@@ -4,16 +4,17 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#080b0a">
-  <title>Global Play Agent Central</title>
+  <title>NEXUS AI · Agent Control Center</title>
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
   <div class="shell">
     <aside class="sidebar">
-      <div class="brand"><span class="brand-mark">▶</span><div><strong>GLOBAL PLAY</strong><small>AGENT CENTRAL</small></div></div>
+      <div class="brand"><img src="/assets/nexus-ai-logo.png" alt="NEXUS AI"><div><strong>NEXUS AI</strong><small>AGENT CONTROL CENTER</small></div></div>
       <nav>
         <button class="nav-item active" data-view="dashboard">▦ <span>Visão geral</span></button>
         <button class="nav-item" data-view="clients">◉ <span>Clientes</span></button>
+        <button class="nav-item" data-view="portal">⌁ <span>Portal do cliente</span></button>
         <button class="nav-item" data-view="odin">◆ <span>Odin & Leads</span></button>
         <button class="nav-item" data-view="onboarding">＋ <span>Novo cliente</span></button>
         <button class="nav-item" data-view="settings">⚙ <span>Integrações</span></button>
@@ -24,7 +25,7 @@
     <main>
       <header>
         <div><p class="eyebrow">PAINEL MASTER</p><h1 id="page-title">Visão geral</h1></div>
-        <div class="header-actions"><span class="live"><i></i> Central online</span><button id="refresh" class="icon-btn" title="Atualizar">↻</button></div>
+        <div class="header-actions"><span class="master-chip">MASTER</span><span class="live"><i></i> Sistema online</span><button id="refresh" class="icon-btn" title="Atualizar">↻</button></div>
       </header>
 
       <section id="dashboard" class="view active">
@@ -42,9 +43,19 @@
 
       <section id="clients" class="view"><div class="panel"><div class="panel-head"><div><p class="eyebrow">GESTÃO</p><h2>Todos os clientes</h2></div><button class="primary" data-go="onboarding">＋ Adicionar cliente</button></div><div class="table-wrap"><table><thead><tr><th>Cliente</th><th>Status</th><th>Instagram</th><th>Odin</th><th>Horários</th><th>Infraestrutura</th></tr></thead><tbody id="clients-table"></tbody></table></div></div></section>
 
+      <section id="portal" class="view">
+        <div class="portal-toolbar"><div><p class="eyebrow">VISÃO DO CLIENTE</p><h2>Portal personalizado</h2></div><label>Visualizar como<select id="portal-client"></select></label></div>
+        <div id="portal-empty" class="panel empty-state"><strong>Nenhum cliente disponível</strong><span>Cadastre o primeiro cliente para gerar o portal.</span></div>
+        <div id="client-portal" class="client-portal" hidden>
+          <section class="portal-hero"><div class="portal-identity"><div id="portal-avatar" class="portal-avatar">NX</div><div><span class="portal-label">AGENTE AUTÔNOMO</span><h2 id="portal-name">Cliente</h2><p id="portal-meta">Configuração do agente</p></div></div><div class="agent-orbit"><span></span><i></i><b></b><em></em><div class="robot-core">AI</div></div><div class="portal-status"><i></i><span id="portal-status">Online</span></div></section>
+          <div class="portal-metrics"><article><span>Leads captados</span><strong id="portal-leads">0</strong><small>Odin comercial</small></article><article><span>Leads quentes</span><strong id="portal-hot">0</strong><small>prontos para atendimento</small></article><article><span>Próxima postagem</span><strong id="portal-next-post">—</strong><small>horário configurado</small></article><article><span>Automação</span><strong id="portal-odin">Ativa</strong><small>monitoramento contínuo</small></article></div>
+          <div class="grid-main"><section class="panel"><div class="panel-head"><div><p class="eyebrow">OPERAÇÃO</p><h2>Seu agente</h2></div><span id="portal-agent-badge" class="badge">ONLINE</span></div><div class="agent-grid"><div><span>Instagram</span><strong id="portal-instagram">—</strong></div><div><span>Segmento</span><strong id="portal-niche">—</strong></div><div><span>Postagens</span><strong id="portal-times">—</strong></div><div><span>Atendimento</span><strong>WhatsApp humano</strong></div></div></section><section class="panel"><p class="eyebrow">CONSUMO</p><h2>Recursos</h2><div id="portal-usage"></div><p class="disclaimer">Indicadores de uso. Custos e limites reais dependem dos dados disponibilizados por cada provedor.</p></section></div>
+        </div>
+      </section>
+
       <section id="odin" class="view"><div class="grid-main"><div class="panel"><p class="eyebrow">MÓDULO COMERCIAL</p><h2>Odin</h2><p class="muted">Captação, qualificação e encaminhamento de leads quentes para atendimento humano.</p><div class="funnel"><div><strong id="funnel-total">0</strong><span>Total</span></div><div><strong id="funnel-warm">0</strong><span>Mornos</span></div><div><strong id="funnel-hot">0</strong><span>Quentes</span></div></div></div><div class="panel"><p class="eyebrow">AUTOMAÇÃO</p><h2>Recursos preparados</h2><ul class="checklist"><li>Comentários “QUERO”</li><li>Classificação frio, morno e quente</li><li>Score e intenção de compra</li><li>Assinatura, revenda e suporte</li><li>Encaminhamento para WhatsApp</li></ul></div></div></section>
 
-      <section id="onboarding" class="view"><div class="panel form-panel"><p class="eyebrow">PORTAL DO CLIENTE</p><h2>Cadastrar novo cliente</h2><p class="muted">Crie a configuração inicial. Autorizações OAuth serão adicionadas na próxima fase.</p><form id="client-form"><div class="form-grid"><label>Empresa / nome<input name="name" required placeholder="Ex.: Ragnar One"></label><label>Nicho<input name="niche" placeholder="Ex.: Streaming"></label><label>Instagram<input name="instagram" placeholder="@usuario"></label><label>Tema<select name="theme"><option value="green-black">Preto + Verde</option><option value="red-black">Preto + Vermelho</option><option value="blue-white">Azul + Branco</option><option value="gold-black">Preto + Dourado</option></select></label></div><div class="theme-preview" id="theme-preview"><span>PRÉVIA</span><strong>Seu agente, sua marca.</strong><small>Automação inteligente Global Play</small></div><button class="primary" type="submit">Criar configuração</button><span id="form-status" class="form-status"></span></form></div></section>
+      <section id="onboarding" class="view"><div class="panel form-panel"><p class="eyebrow">PORTAL DO CLIENTE</p><h2>Cadastrar novo cliente</h2><p class="muted">Crie a configuração inicial. Autorizações OAuth serão adicionadas na próxima fase.</p><form id="client-form"><div class="form-grid"><label>Empresa / nome<input name="name" required placeholder="Ex.: Ragnar One"></label><label>Nicho<input name="niche" placeholder="Ex.: Streaming"></label><label>Instagram<input name="instagram" placeholder="@usuario"></label><label>Tema<select name="theme"><option value="green-black">Preto + Verde</option><option value="red-black">Preto + Vermelho</option><option value="blue-white">Azul + Branco</option><option value="gold-black">Preto + Dourado</option></select></label></div><div class="theme-preview" id="theme-preview"><span>PRÉVIA</span><strong>Seu agente, sua marca.</strong><small>Automação inteligente e independente</small></div><button class="primary" type="submit">Criar configuração</button><span id="form-status" class="form-status"></span></form></div></section>
 
       <section id="settings" class="view"><div class="panel"><p class="eyebrow">SEGURANÇA & ACESSO</p><h2>Integrações administrativas</h2><p class="muted">A Central não guarda senhas nem códigos 2FA. Segredos permanecem em variáveis de ambiente.</p><div id="integration-list" class="integration-list"></div></div></section>
     </main>
