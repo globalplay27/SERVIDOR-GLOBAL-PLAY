@@ -5,125 +5,103 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#050807">
   <title>NEXUS AI · Portal do Cliente</title>
-  <link rel="stylesheet" href="/client.css?v=3">
+  <link rel="stylesheet" href="/client.css?v=6">
 </head>
 <body>
-  <div class="ambient ambient-a"></div>
-  <div class="ambient ambient-b"></div>
-
+  <div class="ambient ambient-a"></div><div class="ambient ambient-b"></div>
   <main class="portal-shell">
     <section id="login-view" class="login-card">
       <img class="login-logo" src="/assets/nexus-ai-logo.png?v=3" alt="NEXUS AI">
-      <div class="login-copy">
-        <p class="eyebrow">ACESSO SEGURO</p>
-        <h1>Portal do Cliente</h1>
-        <p class="muted">Entre no ambiente exclusivo do seu agente NEXUS AI.</p>
-      </div>
-
+      <div class="login-copy"><p class="eyebrow">ACESSO SEGURO</p><h1>Portal do Cliente</h1><p class="muted">Entre no ambiente exclusivo do seu agente NEXUS AI.</p></div>
       <form id="login-form">
-        <label>
-          <span>Usuário</span>
-          <input name="username" autocomplete="username" required>
-        </label>
-        <label>
-          <span>Senha</span>
-          <input name="password" type="password" autocomplete="current-password" required>
-        </label>
-        <button type="submit">Entrar no portal</button>
-        <span id="login-error" role="alert"></span>
+        <label><span>Usuário</span><input name="username" autocomplete="username" required></label>
+        <label><span>Senha</span><input name="password" type="password" autocomplete="current-password" required></label>
+        <button type="submit">Entrar no portal</button><span id="login-error" role="alert"></span>
       </form>
       <small class="security">Acesso individual e independente do painel Master.</small>
     </section>
 
     <section id="portal-view" class="dashboard" hidden>
       <header class="topbar">
-        <div class="brand">
-          <img src="/assets/nexus-ai-logo.png?v=3" alt="NEXUS AI">
-        </div>
-        <div class="top-actions">
-          <span class="online"><i></i> Sistema online</span>
-          <button id="logout" class="logout">Sair</button>
-        </div>
+        <div class="brand"><img src="/assets/nexus-ai-logo.png?v=3" alt="NEXUS AI"></div>
+        <div class="top-actions"><span class="online"><i></i> Sistema online</span><button id="logout" class="logout">Sair</button></div>
       </header>
 
-      <section class="hero">
-        <div class="hero-copy">
-          <p class="eyebrow">AGENTE AUTÔNOMO</p>
-          <h1 id="client-name">—</h1>
-          <p id="client-meta" class="muted">—</p>
-          <div class="hero-badge"><span></span>NEXUS AI conectado</div>
-        </div>
+      <nav class="client-nav">
+        <button type="button" class="active" data-view="overview">Visão geral</button>
+        <button type="button" data-view="posting">Controle de postagens</button>
+      </nav>
 
-        <div class="ai-visual" aria-hidden="true">
-          <div class="orbit orbit-one"></div>
-          <div class="orbit orbit-two"></div>
-          <div class="ai-core"><span>AI</span></div>
-        </div>
-      </section>
+      <div id="view-overview" class="client-view">
+        <section class="hero">
+          <div class="hero-copy"><p class="eyebrow">AGENTE AUTÔNOMO</p><h1 id="client-name">—</h1><p id="client-meta" class="muted">—</p><div class="hero-badge"><span></span>NEXUS AI conectado</div></div>
+          <div class="ai-visual" aria-hidden="true"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="ai-core"><span>AI</span></div></div>
+        </section>
+        <section class="metrics">
+          <article><div class="metric-icon">◎</div><span>Leads captados</span><strong id="leads-total">0</strong><small>Odin comercial</small></article>
+          <article><div class="metric-icon">◆</div><span>Leads quentes</span><strong id="leads-hot">0</strong><small>prontos para atendimento</small></article>
+          <article><div class="metric-icon">◷</div><span>Próxima postagem</span><strong id="next-post">—</strong><small>horário configurado</small></article>
+          <article><div class="metric-icon">◈</div><span>Odin</span><strong id="odin-status">—</strong><small>automação comercial</small></article>
+        </section>
+        <section class="content-grid">
+          <article class="panel"><div class="panel-heading"><div><p class="eyebrow">OPERAÇÃO</p><h2>Seu agente</h2></div><span class="status-chip">OPERACIONAL</span></div><div class="details"><div><span>Instagram</span><strong id="instagram">—</strong></div><div><span>Segmento</span><strong id="niche">—</strong></div><div><span>Status</span><strong id="agent-status">—</strong></div><div><span>Postagens</span><strong id="post-times">—</strong></div></div></article>
+          <article class="panel"><div class="panel-heading"><div><p class="eyebrow">CONSUMO</p><h2>Uso dos recursos</h2></div></div><div id="usage"></div><p class="note">Indicadores de uso do ambiente deste cliente.</p></article>
+        </section>
+      </div>
 
-      <section class="metrics">
-        <article>
-          <div class="metric-icon">◎</div>
-          <span>Leads captados</span>
-          <strong id="leads-total">0</strong>
-          <small>Odin comercial</small>
-        </article>
-        <article>
-          <div class="metric-icon">◆</div>
-          <span>Leads quentes</span>
-          <strong id="leads-hot">0</strong>
-          <small>prontos para atendimento</small>
-        </article>
-        <article>
-          <div class="metric-icon">◷</div>
-          <span>Próxima postagem</span>
-          <strong id="next-post">—</strong>
-          <small>horário configurado</small>
-        </article>
-        <article>
-          <div class="metric-icon">◈</div>
-          <span>Odin</span>
-          <strong id="odin-status">—</strong>
-          <small>automação comercial</small>
-        </article>
-      </section>
+      <div id="view-posting" class="client-view" hidden>
+        <section class="settings-heading">
+          <div><p class="eyebrow">CONTROLE EDITORIAL</p><h1>Como o agente vai postar</h1><p class="muted">As mudanças salvas aqui serão usadas pelo agente nas próximas publicações automáticas.</p></div>
+          <span id="save-status" class="save-status"></span>
+        </section>
 
-      <section class="content-grid">
-        <article class="panel">
-          <div class="panel-heading">
-            <div>
-              <p class="eyebrow">OPERAÇÃO</p>
-              <h2>Seu agente</h2>
-            </div>
-            <span class="status-chip">OPERACIONAL</span>
-          </div>
-          <div class="details">
-            <div><span>Instagram</span><strong id="instagram">—</strong></div>
-            <div><span>Segmento</span><strong id="niche">—</strong></div>
-            <div><span>Status</span><strong id="agent-status">—</strong></div>
-            <div><span>Postagens</span><strong id="post-times">—</strong></div>
-          </div>
-        </article>
+        <form id="posting-form">
+          <section class="settings-grid">
+            <article class="panel settings-panel">
+              <p class="eyebrow">ESTRATÉGIA</p><h2>Direção do conteúdo</h2>
+              <div class="form-grid">
+                <label><span>Nicho trabalhado nas postagens</span><input id="cfg-niche" maxlength="80"></label>
+                <label><span>Estratégia</span><select id="cfg-strategy"><option>Vendas + engajamento</option><option>Vendas diretas</option><option>Engajamento</option><option>Autoridade</option><option>Educativo</option><option>Misto</option></select></label>
+                <label><span>Estilo visual</span><select id="cfg-style"><option>Tecnológico premium</option><option>Luxuoso</option><option>Cinematográfico</option><option>Minimalista</option><option>Esportivo</option><option>Direto para vendas</option></select></label>
+                <label><span>Tom da comunicação</span><input id="cfg-tone" maxlength="180"></label>
+                <label class="wide"><span>Foco principal do conteúdo</span><textarea id="cfg-focus" rows="3" maxlength="400"></textarea></label>
+                <label class="wide"><span>Assuntos que o agente deve evitar</span><textarea id="cfg-avoid" rows="3" maxlength="500"></textarea></label>
+              </div>
+            </article>
 
-        <article class="panel">
-          <div class="panel-heading">
-            <div>
-              <p class="eyebrow">CONSUMO</p>
-              <h2>Uso dos recursos</h2>
-            </div>
-          </div>
-          <div id="usage"></div>
-          <p class="note">Indicadores de uso do ambiente deste cliente.</p>
-        </article>
-      </section>
+            <article class="panel settings-panel">
+              <p class="eyebrow">IDENTIDADE VISUAL</p><h2>Cores dos criativos</h2>
+              <div class="color-grid">
+                <label><span>Cor principal</span><div class="color-control"><input id="cfg-primary" type="color"><code id="cfg-primary-text">#22c55e</code></div></label>
+                <label><span>Cor secundária</span><div class="color-control"><input id="cfg-secondary" type="color"><code id="cfg-secondary-text">#050807</code></div></label>
+              </div>
+              <div id="creative-preview" class="creative-preview"><span>PRÉVIA DO ESTILO</span><strong id="preview-title">Ragnar One</strong><small id="preview-cta">Comente QUERO e saiba mais</small></div>
+            </article>
 
-      <footer>
-        <span>NEXUS AI</span>
-        <small>Client Portal · ambiente exclusivo</small>
-      </footer>
+            <article class="panel settings-panel wide-panel">
+              <p class="eyebrow">PAUTA DIÁRIA</p><h2>O que publicar em cada horário</h2>
+              <div class="schedule-editor">
+                <div><label><span>Horário 1</span><input id="time-1" type="time"></label><label><span>Tema / orientação</span><input id="theme-1" maxlength="250"></label></div>
+                <div><label><span>Horário 2</span><input id="time-2" type="time"></label><label><span>Tema / orientação</span><input id="theme-2" maxlength="250"></label></div>
+                <div><label><span>Horário 3</span><input id="time-3" type="time"></label><label><span>Tema / orientação</span><input id="theme-3" maxlength="250"></label></div>
+              </div>
+            </article>
+
+            <article class="panel settings-panel wide-panel">
+              <p class="eyebrow">CONVERSÃO</p><h2>Legenda e chamada</h2>
+              <div class="form-grid">
+                <label class="wide"><span>CTA padrão</span><input id="cfg-cta" maxlength="180"></label>
+                <label class="wide"><span>Hashtags padrão</span><textarea id="cfg-hashtags" rows="3" maxlength="350"></textarea></label>
+              </div>
+            </article>
+          </section>
+          <div class="save-bar"><div><strong>Alterações operacionais</strong><span>O Ragnar consulta estas regras antes das próximas postagens.</span></div><button type="submit">Salvar e aplicar ao agente</button></div>
+        </form>
+      </div>
+
+      <footer><span>NEXUS AI</span><small>Client Portal · ambiente exclusivo</small></footer>
     </section>
   </main>
-
-  <script src="/client.js?v=3" defer></script>
+  <script src="/client.js?v=6" defer></script>
 </body>
 </html>

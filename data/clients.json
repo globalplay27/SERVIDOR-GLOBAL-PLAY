@@ -13,9 +13,21 @@
     "openai": "configured",
     "meta": "configured",
     "odin": true,
-    "postTimes": ["09:00", "12:00", "18:00"],
-    "leads": { "total": 0, "hot": 0, "warm": 0, "cold": 0 },
-    "usage": { "openaiPercent": 0, "railwayPercent": 0 },
+    "postTimes": [
+      "09:00",
+      "12:00",
+      "18:00"
+    ],
+    "leads": {
+      "total": 0,
+      "hot": 0,
+      "warm": 0,
+      "cold": 0
+    },
+    "usage": {
+      "openaiPercent": 0,
+      "railwayPercent": 0
+    },
     "onboarding": {
       "github": true,
       "railway": true,
@@ -23,6 +35,18 @@
       "instagram": true,
       "facebook": true,
       "metaApp": true
+    },
+    "postingProfile": {
+      "contentStrategy": "Vendas + engajamento",
+      "visualStyle": "Tecnológico premium",
+      "contentFocus": "Estabilidade, suporte, futebol, filmes e séries",
+      "morningTheme": "Dores do cliente e estabilidade",
+      "afternoonTheme": "Filmes, séries e entretenimento",
+      "eveningTheme": "Futebol e jogos ao vivo",
+      "tone": "Firme, direto e profissional",
+      "cta": "Comente \"QUERO\" e saiba mais",
+      "hashtags": "#RagnarOne #Streaming #FutebolAoVivo #FilmesESeries #Entretenimento",
+      "avoidTopics": "Promessas irreais, informações não confirmadas e poluição visual"
     }
   }
 ]

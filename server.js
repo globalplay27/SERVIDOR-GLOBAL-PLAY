@@ -165,6 +165,21 @@ function portalClientForRequest(req) {
   return loadClients().find(client => client.id === account.clientId) || null;
 }
 
+function defaultPostingProfile() {
+  return {
+    contentStrategy: "Vendas + engajamento",
+    visualStyle: "Tecnológico premium",
+    contentFocus: "Estabilidade, suporte, futebol, filmes e séries",
+    morningTheme: "Dores do cliente e estabilidade",
+    afternoonTheme: "Filmes, séries e entretenimento",
+    eveningTheme: "Futebol e jogos ao vivo",
+    tone: "Firme, direto e profissional",
+    cta: 'Comente "QUERO" e saiba mais',
+    hashtags: "#RagnarOne #Streaming #FutebolAoVivo #FilmesESeries #Entretenimento",
+    avoidTopics: "Promessas irreais, informações não confirmadas e poluição visual"
+  };
+}
+
 function clientPortalView(client) {
   return {
     id: client.id,
@@ -178,7 +193,8 @@ function clientPortalView(client) {
     odin: client.odin,
     postTimes: client.postTimes,
     leads: client.leads,
-    usage: client.usage
+    usage: client.usage,
+    postingProfile: { ...defaultPostingProfile(), ...(client.postingProfile || {}) }
   };
 }
 
@@ -206,6 +222,70 @@ const server = http.createServer(async (req, res) => {
       res.setHeader("WWW-Authenticate", 'Basic realm="NEXUS AI Client Portal"');
       return send(res, 401, { error: "unauthorized" });
     }
+    return send(res, 200, clientPortalView(client));
+  }
+
+  const agentConfigMatch = url.pathname.match(/^\/api\/agent-config\/([^/]+)$/);
+  if (agentConfigMatch && req.method === "GET") {
+    const client = loadClients().find(item => item.id === agentConfigMatch[1]);
+    if (!client) return send(res, 404, { error: "not_found" });
+    const view = clientPortalView(client);
+    return send(res, 200, {
+      id: view.id,
+      name: view.name,
+      niche: view.niche,
+      instagram: view.instagram,
+      primaryColor: view.primaryColor,
+      secondaryColor: view.secondaryColor,
+      postTimes: view.postTimes,
+      postingProfile: view.postingProfile
+    });
+  }
+
+  if (url.pathname === "/api/portal/settings" && req.method === "PATCH") {
+    const sessionClient = portalClientForRequest(req);
+    if (!sessionClient) {
+      res.setHeader("WWW-Authenticate", 'Basic realm="NEXUS AI Client Portal"');
+      return send(res, 401, { error: "unauthorized" });
+    }
+
+    const body = await readBody(req);
+    const clients = loadClients();
+    const client = clients.find(item => item.id === sessionClient.id);
+    if (!client) return send(res, 404, { error: "not_found" });
+
+    const textValue = (value, fallback = "", max = 500) =>
+      typeof value === "string" ? value.trim().slice(0, max) : fallback;
+    const colorValue = (value, fallback) =>
+      typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value) ? value : fallback;
+    const timeValues = (value, fallback) => {
+      if (!Array.isArray(value)) return fallback;
+      const valid = [...new Set(value.map(String).filter(item => /^([01]\\d|2[0-3]):[0-5]\\d$/.test(item)))].sort();
+      return valid.length ? valid.slice(0, 6) : fallback;
+    };
+
+    client.niche = textValue(body.niche, client.niche || "Outro", 80);
+    client.primaryColor = colorValue(body.primaryColor, client.primaryColor || "#22c55e");
+    client.secondaryColor = colorValue(body.secondaryColor, client.secondaryColor || "#050807");
+    client.postTimes = timeValues(body.postTimes, client.postTimes || ["09:00", "12:00", "18:00"]);
+
+    const defaults = defaultPostingProfile();
+    const current = { ...defaults, ...(client.postingProfile || {}) };
+    const incoming = body.postingProfile && typeof body.postingProfile === "object" ? body.postingProfile : {};
+    client.postingProfile = {
+      contentStrategy: textValue(incoming.contentStrategy, current.contentStrategy, 100),
+      visualStyle: textValue(incoming.visualStyle, current.visualStyle, 100),
+      contentFocus: textValue(incoming.contentFocus, current.contentFocus, 400),
+      morningTheme: textValue(incoming.morningTheme, current.morningTheme, 250),
+      afternoonTheme: textValue(incoming.afternoonTheme, current.afternoonTheme, 250),
+      eveningTheme: textValue(incoming.eveningTheme, current.eveningTheme, 250),
+      tone: textValue(incoming.tone, current.tone, 180),
+      cta: textValue(incoming.cta, current.cta, 180),
+      hashtags: textValue(incoming.hashtags, current.hashtags, 350),
+      avoidTopics: textValue(incoming.avoidTopics, current.avoidTopics, 500)
+    };
+
+    saveClients(clients);
     return send(res, 200, clientPortalView(client));
   }
 
@@ -245,7 +325,8 @@ const server = http.createServer(async (req, res) => {
       onboarding: {
         github: false, railway: false, openai: false,
         instagram: false, facebook: false, metaApp: false
-      }
+      },
+      postingProfile: defaultPostingProfile()
     };
 
     clients.push(client);
