@@ -139,38 +139,32 @@ $$("[data-preset]").forEach(b=>b.addEventListener("click",()=>{const p=presets[b
 
 $("#posting-form").addEventListener("submit",async e=>{e.preventDefault();$("#save-status").textContent="Salvando…";$("#save-status").className="save-status";const payload={niche:$("#cfg-niche").value,primaryColor:$("#cfg-primary").value,secondaryColor:$("#cfg-secondary").value,postTimes:[$("#time-1").value,$("#time-2").value,$("#time-3").value].filter(Boolean),postingProfile:{contentStrategy:$("#cfg-strategy").value,targetAudience:$("#cfg-audience").value,visualStyle:$("#cfg-style").value,contentFocus:$("#cfg-focus").value,morningTheme:$("#theme-1").value,afternoonTheme:$("#theme-2").value,eveningTheme:$("#theme-3").value,tone:$("#cfg-tone").value,cta:$("#cfg-cta").value,hashtags:$("#cfg-hashtags").value,avoidTopics:$("#cfg-avoid").value}};try{const r=await fetch("/api/portal/settings",{method:"PATCH",headers:{"x-nexus-session":sessionAuth,"content-type":"application/json"},body:JSON.stringify(payload)});if(!r.ok)throw new Error("Não foi possível salvar.");const c=await r.json();renderClient(c);document.documentElement.style.setProperty("--accent",c.primaryColor||"#22c55e");$("#save-status").textContent="Salvo. O agente usará estas regras nas próximas postagens.";$("#save-status").className="save-status ok";await patchOnboarding({creativeProfile:true});}catch(err){$("#save-status").textContent=err.message;$("#save-status").className="save-status error";}});
 
-$("#login-form").addEventListener("submit",async e=>{
-  e.preventDefault();
-  $("#login-error").textContent="Verificando…";
-  const f=new FormData(e.currentTarget);
-  try{
-    const r=await fetch("/api/portal/login",{
-      method:"POST",
-      headers:{"content-type":"application/json"},
-      body:JSON.stringify({username:String(f.get("username")||"").trim(),password:String(f.get("password")||"")})
-    });
-    const d=await r.json();
-    if(!r.ok||!d.token||!d.client)throw new Error("Usuário ou senha inválidos.");
-    sessionAuth=d.token;
-    const c=d.client;
-    $("#login-view").hidden=true;
-    $("#portal-view").hidden=false;
-    document.documentElement.style.setProperty("--accent",c.primaryColor||"#22c55e");
-    renderClient(c);
-    e.currentTarget.reset();
-    $("#login-error").textContent="";
-    showView("setup");
-    liveStatus();
-    providerUsage();
-    loadConnections();
-  }catch(err){
-    sessionAuth=null;
-    $("#login-error").textContent=err.message;
-  }
-});
 $("#logout").addEventListener("click",async()=>{
   const token=sessionAuth;
   sessionAuth=null;currentClient=null;
   try{if(token)await fetch("/api/portal/logout",{method:"POST",headers:{"x-nexus-session":token}});}catch{}
   $("#portal-view").hidden=true;$("#login-view").hidden=false;$("#login-error").textContent="";
 });
+
+async function resumeCookieSession(){
+  const params=new URLSearchParams(location.search);
+  if(params.get("error")==="1"){
+    $("#login-error").textContent="Usuário ou senha inválidos.";
+    return;
+  }
+  try{
+    const r=await fetch("/api/portal/session",{credentials:"same-origin"});
+    if(!r.ok)return;
+    const c=await r.json();
+    $("#login-view").hidden=true;
+    $("#portal-view").hidden=false;
+    document.documentElement.style.setProperty("--accent",c.primaryColor||"#22c55e");
+    renderClient(c);
+    $("#login-error").textContent="";
+    showView("setup");
+    liveStatus();
+    providerUsage();
+    loadConnections();
+  }catch{}
+}
+resumeCookieSession();
