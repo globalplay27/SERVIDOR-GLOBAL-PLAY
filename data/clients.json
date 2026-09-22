@@ -34,9 +34,12 @@
       "openai": true,
       "instagram": true,
       "facebook": true,
-      "metaApp": true
+      "metaApp": true,
+      "creativeProfile": true,
+      "supportRequested": true
     },
     "postingProfile": {
+      "targetAudience": "Misto",
       "contentStrategy": "Vendas + engajamento",
       "visualStyle": "Tecnológico premium",
       "contentFocus": "Estabilidade, suporte, futebol, filmes e séries",
@@ -47,6 +50,8 @@
       "cta": "Comente \"QUERO\" e saiba mais",
       "hashtags": "#RagnarOne #Streaming #FutebolAoVivo #FilmesESeries #Entretenimento",
       "avoidTopics": "Promessas irreais, informações não confirmadas e poluição visual"
-    }
+    },
+    "agentApiUrl": "https://ragnar-agent-production.up.railway.app",
+    "setupMode": "ready"
   }
 ]

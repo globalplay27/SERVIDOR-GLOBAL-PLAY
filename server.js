@@ -168,6 +168,7 @@ function portalClientForRequest(req) {
 function defaultPostingProfile() {
   return {
     contentStrategy: "Vendas + engajamento",
+    targetAudience: "Misto",
     visualStyle: "Tecnológico premium",
     contentFocus: "Estabilidade, suporte, futebol, filmes e séries",
     morningTheme: "Dores do cliente e estabilidade",
@@ -194,6 +195,14 @@ function clientPortalView(client) {
     postTimes: client.postTimes,
     leads: client.leads,
     usage: client.usage,
+    onboarding: client.onboarding || {},
+    setupMode: client.setupMode || "ready",
+    integrationState: {
+      github: client.github || "pending",
+      railway: client.railway || "pending",
+      openai: client.openai || "pending",
+      meta: client.meta || "pending"
+    },
     postingProfile: { ...defaultPostingProfile(), ...(client.postingProfile || {}) }
   };
 }
@@ -274,6 +283,7 @@ const server = http.createServer(async (req, res) => {
     const incoming = body.postingProfile && typeof body.postingProfile === "object" ? body.postingProfile : {};
     client.postingProfile = {
       contentStrategy: textValue(incoming.contentStrategy, current.contentStrategy, 100),
+      targetAudience: textValue(incoming.targetAudience, current.targetAudience, 100),
       visualStyle: textValue(incoming.visualStyle, current.visualStyle, 100),
       contentFocus: textValue(incoming.contentFocus, current.contentFocus, 400),
       morningTheme: textValue(incoming.morningTheme, current.morningTheme, 250),
@@ -287,6 +297,55 @@ const server = http.createServer(async (req, res) => {
 
     saveClients(clients);
     return send(res, 200, clientPortalView(client));
+  }
+
+  if (url.pathname === "/api/portal/onboarding" && req.method === "PATCH") {
+    const sessionClient = portalClientForRequest(req);
+    if (!sessionClient) {
+      res.setHeader("WWW-Authenticate", 'Basic realm="NEXUS AI Client Portal"');
+      return send(res, 401, { error: "unauthorized" });
+    }
+    const body = await readBody(req);
+    const clients = loadClients();
+    const client = clients.find(item => item.id === sessionClient.id);
+    if (!client) return send(res, 404, { error: "not_found" });
+
+    const allowedSteps = ["github","railway","openai","facebook","instagram","metaApp","creativeProfile","supportRequested"];
+    const current = client.onboarding && typeof client.onboarding === "object" ? client.onboarding : {};
+    for (const step of allowedSteps) {
+      if (Object.prototype.hasOwnProperty.call(body, step)) current[step] = Boolean(body[step]);
+    }
+    client.onboarding = current;
+    if (body.setupMode === "new" || body.setupMode === "ready") client.setupMode = body.setupMode;
+    saveClients(clients);
+    return send(res, 200, clientPortalView(client));
+  }
+
+  if (url.pathname === "/api/portal/live-status" && req.method === "GET") {
+    const client = portalClientForRequest(req);
+    if (!client) {
+      res.setHeader("WWW-Authenticate", 'Basic realm="NEXUS AI Client Portal"');
+      return send(res, 401, { error: "unauthorized" });
+    }
+
+    const base = String(client.agentApiUrl || "").replace(/\/+$/, "");
+    if (!base) return send(res, 200, { connected: false, reason: "agent_url_missing" });
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6000);
+    try {
+      const response = await fetch(base + "/nexus/status", {
+        headers: { "accept": "application/json", "user-agent": "NEXUS-AI-Control-Center/1.0" },
+        signal: controller.signal
+      });
+      if (!response.ok) return send(res, 200, { connected: false, reason: "agent_http_" + response.status });
+      const payload = await response.json();
+      return send(res, 200, { connected: true, ...payload });
+    } catch (error) {
+      return send(res, 200, { connected: false, reason: "agent_unavailable" });
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   if (url.pathname.startsWith("/api/") && !authorized(req)) {
@@ -326,7 +385,9 @@ const server = http.createServer(async (req, res) => {
         github: false, railway: false, openai: false,
         instagram: false, facebook: false, metaApp: false
       },
-      postingProfile: defaultPostingProfile()
+      postingProfile: defaultPostingProfile(),
+      setupMode: "new",
+      agentApiUrl: ""
     };
 
     clients.push(client);
@@ -344,7 +405,7 @@ const server = http.createServer(async (req, res) => {
     const allowed = [
       "name","niche","instagram","theme","primaryColor","secondaryColor",
       "status","github","railway","openai","meta","odin","postTimes",
-      "leads","usage","onboarding"
+      "leads","usage","onboarding","agentApiUrl","setupMode"
     ];
     for (const key of allowed) {
       if (Object.prototype.hasOwnProperty.call(body, key)) client[key] = body[key];

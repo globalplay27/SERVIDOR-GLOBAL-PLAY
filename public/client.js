@@ -1,105 +1,34 @@
-const $ = selector => document.querySelector(selector);
-let sessionAuth = null;
-let currentClient = null;
+const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
+let sessionAuth=null,currentClient=null;
 
-function nextPostTime(times = []) {
-  if (!Array.isArray(times) || !times.length) return "—";
-  const parts = new Intl.DateTimeFormat("pt-BR", {timeZone:"America/Sao_Paulo",hour:"2-digit",minute:"2-digit",hour12:false}).formatToParts(new Date());
-  const nowMinutes = Number(parts.find(p=>p.type==="hour")?.value||0)*60 + Number(parts.find(p=>p.type==="minute")?.value||0);
-  const normalized = times.map(value => { const [h,m]=String(value).split(":").map(Number); return {value,minutes:h*60+m}; }).filter(x=>Number.isFinite(x.minutes)).sort((a,b)=>a.minutes-b.minutes);
-  return normalized.find(x=>x.minutes>nowMinutes)?.value || normalized[0]?.value || "—";
+function nextPostTime(times=[]){if(!Array.isArray(times)||!times.length)return"—";const parts=new Intl.DateTimeFormat("pt-BR",{timeZone:"America/Sao_Paulo",hour:"2-digit",minute:"2-digit",hour12:false}).formatToParts(new Date());const now=Number(parts.find(p=>p.type==="hour")?.value||0)*60+Number(parts.find(p=>p.type==="minute")?.value||0);const sorted=times.map(v=>{const[h,m]=String(v).split(":").map(Number);return{v,m:h*60+m}}).filter(x=>Number.isFinite(x.m)).sort((a,b)=>a.m-b.m);return sorted.find(x=>x.m>now)?.v||sorted[0]?.v||"—";}
+function showView(name){$$("[data-view]").forEach(b=>b.classList.toggle("active",b.dataset.view===name));["overview","posting","setup"].forEach(v=>$("#view-"+v).hidden=v!==name);}
+function onboardingKeys(){return["github","railway","openai","facebook","instagram","metaApp","creativeProfile","supportRequested"];}
+function setupPercent(){const o=currentClient?.onboarding||{};const keys=onboardingKeys();return Math.round(keys.filter(k=>o[k]).length/keys.length*100);}
+function renderOnboarding(){
+  const o=currentClient?.onboarding||{},pct=setupPercent();$("#setup-progress").textContent=pct+"%";$("#setup-banner").hidden=pct>=100;
+  $$(".wizard-step").forEach(card=>{const key=card.dataset.step,done=Boolean(o[key]);card.classList.toggle("done",done);const state=card.querySelector(".step-state");if(state)state.textContent=done?"Concluído":"Pendente";});
+  $("#mode-new").classList.toggle("selected",(currentClient?.setupMode||"ready")==="new");$("#mode-ready").classList.toggle("selected",(currentClient?.setupMode||"ready")==="ready");
 }
-function usageRow(label,value){const safe=Math.min(Number(value)||0,100);return `<div class="usage-row"><div><span>${label}</span><strong>${safe}%</strong></div><div class="bar"><i style="width:${safe}%"></i></div></div>`;}
-
-function renderClient(client){
-  currentClient=client;
-  $("#client-name").textContent=client.name;
-  $("#client-meta").textContent=`${client.niche||"Outro"} · ambiente exclusivo`;
-  $("#leads-total").textContent=client.leads?.total||0;
-  $("#leads-hot").textContent=client.leads?.hot||0;
-  $("#next-post").textContent=nextPostTime(client.postTimes);
-  $("#odin-status").textContent=client.odin?"Ativo":"Pausado";
-  $("#instagram").textContent=client.instagram||"Pendente";
-  $("#niche").textContent=client.niche||"Outro";
-  $("#agent-status").textContent=client.status==="online"?"Online":"Em configuração";
-  $("#post-times").textContent=(client.postTimes||[]).join(" · ")||"—";
-  $("#usage").innerHTML=usageRow("OpenAI",client.usage?.openaiPercent)+usageRow("Railway",client.usage?.railwayPercent);
-  populatePosting(client);
-}
-function showPortal(client){
-  $("#login-view").hidden=true;$("#portal-view").hidden=false;
-  document.documentElement.style.setProperty("--accent",client.primaryColor||"#22c55e");
-  renderClient(client);
-}
-function populatePosting(client){
-  const p=client.postingProfile||{};
-  $("#cfg-niche").value=client.niche||"";
-  $("#cfg-strategy").value=p.contentStrategy||"Vendas + engajamento";
-  $("#cfg-style").value=p.visualStyle||"Tecnológico premium";
-  $("#cfg-tone").value=p.tone||"Firme, direto e profissional";
-  $("#cfg-focus").value=p.contentFocus||"";
-  $("#cfg-avoid").value=p.avoidTopics||"";
-  $("#cfg-primary").value=client.primaryColor||"#22c55e";
-  $("#cfg-secondary").value=client.secondaryColor||"#050807";
-  $("#cfg-cta").value=p.cta||'Comente "QUERO" e saiba mais';
-  $("#cfg-hashtags").value=p.hashtags||"";
-  const times=client.postTimes||["09:00","12:00","18:00"];
-  $("#time-1").value=times[0]||"09:00";$("#time-2").value=times[1]||"12:00";$("#time-3").value=times[2]||"18:00";
-  $("#theme-1").value=p.morningTheme||"";$("#theme-2").value=p.afternoonTheme||"";$("#theme-3").value=p.eveningTheme||"";
-  updatePreview();
-}
-function updatePreview(){
-  const primary=$("#cfg-primary").value,secondary=$("#cfg-secondary").value;
-  $("#cfg-primary-text").textContent=primary;$("#cfg-secondary-text").textContent=secondary;
-  $("#creative-preview").style.background=`radial-gradient(circle at 80% 15%,${primary}55,transparent 35%),linear-gradient(135deg,${secondary},#090d0b)`;
-  $("#creative-preview").style.borderColor=primary;
-  $("#preview-cta").textContent=$("#cfg-cta").value||"CTA";
-}
-document.querySelectorAll("[data-view]").forEach(button=>button.addEventListener("click",()=>{
-  document.querySelectorAll("[data-view]").forEach(x=>x.classList.toggle("active",x===button));
-  $("#view-overview").hidden=button.dataset.view!=="overview";
-  $("#view-posting").hidden=button.dataset.view!=="posting";
-}));
+function renderClient(c){currentClient=c;$("#client-name").textContent=c.name;$("#client-meta").textContent=`${c.niche||"Outro"} · ambiente exclusivo`;$("#leads-total").textContent=c.leads?.total||0;$("#leads-hot").textContent=c.leads?.hot||0;$("#next-post").textContent=nextPostTime(c.postTimes);$("#odin-status").textContent=c.odin?"Ativo":"Pausado";$("#instagram").textContent=c.instagram||"Pendente";$("#niche").textContent=c.niche||"Outro";$("#agent-status").textContent=c.status==="online"?"Online":"Em configuração";$("#post-times").textContent=(c.postTimes||[]).join(" · ")||"—";populatePosting(c);renderOnboarding();}
+function populatePosting(c){const p=c.postingProfile||{};$("#cfg-niche").value=[...$("#cfg-niche").options].some(o=>o.value===c.niche)?c.niche:"Outro";$("#cfg-audience").value=p.targetAudience||"Misto";$("#cfg-strategy").value=p.contentStrategy||"Vendas + engajamento";$("#cfg-style").value=p.visualStyle||"Tecnológico premium";$("#cfg-tone").value=p.tone||"Firme, direto e profissional";$("#cfg-focus").value=p.contentFocus||"";$("#cfg-avoid").value=p.avoidTopics||"";$("#cfg-primary").value=c.primaryColor||"#22c55e";$("#cfg-secondary").value=c.secondaryColor||"#050807";$("#cfg-cta").value=p.cta||'Comente "QUERO" e saiba mais';$("#cfg-hashtags").value=p.hashtags||"";const t=c.postTimes||["09:00","12:00","18:00"];$("#time-1").value=t[0]||"09:00";$("#time-2").value=t[1]||"12:00";$("#time-3").value=t[2]||"18:00";$("#theme-1").value=p.morningTheme||"";$("#theme-2").value=p.afternoonTheme||"";$("#theme-3").value=p.eveningTheme||"";$("#preview-title").textContent=c.name||"Seu agente";updatePreview();}
+function updatePreview(){const p=$("#cfg-primary").value,s=$("#cfg-secondary").value;$("#cfg-primary-text").textContent=p;$("#cfg-secondary-text").textContent=s;$("#creative-preview").style.background=`radial-gradient(circle at 80% 15%,${p}55,transparent 35%),linear-gradient(135deg,${s},#090d0b)`;$("#creative-preview").style.borderColor=p;$("#preview-cta").textContent=$("#cfg-cta").value||"CTA";}
+async function liveStatus(){try{const r=await fetch("/api/portal/live-status",{headers:{authorization:sessionAuth}}),d=await r.json();if(!d.connected){$("#agent-live-chip").textContent="SEM LEITURA";$("#agent-live-chip").classList.add("off");$("#live-openai").textContent="Aguardando conexão";$("#live-openai-detail").textContent="O agente ainda não respondeu.";$("#live-railway").textContent="Aguardando conexão";$("#live-railway-detail").textContent="—";return;}$("#agent-live-chip").textContent="ONLINE";$("#agent-live-chip").classList.remove("off");$("#agent-status").textContent="Online";if(Array.isArray(d.post_times)&&d.post_times.length){currentClient.postTimes=d.post_times;$("#post-times").textContent=d.post_times.join(" · ");$("#next-post").textContent=nextPostTime(d.post_times);}const oa=d.openai||{};$("#live-openai").textContent=oa.month_cost_usd!=null?`US$ ${Number(oa.month_cost_usd).toFixed(2)} / 31 dias`:oa.configured?"Conta conectada":"Não conectada";$("#live-openai-detail").textContent=oa.status||"Sem custo disponível pela API";const rw=d.railway||{};$("#live-railway").textContent=rw.project||"Railway";$("#live-railway-detail").textContent=rw.disk_used_mb!=null?`${rw.disk_used_mb} MB usados · ${rw.disk_free_mb} MB livres`:"Sem métricas";}catch(e){$("#agent-live-chip").textContent="SEM LEITURA";}}
+async function patchOnboarding(payload){const r=await fetch("/api/portal/onboarding",{method:"PATCH",headers:{authorization:sessionAuth,"content-type":"application/json"},body:JSON.stringify(payload)});if(!r.ok)throw new Error("Falha ao salvar etapa");renderClient(await r.json());}
+$$("[data-view]").forEach(b=>b.addEventListener("click",()=>showView(b.dataset.view)));$$("[data-open-setup]").forEach(b=>b.addEventListener("click",()=>showView("setup")));$$("[data-open-posting]").forEach(b=>b.addEventListener("click",()=>showView("posting")));
 $("#cfg-primary").addEventListener("input",updatePreview);$("#cfg-secondary").addEventListener("input",updatePreview);$("#cfg-cta").addEventListener("input",updatePreview);
+$$("[data-complete]").forEach(b=>b.addEventListener("click",async()=>{b.disabled=true;try{await patchOnboarding({[b.dataset.complete]:true});}finally{b.disabled=false;}}));
+$("#mode-new").addEventListener("click",()=>patchOnboarding({setupMode:"new"}));$("#mode-ready").addEventListener("click",()=>patchOnboarding({setupMode:"ready"}));
+$("#request-support").addEventListener("click",async()=>{await patchOnboarding({supportRequested:true});alert("Solicitação registrada. O suporte poderá concluir a instalação final.");});
 
-$("#posting-form").addEventListener("submit",async event=>{
-  event.preventDefault();
-  $("#save-status").textContent="Salvando…";$("#save-status").className="save-status";
-  const postTimes=[$("#time-1").value,$("#time-2").value,$("#time-3").value].filter(Boolean);
-  const payload={
-    niche:$("#cfg-niche").value,
-    primaryColor:$("#cfg-primary").value,
-    secondaryColor:$("#cfg-secondary").value,
-    postTimes,
-    postingProfile:{
-      contentStrategy:$("#cfg-strategy").value,
-      visualStyle:$("#cfg-style").value,
-      contentFocus:$("#cfg-focus").value,
-      morningTheme:$("#theme-1").value,
-      afternoonTheme:$("#theme-2").value,
-      eveningTheme:$("#theme-3").value,
-      tone:$("#cfg-tone").value,
-      cta:$("#cfg-cta").value,
-      hashtags:$("#cfg-hashtags").value,
-      avoidTopics:$("#cfg-avoid").value
-    }
-  };
-  try{
-    const response=await fetch("/api/portal/settings",{method:"PATCH",headers:{authorization:sessionAuth,"content-type":"application/json"},body:JSON.stringify(payload)});
-    if(!response.ok) throw new Error("Não foi possível salvar.");
-    const client=await response.json();renderClient(client);
-    document.documentElement.style.setProperty("--accent",client.primaryColor||"#22c55e");
-    $("#save-status").textContent="Salvo e enviado ao agente";$("#save-status").className="save-status ok";
-  }catch(error){$("#save-status").textContent=error.message;$("#save-status").className="save-status error";}
-});
+const presets={
+  final:{audience:"Cliente final",focus:"Estabilidade, suporte, futebol, filmes e séries para quem quer assistir sem dor de cabeça.",themes:["Dor do cliente: travamento, delay e suporte que não responde","Filmes, séries, variedade de conteúdo e experiência em vários dispositivos","Futebol, jogos ao vivo, estabilidade e chamada para teste"],cta:'Comente "QUERO" para testar'},
+  reseller:{audience:"Revendedores",focus:"Captação de revendedores destacando estabilidade, suporte, painel e oportunidade comercial.",themes:["Dor do revendedor: fornecedor some, cliente reclama e painel instável","Estrutura, suporte e recursos para revender com mais tranquilidade","Oportunidade comercial, equipe, crescimento e chamada para abrir painel"],cta:'Comente "QUERO" para saber sobre revenda'},
+  mixed:{audience:"Misto",focus:"Misturar aquisição de cliente final com captação de novos revendedores.",themes:["Cliente final: dor de travamento e estabilidade","Entretenimento, filmes e séries para cliente final","Revenda: oportunidade, suporte e estrutura"],cta:'Comente "QUERO" e escolha assinatura ou revenda'}
+};
+$$("[data-preset]").forEach(b=>b.addEventListener("click",()=>{const p=presets[b.dataset.preset];$("#cfg-niche").value="Streaming";$("#cfg-audience").value=p.audience;$("#cfg-focus").value=p.focus;$("#theme-1").value=p.themes[0];$("#theme-2").value=p.themes[1];$("#theme-3").value=p.themes[2];$("#cfg-cta").value=p.cta;updatePreview();}));
 
-$("#login-form").addEventListener("submit",async event=>{
-  event.preventDefault();$("#login-error").textContent="Verificando…";
-  const form=new FormData(event.currentTarget);sessionAuth=`Basic ${btoa(`${form.get("username")}:${form.get("password")}`)}`;
-  try{
-    const response=await fetch("/api/portal/session",{headers:{authorization:sessionAuth}});
-    if(!response.ok) throw new Error("Usuário ou senha inválidos.");
-    showPortal(await response.json());event.currentTarget.reset();$("#login-error").textContent="";
-  }catch(error){sessionAuth=null;$("#login-error").textContent=error.message;}
-});
+$("#posting-form").addEventListener("submit",async e=>{e.preventDefault();$("#save-status").textContent="Salvando…";$("#save-status").className="save-status";const payload={niche:$("#cfg-niche").value,primaryColor:$("#cfg-primary").value,secondaryColor:$("#cfg-secondary").value,postTimes:[$("#time-1").value,$("#time-2").value,$("#time-3").value].filter(Boolean),postingProfile:{contentStrategy:$("#cfg-strategy").value,targetAudience:$("#cfg-audience").value,visualStyle:$("#cfg-style").value,contentFocus:$("#cfg-focus").value,morningTheme:$("#theme-1").value,afternoonTheme:$("#theme-2").value,eveningTheme:$("#theme-3").value,tone:$("#cfg-tone").value,cta:$("#cfg-cta").value,hashtags:$("#cfg-hashtags").value,avoidTopics:$("#cfg-avoid").value}};try{const r=await fetch("/api/portal/settings",{method:"PATCH",headers:{authorization:sessionAuth,"content-type":"application/json"},body:JSON.stringify(payload)});if(!r.ok)throw new Error("Não foi possível salvar.");const c=await r.json();renderClient(c);document.documentElement.style.setProperty("--accent",c.primaryColor||"#22c55e");$("#save-status").textContent="Salvo. O agente usará estas regras nas próximas postagens.";$("#save-status").className="save-status ok";await patchOnboarding({creativeProfile:true});}catch(err){$("#save-status").textContent=err.message;$("#save-status").className="save-status error";}});
+
+$("#login-form").addEventListener("submit",async e=>{e.preventDefault();$("#login-error").textContent="Verificando…";const f=new FormData(e.currentTarget);sessionAuth=`Basic ${btoa(`${f.get("username")}:${f.get("password")}`)}`;try{const r=await fetch("/api/portal/session",{headers:{authorization:sessionAuth}});if(!r.ok)throw new Error("Usuário ou senha inválidos.");const c=await r.json();$("#login-view").hidden=true;$("#portal-view").hidden=false;document.documentElement.style.setProperty("--accent",c.primaryColor||"#22c55e");renderClient(c);e.currentTarget.reset();$("#login-error").textContent="";if(setupPercent()<100&&c.setupMode==="new")showView("setup");else showView("overview");liveStatus();}catch(err){sessionAuth=null;$("#login-error").textContent=err.message;}});
 $("#logout").addEventListener("click",()=>{sessionAuth=null;currentClient=null;$("#portal-view").hidden=true;$("#login-view").hidden=false;$("#login-error").textContent="";});

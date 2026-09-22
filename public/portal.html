@@ -5,67 +5,82 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#050807">
   <title>NEXUS AI · Portal do Cliente</title>
-  <link rel="stylesheet" href="/client.css?v=6">
+  <link rel="stylesheet" href="/client.css?v=9">
 </head>
 <body>
   <div class="ambient ambient-a"></div><div class="ambient ambient-b"></div>
   <main class="portal-shell">
     <section id="login-view" class="login-card">
       <img class="login-logo" src="/assets/nexus-ai-logo.png?v=3" alt="NEXUS AI">
-      <div class="login-copy"><p class="eyebrow">ACESSO SEGURO</p><h1>Portal do Cliente</h1><p class="muted">Entre no ambiente exclusivo do seu agente NEXUS AI.</p></div>
+      <div class="login-copy"><p class="eyebrow">ACESSO SEGURO</p><h1>Portal do Cliente</h1><p class="muted">Controle seu agente, suas postagens e a configuração inicial em um só lugar.</p></div>
       <form id="login-form">
         <label><span>Usuário</span><input name="username" autocomplete="username" required></label>
         <label><span>Senha</span><input name="password" type="password" autocomplete="current-password" required></label>
         <button type="submit">Entrar no portal</button><span id="login-error" role="alert"></span>
       </form>
-      <small class="security">Acesso individual e independente do painel Master.</small>
+      <small class="security">Acesso individual · sem acesso ao painel Master.</small>
     </section>
 
     <section id="portal-view" class="dashboard" hidden>
       <header class="topbar">
         <div class="brand"><img src="/assets/nexus-ai-logo.png?v=3" alt="NEXUS AI"></div>
-        <div class="top-actions"><span class="online"><i></i> Sistema online</span><button id="logout" class="logout">Sair</button></div>
+        <div class="top-actions"><span id="system-status" class="online"><i></i> Sistema online</span><button id="logout" class="logout">Sair</button></div>
       </header>
 
       <nav class="client-nav">
         <button type="button" class="active" data-view="overview">Visão geral</button>
         <button type="button" data-view="posting">Controle de postagens</button>
+        <button type="button" data-view="setup">Configuração inicial</button>
       </nav>
 
       <div id="view-overview" class="client-view">
+        <section id="setup-banner" class="setup-banner" hidden>
+          <div><p class="eyebrow">PRIMEIROS PASSOS</p><strong>Seu agente ainda está em configuração</strong><span>Conclua o passo a passo para deixar tudo pronto.</span></div>
+          <button type="button" data-open-setup>Continuar configuração</button>
+        </section>
+
         <section class="hero">
           <div class="hero-copy"><p class="eyebrow">AGENTE AUTÔNOMO</p><h1 id="client-name">—</h1><p id="client-meta" class="muted">—</p><div class="hero-badge"><span></span>NEXUS AI conectado</div></div>
           <div class="ai-visual" aria-hidden="true"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="ai-core"><span>AI</span></div></div>
         </section>
+
         <section class="metrics">
           <article><div class="metric-icon">◎</div><span>Leads captados</span><strong id="leads-total">0</strong><small>Odin comercial</small></article>
           <article><div class="metric-icon">◆</div><span>Leads quentes</span><strong id="leads-hot">0</strong><small>prontos para atendimento</small></article>
           <article><div class="metric-icon">◷</div><span>Próxima postagem</span><strong id="next-post">—</strong><small>horário configurado</small></article>
           <article><div class="metric-icon">◈</div><span>Odin</span><strong id="odin-status">—</strong><small>automação comercial</small></article>
         </section>
+
         <section class="content-grid">
-          <article class="panel"><div class="panel-heading"><div><p class="eyebrow">OPERAÇÃO</p><h2>Seu agente</h2></div><span class="status-chip">OPERACIONAL</span></div><div class="details"><div><span>Instagram</span><strong id="instagram">—</strong></div><div><span>Segmento</span><strong id="niche">—</strong></div><div><span>Status</span><strong id="agent-status">—</strong></div><div><span>Postagens</span><strong id="post-times">—</strong></div></div></article>
-          <article class="panel"><div class="panel-heading"><div><p class="eyebrow">CONSUMO</p><h2>Uso dos recursos</h2></div></div><div id="usage"></div><p class="note">Indicadores de uso do ambiente deste cliente.</p></article>
+          <article class="panel">
+            <div class="panel-heading"><div><p class="eyebrow">OPERAÇÃO</p><h2>Seu agente</h2></div><span id="agent-live-chip" class="status-chip">VERIFICANDO</span></div>
+            <div class="details"><div><span>Instagram</span><strong id="instagram">—</strong></div><div><span>Segmento</span><strong id="niche">—</strong></div><div><span>Status</span><strong id="agent-status">—</strong></div><div><span>Postagens</span><strong id="post-times">—</strong></div></div>
+          </article>
+          <article class="panel">
+            <div class="panel-heading"><div><p class="eyebrow">CONSUMO REAL</p><h2>OpenAI & Railway</h2></div></div>
+            <div class="live-usage">
+              <div><span>OpenAI</span><strong id="live-openai">Verificando…</strong><small id="live-openai-detail">—</small></div>
+              <div><span>Railway</span><strong id="live-railway">Verificando…</strong><small id="live-railway-detail">—</small></div>
+            </div>
+            <p class="note">Quando o provedor não disponibilizar saldo restante por API, o painel mostra somente os dados reais disponíveis, sem estimativas.</p>
+          </article>
         </section>
       </div>
 
       <div id="view-posting" class="client-view" hidden>
-        <section class="settings-heading">
-          <div><p class="eyebrow">CONTROLE EDITORIAL</p><h1>Como o agente vai postar</h1><p class="muted">As mudanças salvas aqui serão usadas pelo agente nas próximas publicações automáticas.</p></div>
-          <span id="save-status" class="save-status"></span>
-        </section>
-
+        <section class="settings-heading"><div><p class="eyebrow">CONTROLE EDITORIAL</p><h1>Como o agente vai postar</h1><p class="muted">O Ragnar lê estas regras antes das próximas publicações automáticas.</p></div><span id="save-status" class="save-status"></span></section>
         <form id="posting-form">
           <section class="settings-grid">
             <article class="panel settings-panel">
               <p class="eyebrow">ESTRATÉGIA</p><h2>Direção do conteúdo</h2>
               <div class="form-grid">
-                <label><span>Nicho trabalhado nas postagens</span><input id="cfg-niche" maxlength="80"></label>
-                <label><span>Estratégia</span><select id="cfg-strategy"><option>Vendas + engajamento</option><option>Vendas diretas</option><option>Engajamento</option><option>Autoridade</option><option>Educativo</option><option>Misto</option></select></label>
+                <label><span>Nicho</span><select id="cfg-niche"><option>Streaming</option><option>Restaurante</option><option>Loja</option><option>Serviços</option><option>Imobiliária</option><option>Automotivo</option><option>Outro</option></select></label>
+                <label><span>Público principal</span><select id="cfg-audience"><option>Cliente final</option><option>Revendedores</option><option>Misto</option><option>Empresas</option><option>Personalizado</option></select></label>
+                <label><span>Objetivo</span><select id="cfg-strategy"><option>Vendas + engajamento</option><option>Vendas diretas</option><option>Engajamento</option><option>Autoridade</option><option>Educativo</option><option>Misto</option></select></label>
                 <label><span>Estilo visual</span><select id="cfg-style"><option>Tecnológico premium</option><option>Luxuoso</option><option>Cinematográfico</option><option>Minimalista</option><option>Esportivo</option><option>Direto para vendas</option></select></label>
                 <label><span>Tom da comunicação</span><input id="cfg-tone" maxlength="180"></label>
                 <label class="wide"><span>Foco principal do conteúdo</span><textarea id="cfg-focus" rows="3" maxlength="400"></textarea></label>
-                <label class="wide"><span>Assuntos que o agente deve evitar</span><textarea id="cfg-avoid" rows="3" maxlength="500"></textarea></label>
+                <label class="wide"><span>O agente NÃO deve postar</span><textarea id="cfg-avoid" rows="3" maxlength="500"></textarea></label>
               </div>
             </article>
 
@@ -75,7 +90,7 @@
                 <label><span>Cor principal</span><div class="color-control"><input id="cfg-primary" type="color"><code id="cfg-primary-text">#22c55e</code></div></label>
                 <label><span>Cor secundária</span><div class="color-control"><input id="cfg-secondary" type="color"><code id="cfg-secondary-text">#050807</code></div></label>
               </div>
-              <div id="creative-preview" class="creative-preview"><span>PRÉVIA DO ESTILO</span><strong id="preview-title">Ragnar One</strong><small id="preview-cta">Comente QUERO e saiba mais</small></div>
+              <div id="creative-preview" class="creative-preview"><span>PRÉVIA DO ESTILO</span><strong id="preview-title">Seu agente</strong><small id="preview-cta">Comente QUERO e saiba mais</small></div>
             </article>
 
             <article class="panel settings-panel wide-panel">
@@ -85,23 +100,45 @@
                 <div><label><span>Horário 2</span><input id="time-2" type="time"></label><label><span>Tema / orientação</span><input id="theme-2" maxlength="250"></label></div>
                 <div><label><span>Horário 3</span><input id="time-3" type="time"></label><label><span>Tema / orientação</span><input id="theme-3" maxlength="250"></label></div>
               </div>
+              <div class="preset-row">
+                <button type="button" data-preset="final">Streaming · Cliente final</button>
+                <button type="button" data-preset="reseller">Streaming · Revendedores</button>
+                <button type="button" data-preset="mixed">Streaming · Misto</button>
+              </div>
             </article>
 
             <article class="panel settings-panel wide-panel">
               <p class="eyebrow">CONVERSÃO</p><h2>Legenda e chamada</h2>
-              <div class="form-grid">
-                <label class="wide"><span>CTA padrão</span><input id="cfg-cta" maxlength="180"></label>
-                <label class="wide"><span>Hashtags padrão</span><textarea id="cfg-hashtags" rows="3" maxlength="350"></textarea></label>
-              </div>
+              <div class="form-grid"><label class="wide"><span>CTA padrão</span><input id="cfg-cta" maxlength="180"></label><label class="wide"><span>Hashtags padrão</span><textarea id="cfg-hashtags" rows="3" maxlength="350"></textarea></label></div>
             </article>
           </section>
-          <div class="save-bar"><div><strong>Alterações operacionais</strong><span>O Ragnar consulta estas regras antes das próximas postagens.</span></div><button type="submit">Salvar e aplicar ao agente</button></div>
+          <div class="save-bar"><div><strong>Alterações operacionais</strong><span>Depois de salvar, as próximas postagens usam as novas regras.</span></div><button type="submit">Salvar e aplicar ao agente</button></div>
         </form>
+      </div>
+
+      <div id="view-setup" class="client-view" hidden>
+        <section class="settings-heading"><div><p class="eyebrow">CONFIGURAÇÃO INICIAL</p><h1>Coloque seu agente no ar</h1><p class="muted">Siga as etapas. Você pode sair e continuar depois.</p></div><div class="progress-pill"><strong id="setup-progress">0%</strong><span>concluído</span></div></section>
+
+        <section class="setup-choice">
+          <button type="button" id="mode-new"><strong>Estou começando do zero</strong><span>Quero seguir o passo a passo completo.</span></button>
+          <button type="button" id="mode-ready"><strong>Já tenho minhas contas</strong><span>Quero conferir conexões e ir para a instalação.</span></button>
+        </section>
+
+        <section class="wizard-list">
+          <article class="wizard-step" data-step="github"><div class="step-number">1</div><div class="step-body"><strong>Criar ou acessar GitHub</strong><span>Conta onde ficará o código do seu agente.</span><div class="step-actions"><a target="_blank" rel="noopener" href="https://github.com/signup">Abrir GitHub</a><button type="button" data-complete="github">Já concluí</button></div></div><span class="step-state">Pendente</span></article>
+          <article class="wizard-step" data-step="railway"><div class="step-number">2</div><div class="step-body"><strong>Criar ou acessar Railway</strong><span>É onde o agente ficará rodando 24 horas.</span><div class="step-actions"><a target="_blank" rel="noopener" href="https://railway.com/">Abrir Railway</a><button type="button" data-complete="railway">Já concluí</button></div></div><span class="step-state">Pendente</span></article>
+          <article class="wizard-step" data-step="openai"><div class="step-number">3</div><div class="step-body"><strong>Criar ou acessar OpenAI API</strong><span>Conta usada pela inteligência e geração de conteúdo.</span><div class="step-actions"><a target="_blank" rel="noopener" href="https://platform.openai.com/">Abrir OpenAI</a><button type="button" data-complete="openai">Já concluí</button></div></div><span class="step-state">Pendente</span></article>
+          <article class="wizard-step" data-step="facebook"><div class="step-number">4</div><div class="step-body"><strong>Facebook / Meta</strong><span>Prepare a conta profissional ligada ao Instagram.</span><div class="step-actions"><a target="_blank" rel="noopener" href="https://www.facebook.com/">Abrir Facebook</a><button type="button" data-complete="facebook">Já concluí</button></div></div><span class="step-state">Pendente</span></article>
+          <article class="wizard-step" data-step="instagram"><div class="step-number">5</div><div class="step-body"><strong>Instagram profissional</strong><span>Conta que o agente vai atender e publicar.</span><div class="step-actions"><a target="_blank" rel="noopener" href="https://www.instagram.com/">Abrir Instagram</a><button type="button" data-complete="instagram">Já concluí</button></div></div><span class="step-state">Pendente</span></article>
+          <article class="wizard-step" data-step="metaApp"><div class="step-number">6</div><div class="step-body"><strong>Aplicativo Meta</strong><span>Crie o aplicativo que autoriza mensagens, comentários e publicação.</span><div class="step-actions"><a target="_blank" rel="noopener" href="https://developers.facebook.com/apps/">Abrir Meta for Developers</a><button type="button" data-complete="metaApp">Já concluí</button></div></div><span class="step-state">Pendente</span></article>
+          <article class="wizard-step" data-step="creativeProfile"><div class="step-number">7</div><div class="step-body"><strong>Configurar estilo das postagens</strong><span>Escolha nicho, público, cores, horários, CTA e temas.</span><div class="step-actions"><button type="button" data-open-posting>Configurar agora</button><button type="button" data-complete="creativeProfile">Já concluí</button></div></div><span class="step-state">Pendente</span></article>
+          <article class="wizard-step support-step" data-step="supportRequested"><div class="step-number">8</div><div class="step-body"><strong>Solicitar instalação final</strong><span>Quando as contas estiverem prontas, o suporte conclui tokens, permissões e teste final.</span><div class="step-actions"><button type="button" id="request-support">Solicitar instalação</button></div></div><span class="step-state">Pendente</span></article>
+        </section>
       </div>
 
       <footer><span>NEXUS AI</span><small>Client Portal · ambiente exclusivo</small></footer>
     </section>
   </main>
-  <script src="/client.js?v=6" defer></script>
+  <script src="/client.js?v=9" defer></script>
 </body>
 </html>
