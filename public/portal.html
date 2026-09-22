@@ -4,8 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#050807">
+  <meta name="application-name" content="NEXUS AI">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>NEXUS AI · Portal do Cliente</title>
-  <link rel="stylesheet" href="/client.css?v=21">
+  <link rel="icon" href="/assets/nexus-ai-mark.svg" type="image/svg+xml">
+  <link rel="manifest" href="/manifest.webmanifest?v=1">
+  <link rel="stylesheet" href="/client.css?v=22">
 </head>
 <body>
   <div id="nexus-boot" class="nexus-boot" hidden>
@@ -32,15 +37,19 @@
         <label><span>Senha</span><input name="password" type="password" autocomplete="current-password" required></label>
         <button type="submit">Entrar no portal</button><span id="login-error" role="alert"></span>
       </form>
+      <div class="login-install">
+        <button type="button" class="install-app-button" data-install-app hidden>Instalar NEXUS AI</button>
+        <small>Instale no celular ou computador e use como aplicativo.</small>
+      </div>
     </section>
 
     <section id="portal-view" class="dashboard" hidden>
       <header class="topbar">
         <div class="brand"><img src="/assets/nexus-ai-logo.png?v=3" alt="NEXUS AI"></div>
-        <div class="top-actions"><span id="system-status" class="online"><i></i> Sistema online</span><button id="logout" class="logout">Sair</button></div>
+        <div class="top-actions"><button type="button" class="install-app-button compact" data-install-app hidden>Instalar app</button><span id="system-status" class="online"><i></i> Sistema online</span><button id="logout" class="logout">Sair</button></div>
       </header>
 
-      <section class="setup-hero-card" data-open-setup>
+      <section class="setup-hero-card" data-open-setup hidden>
         <div class="setup-hero-icon">01</div>
         <div class="setup-hero-copy">
           <p class="eyebrow">CONEXÕES DO AGENTE</p>
@@ -53,7 +62,7 @@
       <nav class="client-nav">
         <button type="button" class="active" data-view="overview">Visão geral</button>
         <button type="button" data-view="posting">Postagens</button>
-        <button type="button" class="setup-nav-main" data-view="setup">Conexões</button>
+        <button type="button" class="setup-nav-main" data-view="setup" hidden>Conexões</button>
       </nav>
 
       <div id="view-overview" class="client-view">
@@ -201,6 +210,6 @@
       <footer><span>NEXUS AI</span><small>Client Portal · ambiente exclusivo</small></footer>
     </section>
   </main>
-  <script src="/client.js?v=21" defer></script>
+  <script src="/client.js?v=22" defer></script>
 </body>
 </html>

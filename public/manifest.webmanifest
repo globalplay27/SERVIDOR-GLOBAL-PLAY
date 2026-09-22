@@ -1,0 +1,24 @@
+{
+  "name": "NEXUS AI",
+  "short_name": "NEXUS AI",
+  "description": "Central inteligente para operação do seu agente NEXUS.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#020508",
+  "theme_color": "#050807",
+  "categories": [
+    "business",
+    "productivity"
+  ],
+  "icons": [
+    {
+      "src": "/assets/nexus-ai-mark.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

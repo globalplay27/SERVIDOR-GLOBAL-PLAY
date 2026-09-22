@@ -20,6 +20,7 @@ const seedFile = path.join(__dirname, "data", "clients.json");
 const runtimeFile = path.join(DATA_DIR, "runtime.json");
 const connectionsFile = path.join(DATA_DIR, "connections.json");
 const oauthStateFile = path.join(DATA_DIR, "oauth-states.json");
+const portalUsersFile = path.join(DATA_DIR, "portal-users.json");
 const portalSessions = new Map();
 
 function readJsonFile(file, fallback) {
@@ -150,6 +151,31 @@ function loadOauthStates() {
 
 function saveOauthStates(value) {
   writeJsonAtomic(oauthStateFile, value);
+}
+
+function loadPortalUsers() {
+  return readObjectFile(portalUsersFile, {});
+}
+
+function savePortalUsers(value) {
+  writeJsonAtomic(portalUsersFile, value);
+}
+
+function createPortalPasswordRecord(password) {
+  const salt = crypto.randomBytes(16).toString("hex");
+  const hash = crypto.scryptSync(String(password), salt, 32).toString("hex");
+  return { salt, hash };
+}
+
+function verifyPortalPassword(password, record) {
+  if (!record?.salt || !record?.hash) return false;
+  try {
+    const supplied = crypto.scryptSync(String(password), String(record.salt), 32);
+    const expected = Buffer.from(String(record.hash), "hex");
+    return supplied.length === expected.length && crypto.timingSafeEqual(supplied, expected);
+  } catch {
+    return false;
+  }
 }
 
 function secretKey() {
@@ -386,12 +412,23 @@ function portalAccounts() {
 }
 
 function clientFromCredentials(username, password) {
+  const clients = loadClients();
   const account = portalAccounts().find(item =>
     safeEqualText(username, item.username)
     && safeEqualText(password, item.password)
   );
   if (account) {
-    return loadClients().find(client => client.id === account.clientId) || null;
+    return clients.find(client => client.id === account.clientId) || null;
+  }
+
+  const storedUsers = loadPortalUsers();
+  for (const [clientId, record] of Object.entries(storedUsers)) {
+    if (
+      safeEqualText(username, record?.username || "")
+      && verifyPortalPassword(password, record)
+    ) {
+      return clients.find(client => client.id === clientId) || null;
+    }
   }
 
   const ragnarFallback =
@@ -399,7 +436,7 @@ function clientFromCredentials(username, password) {
     && safeEqualText(sha256Text(password), RAGNAR_PORTAL_PASSWORD_HASH);
 
   if (ragnarFallback) {
-    return loadClients().find(client => client.id === "ragnar-one") || null;
+    return clients.find(client => client.id === "ragnar-one") || null;
   }
   return null;
 }
@@ -1024,9 +1061,43 @@ const server = http.createServer(async (req, res) => {
       agentApiUrl: ""
     };
 
+    const existingUsers = loadPortalUsers();
+    const takenUsernames = new Set([
+      ...portalAccounts().map(item => String(item.username || "").toLowerCase()),
+      ...Object.values(existingUsers).map(item => String(item?.username || "").toLowerCase())
+    ]);
+    let portalUsername = slug(body.username || id).replace(/-/g, ".") || id;
+    const baseUsername = portalUsername;
+    let suffix = 2;
+    while (takenUsernames.has(portalUsername.toLowerCase())) {
+      portalUsername = baseUsername + suffix;
+      suffix += 1;
+    }
+
+    const initialPassword = String(body.password || "").trim()
+      || crypto.randomBytes(12).toString("base64url");
+    if (initialPassword.length < 8) {
+      return send(res, 400, { error: "portal_password_too_short" });
+    }
+
     clients.push(client);
     saveClients(clients);
-    return send(res, 201, client);
+
+    existingUsers[id] = {
+      username: portalUsername,
+      ...createPortalPasswordRecord(initialPassword),
+      createdAt: new Date().toISOString()
+    };
+    savePortalUsers(existingUsers);
+
+    return send(res, 201, {
+      client,
+      portalCredentials: {
+        username: portalUsername,
+        initialPassword,
+        portalPath: "/"
+      }
+    });
   }
 
   const clientMatch = url.pathname.match(/^\/api\/clients\/([^/]+)$/);
@@ -1073,6 +1144,8 @@ const server = http.createServer(async (req, res) => {
     ".html": "text/html; charset=utf-8",
     ".css": "text/css; charset=utf-8",
     ".js": "text/javascript; charset=utf-8",
+    ".webmanifest": "application/manifest+json; charset=utf-8",
+    ".json": "application/json; charset=utf-8",
     ".svg": "image/svg+xml",
     ".png": "image/png"
   };

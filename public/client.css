@@ -427,3 +427,14 @@ footer span{color:#a8c8d7!important}
 #last-agent-error{font-size:13px!important;line-height:1.35;color:#c6d9e5;overflow-wrap:anywhere}
 @media(max-width:900px){.operational-metrics{grid-template-columns:repeat(2,1fr)}.compact-details{grid-template-columns:repeat(2,1fr)!important}}
 @media(max-width:560px){.operational-metrics,.compact-details{grid-template-columns:1fr!important}.overview-actions{flex-direction:column}}
+
+
+/* ===== installable NEXUS app v22 ===== */
+.login-install{display:grid;justify-items:center;gap:8px;margin-top:18px;padding-top:16px;border-top:1px solid rgba(93,211,255,.08)}
+.login-install small{color:#607b8c;font-size:11px;text-align:center}
+.install-app-button{border:1px solid rgba(93,211,255,.2);border-radius:10px;padding:11px 15px;background:rgba(93,211,255,.07);color:#bfeeff;font-weight:900;letter-spacing:.02em;cursor:pointer}
+.install-app-button:hover{border-color:rgba(93,211,255,.4);background:rgba(93,211,255,.11)}
+.install-app-button.compact{padding:8px 11px;font-size:11px}
+.install-app-button[hidden]{display:none!important}
+.installed-app .install-app-button{display:none!important}
+@media(max-width:640px){.top-actions .install-app-button.compact{display:none!important}}

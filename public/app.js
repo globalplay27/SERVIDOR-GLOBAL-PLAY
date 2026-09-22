@@ -112,7 +112,17 @@ $("#client-form").addEventListener("submit", async event => {
   event.preventDefault();
   const data = Object.fromEntries(new FormData(event.currentTarget));
   $("#form-status").textContent = "Salvando…";
-  try { await api("/api/clients", { method: "POST", body: JSON.stringify(data) }); event.currentTarget.reset(); $("#form-status").textContent = "Cliente criado."; await load(); showView("clients"); }
+  try {
+    const result = await api("/api/clients", { method: "POST", body: JSON.stringify(data) });
+    event.currentTarget.reset();
+    $("#form-status").textContent = "Cliente criado. Envie somente o acesso abaixo.";
+    const access = result.portalCredentials || {};
+    $("#new-client-user").textContent = "Usuário: " + (access.username || "—");
+    $("#new-client-password").textContent = "Senha: " + (access.initialPassword || "—");
+    $("#new-client-access").dataset.access = "NEXUS AI\nAcesso: " + location.origin + "/\nUsuário: " + (access.username || "") + "\nSenha: " + (access.initialPassword || "");
+    $("#new-client-access").hidden = false;
+    await load();
+  }
   catch (error) { $("#form-status").textContent = error.message; }
 });
 $("select[name=theme]").addEventListener("change", event => {
@@ -123,3 +133,12 @@ $("select[name=theme]").addEventListener("change", event => {
 });
 
 load();
+
+const copyAccessButton=$("#copy-client-access");
+if(copyAccessButton)copyAccessButton.addEventListener("click",async()=>{
+  const card=$("#new-client-access");
+  const text=card?.dataset.access||"";
+  if(!text)return;
+  try{await navigator.clipboard.writeText(text);copyAccessButton.textContent="Acesso copiado";setTimeout(()=>copyAccessButton.textContent="Copiar acesso",1500);}
+  catch{alert(text);}
+});

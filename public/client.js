@@ -6,7 +6,7 @@ function showView(name){$$("[data-view]").forEach(b=>b.classList.toggle("active"
 function onboardingKeys(){return["github","railway","openai","facebook","instagram","metaApp","creativeProfile","supportRequested"];}
 function setupPercent(){const o=currentClient?.onboarding||{};const keys=onboardingKeys();return Math.round(keys.filter(k=>o[k]).length/keys.length*100);}
 function renderOnboarding(){
-  const o=currentClient?.onboarding||{},pct=setupPercent();$("#setup-progress").textContent=pct+"%";$("#setup-banner").hidden=pct>=100;const hero=document.querySelector(".setup-hero-card");if(hero)hero.hidden=pct>=100;
+  const o=currentClient?.onboarding||{},pct=setupPercent();$("#setup-progress").textContent=pct+"%";$("#setup-banner").hidden=true;const hero=document.querySelector(".setup-hero-card");if(hero)hero.hidden=true;
   $$(".wizard-step").forEach(card=>{const key=card.dataset.step,done=Boolean(o[key]);card.classList.toggle("done",done);const state=card.querySelector(".step-state");if(state)state.textContent=done?"Concluído":"Pendente";});
   $("#mode-new").classList.toggle("selected",(currentClient?.setupMode||"ready")==="new");$("#mode-ready").classList.toggle("selected",(currentClient?.setupMode||"ready")==="ready");
 }
@@ -234,10 +234,40 @@ async function resumeCookieSession(){
     renderClient(c);
     $("#login-error").textContent="";
     runNexusBoot();
-    showView(setupPercent()<100?"setup":"overview");
+    showView("overview");
     liveStatus();
     providerUsage();
     loadConnections();
   }catch{}
 }
 resumeCookieSession();
+
+
+/* ===== NEXUS installable app ===== */
+let nexusInstallPrompt=null;
+function setInstallButtonsVisible(visible){
+  $$("[data-install-app]").forEach(button=>button.hidden=!visible);
+}
+window.addEventListener("beforeinstallprompt",event=>{
+  event.preventDefault();
+  nexusInstallPrompt=event;
+  setInstallButtonsVisible(true);
+});
+window.addEventListener("appinstalled",()=>{
+  nexusInstallPrompt=null;
+  setInstallButtonsVisible(false);
+});
+$$("[data-install-app]").forEach(button=>button.addEventListener("click",async()=>{
+  if(!nexusInstallPrompt)return;
+  nexusInstallPrompt.prompt();
+  try{await nexusInstallPrompt.userChoice;}catch{}
+  nexusInstallPrompt=null;
+  setInstallButtonsVisible(false);
+}));
+if(window.matchMedia("(display-mode: standalone)").matches){
+  document.body.classList.add("installed-app");
+  setInstallButtonsVisible(false);
+}
+if("serviceWorker" in navigator){
+  window.addEventListener("load",()=>navigator.serviceWorker.register("/sw.js").catch(()=>{}));
+}
