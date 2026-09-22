@@ -1,6 +1,28 @@
 const $ = selector => document.querySelector(selector);
 let sessionAuth = null;
 
+function nextPostTime(times = []) {
+  if (!Array.isArray(times) || !times.length) return "—";
+  const parts = new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).formatToParts(new Date());
+  const hour = Number(parts.find(part => part.type === "hour")?.value || 0);
+  const minute = Number(parts.find(part => part.type === "minute")?.value || 0);
+  const nowMinutes = hour * 60 + minute;
+  const normalized = times
+    .map(value => {
+      const [h, m] = String(value).split(":").map(Number);
+      return { value, minutes: h * 60 + m };
+    })
+    .filter(item => Number.isFinite(item.minutes))
+    .sort((a, b) => a.minutes - b.minutes);
+  const next = normalized.find(item => item.minutes > nowMinutes);
+  return next ? next.value : normalized[0]?.value || "—";
+}
+
 function usageRow(label, value) {
   const safe = Math.min(Number(value) || 0, 100);
   return `<div class="usage-row"><div><span>${label}</span><strong>${safe}%</strong></div><div class="bar"><i style="width:${safe}%"></i></div></div>`;
@@ -14,7 +36,7 @@ function showPortal(client) {
   $("#client-meta").textContent = `${client.niche || "Outro"} · ambiente exclusivo`;
   $("#leads-total").textContent = client.leads?.total || 0;
   $("#leads-hot").textContent = client.leads?.hot || 0;
-  $("#next-post").textContent = client.postTimes?.[0] || "—";
+  $("#next-post").textContent = nextPostTime(client.postTimes);
   $("#odin-status").textContent = client.odin ? "Ativo" : "Pausado";
   $("#instagram").textContent = client.instagram || "Pendente";
   $("#niche").textContent = client.niche || "Outro";
