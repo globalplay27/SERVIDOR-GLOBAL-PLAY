@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
+const ADMIN_USERNAME = process.env.ADMIN_USERNAME || "admin";
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin";
 const EMPTY_SEED = [];
 
@@ -90,10 +91,19 @@ function authorized(req) {
   if (!auth.startsWith("Basic ")) return false;
   try {
     const decoded = Buffer.from(auth.slice(6), "base64").toString("utf8");
-    const password = decoded.split(":").slice(1).join(":");
-    const a = Buffer.from(password);
-    const b = Buffer.from(ADMIN_PASSWORD);
-    return a.length === b.length && crypto.timingSafeEqual(a, b);
+    const separator = decoded.indexOf(":");
+    if (separator < 0) return false;
+    const username = decoded.slice(0, separator);
+    const password = decoded.slice(separator + 1);
+    const suppliedUsername = Buffer.from(username);
+    const expectedUsername = Buffer.from(ADMIN_USERNAME);
+    const suppliedPassword = Buffer.from(password);
+    const expectedPassword = Buffer.from(ADMIN_PASSWORD);
+    const usernameMatches = suppliedUsername.length === expectedUsername.length
+      && crypto.timingSafeEqual(suppliedUsername, expectedUsername);
+    const passwordMatches = suppliedPassword.length === expectedPassword.length
+      && crypto.timingSafeEqual(suppliedPassword, expectedPassword);
+    return usernameMatches && passwordMatches;
   } catch {
     return false;
   }
