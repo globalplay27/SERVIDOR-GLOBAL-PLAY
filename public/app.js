@@ -1,4 +1,4 @@
-const state = { clients: [], auth: null };
+const state = { clients: [], auth: sessionStorage.getItem("nexus-auth"), portalClientId: null };
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
 
@@ -7,9 +7,12 @@ function api(path, options = {}) {
   if (state.auth) headers.authorization = state.auth;
   return fetch(path, { ...options, headers }).then(async response => {
     if (response.status === 401) {
-      const password = prompt("Senha administrativa da Central:");
+      const username = prompt("Usuário administrativo da NEXUS AI:");
+      if (username === null) throw new Error("Autenticação cancelada");
+      const password = prompt("Senha administrativa:");
       if (password === null) throw new Error("Autenticação cancelada");
-      state.auth = `Basic ${btoa(`admin:${password}`)}`;
+      state.auth = `Basic ${btoa(`${username}:${password}`)}`;
+      sessionStorage.setItem("nexus-auth", state.auth);
       return api(path, options);
     }
     if (!response.ok) throw new Error(`Erro ${response.status}`);
@@ -39,6 +42,44 @@ function render() {
   $("#usage-list").innerHTML = clients.length ? clients.map(client => `<div class="usage-row"><div><span>${escapeHtml(client.name)} · OpenAI</span><strong>${client.usage?.openaiPercent || 0}%</strong></div><div class="bar"><i style="width:${Math.min(client.usage?.openaiPercent || 0, 100)}%"></i></div><div><span>${escapeHtml(client.name)} · Railway</span><strong>${client.usage?.railwayPercent || 0}%</strong></div><div class="bar"><i style="width:${Math.min(client.usage?.railwayPercent || 0, 100)}%"></i></div></div>`).join("") : `<p class="muted">Sem dados de consumo.</p>`;
 
   $("#clients-table").innerHTML = clients.map(client => `<tr><td><strong>${escapeHtml(client.name)}</strong><br><small>${escapeHtml(client.niche || "Outro")}</small></td><td>${badge(client.status === "online" ? "ONLINE" : "SETUP", client.status === "online")}</td><td>${escapeHtml(client.instagram || "—")}</td><td>${client.odin ? badge("ATIVO") : badge("DESLIGADO", false)}</td><td>${(client.postTimes || []).join(" · ") || "—"}</td><td>GitHub: ${escapeHtml(client.github || "pendente")}<br>Railway: ${escapeHtml(client.railway || "pendente")}</td></tr>`).join("");
+  renderPortalSelector();
+}
+
+function renderPortalSelector() {
+  const select = $("#portal-client");
+  if (!state.clients.length) {
+    select.innerHTML = "<option>Nenhum cliente</option>";
+    $("#portal-empty").hidden = false;
+    $("#client-portal").hidden = true;
+    return;
+  }
+  if (!state.portalClientId || !state.clients.some(client => client.id === state.portalClientId)) state.portalClientId = state.clients[0].id;
+  select.innerHTML = state.clients.map(client => `<option value="${escapeHtml(client.id)}" ${client.id === state.portalClientId ? "selected" : ""}>${escapeHtml(client.name)}</option>`).join("");
+  renderClientPortal(state.clients.find(client => client.id === state.portalClientId));
+}
+
+function renderClientPortal(client) {
+  if (!client) return;
+  $("#portal-empty").hidden = true;
+  $("#client-portal").hidden = false;
+  const online = client.status === "online";
+  const accent = client.primaryColor || "#24e27a";
+  $("#client-portal").style.setProperty("--client-accent", accent);
+  $("#portal-avatar").textContent = initials(client.name);
+  $("#portal-name").textContent = client.name;
+  $("#portal-meta").textContent = `${client.niche || "Outro"} · Portal exclusivo`;
+  $("#portal-status").textContent = online ? "Agente online" : "Em configuração";
+  $("#portal-leads").textContent = client.leads?.total || 0;
+  $("#portal-hot").textContent = client.leads?.hot || 0;
+  $("#portal-next-post").textContent = client.postTimes?.[0] || "—";
+  $("#portal-odin").textContent = client.odin ? "Ativa" : "Pausada";
+  $("#portal-instagram").textContent = client.instagram || "Pendente";
+  $("#portal-niche").textContent = client.niche || "Outro";
+  $("#portal-times").textContent = (client.postTimes || []).join(" · ") || "—";
+  const agentBadge = $("#portal-agent-badge");
+  agentBadge.textContent = online ? "ONLINE" : "SETUP";
+  agentBadge.classList.toggle("off", !online);
+  $("#portal-usage").innerHTML = [["OpenAI", client.usage?.openaiPercent || 0], ["Railway", client.usage?.railwayPercent || 0]].map(([label, value]) => `<div class="usage-row"><div><span>${label}</span><strong>${value}%</strong></div><div class="bar"><i style="width:${Math.min(value, 100)}%"></i></div></div>`).join("");
 }
 
 function escapeHtml(value) { const el = document.createElement("span"); el.textContent = String(value); return el.innerHTML; }
@@ -46,8 +87,8 @@ function escapeHtml(value) { const el = document.createElement("span"); el.textC
 function showView(id) {
   $$(".view").forEach(view => view.classList.toggle("active", view.id === id));
   $$(".nav-item").forEach(item => item.classList.toggle("active", item.dataset.view === id));
-  const titles = { dashboard: "Visão geral", clients: "Clientes", odin: "Odin & Leads", onboarding: "Novo cliente", settings: "Integrações" };
-  $("#page-title").textContent = titles[id] || "Global Play";
+  const titles = { dashboard: "Visão geral", clients: "Clientes", portal: "Portal do cliente", odin: "Odin & Leads", onboarding: "Novo cliente", settings: "Integrações" };
+  $("#page-title").textContent = titles[id] || "NEXUS AI";
 }
 
 async function load() {
@@ -66,6 +107,7 @@ async function loadIntegrations() {
 $$('[data-view]').forEach(button => button.addEventListener("click", () => { showView(button.dataset.view); if (button.dataset.view === "settings") loadIntegrations(); }));
 $$('[data-go]').forEach(button => button.addEventListener("click", () => showView(button.dataset.go)));
 $("#refresh").addEventListener("click", load);
+$("#portal-client").addEventListener("change", event => { state.portalClientId = event.target.value; renderPortalSelector(); });
 $("#client-form").addEventListener("submit", async event => {
   event.preventDefault();
   const data = Object.fromEntries(new FormData(event.currentTarget));
