@@ -9,15 +9,35 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin";
+const EMPTY_SEED = [];
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const seedFile = path.join(__dirname, "data", "clients.json");
 const runtimeFile = path.join(DATA_DIR, "runtime.json");
 
+function readJsonFile(file, fallback) {
+  try {
+    if (!fs.existsSync(file)) return fallback;
+    const raw = fs.readFileSync(file, "utf8").trim();
+    if (!raw) return fallback;
+    const value = JSON.parse(raw);
+    return Array.isArray(value) ? value : fallback;
+  } catch (error) {
+    console.warn(`Ignoring invalid JSON in ${file}: ${error.message}`);
+    return fallback;
+  }
+}
+
+function writeJsonAtomic(file, value) {
+  const tempFile = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(tempFile, JSON.stringify(value, null, 2));
+  fs.renameSync(tempFile, file);
+}
+
 if (!fs.existsSync(runtimeFile)) {
-  const seed = JSON.parse(fs.readFileSync(seedFile, "utf8"));
-  fs.writeFileSync(runtimeFile, JSON.stringify(seed, null, 2));
+  const seed = readJsonFile(seedFile, EMPTY_SEED);
+  writeJsonAtomic(runtimeFile, seed);
 }
 
 function send(res, status, body, type = "application/json; charset=utf-8") {
@@ -58,15 +78,11 @@ function readBody(req) {
 }
 
 function loadClients() {
-  try {
-    return JSON.parse(fs.readFileSync(runtimeFile, "utf8"));
-  } catch {
-    return [];
-  }
+  return readJsonFile(runtimeFile, EMPTY_SEED);
 }
 
 function saveClients(items) {
-  fs.writeFileSync(runtimeFile, JSON.stringify(items, null, 2));
+  writeJsonAtomic(runtimeFile, items);
 }
 
 function authorized(req) {
