@@ -460,6 +460,18 @@ const server = http.createServer(async (req, res) => {
     });
   }
 
+  if (url.pathname === "/api/portal/diagnostic" && req.method === "GET") {
+    const username = process.env.CLIENT_PORTAL_USERNAME || RAGNAR_PORTAL_USERNAME;
+    const password = process.env.CLIENT_PORTAL_PASSWORD || "";
+    const client = clientFromCredentials(username, password);
+    return send(res, client ? 200 : 500, {
+      ok: Boolean(client),
+      clientId: client?.id || null,
+      runtimeHasRagnar: loadClients().some(item => item.id === "ragnar-one"),
+      version: "auth-diagnostic-v1"
+    });
+  }
+
   if (url.pathname === "/api/portal/session" && req.method === "GET") {
     const client = portalClientForRequest(req);
     if (!client) {
