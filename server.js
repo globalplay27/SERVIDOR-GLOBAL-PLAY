@@ -776,6 +776,62 @@ const server = http.createServer(async (req, res) => {
     return send(res, 200, result);
   }
 
+  const agentOpenAIImageMatch = url.pathname.match(/^\/api\/agent\/([^/]+)\/openai\/images$/);
+  if (agentOpenAIImageMatch && req.method === "POST") {
+    const clientId = agentOpenAIImageMatch[1];
+    if (!agentBearerAuthorized(req, clientId)) {
+      return send(res, 401, { error: "unauthorized" });
+    }
+
+    const record = directConnection(clientId, "openai");
+    const apiKey = decryptSecret(record?.apiKey || "");
+    if (!apiKey) {
+      return send(res, 409, { error: "openai_not_connected" });
+    }
+
+    const body = await readBody(req);
+    const prompt = typeof body.prompt === "string" ? body.prompt.trim().slice(0, 32000) : "";
+    if (!prompt) return send(res, 400, { error: "prompt_required" });
+
+    const allowedModels = new Set([
+      "gpt-image-2.5-sunburst",
+      "gpt-image-2.5-flare",
+      "gpt-image-2",
+      "gpt-image-1.5",
+      "gpt-image-1"
+    ]);
+    const allowedSizes = new Set(["auto", "1024x1024", "1024x1536", "1536x1024"]);
+    const allowedQualities = new Set(["auto", "low", "medium", "high", "xhigh", "max"]);
+
+    const model = allowedModels.has(String(body.model || "")) ? String(body.model) : "gpt-image-2.5-flare";
+    const size = allowedSizes.has(String(body.size || "")) ? String(body.size) : "1024x1536";
+    const quality = allowedQualities.has(String(body.quality || "")) ? String(body.quality) : "medium";
+
+    try {
+      const response = await fetch("https://api.openai.com/v1/images/generations", {
+        method: "POST",
+        headers: {
+          authorization: "Bearer " + apiKey,
+          "content-type": "application/json",
+          "user-agent": "NEXUS-AI-Agent-Proxy/1.0"
+        },
+        body: JSON.stringify({ model, prompt, size, quality })
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const code = payload?.error?.code || payload?.error?.type || "openai_image_failed";
+        return send(res, response.status, { error: String(code) });
+      }
+
+      const encoded = payload?.data?.[0]?.b64_json;
+      if (!encoded) return send(res, 502, { error: "image_data_missing" });
+      return send(res, 200, { b64_json: encoded, model });
+    } catch {
+      return send(res, 502, { error: "openai_unavailable" });
+    }
+  }
+
   const agentConfigMatch = url.pathname.match(/^\/api\/agent-config\/([^/]+)$/);
   if (agentConfigMatch && req.method === "GET") {
     const clientId = agentConfigMatch[1];
