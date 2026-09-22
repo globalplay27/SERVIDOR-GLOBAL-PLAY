@@ -3,33 +3,127 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#070908">
+  <meta name="theme-color" content="#050807">
   <title>NEXUS AI · Portal do Cliente</title>
-  <link rel="stylesheet" href="/client.css">
+  <link rel="stylesheet" href="/client.css?v=3">
 </head>
 <body>
+  <div class="ambient ambient-a"></div>
+  <div class="ambient ambient-b"></div>
+
   <main class="portal-shell">
     <section id="login-view" class="login-card">
-      <img src="/assets/nexus-ai-mark.svg" alt="NEXUS AI">
-      <p class="eyebrow">ACESSO SEGURO</p>
-      <h1>Portal do Cliente</h1>
-      <p class="muted">Acesse o ambiente exclusivo do seu agente.</p>
+      <img class="login-logo" src="/assets/nexus-ai-logo.png?v=3" alt="NEXUS AI">
+      <div class="login-copy">
+        <p class="eyebrow">ACESSO SEGURO</p>
+        <h1>Portal do Cliente</h1>
+        <p class="muted">Entre no ambiente exclusivo do seu agente NEXUS AI.</p>
+      </div>
+
       <form id="login-form">
-        <label>Usuário<input name="username" autocomplete="username" required></label>
-        <label>Senha<input name="password" type="password" autocomplete="current-password" required></label>
+        <label>
+          <span>Usuário</span>
+          <input name="username" autocomplete="username" required>
+        </label>
+        <label>
+          <span>Senha</span>
+          <input name="password" type="password" autocomplete="current-password" required>
+        </label>
         <button type="submit">Entrar no portal</button>
         <span id="login-error" role="alert"></span>
       </form>
-      <small class="security">Credenciais protegidas · Nenhuma senha é armazenada no navegador</small>
+      <small class="security">Acesso individual e independente do painel Master.</small>
     </section>
 
     <section id="portal-view" class="dashboard" hidden>
-      <header><div class="brand"><img src="/assets/nexus-ai-mark.svg" alt="NEXUS AI"><div><strong>NEXUS AI</strong><small>CLIENT PORTAL</small></div></div><div><span class="online"><i></i> Sistema online</span><button id="logout" class="logout">Sair</button></div></header>
-      <section class="hero"><div><p class="eyebrow">AGENTE AUTÔNOMO</p><h1 id="client-name">—</h1><p id="client-meta" class="muted">—</p></div><div class="ai-core"><span>N</span></div></section>
-      <section class="metrics"><article><span>Leads captados</span><strong id="leads-total">0</strong><small>Odin comercial</small></article><article><span>Leads quentes</span><strong id="leads-hot">0</strong><small>prontos para atendimento</small></article><article><span>Próxima postagem</span><strong id="next-post">—</strong><small>horário configurado</small></article><article><span>Odin</span><strong id="odin-status">—</strong><small>automação comercial</small></article></section>
-      <section class="content-grid"><article class="panel"><p class="eyebrow">OPERAÇÃO</p><h2>Seu agente</h2><div class="details"><div><span>Instagram</span><strong id="instagram">—</strong></div><div><span>Segmento</span><strong id="niche">—</strong></div><div><span>Status</span><strong id="agent-status">—</strong></div><div><span>Postagens</span><strong id="post-times">—</strong></div></div></article><article class="panel"><p class="eyebrow">CONSUMO</p><h2>Uso dos recursos</h2><div id="usage"></div><p class="note">Indicadores de uso. Custos reais dependem dos dados fornecidos por cada provedor.</p></article></section>
+      <header class="topbar">
+        <div class="brand">
+          <img src="/assets/nexus-ai-logo.png?v=3" alt="NEXUS AI">
+        </div>
+        <div class="top-actions">
+          <span class="online"><i></i> Sistema online</span>
+          <button id="logout" class="logout">Sair</button>
+        </div>
+      </header>
+
+      <section class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">AGENTE AUTÔNOMO</p>
+          <h1 id="client-name">—</h1>
+          <p id="client-meta" class="muted">—</p>
+          <div class="hero-badge"><span></span>NEXUS AI conectado</div>
+        </div>
+
+        <div class="ai-visual" aria-hidden="true">
+          <div class="orbit orbit-one"></div>
+          <div class="orbit orbit-two"></div>
+          <div class="ai-core"><span>AI</span></div>
+        </div>
+      </section>
+
+      <section class="metrics">
+        <article>
+          <div class="metric-icon">◎</div>
+          <span>Leads captados</span>
+          <strong id="leads-total">0</strong>
+          <small>Odin comercial</small>
+        </article>
+        <article>
+          <div class="metric-icon">◆</div>
+          <span>Leads quentes</span>
+          <strong id="leads-hot">0</strong>
+          <small>prontos para atendimento</small>
+        </article>
+        <article>
+          <div class="metric-icon">◷</div>
+          <span>Próxima postagem</span>
+          <strong id="next-post">—</strong>
+          <small>horário configurado</small>
+        </article>
+        <article>
+          <div class="metric-icon">◈</div>
+          <span>Odin</span>
+          <strong id="odin-status">—</strong>
+          <small>automação comercial</small>
+        </article>
+      </section>
+
+      <section class="content-grid">
+        <article class="panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">OPERAÇÃO</p>
+              <h2>Seu agente</h2>
+            </div>
+            <span class="status-chip">OPERACIONAL</span>
+          </div>
+          <div class="details">
+            <div><span>Instagram</span><strong id="instagram">—</strong></div>
+            <div><span>Segmento</span><strong id="niche">—</strong></div>
+            <div><span>Status</span><strong id="agent-status">—</strong></div>
+            <div><span>Postagens</span><strong id="post-times">—</strong></div>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">CONSUMO</p>
+              <h2>Uso dos recursos</h2>
+            </div>
+          </div>
+          <div id="usage"></div>
+          <p class="note">Indicadores de uso do ambiente deste cliente.</p>
+        </article>
+      </section>
+
+      <footer>
+        <span>NEXUS AI</span>
+        <small>Client Portal · ambiente exclusivo</small>
+      </footer>
     </section>
   </main>
-  <script src="/client.js" defer></script>
+
+  <script src="/client.js?v=3" defer></script>
 </body>
 </html>
