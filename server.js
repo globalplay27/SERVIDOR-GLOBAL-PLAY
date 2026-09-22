@@ -523,7 +523,6 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === "/api/portal/session" && req.method === "GET") {
     const client = portalClientForRequest(req);
     if (!client) {
-      res.setHeader("WWW-Authenticate", 'Basic realm="NEXUS AI Client Portal"');
       return send(res, 401, { error: "unauthorized" });
     }
     return send(res, 200, clientPortalView(client));
@@ -539,7 +538,6 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === "/api/portal/connections" && req.method === "GET") {
     const client = portalClientForRequest(req);
     if (!client) {
-      res.setHeader("WWW-Authenticate", 'Basic realm="NEXUS AI Client Portal"');
       return send(res, 401, { error: "unauthorized" });
     }
     return send(res, 200, {
@@ -551,7 +549,6 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === "/api/portal/connect/github" && req.method === "POST") {
     const sessionClient = portalClientForRequest(req);
     if (!sessionClient) {
-      res.setHeader("WWW-Authenticate", 'Basic realm="NEXUS AI Client Portal"');
       return send(res, 401, { error: "unauthorized" });
     }
     try {
@@ -577,7 +574,6 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === "/api/portal/connect/openai" && req.method === "POST") {
     const sessionClient = portalClientForRequest(req);
     if (!sessionClient) {
-      res.setHeader("WWW-Authenticate", 'Basic realm="NEXUS AI Client Portal"');
       return send(res, 401, { error: "unauthorized" });
     }
     try {
@@ -605,7 +601,6 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === "/api/oauth/railway/start" && req.method === "GET") {
     const sessionClient = portalClientForRequest(req);
     if (!sessionClient) {
-      res.setHeader("WWW-Authenticate", 'Basic realm="NEXUS AI Client Portal"');
       return send(res, 401, { error: "unauthorized" });
     }
     const clientId = process.env.RAILWAY_OAUTH_CLIENT_ID;
@@ -706,7 +701,6 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === "/api/portal/provider-usage" && req.method === "GET") {
     const client = portalClientForRequest(req);
     if (!client) {
-      res.setHeader("WWW-Authenticate", 'Basic realm="NEXUS AI Client Portal"');
       return send(res, 401, { error: "unauthorized" });
     }
 
@@ -791,7 +785,6 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === "/api/portal/settings" && req.method === "PATCH") {
     const sessionClient = portalClientForRequest(req);
     if (!sessionClient) {
-      res.setHeader("WWW-Authenticate", 'Basic realm="NEXUS AI Client Portal"');
       return send(res, 401, { error: "unauthorized" });
     }
 
@@ -839,7 +832,6 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === "/api/portal/onboarding" && req.method === "PATCH") {
     const sessionClient = portalClientForRequest(req);
     if (!sessionClient) {
-      res.setHeader("WWW-Authenticate", 'Basic realm="NEXUS AI Client Portal"');
       return send(res, 401, { error: "unauthorized" });
     }
     const body = await readBody(req);
@@ -861,7 +853,6 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === "/api/portal/live-status" && req.method === "GET") {
     const client = portalClientForRequest(req);
     if (!client) {
-      res.setHeader("WWW-Authenticate", 'Basic realm="NEXUS AI Client Portal"');
       return send(res, 401, { error: "unauthorized" });
     }
 

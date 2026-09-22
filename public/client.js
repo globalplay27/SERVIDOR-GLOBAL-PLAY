@@ -48,7 +48,42 @@ async function providerUsage(){
   }catch{}
 }
 
-async function liveStatus(){try{const r=await fetch("/api/portal/live-status",{headers:{"x-nexus-session":sessionAuth}}),d=await r.json();if(!d.connected){$("#agent-live-chip").textContent="SEM LEITURA";$("#agent-live-chip").classList.add("off");$("#live-openai").textContent="Aguardando conexão";$("#live-openai-detail").textContent="O agente ainda não respondeu.";$("#live-railway").textContent="Aguardando conexão";$("#live-railway-detail").textContent="—";return;}$("#agent-live-chip").textContent="ONLINE";$("#agent-live-chip").classList.remove("off");$("#agent-status").textContent="Online";if(Array.isArray(d.post_times)&&d.post_times.length){currentClient.postTimes=d.post_times;$("#post-times").textContent=d.post_times.join(" · ");$("#next-post").textContent=nextPostTime(d.post_times);}const oa=d.openai||{};$("#live-openai").textContent=oa.month_cost_usd!=null?`US$ ${Number(oa.month_cost_usd).toFixed(2)} / 31 dias`:oa.configured?"Conta conectada":"Não conectada";$("#live-openai-detail").textContent=oa.status||"Sem custo disponível pela API";const rw=d.railway||{};$("#live-railway").textContent=rw.project||"Railway";$("#live-railway-detail").textContent=rw.disk_used_mb!=null?`${rw.disk_used_mb} MB usados · ${rw.disk_free_mb} MB livres`:"Sem métricas";}catch(e){$("#agent-live-chip").textContent="SEM LEITURA";}}
+async function liveStatus(){
+  try{
+    const r=await fetch("/api/portal/live-status",{headers:{"x-nexus-session":sessionAuth}});
+    const d=await r.json();
+    if(!d.connected){
+      const configured=currentClient?.status==="online";
+      $("#agent-live-chip").textContent=configured?"ATIVO":"CONFIGURANDO";
+      $("#agent-live-chip").classList.toggle("off",!configured);
+      $("#agent-live-chip").title=configured
+        ?"Agente ativo no NEXUS. Telemetria direta ainda não vinculada."
+        :"Agente ainda em configuração.";
+      $("#agent-status").textContent=configured?"Online":"Em configuração";
+      return;
+    }
+    $("#agent-live-chip").textContent="ONLINE";
+    $("#agent-live-chip").classList.remove("off");
+    $("#agent-live-chip").title="Telemetria direta do agente conectada.";
+    $("#agent-status").textContent="Online";
+    if(Array.isArray(d.post_times)&&d.post_times.length){
+      currentClient.postTimes=d.post_times;
+      $("#post-times").textContent=d.post_times.join(" · ");
+      $("#next-post").textContent=nextPostTime(d.post_times);
+    }
+    const oa=d.openai||{};
+    $("#live-openai").textContent=oa.month_cost_usd!=null?`US$ ${Number(oa.month_cost_usd).toFixed(2)} / 31 dias`:oa.configured?"Conta conectada":"Não conectada";
+    $("#live-openai-detail").textContent=oa.status||"Sem custo disponível pela API";
+    const rw=d.railway||{};
+    $("#live-railway").textContent=rw.project||"Railway";
+    $("#live-railway-detail").textContent=rw.disk_used_mb!=null?`${rw.disk_used_mb} MB usados · ${rw.disk_free_mb} MB livres`:"Sem métricas";
+  }catch(e){
+    const configured=currentClient?.status==="online";
+    $("#agent-live-chip").textContent=configured?"ATIVO":"CONFIGURANDO";
+    $("#agent-live-chip").classList.toggle("off",!configured);
+    $("#agent-status").textContent=configured?"Online":"Em configuração";
+  }
+}
 async function loadConnections(){
   try{
     const r=await fetch("/api/portal/connections",{headers:{"x-nexus-session":sessionAuth}});
