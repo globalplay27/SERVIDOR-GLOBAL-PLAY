@@ -6,7 +6,7 @@ function showView(name){$$("[data-view]").forEach(b=>b.classList.toggle("active"
 function onboardingKeys(){return["github","railway","openai","facebook","instagram","metaApp","creativeProfile","supportRequested"];}
 function setupPercent(){const o=currentClient?.onboarding||{};const keys=onboardingKeys();return Math.round(keys.filter(k=>o[k]).length/keys.length*100);}
 function renderOnboarding(){
-  const o=currentClient?.onboarding||{},pct=setupPercent();$("#setup-progress").textContent=pct+"%";$("#setup-banner").hidden=pct>=100;
+  const o=currentClient?.onboarding||{},pct=setupPercent();$("#setup-progress").textContent=pct+"%";$("#setup-banner").hidden=pct>=100;const hero=document.querySelector(".setup-hero-card");if(hero)hero.hidden=pct>=100;
   $$(".wizard-step").forEach(card=>{const key=card.dataset.step,done=Boolean(o[key]);card.classList.toggle("done",done);const state=card.querySelector(".step-state");if(state)state.textContent=done?"Concluído":"Pendente";});
   $("#mode-new").classList.toggle("selected",(currentClient?.setupMode||"ready")==="new");$("#mode-ready").classList.toggle("selected",(currentClient?.setupMode||"ready")==="ready");
 }
@@ -29,7 +29,7 @@ function renderConnections(connections={}){
   }
 }
 
-function renderClient(c){currentClient=c;renderConnections(c.connections||{});$("#client-name").textContent=c.name;$("#client-meta").textContent=`${c.niche||"Outro"} · ambiente exclusivo`;$("#leads-total").textContent=c.leads?.total||0;$("#leads-hot").textContent=c.leads?.hot||0;$("#next-post").textContent=nextPostTime(c.postTimes);$("#odin-status").textContent=c.odin?"Ativo":"Pausado";$("#instagram").textContent=c.instagram||"Pendente";$("#niche").textContent=c.niche||"Outro";$("#agent-status").textContent=c.status==="online"?"Online":"Em configuração";$("#post-times").textContent=(c.postTimes||[]).join(" · ")||"—";populatePosting(c);renderOnboarding();}
+function renderClient(c){currentClient=c;renderConnections(c.connections||{});const coreState=$("#core-agent-state");if(coreState)coreState.textContent=c.status==="online"?"Operacional":"Configurando";$("#client-name").textContent=c.name;$("#client-meta").textContent=`${c.niche||"Outro"} · ambiente exclusivo`;$("#leads-total").textContent=c.leads?.total||0;$("#leads-hot").textContent=c.leads?.hot||0;$("#next-post").textContent=nextPostTime(c.postTimes);$("#odin-status").textContent=c.odin?"Ativo":"Pausado";$("#instagram").textContent=c.instagram||"Pendente";$("#niche").textContent=c.niche||"Outro";$("#agent-status").textContent=c.status==="online"?"Online":"Em configuração";$("#post-times").textContent=(c.postTimes||[]).join(" · ")||"—";populatePosting(c);renderOnboarding();}
 function populatePosting(c){const p=c.postingProfile||{};$("#cfg-niche").value=[...$("#cfg-niche").options].some(o=>o.value===c.niche)?c.niche:"Outro";$("#cfg-audience").value=p.targetAudience||"Misto";$("#cfg-strategy").value=p.contentStrategy||"Vendas + engajamento";$("#cfg-style").value=p.visualStyle||"Tecnológico premium";$("#cfg-tone").value=p.tone||"Firme, direto e profissional";$("#cfg-focus").value=p.contentFocus||"";$("#cfg-avoid").value=p.avoidTopics||"";$("#cfg-primary").value=c.primaryColor||"#22c55e";$("#cfg-secondary").value=c.secondaryColor||"#050807";$("#cfg-cta").value=p.cta||'Comente "QUERO" e saiba mais';$("#cfg-hashtags").value=p.hashtags||"";const t=c.postTimes||["09:00","12:00","18:00"];$("#time-1").value=t[0]||"09:00";$("#time-2").value=t[1]||"12:00";$("#time-3").value=t[2]||"18:00";$("#theme-1").value=p.morningTheme||"";$("#theme-2").value=p.afternoonTheme||"";$("#theme-3").value=p.eveningTheme||"";$("#preview-title").textContent=c.name||"Seu agente";updatePreview();}
 function updatePreview(){const p=$("#cfg-primary").value,s=$("#cfg-secondary").value;$("#cfg-primary-text").textContent=p;$("#cfg-secondary-text").textContent=s;$("#creative-preview").style.background=`radial-gradient(circle at 80% 15%,${p}55,transparent 35%),linear-gradient(135deg,${s},#090d0b)`;$("#creative-preview").style.borderColor=p;$("#preview-cta").textContent=$("#cfg-cta").value||"CTA";}
 async function providerUsage(){
@@ -181,6 +181,28 @@ $("#logout").addEventListener("click",async()=>{
   $("#portal-view").hidden=true;$("#login-view").hidden=false;$("#login-error").textContent="";
 });
 
+function runNexusBoot(){
+  const boot=$("#nexus-boot");
+  if(!boot)return;
+  boot.hidden=false;
+  document.body.classList.add("booting");
+  const label=$("#boot-status");
+  const steps=["Autenticando ambiente...","Sincronizando agente...","NEXUS AI operacional"];
+  let i=0;
+  if(label)label.textContent=steps[0];
+  const timer=setInterval(()=>{
+    i++;
+    if(label)label.textContent=steps[Math.min(i,steps.length-1)];
+    if(i>=steps.length-1){
+      clearInterval(timer);
+      setTimeout(()=>{
+        boot.classList.add("boot-out");
+        setTimeout(()=>{boot.hidden=true;boot.classList.remove("boot-out");document.body.classList.remove("booting");},450);
+      },500);
+    }
+  },520);
+}
+
 async function resumeCookieSession(){
   const params=new URLSearchParams(location.search);
   if(params.get("error")==="1"){
@@ -196,7 +218,8 @@ async function resumeCookieSession(){
     document.documentElement.style.setProperty("--accent",c.primaryColor||"#22c55e");
     renderClient(c);
     $("#login-error").textContent="";
-    showView("setup");
+    runNexusBoot();
+    showView(setupPercent()<100?"setup":"overview");
     liveStatus();
     providerUsage();
     loadConnections();

@@ -5,9 +5,23 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#050807">
   <title>NEXUS AI · Portal do Cliente</title>
-  <link rel="stylesheet" href="/client.css?v=17">
+  <link rel="stylesheet" href="/client.css?v=20">
 </head>
 <body>
+  <div id="nexus-boot" class="nexus-boot" hidden>
+    <div class="boot-grid"></div>
+    <div class="boot-core">
+      <div class="boot-ring ring-a"></div>
+      <div class="boot-ring ring-b"></div>
+      <div class="boot-ring ring-c"></div>
+      <div class="boot-center"><span>N</span></div>
+    </div>
+    <div class="boot-copy">
+      <strong>NEXUS AI</strong>
+      <span id="boot-status">Sincronizando sistemas...</span>
+      <div class="boot-line"><i></i></div>
+    </div>
+  </div>
   <div class="ambient ambient-a"></div><div class="ambient ambient-b"></div>
   <main class="portal-shell">
     <section id="login-view" class="login-card">
@@ -48,9 +62,27 @@
           <button type="button" data-open-setup>Continuar configuração</button>
         </section>
 
+        <section class="command-strip">
+          <div><span class="command-dot"></span><strong>CORE NEXUS</strong><small>Sincronizado</small></div>
+          <div><span class="pulse-line"></span><strong>AGENTE</strong><small id="core-agent-state">Operacional</small></div>
+          <div><span class="pulse-line"></span><strong>AUTOMAÇÃO</strong><small>Monitoramento ativo</small></div>
+        </section>
+
         <section class="hero">
-          <div class="hero-copy"><p class="eyebrow">AGENTE AUTÔNOMO</p><h1 id="client-name">—</h1><p id="client-meta" class="muted">—</p><div class="hero-badge"><span></span>NEXUS AI conectado</div></div>
-          <div class="ai-visual" aria-hidden="true"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="ai-core"><span>AI</span></div></div>
+          <div class="hero-copy">
+            <p class="eyebrow">CENTRAL DE INTELIGÊNCIA AUTÔNOMA</p>
+            <h1 id="client-name">—</h1>
+            <p id="client-meta" class="muted">—</p>
+            <div class="hero-badge"><span></span>SISTEMAS SINCRONIZADOS</div>
+          </div>
+          <div class="ai-visual" aria-hidden="true">
+            <div class="hud-mark hud-north"></div>
+            <div class="hud-mark hud-south"></div>
+            <div class="orbit orbit-one"></div>
+            <div class="orbit orbit-two"></div>
+            <div class="orbit orbit-three"></div>
+            <div class="ai-core"><span>N</span></div>
+          </div>
         </section>
 
         <section class="metrics">
@@ -168,6 +200,6 @@
       <footer><span>NEXUS AI</span><small>Client Portal · ambiente exclusivo</small></footer>
     </section>
   </main>
-  <script src="/client.js?v=17" defer></script>
+  <script src="/client.js?v=20" defer></script>
 </body>
 </html>
