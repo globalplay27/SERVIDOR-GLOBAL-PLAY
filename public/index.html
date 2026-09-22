@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#080b0a">
+  <title>Global Play Agent Central</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark">▶</span><div><strong>GLOBAL PLAY</strong><small>AGENT CENTRAL</small></div></div>
+      <nav>
+        <button class="nav-item active" data-view="dashboard">▦ <span>Visão geral</span></button>
+        <button class="nav-item" data-view="clients">◉ <span>Clientes</span></button>
+        <button class="nav-item" data-view="odin">◆ <span>Odin & Leads</span></button>
+        <button class="nav-item" data-view="onboarding">＋ <span>Novo cliente</span></button>
+        <button class="nav-item" data-view="settings">⚙ <span>Integrações</span></button>
+      </nav>
+      <div class="core-card"><span class="pulse"></span><div><strong>Agent Core</strong><small>Motor central disponível</small></div></div>
+    </aside>
+
+    <main>
+      <header>
+        <div><p class="eyebrow">PAINEL MASTER</p><h1 id="page-title">Visão geral</h1></div>
+        <div class="header-actions"><span class="live"><i></i> Central online</span><button id="refresh" class="icon-btn" title="Atualizar">↻</button></div>
+      </header>
+
+      <section id="dashboard" class="view active">
+        <div class="metrics">
+          <article><span>Clientes</span><strong id="metric-clients">—</strong><small>gerenciados na Central</small></article>
+          <article><span>Agentes online</span><strong id="metric-online">—</strong><small>em produção</small></article>
+          <article><span>Leads no Odin</span><strong id="metric-leads">—</strong><small id="metric-hot">— quentes</small></article>
+          <article><span>Alertas</span><strong id="metric-alerts">—</strong><small>consumo e operação</small></article>
+        </div>
+        <div class="grid-main">
+          <section class="panel"><div class="panel-head"><div><p class="eyebrow">OPERAÇÃO</p><h2>Clientes ativos</h2></div><button class="ghost" data-go="clients">Ver todos</button></div><div id="client-cards" class="client-list"></div></section>
+          <section class="panel consumption"><div class="panel-head"><div><p class="eyebrow">CONSUMO</p><h2>Uso por cliente</h2></div></div><div id="usage-list"></div><p class="disclaimer">Valores percentuais configurados. Dados reais serão conectados somente quando a API do provedor os disponibilizar.</p></section>
+        </div>
+      </section>
+
+      <section id="clients" class="view"><div class="panel"><div class="panel-head"><div><p class="eyebrow">GESTÃO</p><h2>Todos os clientes</h2></div><button class="primary" data-go="onboarding">＋ Adicionar cliente</button></div><div class="table-wrap"><table><thead><tr><th>Cliente</th><th>Status</th><th>Instagram</th><th>Odin</th><th>Horários</th><th>Infraestrutura</th></tr></thead><tbody id="clients-table"></tbody></table></div></div></section>
+
+      <section id="odin" class="view"><div class="grid-main"><div class="panel"><p class="eyebrow">MÓDULO COMERCIAL</p><h2>Odin</h2><p class="muted">Captação, qualificação e encaminhamento de leads quentes para atendimento humano.</p><div class="funnel"><div><strong id="funnel-total">0</strong><span>Total</span></div><div><strong id="funnel-warm">0</strong><span>Mornos</span></div><div><strong id="funnel-hot">0</strong><span>Quentes</span></div></div></div><div class="panel"><p class="eyebrow">AUTOMAÇÃO</p><h2>Recursos preparados</h2><ul class="checklist"><li>Comentários “QUERO”</li><li>Classificação frio, morno e quente</li><li>Score e intenção de compra</li><li>Assinatura, revenda e suporte</li><li>Encaminhamento para WhatsApp</li></ul></div></div></section>
+
+      <section id="onboarding" class="view"><div class="panel form-panel"><p class="eyebrow">PORTAL DO CLIENTE</p><h2>Cadastrar novo cliente</h2><p class="muted">Crie a configuração inicial. Autorizações OAuth serão adicionadas na próxima fase.</p><form id="client-form"><div class="form-grid"><label>Empresa / nome<input name="name" required placeholder="Ex.: Ragnar One"></label><label>Nicho<input name="niche" placeholder="Ex.: Streaming"></label><label>Instagram<input name="instagram" placeholder="@usuario"></label><label>Tema<select name="theme"><option value="green-black">Preto + Verde</option><option value="red-black">Preto + Vermelho</option><option value="blue-white">Azul + Branco</option><option value="gold-black">Preto + Dourado</option></select></label></div><div class="theme-preview" id="theme-preview"><span>PRÉVIA</span><strong>Seu agente, sua marca.</strong><small>Automação inteligente Global Play</small></div><button class="primary" type="submit">Criar configuração</button><span id="form-status" class="form-status"></span></form></div></section>
+
+      <section id="settings" class="view"><div class="panel"><p class="eyebrow">SEGURANÇA & ACESSO</p><h2>Integrações administrativas</h2><p class="muted">A Central não guarda senhas nem códigos 2FA. Segredos permanecem em variáveis de ambiente.</p><div id="integration-list" class="integration-list"></div></div></section>
+    </main>
+  </div>
+  <script src="/app.js" defer></script>
+</body>
+</html>
