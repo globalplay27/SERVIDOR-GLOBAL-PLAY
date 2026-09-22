@@ -330,6 +330,17 @@ function sha256Text(value) {
   return crypto.createHash("sha256").update(String(value || ""), "utf8").digest("hex");
 }
 
+function agentBearerAuthorized(req, clientId) {
+  const auth = String(req.headers.authorization || "");
+  if (!auth.startsWith("Bearer ")) return false;
+  const supplied = auth.slice(7);
+  const expected = clientId === "ragnar-one"
+    ? String(process.env.RAGNAR_AGENT_TOKEN || "")
+    : "";
+  if (!expected) return false;
+  return safeEqualText(supplied, expected);
+}
+
 function authorized(req) {
   const credentials = parseBasicAuth(req);
   if (!credentials) return false;
@@ -767,7 +778,11 @@ const server = http.createServer(async (req, res) => {
 
   const agentConfigMatch = url.pathname.match(/^\/api\/agent-config\/([^/]+)$/);
   if (agentConfigMatch && req.method === "GET") {
-    const client = loadClients().find(item => item.id === agentConfigMatch[1]);
+    const clientId = agentConfigMatch[1];
+    if (!agentBearerAuthorized(req, clientId)) {
+      return send(res, 401, { error: "unauthorized" });
+    }
+    const client = loadClients().find(item => item.id === clientId);
     if (!client) return send(res, 404, { error: "not_found" });
     const view = clientPortalView(client);
     return send(res, 200, {
@@ -862,8 +877,13 @@ const server = http.createServer(async (req, res) => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 6000);
     try {
+      const token = String(process.env.RAGNAR_AGENT_TOKEN || "");
       const response = await fetch(base + "/nexus/status", {
-        headers: { "accept": "application/json", "user-agent": "NEXUS-AI-Control-Center/1.0" },
+        headers: {
+          "accept": "application/json",
+          "user-agent": "NEXUS-AI-Control-Center/1.0",
+          ...(token ? { authorization: "Bearer " + token } : {})
+        },
         signal: controller.signal
       });
       if (!response.ok) return send(res, 200, { connected: false, reason: "agent_http_" + response.status });
