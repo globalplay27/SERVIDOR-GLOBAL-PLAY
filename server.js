@@ -86,27 +86,100 @@ function saveClients(items) {
   writeJsonAtomic(runtimeFile, items);
 }
 
-function authorized(req) {
+function parseBasicAuth(req) {
   const auth = req.headers.authorization || "";
-  if (!auth.startsWith("Basic ")) return false;
+  if (!auth.startsWith("Basic ")) return null;
   try {
     const decoded = Buffer.from(auth.slice(6), "base64").toString("utf8");
     const separator = decoded.indexOf(":");
-    if (separator < 0) return false;
-    const username = decoded.slice(0, separator);
-    const password = decoded.slice(separator + 1);
-    const suppliedUsername = Buffer.from(username);
-    const expectedUsername = Buffer.from(ADMIN_USERNAME);
-    const suppliedPassword = Buffer.from(password);
-    const expectedPassword = Buffer.from(ADMIN_PASSWORD);
-    const usernameMatches = suppliedUsername.length === expectedUsername.length
-      && crypto.timingSafeEqual(suppliedUsername, expectedUsername);
-    const passwordMatches = suppliedPassword.length === expectedPassword.length
-      && crypto.timingSafeEqual(suppliedPassword, expectedPassword);
-    return usernameMatches && passwordMatches;
+    if (separator < 0) return null;
+    return {
+      username: decoded.slice(0, separator),
+      password: decoded.slice(separator + 1)
+    };
   } catch {
-    return false;
+    return null;
   }
+}
+
+function safeEqualText(left, right) {
+  const supplied = Buffer.from(String(left || ""));
+  const expected = Buffer.from(String(right || ""));
+  return supplied.length === expected.length && crypto.timingSafeEqual(supplied, expected);
+}
+
+function authorized(req) {
+  const credentials = parseBasicAuth(req);
+  if (!credentials) return false;
+  return safeEqualText(credentials.username, ADMIN_USERNAME)
+    && safeEqualText(credentials.password, ADMIN_PASSWORD);
+}
+
+function portalAccounts() {
+  const accounts = [];
+
+  if (process.env.CLIENT_PORTAL_ACCOUNTS) {
+    try {
+      const parsed = JSON.parse(process.env.CLIENT_PORTAL_ACCOUNTS);
+      if (Array.isArray(parsed)) {
+        for (const account of parsed) {
+          if (account?.clientId && account?.username && account?.password) {
+            accounts.push({
+              clientId: String(account.clientId),
+              username: String(account.username),
+              password: String(account.password)
+            });
+          }
+        }
+      }
+    } catch (error) {
+      console.warn(`Ignoring invalid CLIENT_PORTAL_ACCOUNTS: ${error.message}`);
+    }
+  }
+
+  if (
+    process.env.CLIENT_PORTAL_CLIENT_ID
+    && process.env.CLIENT_PORTAL_USERNAME
+    && process.env.CLIENT_PORTAL_PASSWORD
+  ) {
+    accounts.push({
+      clientId: process.env.CLIENT_PORTAL_CLIENT_ID,
+      username: process.env.CLIENT_PORTAL_USERNAME,
+      password: process.env.CLIENT_PORTAL_PASSWORD
+    });
+  }
+
+  return accounts;
+}
+
+function portalClientForRequest(req) {
+  const credentials = parseBasicAuth(req);
+  if (!credentials) return null;
+
+  const account = portalAccounts().find(item =>
+    safeEqualText(credentials.username, item.username)
+    && safeEqualText(credentials.password, item.password)
+  );
+  if (!account) return null;
+
+  return loadClients().find(client => client.id === account.clientId) || null;
+}
+
+function clientPortalView(client) {
+  return {
+    id: client.id,
+    name: client.name,
+    niche: client.niche,
+    instagram: client.instagram,
+    theme: client.theme,
+    primaryColor: client.primaryColor,
+    secondaryColor: client.secondaryColor,
+    status: client.status,
+    odin: client.odin,
+    postTimes: client.postTimes,
+    leads: client.leads,
+    usage: client.usage
+  };
 }
 
 function slug(value) {
@@ -125,6 +198,15 @@ const server = http.createServer(async (req, res) => {
       service: "nexus-ai-agent-central",
       version: "1.0.0"
     });
+  }
+
+  if (url.pathname === "/api/portal/session" && req.method === "GET") {
+    const client = portalClientForRequest(req);
+    if (!client) {
+      res.setHeader("WWW-Authenticate", 'Basic realm="NEXUS AI Client Portal"');
+      return send(res, 401, { error: "unauthorized" });
+    }
+    return send(res, 200, clientPortalView(client));
   }
 
   if (url.pathname.startsWith("/api/") && !authorized(req)) {
@@ -195,6 +277,7 @@ const server = http.createServer(async (req, res) => {
       githubConfigured: Boolean(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET),
       railwayConfigured: Boolean(process.env.RAILWAY_API_TOKEN),
       openaiAdminConfigured: Boolean(process.env.OPENAI_ADMIN_KEY),
+      clientPortalConfigured: portalAccounts().length > 0,
       metaMode: "manual-assisted",
       note: "A versão 1 organiza o onboarding e a administração. OAuth automático entra na próxima etapa."
     });
