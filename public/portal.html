@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#050807">
   <title>NEXUS AI · Portal do Cliente</title>
-  <link rel="stylesheet" href="/client.css?v=20">
+  <link rel="stylesheet" href="/client.css?v=21">
 </head>
 <body>
   <div id="nexus-boot" class="nexus-boot" hidden>
@@ -43,17 +43,17 @@
       <section class="setup-hero-card" data-open-setup>
         <div class="setup-hero-icon">01</div>
         <div class="setup-hero-copy">
-          <p class="eyebrow">COMECE POR AQUI</p>
-          <strong>Configuração inicial do seu agente</strong>
-          <span>Conecte GitHub, Railway, OpenAI e Meta. Depois personalize como o agente vai postar.</span>
+          <p class="eyebrow">CONEXÕES DO AGENTE</p>
+          <strong>Integrações e serviços</strong>
+          <span>GitHub, Railway, OpenAI e Meta em um único lugar.</span>
         </div>
-        <button type="button">Abrir configuração</button>
+        <button type="button">Ver conexões</button>
       </section>
 
       <nav class="client-nav">
-        <button type="button" class="active setup-nav-main" data-view="setup">Configuração inicial</button>
-        <button type="button" data-view="overview">Visão geral</button>
-        <button type="button" data-view="posting">Controle de postagens</button>
+        <button type="button" class="active" data-view="overview">Visão geral</button>
+        <button type="button" data-view="posting">Postagens</button>
+        <button type="button" class="setup-nav-main" data-view="setup">Conexões</button>
       </nav>
 
       <div id="view-overview" class="client-view">
@@ -85,25 +85,26 @@
           </div>
         </section>
 
-        <section class="metrics">
-          <article><div class="metric-icon">◎</div><span>Leads captados</span><strong id="leads-total">0</strong><small>Odin comercial</small></article>
-          <article><div class="metric-icon">◆</div><span>Leads quentes</span><strong id="leads-hot">0</strong><small>prontos para atendimento</small></article>
-          <article><div class="metric-icon">◷</div><span>Próxima postagem</span><strong id="next-post">—</strong><small>horário configurado</small></article>
-          <article><div class="metric-icon">◈</div><span>Odin</span><strong id="odin-status">—</strong><small>automação comercial</small></article>
+        <section class="metrics operational-metrics">
+          <article><div class="metric-icon">◉</div><span>Status do agente</span><strong id="overview-agent-status">—</strong><small>operação NEXUS</small></article>
+          <article><div class="metric-icon">◷</div><span>Próxima postagem</span><strong id="next-post">—</strong><small>horário programado</small></article>
+          <article><div class="metric-icon">✓</div><span>Última postagem</span><strong id="last-post">—</strong><small id="last-post-detail">aguardando telemetria</small></article>
+          <article><div class="metric-icon">＠</div><span>Instagram</span><strong id="instagram-card">—</strong><small>conta vinculada</small></article>
         </section>
 
-        <section class="content-grid">
+        <section class="content-grid compact-overview">
           <article class="panel">
-            <div class="panel-heading"><div><p class="eyebrow">OPERAÇÃO</p><h2>Seu agente</h2></div><span id="agent-live-chip" class="status-chip">VERIFICANDO</span></div>
-            <div class="details"><div><span>Instagram</span><strong id="instagram">—</strong></div><div><span>Segmento</span><strong id="niche">—</strong></div><div><span>Status</span><strong id="agent-status">—</strong></div><div><span>Postagens</span><strong id="post-times">—</strong></div></div>
-          </article>
-          <article class="panel">
-            <div class="panel-heading"><div><p class="eyebrow">CONSUMO REAL</p><h2>OpenAI & Railway</h2></div></div>
-            <div class="live-usage">
-              <div><span>OpenAI</span><strong id="live-openai">Verificando…</strong><small id="live-openai-detail">—</small></div>
-              <div><span>Railway</span><strong id="live-railway">Verificando…</strong><small id="live-railway-detail">—</small></div>
+            <div class="panel-heading"><div><p class="eyebrow">OPERAÇÃO</p><h2>Ragnar em tempo real</h2></div><span id="agent-live-chip" class="status-chip">VERIFICANDO</span></div>
+            <div class="details compact-details">
+              <div><span>Segmento</span><strong id="niche">—</strong></div>
+              <div><span>Status</span><strong id="agent-status">—</strong></div>
+              <div><span>Agenda</span><strong id="post-times">—</strong></div>
+              <div><span>Último erro</span><strong id="last-agent-error">Nenhum</strong></div>
             </div>
-            <p class="note">Quando o provedor não disponibilizar saldo restante por API, o painel mostra somente os dados reais disponíveis, sem estimativas.</p>
+            <div class="overview-actions">
+              <button type="button" data-open-posting>Configurar postagens</button>
+              <button type="button" data-open-setup>Ver conexões</button>
+            </div>
           </article>
         </section>
       </div>
@@ -158,9 +159,9 @@
       </div>
 
       <div id="view-setup" class="client-view" hidden>
-        <section class="settings-heading"><div><p class="eyebrow">CONFIGURAÇÃO INICIAL</p><h1>Coloque seu agente no ar</h1><p class="muted">Siga as etapas. Você pode sair e continuar depois.</p></div><div class="progress-pill"><strong id="setup-progress">0%</strong><span>concluído</span></div></section>
+        <section class="settings-heading"><div><p class="eyebrow">CENTRAL DE CONEXÕES</p><h1>Serviços do agente</h1><p class="muted">Confira e conecte os serviços usados pela automação.</p></div><div class="progress-pill"><strong id="setup-progress">0%</strong><span>concluído</span></div></section>
 
-        <section class="setup-choice">
+        <section class="setup-choice setup-choice-secondary">
           <button type="button" id="mode-new"><strong>Estou começando do zero</strong><span>Quero seguir o passo a passo completo.</span></button>
           <button type="button" id="mode-ready"><strong>Já tenho minhas contas</strong><span>Quero conferir conexões e ir para a instalação.</span></button>
         </section>
@@ -200,6 +201,6 @@
       <footer><span>NEXUS AI</span><small>Client Portal · ambiente exclusivo</small></footer>
     </section>
   </main>
-  <script src="/client.js?v=20" defer></script>
+  <script src="/client.js?v=21" defer></script>
 </body>
 </html>

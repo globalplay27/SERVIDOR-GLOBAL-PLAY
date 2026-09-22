@@ -29,7 +29,23 @@ function renderConnections(connections={}){
   }
 }
 
-function renderClient(c){currentClient=c;renderConnections(c.connections||{});const coreState=$("#core-agent-state");if(coreState)coreState.textContent=c.status==="online"?"Operacional":"Configurando";$("#client-name").textContent=c.name;$("#client-meta").textContent=`${c.niche||"Outro"} · ambiente exclusivo`;$("#leads-total").textContent=c.leads?.total||0;$("#leads-hot").textContent=c.leads?.hot||0;$("#next-post").textContent=nextPostTime(c.postTimes);$("#odin-status").textContent=c.odin?"Ativo":"Pausado";$("#instagram").textContent=c.instagram||"Pendente";$("#niche").textContent=c.niche||"Outro";$("#agent-status").textContent=c.status==="online"?"Online":"Em configuração";$("#post-times").textContent=(c.postTimes||[]).join(" · ")||"—";populatePosting(c);renderOnboarding();}
+function renderClient(c){
+  currentClient=c;
+  renderConnections(c.connections||{});
+  const online=c.status==="online";
+  const coreState=$("#core-agent-state");
+  if(coreState)coreState.textContent=online?"Operacional":"Configurando";
+  $("#client-name").textContent=c.name;
+  $("#client-meta").textContent=(c.niche||"Outro")+" · ambiente exclusivo";
+  $("#next-post").textContent=nextPostTime(c.postTimes);
+  $("#instagram-card").textContent=c.instagram||"Pendente";
+  $("#overview-agent-status").textContent=online?"ONLINE":"CONFIGURANDO";
+  $("#niche").textContent=c.niche||"Outro";
+  $("#agent-status").textContent=online?"Online":"Em configuração";
+  $("#post-times").textContent=(c.postTimes||[]).join(" · ")||"—";
+  populatePosting(c);
+  renderOnboarding();
+}
 function populatePosting(c){const p=c.postingProfile||{};$("#cfg-niche").value=[...$("#cfg-niche").options].some(o=>o.value===c.niche)?c.niche:"Outro";$("#cfg-audience").value=p.targetAudience||"Misto";$("#cfg-strategy").value=p.contentStrategy||"Vendas + engajamento";$("#cfg-style").value=p.visualStyle||"Tecnológico premium";$("#cfg-tone").value=p.tone||"Firme, direto e profissional";$("#cfg-focus").value=p.contentFocus||"";$("#cfg-avoid").value=p.avoidTopics||"";$("#cfg-primary").value=c.primaryColor||"#22c55e";$("#cfg-secondary").value=c.secondaryColor||"#050807";$("#cfg-cta").value=p.cta||'Comente "QUERO" e saiba mais';$("#cfg-hashtags").value=p.hashtags||"";const t=c.postTimes||["09:00","12:00","18:00"];$("#time-1").value=t[0]||"09:00";$("#time-2").value=t[1]||"12:00";$("#time-3").value=t[2]||"18:00";$("#theme-1").value=p.morningTheme||"";$("#theme-2").value=p.afternoonTheme||"";$("#theme-3").value=p.eveningTheme||"";$("#preview-title").textContent=c.name||"Seu agente";updatePreview();}
 function updatePreview(){const p=$("#cfg-primary").value,s=$("#cfg-secondary").value;$("#cfg-primary-text").textContent=p;$("#cfg-secondary-text").textContent=s;$("#creative-preview").style.background=`radial-gradient(circle at 80% 15%,${p}55,transparent 35%),linear-gradient(135deg,${s},#090d0b)`;$("#creative-preview").style.borderColor=p;$("#preview-cta").textContent=$("#cfg-cta").value||"CTA";}
 async function providerUsage(){
@@ -37,13 +53,14 @@ async function providerUsage(){
     const r=await fetch("/api/portal/provider-usage",{headers:{"x-nexus-session":sessionAuth}});
     if(!r.ok)return;
     const d=await r.json();
-    if(d.openai?.connected){
-      $("#live-openai").textContent=d.openai.costAvailable?`US$ ${Number(d.openai.cost31dUsd||0).toFixed(2)} / 31 dias`:"OpenAI conectada";
-      $("#live-openai-detail").textContent=d.openai.costAvailable?"Custo obtido da API da organização.":"Chave do projeto validada. Custo exige credencial administrativa compatível.";
+    const oa=$("#live-openai"),oad=$("#live-openai-detail"),rw=$("#live-railway"),rwd=$("#live-railway-detail");
+    if(d.openai?.connected&&oa){
+      oa.textContent=d.openai.costAvailable?("US$ "+Number(d.openai.cost31dUsd||0).toFixed(2)+" / 31 dias"):"OpenAI conectada";
+      if(oad)oad.textContent=d.openai.costAvailable?"Custo obtido da API da organização.":"Chave do projeto validada.";
     }
-    if(d.railway?.connected){
-      $("#live-railway").textContent=d.railway.projectCount!=null?`${d.railway.projectCount} projeto(s) autorizado(s)`:"Railway conectada";
-      $("#live-railway-detail").textContent=(d.railway.projects||[]).slice(0,3).map(p=>p.name).filter(Boolean).join(" · ")||"Autorização Railway ativa.";
+    if(d.railway?.connected&&rw){
+      rw.textContent=d.railway.projectCount!=null?(d.railway.projectCount+" projeto(s) autorizado(s)"):"Railway conectada";
+      if(rwd)rwd.textContent=(d.railway.projects||[]).slice(0,3).map(p=>p.name).filter(Boolean).join(" · ")||"Autorização Railway ativa.";
     }
   }catch{}
 }
@@ -52,36 +69,34 @@ async function liveStatus(){
   try{
     const r=await fetch("/api/portal/live-status",{headers:{"x-nexus-session":sessionAuth}});
     const d=await r.json();
+    const configured=currentClient?.status==="online";
     if(!d.connected){
-      const configured=currentClient?.status==="online";
       $("#agent-live-chip").textContent=configured?"ATIVO":"CONFIGURANDO";
       $("#agent-live-chip").classList.toggle("off",!configured);
-      $("#agent-live-chip").title=configured
-        ?"Agente ativo no NEXUS. Telemetria direta ainda não vinculada."
-        :"Agente ainda em configuração.";
       $("#agent-status").textContent=configured?"Online":"Em configuração";
+      $("#overview-agent-status").textContent=configured?"ATIVO":"CONFIGURANDO";
       return;
     }
     $("#agent-live-chip").textContent="ONLINE";
     $("#agent-live-chip").classList.remove("off");
-    $("#agent-live-chip").title="Telemetria direta do agente conectada.";
     $("#agent-status").textContent="Online";
+    $("#overview-agent-status").textContent="ONLINE";
     if(Array.isArray(d.post_times)&&d.post_times.length){
       currentClient.postTimes=d.post_times;
       $("#post-times").textContent=d.post_times.join(" · ");
       $("#next-post").textContent=nextPostTime(d.post_times);
     }
-    const oa=d.openai||{};
-    $("#live-openai").textContent=oa.month_cost_usd!=null?`US$ ${Number(oa.month_cost_usd).toFixed(2)} / 31 dias`:oa.configured?"Conta conectada":"Não conectada";
-    $("#live-openai-detail").textContent=oa.status||"Sem custo disponível pela API";
-    const rw=d.railway||{};
-    $("#live-railway").textContent=rw.project||"Railway";
-    $("#live-railway-detail").textContent=rw.disk_used_mb!=null?`${rw.disk_used_mb} MB usados · ${rw.disk_free_mb} MB livres`:"Sem métricas";
+    if(d.last_post){
+      $("#last-post").textContent=d.last_post.time||d.last_post.slot||"Publicado";
+      $("#last-post-detail").textContent=d.last_post.media_id?("ID "+d.last_post.media_id):"publicação confirmada";
+    }
+    $("#last-agent-error").textContent=d.last_error?String(d.last_error).slice(0,90):"Nenhum";
   }catch(e){
     const configured=currentClient?.status==="online";
     $("#agent-live-chip").textContent=configured?"ATIVO":"CONFIGURANDO";
     $("#agent-live-chip").classList.toggle("off",!configured);
     $("#agent-status").textContent=configured?"Online":"Em configuração";
+    $("#overview-agent-status").textContent=configured?"ATIVO":"CONFIGURANDO";
   }
 }
 async function loadConnections(){
