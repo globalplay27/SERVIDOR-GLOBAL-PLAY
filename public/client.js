@@ -34,7 +34,7 @@ function populatePosting(c){const p=c.postingProfile||{};$("#cfg-niche").value=[
 function updatePreview(){const p=$("#cfg-primary").value,s=$("#cfg-secondary").value;$("#cfg-primary-text").textContent=p;$("#cfg-secondary-text").textContent=s;$("#creative-preview").style.background=`radial-gradient(circle at 80% 15%,${p}55,transparent 35%),linear-gradient(135deg,${s},#090d0b)`;$("#creative-preview").style.borderColor=p;$("#preview-cta").textContent=$("#cfg-cta").value||"CTA";}
 async function providerUsage(){
   try{
-    const r=await fetch("/api/portal/provider-usage",{headers:{authorization:sessionAuth}});
+    const r=await fetch("/api/portal/provider-usage",{headers:{"x-nexus-session":sessionAuth}});
     if(!r.ok)return;
     const d=await r.json();
     if(d.openai?.connected){
@@ -48,10 +48,10 @@ async function providerUsage(){
   }catch{}
 }
 
-async function liveStatus(){try{const r=await fetch("/api/portal/live-status",{headers:{authorization:sessionAuth}}),d=await r.json();if(!d.connected){$("#agent-live-chip").textContent="SEM LEITURA";$("#agent-live-chip").classList.add("off");$("#live-openai").textContent="Aguardando conexão";$("#live-openai-detail").textContent="O agente ainda não respondeu.";$("#live-railway").textContent="Aguardando conexão";$("#live-railway-detail").textContent="—";return;}$("#agent-live-chip").textContent="ONLINE";$("#agent-live-chip").classList.remove("off");$("#agent-status").textContent="Online";if(Array.isArray(d.post_times)&&d.post_times.length){currentClient.postTimes=d.post_times;$("#post-times").textContent=d.post_times.join(" · ");$("#next-post").textContent=nextPostTime(d.post_times);}const oa=d.openai||{};$("#live-openai").textContent=oa.month_cost_usd!=null?`US$ ${Number(oa.month_cost_usd).toFixed(2)} / 31 dias`:oa.configured?"Conta conectada":"Não conectada";$("#live-openai-detail").textContent=oa.status||"Sem custo disponível pela API";const rw=d.railway||{};$("#live-railway").textContent=rw.project||"Railway";$("#live-railway-detail").textContent=rw.disk_used_mb!=null?`${rw.disk_used_mb} MB usados · ${rw.disk_free_mb} MB livres`:"Sem métricas";}catch(e){$("#agent-live-chip").textContent="SEM LEITURA";}}
+async function liveStatus(){try{const r=await fetch("/api/portal/live-status",{headers:{"x-nexus-session":sessionAuth}}),d=await r.json();if(!d.connected){$("#agent-live-chip").textContent="SEM LEITURA";$("#agent-live-chip").classList.add("off");$("#live-openai").textContent="Aguardando conexão";$("#live-openai-detail").textContent="O agente ainda não respondeu.";$("#live-railway").textContent="Aguardando conexão";$("#live-railway-detail").textContent="—";return;}$("#agent-live-chip").textContent="ONLINE";$("#agent-live-chip").classList.remove("off");$("#agent-status").textContent="Online";if(Array.isArray(d.post_times)&&d.post_times.length){currentClient.postTimes=d.post_times;$("#post-times").textContent=d.post_times.join(" · ");$("#next-post").textContent=nextPostTime(d.post_times);}const oa=d.openai||{};$("#live-openai").textContent=oa.month_cost_usd!=null?`US$ ${Number(oa.month_cost_usd).toFixed(2)} / 31 dias`:oa.configured?"Conta conectada":"Não conectada";$("#live-openai-detail").textContent=oa.status||"Sem custo disponível pela API";const rw=d.railway||{};$("#live-railway").textContent=rw.project||"Railway";$("#live-railway-detail").textContent=rw.disk_used_mb!=null?`${rw.disk_used_mb} MB usados · ${rw.disk_free_mb} MB livres`:"Sem métricas";}catch(e){$("#agent-live-chip").textContent="SEM LEITURA";}}
 async function loadConnections(){
   try{
-    const r=await fetch("/api/portal/connections",{headers:{authorization:sessionAuth}});
+    const r=await fetch("/api/portal/connections",{headers:{"x-nexus-session":sessionAuth}});
     if(!r.ok)return null;
     const d=await r.json();
     currentClient.connections=d.connections||{};
@@ -83,7 +83,7 @@ async function startRailwayConnection(){
   const button=$('[data-connect="railway"]');
   button.disabled=true;button.textContent="Abrindo autorização…";
   try{
-    const r=await fetch("/api/oauth/railway/start",{headers:{authorization:sessionAuth}});
+    const r=await fetch("/api/oauth/railway/start",{headers:{"x-nexus-session":sessionAuth}});
     const d=await r.json();
     if(!r.ok||!d.url)throw new Error("Não foi possível iniciar a conexão Railway.");
     const popup=window.open(d.url,"nexus-railway-oauth","width=720,height=760");
@@ -102,7 +102,7 @@ async function startRailwayConnection(){
   }
 }
 
-async function patchOnboarding(payload){const r=await fetch("/api/portal/onboarding",{method:"PATCH",headers:{authorization:sessionAuth,"content-type":"application/json"},body:JSON.stringify(payload)});if(!r.ok)throw new Error("Falha ao salvar etapa");renderClient(await r.json());}
+async function patchOnboarding(payload){const r=await fetch("/api/portal/onboarding",{method:"PATCH",headers:{"x-nexus-session":sessionAuth,"content-type":"application/json"},body:JSON.stringify(payload)});if(!r.ok)throw new Error("Falha ao salvar etapa");renderClient(await r.json());}
 $$("[data-view]").forEach(b=>b.addEventListener("click",()=>showView(b.dataset.view)));$$("[data-open-setup]").forEach(b=>b.addEventListener("click",()=>showView("setup")));$$("[data-open-posting]").forEach(b=>b.addEventListener("click",()=>showView("posting")));
 $("#cfg-primary").addEventListener("input",updatePreview);$("#cfg-secondary").addEventListener("input",updatePreview);$("#cfg-cta").addEventListener("input",updatePreview);
 $("[data-complete]").forEach(b=>b.addEventListener("click",async()=>{b.disabled=true;try{await patchOnboarding({[b.dataset.complete]:true});}finally{b.disabled=false;}}));
@@ -120,7 +120,7 @@ $("#connection-form").addEventListener("submit",async event=>{
     }else if(connectionProvider==="openai"){
       endpoint="/api/portal/connect/openai";payload={apiKey:$("#openai-key").value,adminKey:$("#openai-admin-key").value};
     }else throw new Error("Conexão inválida.");
-    const r=await fetch(endpoint,{method:"POST",headers:{authorization:sessionAuth,"content-type":"application/json"},body:JSON.stringify(payload)});
+    const r=await fetch(endpoint,{method:"POST",headers:{"x-nexus-session":sessionAuth,"content-type":"application/json"},body:JSON.stringify(payload)});
     const d=await r.json();
     if(!r.ok)throw new Error(d.error==="github_auth_failed"?"Token do GitHub não foi aceito.":d.error==="openai_auth_failed"?"A chave da OpenAI não foi aceita.":d.error==="openai_admin_auth_failed"?"A chave administrativa da OpenAI não foi aceita.":"Não foi possível conectar.");
     renderClient(d);closeConnectionModal();await providerUsage();
@@ -137,7 +137,40 @@ const presets={
 };
 $$("[data-preset]").forEach(b=>b.addEventListener("click",()=>{const p=presets[b.dataset.preset];$("#cfg-niche").value="Streaming";$("#cfg-audience").value=p.audience;$("#cfg-focus").value=p.focus;$("#theme-1").value=p.themes[0];$("#theme-2").value=p.themes[1];$("#theme-3").value=p.themes[2];$("#cfg-cta").value=p.cta;updatePreview();}));
 
-$("#posting-form").addEventListener("submit",async e=>{e.preventDefault();$("#save-status").textContent="Salvando…";$("#save-status").className="save-status";const payload={niche:$("#cfg-niche").value,primaryColor:$("#cfg-primary").value,secondaryColor:$("#cfg-secondary").value,postTimes:[$("#time-1").value,$("#time-2").value,$("#time-3").value].filter(Boolean),postingProfile:{contentStrategy:$("#cfg-strategy").value,targetAudience:$("#cfg-audience").value,visualStyle:$("#cfg-style").value,contentFocus:$("#cfg-focus").value,morningTheme:$("#theme-1").value,afternoonTheme:$("#theme-2").value,eveningTheme:$("#theme-3").value,tone:$("#cfg-tone").value,cta:$("#cfg-cta").value,hashtags:$("#cfg-hashtags").value,avoidTopics:$("#cfg-avoid").value}};try{const r=await fetch("/api/portal/settings",{method:"PATCH",headers:{authorization:sessionAuth,"content-type":"application/json"},body:JSON.stringify(payload)});if(!r.ok)throw new Error("Não foi possível salvar.");const c=await r.json();renderClient(c);document.documentElement.style.setProperty("--accent",c.primaryColor||"#22c55e");$("#save-status").textContent="Salvo. O agente usará estas regras nas próximas postagens.";$("#save-status").className="save-status ok";await patchOnboarding({creativeProfile:true});}catch(err){$("#save-status").textContent=err.message;$("#save-status").className="save-status error";}});
+$("#posting-form").addEventListener("submit",async e=>{e.preventDefault();$("#save-status").textContent="Salvando…";$("#save-status").className="save-status";const payload={niche:$("#cfg-niche").value,primaryColor:$("#cfg-primary").value,secondaryColor:$("#cfg-secondary").value,postTimes:[$("#time-1").value,$("#time-2").value,$("#time-3").value].filter(Boolean),postingProfile:{contentStrategy:$("#cfg-strategy").value,targetAudience:$("#cfg-audience").value,visualStyle:$("#cfg-style").value,contentFocus:$("#cfg-focus").value,morningTheme:$("#theme-1").value,afternoonTheme:$("#theme-2").value,eveningTheme:$("#theme-3").value,tone:$("#cfg-tone").value,cta:$("#cfg-cta").value,hashtags:$("#cfg-hashtags").value,avoidTopics:$("#cfg-avoid").value}};try{const r=await fetch("/api/portal/settings",{method:"PATCH",headers:{"x-nexus-session":sessionAuth,"content-type":"application/json"},body:JSON.stringify(payload)});if(!r.ok)throw new Error("Não foi possível salvar.");const c=await r.json();renderClient(c);document.documentElement.style.setProperty("--accent",c.primaryColor||"#22c55e");$("#save-status").textContent="Salvo. O agente usará estas regras nas próximas postagens.";$("#save-status").className="save-status ok";await patchOnboarding({creativeProfile:true});}catch(err){$("#save-status").textContent=err.message;$("#save-status").className="save-status error";}});
 
-$("#login-form").addEventListener("submit",async e=>{e.preventDefault();$("#login-error").textContent="Verificando…";const f=new FormData(e.currentTarget);sessionAuth=`Basic ${btoa(`${f.get("username")}:${f.get("password")}`)}`;try{const r=await fetch("/api/portal/session",{headers:{authorization:sessionAuth}});if(!r.ok)throw new Error("Usuário ou senha inválidos.");const c=await r.json();$("#login-view").hidden=true;$("#portal-view").hidden=false;document.documentElement.style.setProperty("--accent",c.primaryColor||"#22c55e");renderClient(c);e.currentTarget.reset();$("#login-error").textContent="";showView("setup");liveStatus();providerUsage();loadConnections();}catch(err){sessionAuth=null;$("#login-error").textContent=err.message;}});
-$("#logout").addEventListener("click",()=>{sessionAuth=null;currentClient=null;$("#portal-view").hidden=true;$("#login-view").hidden=false;$("#login-error").textContent="";});
+$("#login-form").addEventListener("submit",async e=>{
+  e.preventDefault();
+  $("#login-error").textContent="Verificando…";
+  const f=new FormData(e.currentTarget);
+  try{
+    const r=await fetch("/api/portal/login",{
+      method:"POST",
+      headers:{"content-type":"application/json"},
+      body:JSON.stringify({username:String(f.get("username")||"").trim(),password:String(f.get("password")||"")})
+    });
+    const d=await r.json();
+    if(!r.ok||!d.token||!d.client)throw new Error("Usuário ou senha inválidos.");
+    sessionAuth=d.token;
+    const c=d.client;
+    $("#login-view").hidden=true;
+    $("#portal-view").hidden=false;
+    document.documentElement.style.setProperty("--accent",c.primaryColor||"#22c55e");
+    renderClient(c);
+    e.currentTarget.reset();
+    $("#login-error").textContent="";
+    showView("setup");
+    liveStatus();
+    providerUsage();
+    loadConnections();
+  }catch(err){
+    sessionAuth=null;
+    $("#login-error").textContent=err.message;
+  }
+});
+$("#logout").addEventListener("click",async()=>{
+  const token=sessionAuth;
+  sessionAuth=null;currentClient=null;
+  try{if(token)await fetch("/api/portal/logout",{method:"POST",headers:{"x-nexus-session":token}});}catch{}
+  $("#portal-view").hidden=true;$("#login-view").hidden=false;$("#login-error").textContent="";
+});

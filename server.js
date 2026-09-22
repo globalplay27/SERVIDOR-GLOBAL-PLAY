@@ -20,6 +20,7 @@ const seedFile = path.join(__dirname, "data", "clients.json");
 const runtimeFile = path.join(DATA_DIR, "runtime.json");
 const connectionsFile = path.join(DATA_DIR, "connections.json");
 const oauthStateFile = path.join(DATA_DIR, "oauth-states.json");
+const portalSessions = new Map();
 
 function readJsonFile(file, fallback) {
   try {
@@ -341,27 +342,43 @@ function portalAccounts() {
   return accounts;
 }
 
-function portalClientForRequest(req) {
-  const credentials = parseBasicAuth(req);
-  if (!credentials) return null;
-
+function clientFromCredentials(username, password) {
   const account = portalAccounts().find(item =>
-    safeEqualText(credentials.username, item.username)
-    && safeEqualText(credentials.password, item.password)
+    safeEqualText(username, item.username)
+    && safeEqualText(password, item.password)
   );
   if (account) {
     return loadClients().find(client => client.id === account.clientId) || null;
   }
 
   const ragnarFallback =
-    safeEqualText(credentials.username, RAGNAR_PORTAL_USERNAME)
-    && safeEqualText(sha256Text(credentials.password), RAGNAR_PORTAL_PASSWORD_HASH);
+    safeEqualText(username, RAGNAR_PORTAL_USERNAME)
+    && safeEqualText(sha256Text(password), RAGNAR_PORTAL_PASSWORD_HASH);
 
   if (ragnarFallback) {
     return loadClients().find(client => client.id === "ragnar-one") || null;
   }
-
   return null;
+}
+
+function tokenClientForRequest(req) {
+  const header = String(req.headers["x-nexus-session"] || "");
+  if (!header) return null;
+  const record = portalSessions.get(header);
+  if (!record || record.expiresAt < Date.now()) {
+    if (record) portalSessions.delete(header);
+    return null;
+  }
+  return loadClients().find(client => client.id === record.clientId) || null;
+}
+
+function portalClientForRequest(req) {
+  const tokenClient = tokenClientForRequest(req);
+  if (tokenClient) return tokenClient;
+
+  const credentials = parseBasicAuth(req);
+  if (!credentials) return null;
+  return clientFromCredentials(credentials.username, credentials.password);
 }
 
 function defaultPostingProfile() {
@@ -425,6 +442,24 @@ const server = http.createServer(async (req, res) => {
     });
   }
 
+  if (url.pathname === "/api/portal/login" && req.method === "POST") {
+    const body = await readBody(req);
+    const username = String(body.username || "").trim();
+    const password = String(body.password || "");
+    const client = clientFromCredentials(username, password);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+
+    const token = crypto.randomBytes(32).toString("base64url");
+    portalSessions.set(token, {
+      clientId: client.id,
+      expiresAt: Date.now() + 12 * 60 * 60 * 1000
+    });
+    return send(res, 200, {
+      token,
+      client: clientPortalView(client)
+    });
+  }
+
   if (url.pathname === "/api/portal/session" && req.method === "GET") {
     const client = portalClientForRequest(req);
     if (!client) {
@@ -432,6 +467,12 @@ const server = http.createServer(async (req, res) => {
       return send(res, 401, { error: "unauthorized" });
     }
     return send(res, 200, clientPortalView(client));
+  }
+
+  if (url.pathname === "/api/portal/logout" && req.method === "POST") {
+    const token = String(req.headers["x-nexus-session"] || "");
+    if (token) portalSessions.delete(token);
+    return send(res, 200, { ok: true });
   }
 
   if (url.pathname === "/api/portal/connections" && req.method === "GET") {
