@@ -1,0 +1,13 @@
+{
+  "name": "globalplay-agent-central",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Central Global Play para implantação e gestão de agentes de clientes.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js"
+  }
+}
