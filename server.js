@@ -962,6 +962,15 @@ const server = http.createServer(async (req, res) => {
     return res.end();
   }
 
+  // Master dashboard is never exposed on a client-branded hostname.
+  const requestHost = String(req.headers.host || "").split(":")[0].toLowerCase();
+  if (
+    requestHost === "painel.ragnarplay.online"
+    && (url.pathname === "/master" || url.pathname === "/master/" || url.pathname === "/index.html")
+  ) {
+    return send(res, 404, "Not found", "text/plain; charset=utf-8");
+  }
+
   // Master dashboard is never public. Both the friendly route and the
   // underlying index.html require the administrator credentials.
   if ((url.pathname === "/master" || url.pathname === "/master/" || url.pathname === "/index.html") && req.method === "GET") {
