@@ -16,6 +16,8 @@ fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const seedFile = path.join(__dirname, "data", "clients.json");
 const runtimeFile = path.join(DATA_DIR, "runtime.json");
+const connectionsFile = path.join(DATA_DIR, "connections.json");
+const oauthStateFile = path.join(DATA_DIR, "oauth-states.json");
 
 function readJsonFile(file, fallback) {
   try {
@@ -84,6 +86,187 @@ function loadClients() {
 
 function saveClients(items) {
   writeJsonAtomic(runtimeFile, items);
+}
+
+function readObjectFile(file, fallback = {}) {
+  try {
+    if (!fs.existsSync(file)) return fallback;
+    const raw = fs.readFileSync(file, "utf8").trim();
+    if (!raw) return fallback;
+    const value = JSON.parse(raw);
+    return value && typeof value === "object" && !Array.isArray(value) ? value : fallback;
+  } catch (error) {
+    console.warn(`Ignoring invalid object JSON in ${file}: ${error.message}`);
+    return fallback;
+  }
+}
+
+function loadConnections() {
+  return readObjectFile(connectionsFile, {});
+}
+
+function saveConnections(value) {
+  writeJsonAtomic(connectionsFile, value);
+}
+
+function loadOauthStates() {
+  return readObjectFile(oauthStateFile, {});
+}
+
+function saveOauthStates(value) {
+  writeJsonAtomic(oauthStateFile, value);
+}
+
+function secretKey() {
+  const raw = String(process.env.NEXUS_SECRET_KEY || "").trim();
+  if (!/^[0-9a-fA-F]{64}$/.test(raw)) return null;
+  return Buffer.from(raw, "hex");
+}
+
+function encryptSecret(value) {
+  const key = secretKey();
+  if (!key) throw new Error("secure_storage_not_configured");
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
+  const encrypted = Buffer.concat([cipher.update(String(value), "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return ["v1", iv.toString("base64"), tag.toString("base64"), encrypted.toString("base64")].join(".");
+}
+
+function decryptSecret(value) {
+  const key = secretKey();
+  if (!key || !value) return "";
+  const parts = String(value).split(".");
+  if (parts.length !== 4 || parts[0] !== "v1") return "";
+  try {
+    const decipher = crypto.createDecipheriv("aes-256-gcm", key, Buffer.from(parts[1], "base64"));
+    decipher.setAuthTag(Buffer.from(parts[2], "base64"));
+    return Buffer.concat([
+      decipher.update(Buffer.from(parts[3], "base64")),
+      decipher.final()
+    ]).toString("utf8");
+  } catch {
+    return "";
+  }
+}
+
+function directConnection(clientId, provider) {
+  const all = loadConnections();
+  return all?.[clientId]?.[provider] || null;
+}
+
+function providerLooksConnected(value) {
+  return ["connected","configured","active","ready"].includes(String(value || "").toLowerCase());
+}
+
+function connectionSummary(client) {
+  const direct = loadConnections()?.[client.id] || {};
+  const legacy = {
+    github: client.github,
+    railway: client.railway,
+    openai: client.openai,
+    meta: client.meta
+  };
+  const result = {};
+  for (const provider of ["github","railway","openai","meta"]) {
+    const record = direct[provider];
+    result[provider] = {
+      connected: Boolean(record) || providerLooksConnected(legacy[provider]),
+      direct: Boolean(record),
+      source: record ? "direct" : (providerLooksConnected(legacy[provider]) ? "agent" : "none"),
+      label: record?.meta?.label || record?.meta?.login || record?.meta?.name || "",
+      connectedAt: record?.connectedAt || null
+    };
+  }
+  return result;
+}
+
+function markProviderConnected(clientId, provider) {
+  const clients = loadClients();
+  const client = clients.find(item => item.id === clientId);
+  if (!client) return null;
+  client.onboarding = client.onboarding && typeof client.onboarding === "object" ? client.onboarding : {};
+  if (["github","railway","openai"].includes(provider)) client.onboarding[provider] = true;
+  if (provider === "github") client.github = "connected";
+  if (provider === "railway") client.railway = "connected";
+  if (provider === "openai") client.openai = "configured";
+  saveClients(clients);
+  return client;
+}
+
+function saveProviderConnection(clientId, provider, record) {
+  const all = loadConnections();
+  all[clientId] = all[clientId] && typeof all[clientId] === "object" ? all[clientId] : {};
+  all[clientId][provider] = { ...record, connectedAt: new Date().toISOString() };
+  saveConnections(all);
+}
+
+async function validateGithubToken(token) {
+  const response = await fetch("https://api.github.com/user", {
+    headers: {
+      authorization: "Bearer " + token,
+      accept: "application/vnd.github+json",
+      "x-github-api-version": "2026-03-10",
+      "user-agent": "NEXUS-AI/1.0"
+    }
+  });
+  if (!response.ok) throw new Error("github_auth_failed");
+  return response.json();
+}
+
+async function validateOpenAIKey(key) {
+  const response = await fetch("https://api.openai.com/v1/models", {
+    headers: { authorization: "Bearer " + key, "user-agent": "NEXUS-AI/1.0" }
+  });
+  if (!response.ok) throw new Error("openai_auth_failed");
+  return true;
+}
+
+async function validateOpenAIAdminKey(key) {
+  const start = Math.floor(Date.now() / 1000) - 86400;
+  const response = await fetch("https://api.openai.com/v1/organization/costs?start_time=" + start + "&limit=1", {
+    headers: { authorization: "Bearer " + key, "user-agent": "NEXUS-AI/1.0" }
+  });
+  if (!response.ok) throw new Error("openai_admin_auth_failed");
+  return true;
+}
+
+function railwayRedirectUri(req) {
+  const host = process.env.RAILWAY_PUBLIC_DOMAIN || req.headers.host || "servidor-global-play-production.up.railway.app";
+  return "https://" + host + "/api/oauth/railway/callback";
+}
+
+async function railwayAccessTokenFor(clientId) {
+  const all = loadConnections();
+  const record = all?.[clientId]?.railway;
+  if (!record) return "";
+  const current = decryptSecret(record.accessToken);
+  if (current && Number(record.expiresAt || 0) > Date.now() + 60000) return current;
+  const refresh = decryptSecret(record.refreshToken);
+  const clientIdEnv = process.env.RAILWAY_OAUTH_CLIENT_ID;
+  const clientSecret = process.env.RAILWAY_OAUTH_CLIENT_SECRET;
+  if (!refresh || !clientIdEnv || !clientSecret) return current;
+
+  const body = new URLSearchParams({
+    grant_type: "refresh_token",
+    refresh_token: refresh
+  });
+  const response = await fetch("https://backboard.railway.com/oauth/token", {
+    method: "POST",
+    headers: {
+      authorization: "Basic " + Buffer.from(clientIdEnv + ":" + clientSecret).toString("base64"),
+      "content-type": "application/x-www-form-urlencoded"
+    },
+    body
+  });
+  if (!response.ok) return current;
+  const tokens = await response.json();
+  record.accessToken = encryptSecret(tokens.access_token || "");
+  if (tokens.refresh_token) record.refreshToken = encryptSecret(tokens.refresh_token);
+  record.expiresAt = Date.now() + Number(tokens.expires_in || 3600) * 1000;
+  all[clientId].railway = record;
+  saveConnections(all);
+  return tokens.access_token || current;
 }
 
 function parseBasicAuth(req) {
@@ -203,7 +386,8 @@ function clientPortalView(client) {
       openai: client.openai || "pending",
       meta: client.meta || "pending"
     },
-    postingProfile: { ...defaultPostingProfile(), ...(client.postingProfile || {}) }
+    postingProfile: { ...defaultPostingProfile(), ...(client.postingProfile || {}) },
+    connections: connectionSummary(client)
   };
 }
 
@@ -232,6 +416,241 @@ const server = http.createServer(async (req, res) => {
       return send(res, 401, { error: "unauthorized" });
     }
     return send(res, 200, clientPortalView(client));
+  }
+
+  if (url.pathname === "/api/portal/connections" && req.method === "GET") {
+    const client = portalClientForRequest(req);
+    if (!client) {
+      res.setHeader("WWW-Authenticate", 'Basic realm="NEXUS AI Client Portal"');
+      return send(res, 401, { error: "unauthorized" });
+    }
+    return send(res, 200, {
+      connections: connectionSummary(client),
+      onboarding: client.onboarding || {}
+    });
+  }
+
+  if (url.pathname === "/api/portal/connect/github" && req.method === "POST") {
+    const sessionClient = portalClientForRequest(req);
+    if (!sessionClient) {
+      res.setHeader("WWW-Authenticate", 'Basic realm="NEXUS AI Client Portal"');
+      return send(res, 401, { error: "unauthorized" });
+    }
+    try {
+      const body = await readBody(req);
+      const token = String(body.token || "").trim();
+      if (token.length < 20) return send(res, 400, { error: "invalid_token" });
+      const profile = await validateGithubToken(token);
+      saveProviderConnection(sessionClient.id, "github", {
+        token: encryptSecret(token),
+        meta: {
+          login: String(profile.login || ""),
+          name: String(profile.name || ""),
+          label: String(profile.login || profile.name || "GitHub")
+        }
+      });
+      const client = markProviderConnected(sessionClient.id, "github");
+      return send(res, 200, clientPortalView(client));
+    } catch (error) {
+      return send(res, 400, { error: error.message || "github_connection_failed" });
+    }
+  }
+
+  if (url.pathname === "/api/portal/connect/openai" && req.method === "POST") {
+    const sessionClient = portalClientForRequest(req);
+    if (!sessionClient) {
+      res.setHeader("WWW-Authenticate", 'Basic realm="NEXUS AI Client Portal"');
+      return send(res, 401, { error: "unauthorized" });
+    }
+    try {
+      const body = await readBody(req);
+      const apiKey = String(body.apiKey || "").trim();
+      const adminKey = String(body.adminKey || "").trim();
+      if (apiKey.length < 20) return send(res, 400, { error: "invalid_api_key" });
+      await validateOpenAIKey(apiKey);
+      if (adminKey) await validateOpenAIAdminKey(adminKey);
+      saveProviderConnection(sessionClient.id, "openai", {
+        apiKey: encryptSecret(apiKey),
+        adminKey: adminKey ? encryptSecret(adminKey) : "",
+        meta: {
+          label: adminKey ? "OpenAI + custos" : "OpenAI API",
+          hasAdminKey: Boolean(adminKey)
+        }
+      });
+      const client = markProviderConnected(sessionClient.id, "openai");
+      return send(res, 200, clientPortalView(client));
+    } catch (error) {
+      return send(res, 400, { error: error.message || "openai_connection_failed" });
+    }
+  }
+
+  if (url.pathname === "/api/oauth/railway/start" && req.method === "GET") {
+    const sessionClient = portalClientForRequest(req);
+    if (!sessionClient) {
+      res.setHeader("WWW-Authenticate", 'Basic realm="NEXUS AI Client Portal"');
+      return send(res, 401, { error: "unauthorized" });
+    }
+    const clientId = process.env.RAILWAY_OAUTH_CLIENT_ID;
+    if (!clientId || !process.env.RAILWAY_OAUTH_CLIENT_SECRET) {
+      return send(res, 503, { error: "railway_oauth_not_configured" });
+    }
+
+    const state = crypto.randomBytes(24).toString("base64url");
+    const verifier = crypto.randomBytes(48).toString("base64url");
+    const challenge = crypto.createHash("sha256").update(verifier).digest("base64url");
+    const states = loadOauthStates();
+    const now = Date.now();
+    for (const [key, value] of Object.entries(states)) {
+      if (!value?.createdAt || now - Number(value.createdAt) > 15 * 60 * 1000) delete states[key];
+    }
+    states[state] = { clientId: sessionClient.id, verifier, createdAt: now };
+    saveOauthStates(states);
+
+    const authorize = new URL("https://backboard.railway.com/oauth/auth");
+    authorize.searchParams.set("response_type", "code");
+    authorize.searchParams.set("client_id", clientId);
+    authorize.searchParams.set("redirect_uri", railwayRedirectUri(req));
+    authorize.searchParams.set("scope", "openid profile email offline_access project:viewer workspace:viewer");
+    authorize.searchParams.set("state", state);
+    authorize.searchParams.set("code_challenge", challenge);
+    authorize.searchParams.set("code_challenge_method", "S256");
+    authorize.searchParams.set("prompt", "consent");
+    return send(res, 200, { url: authorize.toString() });
+  }
+
+  if (url.pathname === "/api/oauth/railway/callback" && req.method === "GET") {
+    const code = url.searchParams.get("code") || "";
+    const state = url.searchParams.get("state") || "";
+    const oauthError = url.searchParams.get("error") || "";
+    const states = loadOauthStates();
+    const saved = states[state];
+
+    const oauthPage = (ok, message) => send(
+      res,
+      ok ? 200 : 400,
+      `<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>NEXUS AI</title><body style="margin:0;background:#050807;color:#f4f8f5;font-family:system-ui;display:grid;place-items:center;min-height:100vh"><div style="max-width:520px;padding:30px;border:1px solid #26352c;border-radius:20px;background:#0b110e;text-align:center"><h1 style="margin-top:0;color:${ok ? "#21e47b" : "#ff9898"}">${ok ? "Railway conectado" : "Falha na conexão"}</h1><p style="color:#aab9b0;line-height:1.5">${message}</p><p>Você pode fechar esta janela e voltar ao Portal NEXUS AI.</p></div></body></html>`,
+      "text/html; charset=utf-8"
+    );
+
+    if (oauthError) return oauthPage(false, "A autorização foi cancelada ou recusada.");
+    if (!code || !state || !saved || Date.now() - Number(saved.createdAt || 0) > 15 * 60 * 1000) {
+      return oauthPage(false, "Esta autorização expirou. Inicie a conexão novamente pelo portal.");
+    }
+
+    try {
+      const clientId = process.env.RAILWAY_OAUTH_CLIENT_ID;
+      const clientSecret = process.env.RAILWAY_OAUTH_CLIENT_SECRET;
+      const body = new URLSearchParams({
+        grant_type: "authorization_code",
+        code,
+        redirect_uri: railwayRedirectUri(req),
+        code_verifier: saved.verifier
+      });
+      const tokenResponse = await fetch("https://backboard.railway.com/oauth/token", {
+        method: "POST",
+        headers: {
+          authorization: "Basic " + Buffer.from(clientId + ":" + clientSecret).toString("base64"),
+          "content-type": "application/x-www-form-urlencoded"
+        },
+        body
+      });
+      if (!tokenResponse.ok) throw new Error("railway_token_exchange_failed");
+      const tokens = await tokenResponse.json();
+
+      let identity = {};
+      try {
+        const identityResponse = await fetch("https://backboard.railway.com/oauth/me", {
+          headers: { authorization: "Bearer " + tokens.access_token }
+        });
+        if (identityResponse.ok) identity = await identityResponse.json();
+      } catch {}
+
+      saveProviderConnection(saved.clientId, "railway", {
+        accessToken: encryptSecret(tokens.access_token || ""),
+        refreshToken: tokens.refresh_token ? encryptSecret(tokens.refresh_token) : "",
+        expiresAt: Date.now() + Number(tokens.expires_in || 3600) * 1000,
+        scope: String(tokens.scope || ""),
+        meta: {
+          name: String(identity.name || identity.email || "Railway"),
+          label: String(identity.name || identity.email || "Railway")
+        }
+      });
+      markProviderConnected(saved.clientId, "railway");
+      delete states[state];
+      saveOauthStates(states);
+      return oauthPage(true, "A conta Railway foi autorizada com sucesso.");
+    } catch (error) {
+      console.warn("Railway OAuth callback failed:", error.message);
+      return oauthPage(false, "Não foi possível concluir a autorização. Tente novamente pelo portal.");
+    }
+  }
+
+  if (url.pathname === "/api/portal/provider-usage" && req.method === "GET") {
+    const client = portalClientForRequest(req);
+    if (!client) {
+      res.setHeader("WWW-Authenticate", 'Basic realm="NEXUS AI Client Portal"');
+      return send(res, 401, { error: "unauthorized" });
+    }
+
+    const direct = loadConnections()?.[client.id] || {};
+    const result = {
+      github: { connected: Boolean(direct.github), login: direct.github?.meta?.login || "" },
+      openai: { connected: Boolean(direct.openai), cost31dUsd: null, costAvailable: false },
+      railway: { connected: Boolean(direct.railway), projects: [], projectCount: null }
+    };
+
+    if (direct.openai?.adminKey) {
+      const adminKey = decryptSecret(direct.openai.adminKey);
+      if (adminKey) {
+        try {
+          const start = Math.floor(Date.now() / 1000) - 31 * 86400;
+          const response = await fetch("https://api.openai.com/v1/organization/costs?start_time=" + start + "&limit=31", {
+            headers: { authorization: "Bearer " + adminKey, "user-agent": "NEXUS-AI/1.0" }
+          });
+          if (response.ok) {
+            const payload = await response.json();
+            let total = 0;
+            for (const bucket of payload.data || []) {
+              for (const item of bucket.results || []) {
+                const amount = item.amount || {};
+                if (String(amount.currency || "").toLowerCase() === "usd") total += Number(amount.value || 0);
+              }
+            }
+            result.openai.cost31dUsd = total;
+            result.openai.costAvailable = true;
+          }
+        } catch {}
+      }
+    }
+
+    if (direct.railway) {
+      const token = await railwayAccessTokenFor(client.id);
+      if (token) {
+        try {
+          const response = await fetch("https://backboard.railway.com/graphql/v2", {
+            method: "POST",
+            headers: {
+              authorization: "Bearer " + token,
+              "content-type": "application/json"
+            },
+            body: JSON.stringify({
+              query: "query { projects { edges { node { id name } } } }"
+            })
+          });
+          if (response.ok) {
+            const payload = await response.json();
+            const projects = payload?.data?.projects?.edges || [];
+            result.railway.projects = projects.map(item => ({
+              id: item?.node?.id || "",
+              name: item?.node?.name || ""
+            })).filter(item => item.id);
+            result.railway.projectCount = result.railway.projects.length;
+          }
+        } catch {}
+      }
+    }
+
+    return send(res, 200, result);
   }
 
   const agentConfigMatch = url.pathname.match(/^\/api\/agent-config\/([^/]+)$/);

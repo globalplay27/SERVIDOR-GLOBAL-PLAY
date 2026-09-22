@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#050807">
   <title>NEXUS AI · Portal do Cliente</title>
-  <link rel="stylesheet" href="/client.css?v=9">
+  <link rel="stylesheet" href="/client.css?v=12">
 </head>
 <body>
   <div class="ambient ambient-a"></div><div class="ambient ambient-b"></div>
@@ -135,9 +135,9 @@
         </section>
 
         <section class="wizard-list">
-          <article class="wizard-step" data-step="github"><div class="step-number">1</div><div class="step-body"><strong>Criar ou acessar GitHub</strong><span>Conta onde ficará o código do seu agente. Criar a conta não conecta automaticamente: a autorização será feita na etapa de conexão.</span><div class="step-actions"><a target="_blank" rel="noopener" href="https://github.com/signup">Abrir GitHub</a><button type="button" data-complete="github">Já concluí</button></div></div><span class="step-state">Pendente</span></article>
-          <article class="wizard-step" data-step="railway"><div class="step-number">2</div><div class="step-body"><strong>Criar ou acessar Railway</strong><span>É onde o agente ficará rodando 24 horas. Depois será necessário autorizar o NEXUS AI a ler os dados deste projeto.</span><div class="step-actions"><a target="_blank" rel="noopener" href="https://railway.com/">Abrir Railway</a><button type="button" data-complete="railway">Já concluí</button></div></div><span class="step-state">Pendente</span></article>
-          <article class="wizard-step" data-step="openai"><div class="step-number">3</div><div class="step-body"><strong>Criar ou acessar OpenAI API</strong><span>Conta usada pela inteligência e geração de conteúdo. O painel só mostrará consumo real depois que a chave/credencial adequada for conectada.</span><div class="step-actions"><a target="_blank" rel="noopener" href="https://platform.openai.com/">Abrir OpenAI</a><button type="button" data-complete="openai">Já concluí</button></div></div><span class="step-state">Pendente</span></article>
+          <article class="wizard-step" data-step="github"><div class="step-number">1</div><div class="step-body"><strong>GitHub</strong><span>Crie sua conta e depois conecte ao NEXUS AI. Nunca informe sua senha do GitHub aqui.</span><div class="step-actions"><a target="_blank" rel="noopener" href="https://github.com/signup">Criar conta</a><button type="button" data-connect="github">Conectar GitHub</button></div><small class="provider-line" id="github-connection">Não conectado diretamente</small></div><span class="step-state">Pendente</span></article>
+          <article class="wizard-step" data-step="railway"><div class="step-number">2</div><div class="step-body"><strong>Railway</strong><span>Crie sua conta e autorize o NEXUS AI. A conexão usa a tela oficial de autorização do Railway.</span><div class="step-actions"><a target="_blank" rel="noopener" href="https://railway.com/">Criar / acessar conta</a><button type="button" data-connect="railway">Conectar Railway</button></div><small class="provider-line" id="railway-connection">Não conectado diretamente</small></div><span class="step-state">Pendente</span></article>
+          <article class="wizard-step" data-step="openai"><div class="step-number">3</div><div class="step-body"><strong>OpenAI API</strong><span>Conecte uma chave do projeto. Para custo no dashboard, você pode adicionar também uma chave administrativa com permissão adequada.</span><div class="step-actions"><a target="_blank" rel="noopener" href="https://platform.openai.com/">Abrir OpenAI</a><button type="button" data-connect="openai">Conectar OpenAI</button></div><small class="provider-line" id="openai-connection">Não conectado diretamente</small></div><span class="step-state">Pendente</span></article>
           <article class="wizard-step" data-step="facebook"><div class="step-number">4</div><div class="step-body"><strong>Facebook / Meta</strong><span>Prepare a conta profissional ligada ao Instagram.</span><div class="step-actions"><a target="_blank" rel="noopener" href="https://www.facebook.com/">Abrir Facebook</a><button type="button" data-complete="facebook">Já concluí</button></div></div><span class="step-state">Pendente</span></article>
           <article class="wizard-step" data-step="instagram"><div class="step-number">5</div><div class="step-body"><strong>Instagram profissional</strong><span>Conta que o agente vai atender e publicar.</span><div class="step-actions"><a target="_blank" rel="noopener" href="https://www.instagram.com/">Abrir Instagram</a><button type="button" data-complete="instagram">Já concluí</button></div></div><span class="step-state">Pendente</span></article>
           <article class="wizard-step" data-step="metaApp"><div class="step-number">6</div><div class="step-body"><strong>Aplicativo Meta</strong><span>Crie o aplicativo que autoriza mensagens, comentários e publicação.</span><div class="step-actions"><a target="_blank" rel="noopener" href="https://developers.facebook.com/apps/">Abrir Meta for Developers</a><button type="button" data-complete="metaApp">Já concluí</button></div></div><span class="step-state">Pendente</span></article>
@@ -146,9 +146,29 @@
         </section>
       </div>
 
+      <div id="connection-modal" class="connection-modal" hidden>
+        <div class="connection-dialog">
+          <div class="connection-dialog-head"><div><p class="eyebrow">CONEXÃO SEGURA</p><h2 id="connection-title">Conectar</h2></div><button type="button" id="connection-close">×</button></div>
+          <p id="connection-help" class="muted"></p>
+          <form id="connection-form">
+            <div id="github-fields" class="connection-fields" hidden>
+              <label><span>Token de acesso GitHub</span><input id="github-token" type="password" autocomplete="off" placeholder="github_pat_..."></label>
+              <small>Use um token de acesso do GitHub. Ele será validado e armazenado criptografado.</small>
+            </div>
+            <div id="openai-fields" class="connection-fields" hidden>
+              <label><span>Chave da API do projeto</span><input id="openai-key" type="password" autocomplete="off" placeholder="sk-..."></label>
+              <label><span>Chave administrativa para custos (opcional)</span><input id="openai-admin-key" type="password" autocomplete="off" placeholder="Opcional"></label>
+              <small>A chave administrativa é opcional e só é necessária para os dados de custo que exigem esse nível de acesso.</small>
+            </div>
+            <span id="connection-error" class="connection-error"></span>
+            <button type="submit" class="connection-submit">Validar e conectar</button>
+          </form>
+        </div>
+      </div>
+
       <footer><span>NEXUS AI</span><small>Client Portal · ambiente exclusivo</small></footer>
     </section>
   </main>
-  <script src="/client.js?v=9" defer></script>
+  <script src="/client.js?v=12" defer></script>
 </body>
 </html>
