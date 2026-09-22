@@ -1,0 +1,28 @@
+[
+  {
+    "id": "ragnar-one",
+    "name": "Ragnar One",
+    "niche": "Streaming",
+    "instagram": "@ragnarplay1",
+    "theme": "green-black",
+    "primaryColor": "#22c55e",
+    "secondaryColor": "#050807",
+    "status": "online",
+    "github": "connected",
+    "railway": "connected",
+    "openai": "configured",
+    "meta": "configured",
+    "odin": true,
+    "postTimes": ["09:00", "12:00", "18:00"],
+    "leads": { "total": 0, "hot": 0, "warm": 0, "cold": 0 },
+    "usage": { "openaiPercent": 0, "railwayPercent": 0 },
+    "onboarding": {
+      "github": true,
+      "railway": true,
+      "openai": true,
+      "instagram": true,
+      "facebook": true,
+      "metaApp": true
+    }
+  }
+]
