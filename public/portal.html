@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#050807">
   <title>NEXUS AI · Portal do Cliente</title>
-  <link rel="stylesheet" href="/client.css?v=13">
+  <link rel="stylesheet" href="/client.css?v=16">
 </head>
 <body>
   <div class="ambient ambient-a"></div><div class="ambient ambient-b"></div>
@@ -13,7 +13,7 @@
     <section id="login-view" class="login-card">
       <img class="login-logo" src="/assets/nexus-ai-logo.png?v=3" alt="NEXUS AI">
       <div class="login-copy"><p class="eyebrow">ACESSO SEGURO</p><h1>Portal do Cliente</h1><p class="muted">Controle seu agente, suas postagens e a configuração inicial em um só lugar.</p></div>
-      <form id="login-form">
+      <form id="login-form" action="/portal-login" method="post">
         <label><span>Usuário</span><input name="username" autocomplete="username" required></label>
         <label><span>Senha</span><input name="password" type="password" autocomplete="current-password" required></label>
         <button type="submit">Entrar no portal</button><span id="login-error" role="alert"></span>
@@ -169,6 +169,6 @@
       <footer><span>NEXUS AI</span><small>Client Portal · ambiente exclusivo</small></footer>
     </section>
   </main>
-  <script src="/client.js?v=13" defer></script>
+  <script src="/client.js?v=16" defer></script>
 </body>
 </html>
