@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title">
+  <title id="title">NEXUS AI</title>
+  <defs>
+    <linearGradient id="metal" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f4f7f5"/>
+      <stop offset=".42" stop-color="#6d7872"/>
+      <stop offset=".72" stop-color="#202623"/>
+      <stop offset="1" stop-color="#cdd5d1"/>
+    </linearGradient>
+    <filter id="glow"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <circle cx="128" cy="128" r="108" fill="#090d0b" stroke="url(#metal)" stroke-width="8"/>
+  <path d="M72 181V75l112 106V75" fill="none" stroke="url(#metal)" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M41 93A96 96 0 0 1 91 37M165 35a96 96 0 0 1 53 54M216 166a96 96 0 0 1-49 54" fill="none" stroke="#24e27a" stroke-width="5" stroke-linecap="round" filter="url(#glow)"/>
+  <g fill="#24e27a" stroke="#d6ffe5" stroke-width="3" filter="url(#glow)">
+    <circle cx="42" cy="92" r="10"/><circle cx="164" cy="35" r="10"/><circle cx="216" cy="166" r="10"/>
+  </g>
+</svg>
