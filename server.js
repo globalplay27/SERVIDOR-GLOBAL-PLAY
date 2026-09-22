@@ -10,8 +10,8 @@ const PORT = Number(process.env.PORT || 3000);
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || "admin";
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin";
-const RAGNAR_PORTAL_USERNAME = "ragnar-one";
-const RAGNAR_PORTAL_PASSWORD_HASH = "1cbc2275dd868000ae0fc093c2bcb5aa05e75156a0681e0a7a52dc13e9bd14e3";
+const RAGNAR_PORTAL_USERNAME = "ragnar";
+const RAGNAR_PORTAL_PASSWORD_HASH = "e75a819e574913a55ec601e7865e3545c8111bb6c3de0bb6e066580e185aa537";
 const EMPTY_SEED = [];
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
