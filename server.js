@@ -59,6 +59,38 @@ function send(res, status, body, type = "application/json; charset=utf-8") {
   res.end(raw);
 }
 
+function readFormBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    req.on("data", chunk => chunks.push(chunk));
+    req.on("end", () => {
+      const params = new URLSearchParams(Buffer.concat(chunks).toString("utf8"));
+      resolve(Object.fromEntries(params.entries()));
+    });
+    req.on("error", reject);
+  });
+}
+
+function parseCookies(req) {
+  const result = {};
+  for (const part of String(req.headers.cookie || "").split(";")) {
+    const index = part.indexOf("=");
+    if (index < 0) continue;
+    const key = part.slice(0, index).trim();
+    if (!key) continue;
+    const raw = part.slice(index + 1).trim();
+    try { result[key] = decodeURIComponent(raw); } catch { result[key] = raw; }
+  }
+  return result;
+}
+
+function redirectWithCookie(res, location, cookie = "") {
+  const headers = { location, "cache-control": "no-store", "content-length": "0" };
+  if (cookie) headers["set-cookie"] = cookie;
+  res.writeHead(303, headers);
+  res.end();
+}
+
 function readBody(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -362,11 +394,12 @@ function clientFromCredentials(username, password) {
 }
 
 function tokenClientForRequest(req) {
-  const header = String(req.headers["x-nexus-session"] || "");
-  if (!header) return null;
-  const record = portalSessions.get(header);
+  const cookies = parseCookies(req);
+  const token = String(cookies.nexus_session || req.headers["x-nexus-session"] || "");
+  if (!token) return null;
+  const record = portalSessions.get(token);
   if (!record || record.expiresAt < Date.now()) {
-    if (record) portalSessions.delete(header);
+    if (record) portalSessions.delete(token);
     return null;
   }
   return loadClients().find(client => client.id === record.clientId) || null;
@@ -460,6 +493,21 @@ const server = http.createServer(async (req, res) => {
     });
   }
 
+  if (url.pathname === "/portal-login" && req.method === "POST") {
+    try {
+      const body = await readFormBody(req);
+      const client = clientFromCredentials(String(body.username || "").trim(), String(body.password || ""));
+      if (!client) return redirectWithCookie(res, "/portal.html?v=16&error=1");
+
+      const token = crypto.randomBytes(32).toString("base64url");
+      portalSessions.set(token, { clientId: client.id, expiresAt: Date.now() + 12 * 60 * 60 * 1000 });
+      const cookie = "nexus_session=" + encodeURIComponent(token) + "; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=43200";
+      return redirectWithCookie(res, "/portal.html?v=16&auth=1", cookie);
+    } catch {
+      return redirectWithCookie(res, "/portal.html?v=16&error=1");
+    }
+  }
+
   if (url.pathname === "/api/portal/diagnostic" && req.method === "GET") {
     const username = process.env.CLIENT_PORTAL_USERNAME || RAGNAR_PORTAL_USERNAME;
     const password = process.env.CLIENT_PORTAL_PASSWORD || "";
@@ -482,8 +530,9 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (url.pathname === "/api/portal/logout" && req.method === "POST") {
-    const token = String(req.headers["x-nexus-session"] || "");
+    const token = String(parseCookies(req).nexus_session || req.headers["x-nexus-session"] || "");
     if (token) portalSessions.delete(token);
+    res.setHeader("set-cookie", "nexus_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0");
     return send(res, 200, { ok: true });
   }
 
