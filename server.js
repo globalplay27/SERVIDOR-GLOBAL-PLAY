@@ -952,6 +952,27 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // Public entry always belongs to the client portal.
+  if (url.pathname === "/" && req.method === "GET") {
+    res.writeHead(302, {
+      location: "/portal.html?v=21",
+      "cache-control": "no-store",
+      "content-length": "0"
+    });
+    return res.end();
+  }
+
+  // Master dashboard is never public. Both the friendly route and the
+  // underlying index.html require the administrator credentials.
+  if ((url.pathname === "/master" || url.pathname === "/master/" || url.pathname === "/index.html") && req.method === "GET") {
+    if (!authorized(req)) {
+      res.setHeader("WWW-Authenticate", 'Basic realm="NEXUS AI Master"');
+      return send(res, 401, "Acesso administrativo", "text/plain; charset=utf-8");
+    }
+    const masterFile = path.join(__dirname, "public", "index.html");
+    return send(res, 200, fs.readFileSync(masterFile), "text/html; charset=utf-8");
+  }
+
   if (url.pathname.startsWith("/api/") && !authorized(req)) {
     res.setHeader("WWW-Authenticate", 'Basic realm="NEXUS AI Agent Central"');
     return send(res, 401, { error: "unauthorized" });
@@ -1029,7 +1050,7 @@ const server = http.createServer(async (req, res) => {
     });
   }
 
-  let requested = url.pathname === "/" ? "/index.html" : url.pathname;
+  let requested = url.pathname;
   requested = path.normalize(requested).replace(/^(\.\.(\/|\\|$))+/, "");
   const publicRoot = path.join(__dirname, "public");
   const target = path.join(publicRoot, requested);
