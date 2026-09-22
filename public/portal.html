@@ -27,10 +27,20 @@
         <div class="top-actions"><span id="system-status" class="online"><i></i> Sistema online</span><button id="logout" class="logout">Sair</button></div>
       </header>
 
+      <section class="setup-hero-card" data-open-setup>
+        <div class="setup-hero-icon">01</div>
+        <div class="setup-hero-copy">
+          <p class="eyebrow">COMECE POR AQUI</p>
+          <strong>Configuração inicial do seu agente</strong>
+          <span>Conecte GitHub, Railway, OpenAI e Meta. Depois personalize como o agente vai postar.</span>
+        </div>
+        <button type="button">Abrir configuração</button>
+      </section>
+
       <nav class="client-nav">
-        <button type="button" class="active" data-view="overview">Visão geral</button>
+        <button type="button" class="active setup-nav-main" data-view="setup">Configuração inicial</button>
+        <button type="button" data-view="overview">Visão geral</button>
         <button type="button" data-view="posting">Controle de postagens</button>
-        <button type="button" data-view="setup">Configuração inicial</button>
       </nav>
 
       <div id="view-overview" class="client-view">
@@ -125,9 +135,9 @@
         </section>
 
         <section class="wizard-list">
-          <article class="wizard-step" data-step="github"><div class="step-number">1</div><div class="step-body"><strong>Criar ou acessar GitHub</strong><span>Conta onde ficará o código do seu agente.</span><div class="step-actions"><a target="_blank" rel="noopener" href="https://github.com/signup">Abrir GitHub</a><button type="button" data-complete="github">Já concluí</button></div></div><span class="step-state">Pendente</span></article>
-          <article class="wizard-step" data-step="railway"><div class="step-number">2</div><div class="step-body"><strong>Criar ou acessar Railway</strong><span>É onde o agente ficará rodando 24 horas.</span><div class="step-actions"><a target="_blank" rel="noopener" href="https://railway.com/">Abrir Railway</a><button type="button" data-complete="railway">Já concluí</button></div></div><span class="step-state">Pendente</span></article>
-          <article class="wizard-step" data-step="openai"><div class="step-number">3</div><div class="step-body"><strong>Criar ou acessar OpenAI API</strong><span>Conta usada pela inteligência e geração de conteúdo.</span><div class="step-actions"><a target="_blank" rel="noopener" href="https://platform.openai.com/">Abrir OpenAI</a><button type="button" data-complete="openai">Já concluí</button></div></div><span class="step-state">Pendente</span></article>
+          <article class="wizard-step" data-step="github"><div class="step-number">1</div><div class="step-body"><strong>Criar ou acessar GitHub</strong><span>Conta onde ficará o código do seu agente. Criar a conta não conecta automaticamente: a autorização será feita na etapa de conexão.</span><div class="step-actions"><a target="_blank" rel="noopener" href="https://github.com/signup">Abrir GitHub</a><button type="button" data-complete="github">Já concluí</button></div></div><span class="step-state">Pendente</span></article>
+          <article class="wizard-step" data-step="railway"><div class="step-number">2</div><div class="step-body"><strong>Criar ou acessar Railway</strong><span>É onde o agente ficará rodando 24 horas. Depois será necessário autorizar o NEXUS AI a ler os dados deste projeto.</span><div class="step-actions"><a target="_blank" rel="noopener" href="https://railway.com/">Abrir Railway</a><button type="button" data-complete="railway">Já concluí</button></div></div><span class="step-state">Pendente</span></article>
+          <article class="wizard-step" data-step="openai"><div class="step-number">3</div><div class="step-body"><strong>Criar ou acessar OpenAI API</strong><span>Conta usada pela inteligência e geração de conteúdo. O painel só mostrará consumo real depois que a chave/credencial adequada for conectada.</span><div class="step-actions"><a target="_blank" rel="noopener" href="https://platform.openai.com/">Abrir OpenAI</a><button type="button" data-complete="openai">Já concluí</button></div></div><span class="step-state">Pendente</span></article>
           <article class="wizard-step" data-step="facebook"><div class="step-number">4</div><div class="step-body"><strong>Facebook / Meta</strong><span>Prepare a conta profissional ligada ao Instagram.</span><div class="step-actions"><a target="_blank" rel="noopener" href="https://www.facebook.com/">Abrir Facebook</a><button type="button" data-complete="facebook">Já concluí</button></div></div><span class="step-state">Pendente</span></article>
           <article class="wizard-step" data-step="instagram"><div class="step-number">5</div><div class="step-body"><strong>Instagram profissional</strong><span>Conta que o agente vai atender e publicar.</span><div class="step-actions"><a target="_blank" rel="noopener" href="https://www.instagram.com/">Abrir Instagram</a><button type="button" data-complete="instagram">Já concluí</button></div></div><span class="step-state">Pendente</span></article>
           <article class="wizard-step" data-step="metaApp"><div class="step-number">6</div><div class="step-body"><strong>Aplicativo Meta</strong><span>Crie o aplicativo que autoriza mensagens, comentários e publicação.</span><div class="step-actions"><a target="_blank" rel="noopener" href="https://developers.facebook.com/apps/">Abrir Meta for Developers</a><button type="button" data-complete="metaApp">Já concluí</button></div></div><span class="step-state">Pendente</span></article>
