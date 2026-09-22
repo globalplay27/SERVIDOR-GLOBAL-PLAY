@@ -122,13 +122,13 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === "/health") {
     return send(res, 200, {
       ok: true,
-      service: "globalplay-agent-central",
+      service: "nexus-ai-agent-central",
       version: "1.0.0"
     });
   }
 
   if (url.pathname.startsWith("/api/") && !authorized(req)) {
-    res.setHeader("WWW-Authenticate", 'Basic realm="Global Play Agent Central"');
+    res.setHeader("WWW-Authenticate", 'Basic realm="NEXUS AI Agent Central"');
     return send(res, 401, { error: "unauthorized" });
   }
 
@@ -221,5 +221,5 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`Global Play Agent Central listening on ${PORT}`);
+  console.log(`NEXUS AI Agent Central listening on ${PORT}`);
 });
