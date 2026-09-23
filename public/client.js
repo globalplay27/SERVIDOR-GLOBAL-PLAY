@@ -300,6 +300,34 @@ $$("[data-preset]").forEach(b=>b.addEventListener("click",()=>{const p=presets[b
 
 $("#posting-form").addEventListener("submit",async e=>{e.preventDefault();$("#save-status").textContent="Salvando…";$("#save-status").className="save-status";const payload={niche:$("#cfg-niche").value,primaryColor:$("#cfg-primary").value,secondaryColor:$("#cfg-secondary").value,postTimes:[$("#time-1").value,$("#time-2").value,$("#time-3").value].filter(Boolean),postingProfile:{contentStrategy:$("#cfg-strategy").value,targetAudience:$("#cfg-audience").value,visualStyle:$("#cfg-style").value,contentFocus:$("#cfg-focus").value,morningTheme:$("#theme-1").value,afternoonTheme:$("#theme-2").value,eveningTheme:$("#theme-3").value,tone:$("#cfg-tone").value,cta:$("#cfg-cta").value,hashtags:$("#cfg-hashtags").value,avoidTopics:$("#cfg-avoid").value}};try{const r=await fetch("/api/portal/settings",{method:"PATCH",headers:{"x-nexus-session":sessionAuth,"content-type":"application/json"},body:JSON.stringify(payload)});if(!r.ok)throw new Error("Não foi possível salvar.");const c=await r.json();renderClient(c);document.documentElement.style.setProperty("--accent",c.primaryColor||"#22c55e");$("#save-status").textContent="Salvo. O agente usará estas regras nas próximas postagens.";$("#save-status").className="save-status ok";await patchOnboarding({creativeProfile:true});}catch(err){$("#save-status").textContent=err.message;$("#save-status").className="save-status error";}});
 
+const publishTestButton=$("#publish-test-now");
+if(publishTestButton)publishTestButton.addEventListener("click",async()=>{
+  if(!confirm("Publicar agora esta postagem de teste no Instagram conectado?"))return;
+  publishTestButton.disabled=true;
+  const originalText=publishTestButton.textContent;
+  publishTestButton.textContent="Publicando…";
+  $("#save-status").textContent="Enviando imagem ao Instagram…";
+  $("#save-status").className="save-status";
+  const payload={
+    imageUrl:"https://cdn.openart.ai/openart-uploads/production/attachment-transfers/8a520eace102b1b6999ab378b603cd5f68ac27265abbb0e9dca7e4641763150f.jpg",
+    caption:'🚀 Sua empresa precisa aparecer mais?\n\nCriamos imagens profissionais, vídeos promocionais, automação para Instagram e sites modernos para transformar sua presença digital em mais autoridade, oportunidades e vendas.\n\n✅ Imagens profissionais\n✅ Vídeos promocionais\n✅ Automação de Instagram\n✅ Sites profissionais\n\nQuer levar sua empresa para outro nível?\nComente “QUERO” ou chame no direct.\n\n#MarketingDigital #AutomacaoInstagram #CriacaoDeSites #DesignProfissional #VideosPromocionais #ConteudoDigital #PresencaDigital #VendasOnline #Empreendedorismo #SocialMedia'
+  };
+  try{
+    const r=await fetch("/api/portal/instagram/publish-test",{method:"POST",headers:{"x-nexus-session":sessionAuth,"content-type":"application/json"},body:JSON.stringify(payload)});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(d.message||d.error||"Falha ao publicar.");
+    $("#save-status").textContent=d.permalink?"Publicado com sucesso. Abrindo Instagram…":"Publicado com sucesso no Instagram.";
+    $("#save-status").className="save-status ok";
+    if(d.permalink)window.open(d.permalink,"_blank","noopener");
+  }catch(err){
+    $("#save-status").textContent=err.message;
+    $("#save-status").className="save-status error";
+  }finally{
+    publishTestButton.disabled=false;
+    publishTestButton.textContent=originalText;
+  }
+});
+
 $("#logout").addEventListener("click",async()=>{
   const token=sessionAuth;
   sessionAuth=null;currentClient=null;
