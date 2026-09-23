@@ -3,9 +3,12 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const execFileAsync = promisify(execFile);
 const PORT = Number(process.env.PORT || 3000);
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || "admin";
@@ -275,6 +278,7 @@ function portalVideoJobView(job) {
   return {
     id: job.id,
     clientId: job.clientId,
+    clientName: job.clientName || job.clientId,
     filename: job.filename,
     sizeBytes: Number(job.sizeBytes || 0),
     goal: job.goal || "viral",
@@ -283,17 +287,339 @@ function portalVideoJobView(job) {
     status: job.status || "queued",
     progress: Number(job.progress || 0),
     message: job.message || "",
+    duration: Number(job.duration || 0),
+    transcriptAvailable: Boolean(job.transcriptText),
+    analysisCostUsd: Number(job.analysisCostUsd || 0),
     clips: Array.isArray(job.clips) ? job.clips.map(clip => ({
       id: clip.id,
       title: clip.title || "",
+      reason: clip.reason || "",
+      transcript: clip.transcript || "",
+      start: Number(clip.start || 0),
+      end: Number(clip.end || 0),
       duration: Number(clip.duration || 0),
       status: clip.status || "draft",
+      approvalStatus: clip.approvalStatus || "pending",
+      publishStatus: clip.publishStatus || "",
+      scheduledFor: clip.scheduledFor || null,
+      publishedAt: clip.publishedAt || null,
+      mediaId: clip.mediaId || "",
+      error: clip.error || "",
+      caption: clip.caption || "",
       previewUrl: clip.previewUrl || ""
     })) : [],
     createdAt: job.createdAt,
     updatedAt: job.updatedAt || job.createdAt
   };
 }
+
+const videoProcessing = new Set();
+
+function updateVideoJob(jobId, updater) {
+  const jobs = loadVideoJobs();
+  const job = jobs.find(item => item.id === jobId);
+  if (!job) return null;
+  if (typeof updater === "function") updater(job);
+  else if (updater && typeof updater === "object") Object.assign(job, updater);
+  job.updatedAt = new Date().toISOString();
+  saveVideoJobs(jobs);
+  return job;
+}
+
+async function execMedia(command, args, options = {}) {
+  return execFileAsync(command, args, {
+    timeout: options.timeout || 10 * 60 * 1000,
+    maxBuffer: options.maxBuffer || 8 * 1024 * 1024
+  });
+}
+
+async function probeVideoDuration(file) {
+  const { stdout } = await execMedia("ffprobe", [
+    "-v", "error",
+    "-show_entries", "format=duration",
+    "-of", "default=noprint_wrappers=1:nokey=1",
+    file
+  ], { timeout: 30000 });
+  const duration = Number(String(stdout || "").trim());
+  if (!Number.isFinite(duration) || duration <= 0) throw new Error("video_duration_invalid");
+  return duration;
+}
+
+function responseOutputText(payload) {
+  if (typeof payload?.output_text === "string") return payload.output_text;
+  const parts = [];
+  for (const item of payload?.output || []) {
+    for (const content of item?.content || []) {
+      if (typeof content?.text === "string") parts.push(content.text);
+    }
+  }
+  return parts.join("\n").trim();
+}
+
+async function transcribeVideoAudio(audioPath, durationSeconds) {
+  const apiKey = masterOpenAIProjectKey();
+  if (!apiKey) throw new Error("openai_not_configured");
+  const bytes = fs.readFileSync(audioPath);
+  if (bytes.length > 25 * 1024 * 1024) throw new Error("audio_too_large_for_transcription");
+  const form = new FormData();
+  form.append("file", new Blob([bytes], { type: "audio/mpeg" }), "audio.mp3");
+  form.append("model", "whisper-1");
+  form.append("response_format", "verbose_json");
+  form.append("timestamp_granularities[]", "segment");
+  form.append("language", "pt");
+  const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+    method: "POST",
+    headers: { authorization: "Bearer " + apiKey },
+    body: form,
+    signal: AbortSignal.timeout(10 * 60 * 1000)
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error("transcription_failed_" + response.status);
+  const segments = Array.isArray(payload.segments) ? payload.segments.map(item => ({
+    start: Number(item.start || 0),
+    end: Number(item.end || 0),
+    text: String(item.text || "").trim()
+  })).filter(item => item.text && item.end > item.start) : [];
+  return {
+    text: String(payload.text || "").trim(),
+    segments,
+    costUsd: Math.max(0, Number(durationSeconds || payload.duration || 0)) / 60 * 0.006
+  };
+}
+
+function fallbackClipSelections(duration, count, targetDuration) {
+  const usableDuration = Math.max(1, Number(duration || 0));
+  const clipLength = Math.max(3, Math.min(Number(targetDuration || 30), usableDuration));
+  const total = Math.max(1, Math.min(Number(count || 3), Math.floor(usableDuration / Math.max(clipLength * 0.6, 3)) || 1));
+  if (total === 1) return [{ start: 0, end: Math.min(usableDuration, clipLength), title: "Melhor trecho", reason: "Corte técnico automático" }];
+  const maxStart = Math.max(0, usableDuration - clipLength);
+  return Array.from({ length: total }, (_, index) => {
+    const start = maxStart * (index / Math.max(1, total - 1));
+    return {
+      start,
+      end: Math.min(usableDuration, start + clipLength),
+      title: "Corte " + (index + 1),
+      reason: "Corte técnico automático"
+    };
+  });
+}
+
+function transcriptForRange(segments, start, end) {
+  return segments
+    .filter(item => item.end >= start && item.start <= end)
+    .map(item => item.text)
+    .join(" ")
+    .trim()
+    .slice(0, 1200);
+}
+
+async function selectSmartClips(transcription, duration, count, targetDuration, goal) {
+  const segments = Array.isArray(transcription?.segments) ? transcription.segments : [];
+  if (!segments.length) return { clips: fallbackClipSelections(duration, count, targetDuration), costUsd: 0, model: "fallback" };
+
+  const compact = segments.map(item => "[" + item.start.toFixed(1) + "-" + item.end.toFixed(1) + "] " + item.text).join("\n").slice(0, 120000);
+  const prompt = `Você é o editor de vídeos curtos do NEXUS AI.
+Escolha ${count} trechos independentes com maior potencial para ${goal || "engajamento"}.
+Cada corte deve ter aproximadamente ${targetDuration} segundos, com começo compreensível, gancho rápido e final que não corte uma frase importante.
+Não invente falas e não escolha trechos sobrepostos.
+Responda SOMENTE JSON válido neste formato:
+{"clips":[{"start":12.3,"end":42.0,"title":"Título curto","reason":"Por que este trecho funciona"}]}
+
+Duração total: ${duration.toFixed(1)} segundos.
+Transcrição com timestamps:
+${compact}`;
+
+  const apiKey = masterOpenAIProjectKey();
+  if (!apiKey) return { clips: fallbackClipSelections(duration, count, targetDuration), costUsd: 0, model: "fallback" };
+  const response = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      authorization: "Bearer " + apiKey,
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({
+      model: "gpt-5.6-luna",
+      input: prompt,
+      max_output_tokens: 1600
+    }),
+    signal: AbortSignal.timeout(120000)
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error("clip_selection_failed_" + response.status);
+  const output = responseOutputText(payload);
+  const startJson = output.indexOf("{");
+  const endJson = output.lastIndexOf("}");
+  if (startJson < 0 || endJson <= startJson) throw new Error("clip_selection_invalid_json");
+  const parsed = JSON.parse(output.slice(startJson, endJson + 1));
+  const selected = Array.isArray(parsed.clips) ? parsed.clips : [];
+  const clips = selected.map((item, index) => {
+    let start = Math.max(0, Number(item.start || 0));
+    let end = Math.min(duration, Number(item.end || start + targetDuration));
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null;
+    if (end - start > 95) end = start + 95;
+    if (end - start < 3) end = Math.min(duration, start + Math.max(3, targetDuration));
+    return {
+      start,
+      end,
+      title: String(item.title || ("Corte " + (index + 1))).slice(0, 100),
+      reason: String(item.reason || "").slice(0, 300)
+    };
+  }).filter(Boolean).slice(0, Math.max(1, count));
+  const usage = payload.usage || {};
+  const inputTokens = Number(usage.input_tokens || 0);
+  const outputTokens = Number(usage.output_tokens || 0);
+  const costUsd = Math.max(0, inputTokens) * 0.20 / 1_000_000 + Math.max(0, outputTokens) * 1.20 / 1_000_000;
+  return {
+    clips: clips.length ? clips : fallbackClipSelections(duration, count, targetDuration),
+    costUsd,
+    model: "gpt-5.6-luna"
+  };
+}
+
+async function renderVideoClip(inputPath, outputPath, start, end) {
+  const duration = Math.max(3, Number(end) - Number(start));
+  await execMedia("ffmpeg", [
+    "-y",
+    "-ss", Number(start).toFixed(3),
+    "-i", inputPath,
+    "-t", duration.toFixed(3),
+    "-vf", "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black",
+    "-r", "30",
+    "-c:v", "libx264",
+    "-preset", "veryfast",
+    "-crf", "23",
+    "-pix_fmt", "yuv420p",
+    "-c:a", "aac",
+    "-b:a", "128k",
+    "-ar", "48000",
+    "-movflags", "+faststart",
+    outputPath
+  ]);
+}
+
+async function processVideoJob(jobId) {
+  if (videoProcessing.has(jobId)) return;
+  videoProcessing.add(jobId);
+  let audioPath = "";
+  try {
+    const initial = loadVideoJobs().find(item => item.id === jobId);
+    if (!initial || !initial.storedPath || !fs.existsSync(initial.storedPath)) throw new Error("video_file_missing");
+
+    updateVideoJob(jobId, { status: "transcribing", progress: 12, message: "Preparando áudio e transcrição…" });
+    const duration = await probeVideoDuration(initial.storedPath);
+    updateVideoJob(jobId, { duration });
+
+    const workDir = path.join(path.dirname(initial.storedPath), initial.id + "-work");
+    fs.mkdirSync(workDir, { recursive: true });
+    audioPath = path.join(workDir, "audio.mp3");
+
+    let transcription = { text: "", segments: [], costUsd: 0 };
+    try {
+      await execMedia("ffmpeg", ["-y", "-i", initial.storedPath, "-vn", "-ac", "1", "-ar", "16000", "-b:a", "24k", audioPath]);
+      updateVideoJob(jobId, { status: "transcribing", progress: 28, message: "Transcrevendo o áudio…" });
+      transcription = await transcribeVideoAudio(audioPath, duration);
+    } catch (error) {
+      console.warn("Video transcription fallback " + jobId + ": " + String(error?.message || error));
+    }
+
+    updateVideoJob(jobId, job => {
+      job.status = "selecting";
+      job.progress = 48;
+      job.message = transcription.segments.length ? "IA escolhendo os melhores momentos…" : "Selecionando cortes técnicos…";
+      job.transcriptText = transcription.text || "";
+      job.transcriptSegments = transcription.segments || [];
+      job.analysisCostUsd = Number(job.analysisCostUsd || 0) + Number(transcription.costUsd || 0);
+    });
+
+    let selection;
+    try {
+      selection = await selectSmartClips(
+        transcription,
+        duration,
+        Number(initial.requestedClips || 3),
+        Number(initial.clipDuration || 30),
+        initial.goal || "viral"
+      );
+    } catch (error) {
+      console.warn("Video smart selection fallback " + jobId + ": " + String(error?.message || error));
+      selection = { clips: fallbackClipSelections(duration, initial.requestedClips, initial.clipDuration), costUsd: 0, model: "fallback" };
+    }
+
+    updateVideoJob(jobId, job => {
+      job.status = "cutting";
+      job.progress = 58;
+      job.message = "Criando os cortes verticais para revisão…";
+      job.selectionModel = selection.model || "fallback";
+      job.analysisCostUsd = Number(job.analysisCostUsd || 0) + Number(selection.costUsd || 0);
+      job.clips = [];
+    });
+
+    const clipDir = path.join(path.dirname(initial.storedPath), initial.id + "-clips");
+    fs.mkdirSync(clipDir, { recursive: true });
+    const clips = [];
+    for (let index = 0; index < selection.clips.length; index += 1) {
+      const selected = selection.clips[index];
+      const clipId = "clip_" + crypto.randomBytes(7).toString("hex");
+      const publicName = initial.id + "-" + clipId + "-" + crypto.randomBytes(6).toString("hex") + ".mp4";
+      const outputPath = path.join(clipDir, publicName);
+      await renderVideoClip(initial.storedPath, outputPath, selected.start, selected.end);
+      const transcript = transcriptForRange(transcription.segments, selected.start, selected.end);
+      clips.push({
+        id: clipId,
+        publicName,
+        storedPath: outputPath,
+        title: selected.title || "Corte " + (index + 1),
+        reason: selected.reason || "",
+        transcript,
+        start: Number(selected.start),
+        end: Number(selected.end),
+        duration: Number(selected.end) - Number(selected.start),
+        status: "ready",
+        approvalStatus: "pending",
+        publishStatus: "",
+        scheduledFor: null,
+        caption: selected.title || "",
+        previewUrl: "/video-media/" + encodeURIComponent(publicName),
+        createdAt: new Date().toISOString()
+      });
+      updateVideoJob(jobId, {
+        progress: 58 + Math.round((index + 1) / Math.max(1, selection.clips.length) * 38),
+        message: "Criando corte " + (index + 1) + " de " + selection.clips.length + "…"
+      });
+    }
+
+    updateVideoJob(jobId, job => {
+      job.status = "ready";
+      job.progress = 100;
+      job.message = "Cortes prontos para assistir, aprovar ou rejeitar. Nada foi colocado na agenda.";
+      job.clips = clips;
+      job.completedAt = new Date().toISOString();
+    });
+  } catch (error) {
+    console.error("Video processing failed", jobId, error);
+    updateVideoJob(jobId, {
+      status: "failed",
+      progress: 100,
+      message: "Falha ao processar o vídeo.",
+      error: String(error?.message || error).slice(0, 900)
+    });
+  } finally {
+    if (audioPath) {
+      try { fs.unlinkSync(audioPath); } catch {}
+    }
+    videoProcessing.delete(jobId);
+  }
+}
+
+function startPendingVideoJobs() {
+  const jobs = loadVideoJobs();
+  for (const job of jobs) {
+    if (["queued","uploaded","transcribing","selecting","cutting"].includes(String(job.status || ""))) {
+      setTimeout(() => processVideoJob(job.id).catch(() => {}), 1200);
+    }
+  }
+}
+
 
 function cleanPostStatus(value) {
   const allowed = new Set(["scheduled","generating","ready","publishing","published","failed","skipped"]);
