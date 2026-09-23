@@ -2,7 +2,7 @@ const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 let sessionAuth=null,currentClient=null;
 
 function nextPostTime(times=[]){if(!Array.isArray(times)||!times.length)return"—";const parts=new Intl.DateTimeFormat("pt-BR",{timeZone:"America/Sao_Paulo",hour:"2-digit",minute:"2-digit",hour12:false}).formatToParts(new Date());const now=Number(parts.find(p=>p.type==="hour")?.value||0)*60+Number(parts.find(p=>p.type==="minute")?.value||0);const sorted=times.map(v=>{const[h,m]=String(v).split(":").map(Number);return{v,m:h*60+m}}).filter(x=>Number.isFinite(x.m)).sort((a,b)=>a.m-b.m);return sorted.find(x=>x.m>now)?.v||sorted[0]?.v||"—";}
-function showView(name){$$("[data-view]").forEach(b=>b.classList.toggle("active",b.dataset.view===name));["overview","posts","leads","videos","posting","support","setup"].forEach(v=>{const el=$("#view-"+v);if(el)el.hidden=v!==name;});if(name==="support")loadSupportTickets();if(name==="posts")loadClientPosts();if(name==="leads")loadClientLeads();if(name==="videos"){ensureBulkVideoScheduler();loadVideoJobs();}}
+function showView(name){$("[data-view]").forEach(b=>b.classList.toggle("active",b.dataset.view===name));["overview","posts","leads","videos","trailers","posting","support","setup"].forEach(v=>{const el=$("#view-"+v);if(el)el.hidden=v!==name;});if(name==="support")loadSupportTickets();if(name==="posts")loadClientPosts();if(name==="leads")loadClientLeads();if(name==="videos"){ensureBulkVideoScheduler();loadVideoJobs();}if(name==="overview")loadAgentTeam();}
 function onboardingKeys(){return["github","railway","openai","facebook","instagram","metaApp","creativeProfile","supportRequested"];}
 function setupPercent(){const o=currentClient?.onboarding||{};const keys=onboardingKeys();return Math.round(keys.filter(k=>o[k]).length/keys.length*100);}
 function renderOnboarding(){
@@ -26,6 +26,30 @@ function renderConnections(connections={}){
       el.textContent="Não conectado diretamente";
       el.className="provider-line";
     }
+  }
+}
+
+async function loadAgentTeam(){
+  const root=$("#client-agent-team");
+  if(!root||!currentClient)return;
+  try{
+    const r=await fetch("/api/portal/agent-core",{credentials:"same-origin",headers:sessionAuth?{"x-nexus-session":sessionAuth}:{}});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(d.error||"agent_core_unavailable");
+    const modules=Array.isArray(d.modules)?d.modules:[];
+    const states=d.state?.modules||{};
+    root.innerHTML=modules.map(module=>{
+      const state=states[module.id]||{};
+      const status=String(state.status||"idle");
+      const label=status==="success"?"ATIVO":status==="warning"?"ATENÇÃO":status==="failed"?"FALHA":status==="blocked"?"BLOQUEADO":"AGUARDANDO";
+      const skills=(module.skills||[]).join(" · ");
+      return '<article class="client-agent-worker '+escapeSupport(status)+'">'
+        +'<div><strong>'+escapeSupport(module.name||module.id)+'</strong><span>'+escapeSupport(skills||"operação NEXUS")+'</span></div>'
+        +'<b>'+label+'</b><small>'+escapeSupport(state.message||"Pronto para o próximo ciclo.")+'</small>'
+        +'</article>';
+    }).join("")||'<div class="post-client-empty"><strong>Equipe pronta</strong><span>Nenhuma execução registrada ainda.</span></div>';
+  }catch{
+    root.innerHTML='<div class="post-client-empty"><strong>Equipe indisponível</strong><span>Não foi possível sincronizar os agentes agora.</span></div>';
   }
 }
 
@@ -954,7 +978,9 @@ document.addEventListener("click",event=>{
 });
 $$("[data-view]").forEach(b=>b.addEventListener("click",()=>showView(b.dataset.view)));
 const refreshClientPosts=$("#refresh-client-posts");if(refreshClientPosts)refreshClientPosts.addEventListener("click",loadClientPosts);
-const refreshClientLeads=$("#refresh-client-leads");if(refreshClientLeads)refreshClientLeads.addEventListener("click",loadClientLeads);$$("[data-open-setup]").forEach(b=>b.addEventListener("click",()=>showView("setup")));$$("[data-open-posting]").forEach(b=>b.addEventListener("click",()=>showView("posting")));
+const refreshClientLeads=$("#refresh-client-leads");if(refreshClientLeads)refreshClientLeads.addEventListener("click",loadClientLeads);
+const refreshAgentTeam=$("#refresh-agent-team");if(refreshAgentTeam)refreshAgentTeam.addEventListener("click",loadAgentTeam);
+const trailerSearchForm=$("#trailer-search-form");if(trailerSearchForm)trailerSearchForm.addEventListener("submit",searchTrailers);$$("[data-open-setup]").forEach(b=>b.addEventListener("click",()=>showView("setup")));$$("[data-open-posting]").forEach(b=>b.addEventListener("click",()=>showView("posting")));
 $$("[data-profile-tab]").forEach(button=>button.addEventListener("click",()=>{
   $$("[data-profile-tab]").forEach(item=>item.classList.toggle("active",item===button));
   $$("[data-profile-panel]").forEach(panel=>panel.classList.toggle("active",panel.dataset.profilePanel===button.dataset.profileTab));
@@ -1025,6 +1051,45 @@ if(supportForm)supportForm.addEventListener("submit",async event=>{
     if(status){status.textContent="Não foi possível abrir o chamado.";status.className="save-status error";}
   }finally{button.disabled=false;}
 });
+
+async function searchTrailers(event){
+  event?.preventDefault?.();
+  const query=$("#trailer-query")?.value?.trim()||"";
+  const type=$("#trailer-type")?.value||"movie";
+  const status=$("#trailer-search-status"),root=$("#trailer-results");
+  if(!query){if(status)status.textContent="Digite o nome do filme ou série.";return;}
+  if(status){status.textContent="Pesquisando…";status.className="save-status";}
+  if(root)root.innerHTML='<div class="post-client-empty"><strong>Pesquisando</strong><span>Localizando a obra e o trailer oficial…</span></div>';
+  try{
+    const r=await fetch("/api/portal/trailers/search?q="+encodeURIComponent(query)+"&type="+encodeURIComponent(type),{credentials:"same-origin",headers:sessionAuth?{"x-nexus-session":sessionAuth}:{}});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(d.message||d.error||"Falha na pesquisa.");
+    const rows=Array.isArray(d.results)?d.results:[];
+    if(status){
+      status.textContent=d.configured?"Resultados encontrados.":"Busca de catálogo avançada ainda precisa do TMDB_API_TOKEN; abrindo busca oficial no YouTube continua disponível.";
+      status.className=d.configured?"save-status ok":"save-status";
+    }
+    if(!rows.length){
+      const fallback=d.youtubeSearchUrl||("https://www.youtube.com/results?search_query="+encodeURIComponent(query+" trailer oficial"));
+      root.innerHTML='<div class="post-client-empty"><strong>Nenhum trailer confirmado automaticamente</strong><span>Você ainda pode abrir a busca oficial no YouTube.</span><a class="trailer-open" target="_blank" rel="noopener" href="'+escapeSupport(fallback)+'">Buscar no YouTube</a></div>';
+      return;
+    }
+    root.innerHTML=rows.map(item=>{
+      const link=item.trailerUrl||item.youtubeSearchUrl||"#";
+      const badge=item.trailerUrl?(item.official?"TRAILER OFICIAL":"TRAILER ENCONTRADO"):"BUSCAR NO YOUTUBE";
+      return '<article class="trailer-card">'
+        +(item.posterUrl?'<img src="'+escapeSupport(item.posterUrl)+'" alt="Capa de '+escapeSupport(item.title)+'">':'<div class="trailer-poster-empty">NEXUS</div>')
+        +'<div class="trailer-card-copy"><span>'+escapeSupport(item.type==="series"?"SÉRIE":"FILME")+' · '+escapeSupport(item.year||"—")+'</span>'
+        +'<strong>'+escapeSupport(item.title||"")+'</strong>'
+        +'<p>'+escapeSupport(item.overview||"Sinopse não disponível.")+'</p>'
+        +'<a class="trailer-open" target="_blank" rel="noopener" href="'+escapeSupport(link)+'">'+badge+'</a></div>'
+        +'</article>';
+    }).join("");
+  }catch(error){
+    if(status){status.textContent=error.message;status.className="save-status error";}
+    if(root)root.innerHTML='<div class="post-client-empty"><strong>Não foi possível pesquisar</strong><span>'+escapeSupport(error.message)+'</span></div>';
+  }
+}
 
 const videoFileInput=$("#video-file");
 if(videoFileInput)videoFileInput.addEventListener("change",()=>{
@@ -1192,6 +1257,7 @@ async function resumeCookieSession(){
     loadClientPosts();
     loadClientLeads();
     loadVideoJobs();
+    loadAgentTeam();
   }catch{}
 }
 resumeCookieSession();
