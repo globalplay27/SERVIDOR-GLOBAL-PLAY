@@ -16,6 +16,16 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin";
 const RAGNAR_PORTAL_USERNAME = "ragnar-one";
 const RAGNAR_PORTAL_PASSWORD_HASH = "1cbc2275dd868000ae0fc093c2bcb5aa05e75156a0681e0a7a52dc13e9bd14e3";
 const EMPTY_SEED = [];
+const NICHE_CATALOG = JSON.parse(fs.readFileSync(path.join(__dirname, "niches.json"), "utf8"));
+function normalizeNiche(value) {
+  const text = String(value || "").trim();
+  if (/^(streaming|iptv|streaming\s*\/\s*iptv)$/i.test(text)) return "Streaming / IPTV";
+  return NICHE_CATALOG.find(item => item.toLocaleLowerCase("pt-BR") === text.toLocaleLowerCase("pt-BR")) || null;
+}
+function videoEnabled(client) {
+  return typeof client.modules?.video === "boolean"
+    ? client.modules.video : normalizeNiche(client.niche) === "Streaming / IPTV";
+}
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -2285,6 +2295,7 @@ function clientPortalView(client) {
     id: client.id,
     name: client.name,
     niche: client.niche,
+    modules: { video: videoEnabled(client) },
     instagram: client.instagram,
     theme: client.theme,
     primaryColor: client.primaryColor,
@@ -2800,8 +2811,14 @@ const server = http.createServer(async (req, res) => {
     return send(res, 200, loadClients());
   }
 
+  if (url.pathname === "/api/master/niches" && req.method === "GET") {
+    return send(res, 200, { niches: NICHE_CATALOG });
+  }
+
   if (url.pathname === "/api/clients" && req.method === "POST") {
     const body = await readBody(req);
+    const niche = normalizeNiche(body.niche);
+    if (!niche) return send(res, 400, { error: "valid_niche_required" });
     const clients = loadClients();
     let id = slug(body.id || body.name || "cliente");
     if (!id) id = crypto.randomUUID();
@@ -2813,7 +2830,7 @@ const server = http.createServer(async (req, res) => {
     const client = {
       id,
       name: body.name || "Novo cliente",
-      niche: body.niche || "Outro",
+      niche,
       instagram: "",
       theme: body.theme || "green-black",
       primaryColor: body.primaryColor || "#18c96e",
@@ -2887,6 +2904,17 @@ const server = http.createServer(async (req, res) => {
     const clients = loadClients();
     const client = clients.find(c => c.id === clientMatch[1]);
     if (!client) return send(res, 404, { error: "not_found" });
+    if (Object.prototype.hasOwnProperty.call(body, "niche")) {
+      const niche = normalizeNiche(body.niche);
+      if (!niche) return send(res, 400, { error: "valid_niche_required" });
+      body.niche = niche;
+    }
+    if (Object.prototype.hasOwnProperty.call(body, "modules")) {
+      if (!body.modules || typeof body.modules.video !== "boolean") {
+        return send(res, 400, { error: "invalid_modules" });
+      }
+      client.modules = { ...(client.modules || {}), video: body.modules.video };
+    }
 
     if (Object.prototype.hasOwnProperty.call(body, "aiMode")) {
       const mode = String(body.aiMode || "");
