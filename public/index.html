@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#080b0a">
   <title>NEXUS AI · Agent Control Center</title>
-  <link rel="stylesheet" href="/styles.css?v=10">
+  <link rel="stylesheet" href="/styles.css?v=11">
 </head>
 <body>
   <div class="shell">
@@ -14,6 +14,7 @@
       <nav>
         <button class="nav-item active" data-view="dashboard">▦ <span>Visão geral</span></button>
         <button class="nav-item" data-view="clients">◉ <span>Clientes</span></button>
+        <button class="nav-item" data-view="posts">▤ <span>Postagens & custos</span></button>
         <button class="nav-item nav-notifications" data-view="notifications">✦ <span>Notificações</span><b id="notification-count" class="notification-count" hidden>0</b></button>
         <button class="nav-item" data-view="portal">⌁ <span>Portal do cliente</span></button>
         <button class="nav-item" data-view="odin">◆ <span>Odin & Leads</span></button>
@@ -48,6 +49,39 @@
           <div class="panel-head"><div><p class="eyebrow">PERFIS RECEBIDOS</p><h2>Configuração dos agentes</h2><p class="muted">O cliente informa o negócio, identidade e logo. Aqui você revisa o perfil e define toda a operação do agente.</p></div></div>
           <div id="master-agent-profiles" class="master-agent-profiles"></div>
         </div>
+      </section>
+
+      <section id="posts" class="view">
+        <div class="post-cost-metrics">
+          <article><span>Gasto nas postagens</span><strong id="posts-total-cost">US$ 0,00</strong><small>mês atual · custo OpenAI calculado</small></article>
+          <article><span>Postagens registradas</span><strong id="posts-total-count">0</strong><small>tentativas no mês</small></article>
+          <article><span>Publicadas</span><strong id="posts-published-count">0</strong><small>concluídas no Instagram</small></article>
+          <article><span>Não publicadas</span><strong id="posts-failed-count">0</strong><small>falhas que exigem atenção</small></article>
+        </div>
+
+        <div class="post-cost-grid">
+          <section class="panel">
+            <div class="panel-head"><div><p class="eyebrow">CUSTO POR CLIENTE</p><h2>Quem está gastando mais</h2><p class="muted">Ranking mensal pelo custo de IA atribuído a cada postagem.</p></div></div>
+            <div id="post-cost-ranking" class="post-cost-ranking"></div>
+          </section>
+          <section class="panel">
+            <div class="panel-head"><div><p class="eyebrow">STATUS</p><h2>Saúde das postagens</h2><p class="muted">Acompanhe horário programado, horário real, falhas e custo individual.</p></div></div>
+            <div class="post-status-legend"><span class="post-dot published"></span> Publicada <span class="post-dot failed"></span> Falhou <span class="post-dot running"></span> Em andamento</div>
+          </section>
+        </div>
+
+        <section class="panel master-post-ledger">
+          <div class="panel-head">
+            <div><p class="eyebrow">HISTÓRICO DETALHADO</p><h2>Postagens por cliente</h2><p class="muted">A Global Play (@globalplay_streaming) aparece como cliente para que sua operação seja comparada com as demais.</p></div>
+            <label class="post-client-filter">Cliente<select id="post-client-filter"><option value="">Todos</option></select></label>
+          </div>
+          <div class="table-wrap">
+            <table class="post-ledger-table">
+              <thead><tr><th>Cliente</th><th>Instagram</th><th>Programada</th><th>Publicada / tentativa</th><th>Status</th><th>Custo</th><th>Modelo</th><th>Detalhe</th></tr></thead>
+              <tbody id="post-ledger-body"><tr><td colspan="8">Nenhuma postagem registrada ainda.</td></tr></tbody>
+            </table>
+          </div>
+        </section>
       </section>
 
       <section id="notifications" class="view">
@@ -163,6 +197,6 @@
       </section>
     </main>
   </div>
-  <script src="/app.js?v=10" defer></script>
+  <script src="/app.js?v=11" defer></script>
 </body>
 </html>
