@@ -28,6 +28,7 @@ const masterIntegrationsFile = path.join(DATA_DIR, "master-integrations.json");
 const supportTicketsFile = path.join(DATA_DIR, "support-tickets.json");
 const postLedgerFile = path.join(DATA_DIR, "post-ledger.json");
 const videoJobsFile = path.join(DATA_DIR, "video-jobs.json");
+const videoFoldersFile = path.join(DATA_DIR, "video-folders.json");
 const clientLogoDir = path.join(DATA_DIR, "client-logos");
 const manualPostDir = path.join(DATA_DIR, "manual-posts");
 const clientVideoDir = path.join(DATA_DIR, "client-videos");
@@ -274,12 +275,61 @@ function saveVideoJobs(value) {
   writeJsonAtomic(videoJobsFile, Array.isArray(value) ? value.slice(-1000) : []);
 }
 
+function loadVideoFolders() {
+  const rows = readJsonFile(videoFoldersFile, []);
+  return Array.isArray(rows) ? rows : [];
+}
+
+function saveVideoFolders(value) {
+  writeJsonAtomic(videoFoldersFile, Array.isArray(value) ? value.slice(-500) : []);
+}
+
+function videoFoldersForClient(clientId) {
+  const rows = loadVideoFolders().filter(item => item.clientId === clientId);
+  if (!rows.some(item => item.id === "default")) {
+    rows.unshift({ id: "default", clientId, name: "Meus vídeos", createdAt: new Date().toISOString() });
+  }
+  return rows;
+}
+
+function videoFormatSpec(value) {
+  const key = String(value || "reel").toLowerCase();
+  if (key === "feed") return { key: "feed", label: "Instagram Feed 4:5", width: 1080, height: 1350 };
+  if (key === "square") return { key: "square", label: "Instagram 1:1", width: 1080, height: 1080 };
+  return { key: "reel", label: "Reels / Stories 9:16", width: 1080, height: 1920 };
+}
+
+function deleteVideoJobFiles(job) {
+  const targets = new Set();
+  if (job?.storedPath) {
+    targets.add(job.storedPath);
+    const baseDir = path.dirname(job.storedPath);
+    targets.add(path.join(baseDir, job.id + "-work"));
+    targets.add(path.join(baseDir, job.id + "-clips"));
+  }
+  for (const clip of job?.clips || []) {
+    if (clip?.storedPath) targets.add(clip.storedPath);
+  }
+  for (const target of targets) {
+    try {
+      if (!target || !fs.existsSync(target)) continue;
+      const stat = fs.statSync(target);
+      if (stat.isDirectory()) fs.rmSync(target, { recursive: true, force: true });
+      else fs.unlinkSync(target);
+    } catch {}
+  }
+}
+
 function portalVideoJobView(job) {
   return {
     id: job.id,
     clientId: job.clientId,
     clientName: job.clientName || job.clientId,
     filename: job.filename,
+    displayName: job.displayName || job.filename,
+    folderId: job.folderId || "default",
+    outputFormat: videoFormatSpec(job.outputFormat).key,
+    outputFormatLabel: videoFormatSpec(job.outputFormat).label,
     sizeBytes: Number(job.sizeBytes || 0),
     goal: job.goal || "viral",
     clipDuration: Number(job.clipDuration || 30),
@@ -306,7 +356,8 @@ function portalVideoJobView(job) {
       mediaId: clip.mediaId || "",
       error: clip.error || "",
       caption: clip.caption || "",
-      previewUrl: clip.previewUrl || ""
+      previewUrl: clip.previewUrl || "",
+      outputFormat: clip.outputFormat || videoFormatSpec(job.outputFormat).key
     })) : [],
     createdAt: job.createdAt,
     updatedAt: job.updatedAt || job.createdAt
@@ -491,14 +542,23 @@ ${compact}`;
   };
 }
 
-async function renderVideoClip(inputPath, outputPath, start, end) {
+async function renderVideoClip(inputPath, outputPath, start, end, outputFormat = "reel") {
   const duration = Math.max(3, Number(end) - Number(start));
+  const spec = videoFormatSpec(outputFormat);
+  const filter = [
+    "[0:v]split=2[bg][fg]",
+    "[bg]scale=" + spec.width + ":" + spec.height + ":force_original_aspect_ratio=increase,crop=" + spec.width + ":" + spec.height + ",boxblur=20:10[bg2]",
+    "[fg]scale=" + spec.width + ":" + spec.height + ":force_original_aspect_ratio=decrease[fg2]",
+    "[bg2][fg2]overlay=(W-w)/2:(H-h)/2,format=yuv420p[v]"
+  ].join(";");
   await execMedia("ffmpeg", [
     "-y",
     "-ss", Number(start).toFixed(3),
     "-i", inputPath,
     "-t", duration.toFixed(3),
-    "-vf", "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black",
+    "-filter_complex", filter,
+    "-map", "[v]",
+    "-map", "0:a?",
     "-r", "30",
     "-c:v", "libx264",
     "-preset", "veryfast",
@@ -578,7 +638,7 @@ async function processVideoJob(jobId) {
       const clipId = "clip_" + crypto.randomBytes(7).toString("hex");
       const publicName = initial.id + "-" + clipId + "-" + crypto.randomBytes(6).toString("hex") + ".mp4";
       const outputPath = path.join(clipDir, publicName);
-      await renderVideoClip(initial.storedPath, outputPath, selected.start, selected.end);
+      await renderVideoClip(initial.storedPath, outputPath, selected.start, selected.end, initial.outputFormat || "reel");
       const transcript = transcriptForRange(transcription.segments, selected.start, selected.end);
       clips.push({
         id: clipId,
@@ -596,6 +656,7 @@ async function processVideoJob(jobId) {
         scheduledFor: null,
         caption: selected.title || "",
         previewUrl: "/video-media/" + encodeURIComponent(publicName),
+        outputFormat: videoFormatSpec(initial.outputFormat).key,
         createdAt: new Date().toISOString()
       });
       updateVideoJob(jobId, {
@@ -855,7 +916,7 @@ async function adjustVideoClip(clientId, jobId, clipId, body) {
   found.clip.status = "editing";
   found.clip.error = "";
   saveVideoClipState(found.jobs, found.job);
-  await renderVideoClip(found.job.storedPath, found.clip.storedPath, start, end);
+  await renderVideoClip(found.job.storedPath, found.clip.storedPath, start, end, found.job.outputFormat || found.clip.outputFormat || "reel");
   const fresh = findVideoClip(clientId, jobId, clipId);
   fresh.clip.start = start;
   fresh.clip.end = end;
@@ -3201,9 +3262,92 @@ const server = http.createServer(async (req, res) => {
     const jobs = loadVideoJobs()
       .filter(job => job.clientId === client.id)
       .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
-      .slice(0, 30)
+      .slice(0, 300)
       .map(portalVideoJobView);
-    return send(res, 200, { jobs });
+    return send(res, 200, { jobs, folders: videoFoldersForClient(client.id) });
+  }
+
+  if (url.pathname === "/api/portal/video-folders" && req.method === "POST") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    const body = await readBody(req);
+    const name = String(body.name || "").trim().slice(0, 80);
+    if (!name) return send(res, 400, { error: "folder_name_required" });
+    const rows = loadVideoFolders();
+    const folder = { id: "fld_" + crypto.randomBytes(7).toString("hex"), clientId: client.id, name, createdAt: new Date().toISOString() };
+    rows.push(folder);
+    saveVideoFolders(rows);
+    return send(res, 201, { ok: true, folder, folders: videoFoldersForClient(client.id) });
+  }
+
+  const portalFolderMatch = url.pathname.match(/^\/api\/portal\/video-folders\/([^/]+)$/);
+  if (portalFolderMatch && req.method === "PATCH") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    const folderId = decodeURIComponent(portalFolderMatch[1]);
+    if (folderId === "default") return send(res, 400, { error: "default_folder_locked" });
+    const body = await readBody(req);
+    const name = String(body.name || "").trim().slice(0, 80);
+    if (!name) return send(res, 400, { error: "folder_name_required" });
+    const rows = loadVideoFolders();
+    const folder = rows.find(item => item.clientId === client.id && item.id === folderId);
+    if (!folder) return send(res, 404, { error: "folder_not_found" });
+    folder.name = name;
+    folder.updatedAt = new Date().toISOString();
+    saveVideoFolders(rows);
+    return send(res, 200, { ok: true, folder, folders: videoFoldersForClient(client.id) });
+  }
+
+  if (portalFolderMatch && req.method === "DELETE") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    const folderId = decodeURIComponent(portalFolderMatch[1]);
+    if (folderId === "default") return send(res, 400, { error: "default_folder_locked" });
+    const rows = loadVideoFolders();
+    if (!rows.some(item => item.clientId === client.id && item.id === folderId)) return send(res, 404, { error: "folder_not_found" });
+    saveVideoFolders(rows.filter(item => !(item.clientId === client.id && item.id === folderId)));
+    const jobs = loadVideoJobs();
+    for (const job of jobs) if (job.clientId === client.id && job.folderId === folderId) job.folderId = "default";
+    saveVideoJobs(jobs);
+    return send(res, 200, { ok: true, folders: videoFoldersForClient(client.id) });
+  }
+
+  const portalVideoManageMatch = url.pathname.match(/^\/api\/portal\/videos\/([^/]+)$/);
+  if (portalVideoManageMatch && req.method === "PATCH") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    const jobId = decodeURIComponent(portalVideoManageMatch[1]);
+    const body = await readBody(req);
+    const jobs = loadVideoJobs();
+    const job = jobs.find(item => item.id === jobId && item.clientId === client.id);
+    if (!job) return send(res, 404, { error: "video_not_found" });
+    if (Object.prototype.hasOwnProperty.call(body, "displayName")) {
+      const name = String(body.displayName || "").trim().slice(0, 120);
+      if (!name) return send(res, 400, { error: "video_name_required" });
+      job.displayName = name;
+    }
+    if (Object.prototype.hasOwnProperty.call(body, "folderId")) {
+      const folderId = String(body.folderId || "default");
+      const allowed = videoFoldersForClient(client.id).some(item => item.id === folderId);
+      if (!allowed) return send(res, 400, { error: "folder_not_found" });
+      job.folderId = folderId;
+    }
+    job.updatedAt = new Date().toISOString();
+    saveVideoJobs(jobs);
+    return send(res, 200, { ok: true, job: portalVideoJobView(job) });
+  }
+
+  if (portalVideoManageMatch && req.method === "DELETE") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    const jobId = decodeURIComponent(portalVideoManageMatch[1]);
+    if (videoProcessing.has(jobId)) return send(res, 409, { error: "video_processing", message: "Aguarde o processamento terminar para excluir este vídeo." });
+    const jobs = loadVideoJobs();
+    const job = jobs.find(item => item.id === jobId && item.clientId === client.id);
+    if (!job) return send(res, 404, { error: "video_not_found" });
+    deleteVideoJobFiles(job);
+    saveVideoJobs(jobs.filter(item => !(item.id === jobId && item.clientId === client.id)));
+    return send(res, 200, { ok: true, message: "Vídeo excluído da biblioteca do NEXUS." });
   }
 
   const portalVideoApprovalMatch = url.pathname.match(/^\/api\/portal\/videos\/([^/]+)\/clips\/([^/]+)\/approval$/);
@@ -3319,6 +3463,9 @@ const server = http.createServer(async (req, res) => {
       }
 
       const goal = String(req.headers["x-video-goal"] || "viral").slice(0, 40);
+      const outputFormat = videoFormatSpec(String(req.headers["x-output-format"] || "reel")).key;
+      const requestedFolder = String(req.headers["x-video-folder"] || "default");
+      const folderId = videoFoldersForClient(client.id).some(item => item.id === requestedFolder) ? requestedFolder : "default";
       const clipDuration = Math.min(90, Math.max(10, Number(req.headers["x-clip-duration"] || 30) || 30));
       const requestedClips = Math.min(12, Math.max(1, Number(req.headers["x-requested-clips"] || 3) || 3));
       const now = new Date().toISOString();
@@ -3327,6 +3474,9 @@ const server = http.createServer(async (req, res) => {
         clientId: client.id,
         clientName: client.name || client.id,
         filename: safeBase,
+        displayName: path.basename(safeBase, path.extname(safeBase)),
+        folderId,
+        outputFormat,
         storedPath: destination,
         sizeBytes: received,
         goal,
