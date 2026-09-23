@@ -849,8 +849,6 @@ async function runOdinAgent(client, options = {}) {
 
 const agentCoreRunning = new Set();
 
-const agentCoreRunning = new Set();
-
 async function runAgentCoreCycle(clientId, options = {}) {
   if (agentCoreRunning.has(clientId)) return { ok: false, skipped: "already_running" };
   const client = loadClients().find(item => item.id === clientId);
@@ -1357,8 +1355,6 @@ async function selectSmartClips(transcription, duration, count, targetDuration, 
 }
 
 function escapeFfmpegDrawtext(value) {
-
-function escapeFfmpegDrawtext(value) {
   return String(value || "")
     .replace(/\\/g, "\\\\")
     .replace(/'/g, "\\'")
@@ -1642,8 +1638,6 @@ async function searchOfficialTrailers(query, type = "movie") {
   }
   return { configured:true, results, youtubeSearchUrl };
 }
-
-function startPendingVideoJobs() {
 
 function startPendingVideoJobs() {
   const jobs = loadVideoJobs();
