@@ -209,7 +209,7 @@ async function loadIntegrations() {
   }
 }
 
-$('[data-view]').forEach(button => button.addEventListener("click", async () => {
+$$('[data-view]').forEach(button => button.addEventListener("click", async () => {
   showView(button.dataset.view);
   if (button.dataset.view === "settings") loadIntegrations();
   if (button.dataset.view === "notifications") {
