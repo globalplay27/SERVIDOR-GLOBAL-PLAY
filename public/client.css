@@ -457,3 +457,8 @@ footer span{color:#a8c8d7!important}
 .client-ticket span,.client-ticket small{font-size:10px;color:#7f998d}
 .support-empty-client{padding:28px;border:1px dashed #183128;border-radius:12px;text-align:center}
 @media(max-width:900px){.support-client-grid{grid-template-columns:1fr}}
+
+.managed-instagram-button{border:1px solid rgba(93,211,255,.28)!important;background:rgba(93,211,255,.08)!important;color:#b8ecff!important}
+.managed-instagram-button:hover{background:rgba(93,211,255,.14)!important;border-color:rgba(93,211,255,.5)!important}
+.managed-instagram-button.connected{border-color:rgba(64,226,132,.35)!important;background:rgba(64,226,132,.08)!important;color:#91f2ba!important}
+#instagram-connect-status{align-self:center;color:#8eb9c9;font-size:11px}
