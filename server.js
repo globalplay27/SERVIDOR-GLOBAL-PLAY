@@ -2380,6 +2380,13 @@ const server = http.createServer(async (req, res) => {
     });
   }
 
+  // Master API authorization must be enforced independently of the page login.
+  if ((url.pathname === "/api/clients" || url.pathname.startsWith("/api/clients/")
+      || url.pathname.startsWith("/api/master/") || url.pathname === "/api/system/status")
+      && !masterAuthorized(req)) {
+    return send(res, 401, { error: "unauthorized" });
+  }
+
   if (url.pathname === "/api/portal/login" && req.method === "POST") {
     const body = await readBody(req);
     const username = String(body.username || "").trim();
