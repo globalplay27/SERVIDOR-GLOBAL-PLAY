@@ -504,3 +504,12 @@ footer span{color:#a8c8d7!important}
 .video-job-progress{height:5px;margin-top:9px;border-radius:999px;background:rgba(255,255,255,.05);overflow:hidden}.video-job-progress i{display:block;height:100%;background:linear-gradient(90deg,#278db6,#5dd3ff);border-radius:inherit}
 @media(max-width:900px){.post-client-summary{grid-template-columns:1fr 1fr}.video-client-grid{grid-template-columns:1fr}.client-post-editor{grid-template-columns:1fr}.post-editor-separator{height:20px}}
 @media(max-width:600px){.client-nav{overflow-x:auto;justify-content:flex-start}.client-nav button{flex:0 0 auto}.post-client-summary{grid-template-columns:1fr 1fr}.client-post-card{grid-template-columns:82px 1fr}.client-post-time strong{font-size:20px}.client-post-main{padding:13px}.client-post-title{align-items:flex-start;flex-direction:column}.video-options{grid-template-columns:1fr}.video-options label:last-child{grid-column:auto}}
+
+
+/* Odin leads dashboard */
+.lead-client-summary{display:grid;grid-template-columns:repeat(5,1fr);gap:11px;margin-bottom:16px}
+.lead-client-summary article{padding:16px;border:1px solid rgba(93,211,255,.1);border-radius:14px;background:linear-gradient(145deg,rgba(8,18,25,.96),rgba(3,9,13,.98))}
+.lead-client-summary span,.lead-client-summary small{display:block;color:#7894a2;font-size:10px}.lead-client-summary strong{display:block;margin:7px 0 3px;font-size:24px;color:#effbff}
+.client-leads-table-wrap{overflow:auto}.client-leads-table{width:100%;border-collapse:collapse;min-width:760px}.client-leads-table th,.client-leads-table td{padding:12px 10px;border-bottom:1px solid rgba(93,211,255,.08);text-align:left;font-size:11px}.client-leads-table th{color:#6f8c9c;font-size:9px;letter-spacing:.08em;text-transform:uppercase}.client-leads-table td{color:#c7dbe4}.client-leads-table td:first-child strong{display:block;color:#f0fbff}.human-needed{display:inline-block;margin-top:5px;padding:3px 6px;border-radius:999px;background:rgba(255,185,73,.1);color:#ffd282;font-size:7px;font-weight:900;letter-spacing:.06em}
+.lead-temp{display:inline-flex;padding:5px 8px;border-radius:999px;border:1px solid;font-size:8px;font-weight:900;letter-spacing:.06em}.lead-temp.hot{color:#ff9ba6;border-color:rgba(255,83,101,.3);background:rgba(255,83,101,.09)}.lead-temp.warm{color:#ffd384;border-color:rgba(255,190,73,.3);background:rgba(255,190,73,.08)}.lead-temp.cold{color:#8edfff;border-color:rgba(93,211,255,.25);background:rgba(93,211,255,.07)}
+@media(max-width:900px){.lead-client-summary{grid-template-columns:repeat(2,1fr)}}
