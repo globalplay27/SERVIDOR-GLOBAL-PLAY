@@ -17,7 +17,7 @@ function api(path, options = {}) {
 function badge(value, online = true) { return `<span class="badge ${online ? "" : "off"}">${value}</span>`; }
 function initials(name) { return name.split(/\s+/).map(word => word[0]).join("").slice(0, 2).toUpperCase(); }
 function aiModeLabel(mode) {
-  return mode === "hybrid" ? "HÍBRIDO" : mode === "own-key" ? "CHAVE PRÓPRIA" : "ECONÔMICO";
+  return mode === "own-key" ? "CHAVE PRÓPRIA" : "SEM IMAGEM PAGA";
 }
 
 function render() {
@@ -38,18 +38,13 @@ function render() {
 
   const managedUsageClients = clients.filter(client => client.id !== "ragnar-one");
   $("#usage-list").innerHTML = managedUsageClients.length ? managedUsageClients.map(client => {
-    const mode = client.aiMode || "economy";
-    const used = Number(client.aiImagesUsed || 0);
-    const limit = Number(client.aiMonthlyImageLimit || 0);
-    const pct = mode === "hybrid" && limit > 0 ? Math.min(100, Math.round(used / limit * 100)) : 0;
-    const detail = mode === "hybrid" ? `${used} / ${limit} imagens IA` : mode === "own-key" ? "custo na conta do cliente" : "sem imagem IA paga";
-    return `<div class="usage-row"><div><span>${escapeHtml(client.name)} · ${aiModeLabel(mode)}</span><strong>${detail}</strong></div><div class="bar"><i style="width:${pct}%"></i></div></div>`;
-  }).join("") : `<p class="muted">Novos clientes aparecerão aqui. Ragnar não entra no consumo OpenAI central.</p>`;
+    return `<div class="usage-row"><div><span>${escapeHtml(client.name)}</span><strong>Geração paga de imagens desativada</strong></div><div class="bar"><i style="width:0%"></i></div></div>`;
+  }).join("") : `<p class="muted">Novos clientes aparecerão aqui. Ragnar continua isolado na própria conta.</p>`;
 
   $("#clients-table").innerHTML = clients.map(client => {
     const ragnar = client.id === "ragnar-one";
     const mode = ragnar ? "Conta própria" : "NEXUS GERENCIADA";
-    const extra = !ragnar ? `<br><small>${Number(client.aiImagesUsed||0)} imagens IA usadas</small>` : "";
+    const extra = !ragnar ? `<br><small>imagem IA paga desativada</small>` : "";
     const protect = ragnar
       ? `<span class="protected-client">PILOTO PROTEGIDO</span>`
       : client.ownerAccount
@@ -158,10 +153,8 @@ function renderClientPortal(client) {
   agentBadge.textContent = online ? "ONLINE" : "SETUP";
   agentBadge.classList.toggle("off", !online);
   const ragnar = client.id === "ragnar-one";
-  const mode = ragnar ? "Conta OpenAI própria" : aiModeLabel(client.aiMode || "economy");
-  const aiDetail = !ragnar && client.aiMode === "hybrid"
-    ? `${Number(client.aiImagesUsed||0)} de ${Number(client.aiMonthlyImageLimit||0)} imagens IA usadas`
-    : ragnar ? "isolada do NEXUS central" : client.aiMode === "own-key" ? "cobrança na conta do cliente" : "criativos econômicos sem imagem IA paga";
+  const mode = ragnar ? "Conta OpenAI própria" : "NEXUS sem imagem paga";
+  const aiDetail = ragnar ? "isolada do NEXUS central" : "geração paga de imagens desativada";
   $("#portal-usage").innerHTML = `<div class="usage-row"><div><span>Modo de IA</span><strong>${mode}</strong></div><small>${aiDetail}</small></div><div class="usage-row"><div><span>Infraestrutura</span><strong>Gerenciada pelo NEXUS</strong></div><small>GitHub e Railway não são exigidos do cliente.</small></div>`;
 }
 
@@ -352,52 +345,6 @@ async function updateSupportTicket(ticketId, status) {
   renderSupportNotifications(support);
 }
 
-function renderOpenAIClientControls() {
-  const root = $("#openai-client-controls");
-  if (!root) return;
-  const clients = state.clients.filter(client => client.id !== "ragnar-one");
-  if (!clients.length) {
-    root.innerHTML = '<div class="ai-credit-empty">Nenhum cliente NEXUS gerenciado ainda.</div>';
-    return;
-  }
-  root.innerHTML = clients.map(client => {
-    const mode = client.aiMode || "hybrid";
-    const used = Number(client.aiImagesUsed || 0);
-    const limit = Math.max(1, Number(client.aiMonthlyImageLimit || 10));
-    const remaining = Math.max(0, limit - used);
-    const pct = Math.min(100, Math.round((used / limit) * 100));
-    const status = mode === "hybrid" ? (used >= limit ? "LIMITE ATINGIDO" : "ATIVO") : "IA PAGA PAUSADA";
-    return `<article class="ai-credit-card" data-ai-client="${escapeHtml(client.id)}">
-      <div class="ai-credit-card-head">
-        <div><strong>${escapeHtml(client.name)}</strong><small>${escapeHtml(client.instagram || client.niche || "Cliente NEXUS")}</small></div>
-        ${badge(status, mode === "hybrid" && used < limit)}
-      </div>
-      <div class="ai-credit-stats">
-        <div><span>Usados</span><strong>${used}</strong></div>
-        <div><span>Limite</span><strong>${limit}</strong></div>
-        <div><span>Restantes</span><strong>${remaining}</strong></div>
-      </div>
-      <div class="bar ai-credit-bar"><i style="width:${pct}%"></i></div>
-      <div class="ai-credit-controls">
-        <label>Uso da OpenAI
-          <select data-ai-mode>
-            <option value="hybrid" ${mode === "hybrid" ? "selected" : ""}>NEXUS central ativo</option>
-            <option value="economy" ${mode === "economy" ? "selected" : ""}>Pausar IA paga</option>
-          </select>
-        </label>
-        <label>Créditos de imagem / mês
-          <input data-ai-limit type="number" min="1" max="10000" step="1" value="${limit}">
-        </label>
-        <div class="ai-credit-actions">
-          <button type="button" class="primary" data-ai-save>Salvar limite</button>
-          <button type="button" class="ghost" data-ai-reset>Zerar consumo</button>
-        </div>
-      </div>
-      <small class="ai-credit-message" data-ai-message></small>
-    </article>`;
-  }).join("");
-}
-
 async function loadIntegrations() {
   try {
     const [status, openai, instagram] = await Promise.all([
@@ -453,7 +400,6 @@ async function loadIntegrations() {
         ? openai.budgetPercent + "% do orçamento consumido"
         : "defina o orçamento mensal";
     }
-    renderOpenAIClientControls();
     const igState=$("#instagram-master-state");
     if(igState){
       igState.textContent=instagram.configured?"CONFIGURADO":"NÃO CONFIGURADO";
@@ -566,57 +512,6 @@ document.addEventListener("click", async event => {
     } catch {
       if (message) message.textContent = "Não foi possível salvar.";
       masterProfileSave.disabled = false;
-    }
-    return;
-  }
-
-  const aiSave = event.target.closest("[data-ai-save]");
-  if (aiSave) {
-    const card = aiSave.closest("[data-ai-client]");
-    const clientId = card?.dataset.aiClient;
-    const mode = card?.querySelector("[data-ai-mode]")?.value || "hybrid";
-    const limit = Number(card?.querySelector("[data-ai-limit]")?.value || 10);
-    const message = card?.querySelector("[data-ai-message]");
-    aiSave.disabled = true;
-    if (message) message.textContent = "Salvando…";
-    try {
-      await api("/api/clients/" + encodeURIComponent(clientId), {
-        method: "PATCH",
-        body: JSON.stringify({ aiMode: mode, aiMonthlyImageLimit: limit })
-      });
-      const clients = await api("/api/clients");
-      state.clients = clients;
-      render();
-      renderOpenAIClientControls();
-      const updated = $("#openai-client-controls")?.querySelector('[data-ai-client="' + CSS.escape(clientId) + '"] [data-ai-message]');
-      if (updated) updated.textContent = "Limite atualizado.";
-    } catch (error) {
-      if (message) message.textContent = "Não foi possível salvar.";
-      aiSave.disabled = false;
-    }
-    return;
-  }
-
-  const aiReset = event.target.closest("[data-ai-reset]");
-  if (aiReset) {
-    const card = aiReset.closest("[data-ai-client]");
-    const clientId = card?.dataset.aiClient;
-    if (!window.confirm("Zerar o consumo mensal de créditos deste cliente?")) return;
-    const message = card?.querySelector("[data-ai-message]");
-    aiReset.disabled = true;
-    if (message) message.textContent = "Zerando…";
-    try {
-      await api("/api/clients/" + encodeURIComponent(clientId), {
-        method: "PATCH",
-        body: JSON.stringify({ aiImagesUsed: 0, aiUsageMonth: new Date().toISOString().slice(0,7) })
-      });
-      const clients = await api("/api/clients");
-      state.clients = clients;
-      render();
-      renderOpenAIClientControls();
-    } catch {
-      if (message) message.textContent = "Não foi possível zerar.";
-      aiReset.disabled = false;
     }
     return;
   }
