@@ -1,4 +1,4 @@
-const state = { clients: [], auth: sessionStorage.getItem("nexus-auth"), portalClientId: null };
+const state = { clients: [], auth: sessionStorage.getItem("nexus-auth"), portalClientId: null, supportTickets: [], supportFilter: "all" };
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
 
@@ -50,7 +50,10 @@ function render() {
     const ragnar = client.id === "ragnar-one";
     const mode = ragnar ? "Conta própria" : aiModeLabel(client.aiMode || "economy");
     const extra = !ragnar && client.aiMode === "hybrid" ? `<br><small>${Number(client.aiImagesUsed||0)} / ${Number(client.aiMonthlyImageLimit||0)} imagens IA</small>` : "";
-    return `<tr><td><strong>${escapeHtml(client.name)}</strong><br><small>${escapeHtml(client.niche || "Outro")}</small></td><td>${badge(client.status === "online" ? "ONLINE" : "SETUP", client.status === "online")}</td><td>${escapeHtml(client.instagram || "—")}</td><td>${client.odin ? badge("ATIVO") : badge("DESLIGADO", false)}</td><td>${(client.postTimes || []).join(" · ") || "—"}</td><td><strong>${mode}</strong>${extra}</td></tr>`;
+    const action = ragnar
+      ? `<span class="protected-client">PILOTO PROTEGIDO</span>`
+      : `<button type="button" class="small-danger" data-delete-client="${escapeHtml(client.id)}" data-client-name="${escapeHtml(client.name)}">Excluir</button>`;
+    return `<tr><td><strong>${escapeHtml(client.name)}</strong><br><small>${escapeHtml(client.niche || "Outro")}</small></td><td>${badge(client.status === "online" ? "ONLINE" : "SETUP", client.status === "online")}</td><td>${escapeHtml(client.instagram || "Aguardando conexão")}</td><td>${client.odin ? badge("ATIVO") : badge("DESLIGADO", false)}</td><td>${(client.postTimes || []).join(" · ") || "—"}</td><td><strong>${mode}</strong>${extra}</td><td>${action}</td></tr>`;
   }).join("");
   renderPortalSelector();
 }
@@ -102,13 +105,62 @@ function escapeHtml(value) { const el = document.createElement("span"); el.textC
 function showView(id) {
   $$(".view").forEach(view => view.classList.toggle("active", view.id === id));
   $$(".nav-item").forEach(item => item.classList.toggle("active", item.dataset.view === id));
-  const titles = { dashboard: "Visão geral", clients: "Clientes", portal: "Portal do cliente", odin: "Odin & Leads", onboarding: "Novo cliente", settings: "Integrações" };
+  const titles = { dashboard: "Visão geral", clients: "Clientes", notifications: "Notificações", portal: "Portal do cliente", odin: "Odin & Leads", onboarding: "Novo cliente", settings: "Integrações" };
   $("#page-title").textContent = titles[id] || "NEXUS AI";
 }
 
 async function load() {
-  try { state.clients = await api("/api/clients"); render(); }
-  catch (error) { console.error(error); }
+  try {
+    const [clients, support] = await Promise.all([api("/api/clients"), api("/api/master/support")]);
+    state.clients = clients;
+    state.supportTickets = support.tickets || [];
+    render();
+    renderSupportNotifications(support);
+  } catch (error) { console.error(error); }
+}
+
+function formatSupportDate(value) {
+  try { return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value)); }
+  catch { return "—"; }
+}
+
+function renderSupportNotifications(summary = null) {
+  const tickets = state.supportTickets || [];
+  const unread = summary?.unreadCount ?? tickets.filter(item => item.status === "new").length;
+  const open = summary?.openCount ?? tickets.filter(item => item.status !== "resolved").length;
+  const counter = $("#notification-count");
+  if (counter) { counter.textContent = unread; counter.hidden = unread <= 0; }
+  if ($("#support-new-count")) $("#support-new-count").textContent = unread;
+  if ($("#support-open-count")) $("#support-open-count").textContent = open;
+
+  const list = $("#support-notifications");
+  if (!list) return;
+  const filtered = state.supportFilter === "all" ? tickets : tickets.filter(item => item.status === state.supportFilter);
+  if (!filtered.length) {
+    list.innerHTML = '<div class="empty-support"><strong>Nenhum chamado aqui</strong><span>Quando um cliente abrir suporte pelo NEXUS, a notificação aparecerá nesta tela.</span></div>';
+    return;
+  }
+  list.innerHTML = filtered.map(ticket => {
+    const statusLabel = ticket.status === "new" ? "NOVO" : ticket.status === "read" ? "LIDO" : "RESOLVIDO";
+    return `<article class="support-ticket ${ticket.status}">
+      <div class="support-ticket-head">
+        <div><span class="support-category">${escapeHtml(ticket.category || "Suporte")}</span><h3>${escapeHtml(ticket.subject)}</h3><small>${escapeHtml(ticket.clientName)} · ${formatSupportDate(ticket.createdAt)}</small></div>
+        ${badge(statusLabel, ticket.status !== "resolved")}
+      </div>
+      <p>${escapeHtml(ticket.message)}</p>
+      <div class="support-ticket-actions">
+        ${ticket.status === "new" ? `<button type="button" class="ghost" data-ticket-status="read" data-ticket-id="${ticket.id}">Marcar como lido</button>` : ""}
+        ${ticket.status !== "resolved" ? `<button type="button" class="primary" data-ticket-status="resolved" data-ticket-id="${ticket.id}">Resolver chamado</button>` : ""}
+      </div>
+    </article>`;
+  }).join("");
+}
+
+async function updateSupportTicket(ticketId, status) {
+  await api("/api/master/support/" + encodeURIComponent(ticketId), { method: "PATCH", body: JSON.stringify({ status }) });
+  const support = await api("/api/master/support");
+  state.supportTickets = support.tickets || [];
+  renderSupportNotifications(support);
 }
 
 async function loadIntegrations() {
@@ -157,7 +209,17 @@ async function loadIntegrations() {
   }
 }
 
-$$('[data-view]').forEach(button => button.addEventListener("click", () => { showView(button.dataset.view); if (button.dataset.view === "settings") loadIntegrations(); }));
+$('[data-view]').forEach(button => button.addEventListener("click", async () => {
+  showView(button.dataset.view);
+  if (button.dataset.view === "settings") loadIntegrations();
+  if (button.dataset.view === "notifications") {
+    try {
+      const support = await api("/api/master/support");
+      state.supportTickets = support.tickets || [];
+      renderSupportNotifications(support);
+    } catch {}
+  }
+}));
 $$('[data-go]').forEach(button => button.addEventListener("click", () => showView(button.dataset.go)));
 $("#refresh").addEventListener("click", load);
 $("#portal-client").addEventListener("change", event => { state.portalClientId = event.target.value; renderPortalSelector(); });
@@ -195,6 +257,42 @@ $("select[name=theme]").addEventListener("change", event => {
   const [accent, base] = colors[event.target.value];
   $("#theme-preview").style.background = `radial-gradient(circle at 80% 20%, ${accent}55, transparent 28%), linear-gradient(135deg, #101512, ${base})`;
   $("#theme-preview").style.borderColor = accent;
+});
+
+document.addEventListener("click", async event => {
+  const deleteButton = event.target.closest("[data-delete-client]");
+  if (deleteButton) {
+    const clientId = deleteButton.dataset.deleteClient;
+    const clientName = deleteButton.dataset.clientName || clientId;
+    if (!window.confirm('Excluir "' + clientName + '"?\n\nIsso remove acesso, configurações e chamados. Esta ação não pode ser desfeita.')) return;
+    deleteButton.disabled = true;
+    deleteButton.textContent = "Excluindo…";
+    try {
+      await api("/api/clients/" + encodeURIComponent(clientId), { method: "DELETE" });
+      if (state.portalClientId === clientId) state.portalClientId = null;
+      await load();
+    } catch (error) {
+      alert(error.message === "Erro 409" ? "O cliente piloto Ragnar está protegido contra exclusão acidental." : "Não foi possível excluir o cliente.");
+      deleteButton.disabled = false;
+      deleteButton.textContent = "Excluir";
+    }
+    return;
+  }
+
+  const ticketButton = event.target.closest("[data-ticket-status]");
+  if (ticketButton) {
+    ticketButton.disabled = true;
+    try { await updateSupportTicket(ticketButton.dataset.ticketId, ticketButton.dataset.ticketStatus); }
+    catch { alert("Não foi possível atualizar o chamado."); }
+    return;
+  }
+
+  const filterButton = event.target.closest("[data-support-filter]");
+  if (filterButton) {
+    state.supportFilter = filterButton.dataset.supportFilter || "all";
+    $$("[data-support-filter]").forEach(btn => btn.classList.toggle("active", btn === filterButton));
+    renderSupportNotifications();
+  }
 });
 
 const openaiMasterForm=$("#openai-master-form");
