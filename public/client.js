@@ -2,7 +2,7 @@ const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 let sessionAuth=null,currentClient=null;
 
 function nextPostTime(times=[]){if(!Array.isArray(times)||!times.length)return"—";const parts=new Intl.DateTimeFormat("pt-BR",{timeZone:"America/Sao_Paulo",hour:"2-digit",minute:"2-digit",hour12:false}).formatToParts(new Date());const now=Number(parts.find(p=>p.type==="hour")?.value||0)*60+Number(parts.find(p=>p.type==="minute")?.value||0);const sorted=times.map(v=>{const[h,m]=String(v).split(":").map(Number);return{v,m:h*60+m}}).filter(x=>Number.isFinite(x.m)).sort((a,b)=>a.m-b.m);return sorted.find(x=>x.m>now)?.v||sorted[0]?.v||"—";}
-function showView(name){$$("[data-view]").forEach(b=>b.classList.toggle("active",b.dataset.view===name));["overview","posting","setup"].forEach(v=>$("#view-"+v).hidden=v!==name);}
+function showView(name){$("[data-view]").forEach(b=>b.classList.toggle("active",b.dataset.view===name));["overview","posting","support","setup"].forEach(v=>{const el=$("#view-"+v);if(el)el.hidden=v!==name;});if(name==="support")loadSupportTickets();}
 function onboardingKeys(){return["github","railway","openai","facebook","instagram","metaApp","creativeProfile","supportRequested"];}
 function setupPercent(){const o=currentClient?.onboarding||{};const keys=onboardingKeys();return Math.round(keys.filter(k=>o[k]).length/keys.length*100);}
 function renderOnboarding(){
@@ -163,6 +163,20 @@ async function startRailwayConnection(){
 }
 
 async function patchOnboarding(payload){const r=await fetch("/api/portal/onboarding",{method:"PATCH",headers:{"x-nexus-session":sessionAuth,"content-type":"application/json"},body:JSON.stringify(payload)});if(!r.ok)throw new Error("Falha ao salvar etapa");renderClient(await r.json());}
+
+function escapeSupport(value){const el=document.createElement("span");el.textContent=String(value||"");return el.innerHTML;}
+function supportStatusLabel(status){return status==="resolved"?"Resolvido":status==="read"?"Em atendimento":"Novo";}
+async function loadSupportTickets(){
+  const list=$("#client-support-list");
+  try{
+    const r=await fetch("/api/portal/support",{headers:{"x-nexus-session":sessionAuth}});
+    if(!r.ok)throw new Error();
+    const d=await r.json(),tickets=d.tickets||[];
+    if(!list)return;
+    if(!tickets.length){list.innerHTML='<div class="support-empty-client"><strong>Nenhum chamado ainda</strong><span>Quando precisar, abra um chamado ao lado.</span></div>';return;}
+    list.innerHTML=tickets.map(t=>`<article class="client-ticket ${t.status}"><div><strong>${escapeSupport(t.subject)}</strong><span>${escapeSupport(t.category)} · ${supportStatusLabel(t.status)}</span></div><small>${new Date(t.createdAt).toLocaleString("pt-BR")}</small></article>`).join("");
+  }catch{if(list)list.innerHTML='<p class="muted">Não foi possível carregar os chamados agora.</p>';}
+}
 $$("[data-view]").forEach(b=>b.addEventListener("click",()=>showView(b.dataset.view)));$$("[data-open-setup]").forEach(b=>b.addEventListener("click",()=>showView("setup")));$$("[data-open-posting]").forEach(b=>b.addEventListener("click",()=>showView("posting")));
 $("#cfg-primary").addEventListener("input",updatePreview);$("#cfg-secondary").addEventListener("input",updatePreview);$("#cfg-cta").addEventListener("input",updatePreview);
 $$("[data-complete]").forEach(b=>b.addEventListener("click",async()=>{b.disabled=true;try{await patchOnboarding({[b.dataset.complete]:true});}finally{b.disabled=false;}}));
@@ -188,7 +202,27 @@ $("#connection-form").addEventListener("submit",async event=>{
   finally{submit.disabled=false;submit.textContent="Validar e conectar";}
 });
 $("#mode-new").addEventListener("click",()=>patchOnboarding({setupMode:"new"}));$("#mode-ready").addEventListener("click",()=>patchOnboarding({setupMode:"ready"}));
-$("#request-support").addEventListener("click",async()=>{await patchOnboarding({supportRequested:true});alert("Solicitação registrada. O suporte poderá concluir a instalação final.");});
+const legacySupportButton=$("#request-support");
+if(legacySupportButton)legacySupportButton.addEventListener("click",()=>showView("support"));
+
+const supportForm=$("#support-form");
+if(supportForm)supportForm.addEventListener("submit",async event=>{
+  event.preventDefault();
+  const form=event.currentTarget,status=$("#support-send-status"),button=form.querySelector("button[type=submit]");
+  if(status){status.textContent="Enviando…";status.className="save-status";}
+  button.disabled=true;
+  try{
+    const payload={subject:$("#support-subject").value,category:$("#support-category").value,message:$("#support-message").value};
+    const r=await fetch("/api/portal/support",{method:"POST",headers:{"x-nexus-session":sessionAuth,"content-type":"application/json"},body:JSON.stringify(payload)});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(d.error||"Falha ao abrir chamado");
+    form.reset();
+    if(status){status.textContent="Chamado aberto. O suporte já recebeu a notificação.";status.className="save-status ok";}
+    await loadSupportTickets();
+  }catch{
+    if(status){status.textContent="Não foi possível abrir o chamado.";status.className="save-status error";}
+  }finally{button.disabled=false;}
+});
 
 const presets={
   final:{audience:"Cliente final",focus:"Estabilidade, suporte, futebol, filmes e séries para quem quer assistir sem dor de cabeça.",themes:["Dor do cliente: travamento, delay e suporte que não responde","Filmes, séries, variedade de conteúdo e experiência em vários dispositivos","Futebol, jogos ao vivo, estabilidade e chamada para teste"],cta:'Comente "QUERO" para testar'},
