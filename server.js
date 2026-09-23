@@ -325,9 +325,66 @@ function imageUsageCostUsd(usage, model) {
 }
 
 function postLedgerSummary() {
-  const rows = loadPostLedger().sort((a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt)));
-  const monthKey = new Date().toISOString().slice(0, 7);
-  const monthRows = rows.filter(row => String(row.scheduledFor || row.createdAt || "").slice(0, 7) === monthKey);
+  const storedRows = loadPostLedger();
+  const now = new Date();
+  const localParts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hourCycle: "h23"
+  }).formatToParts(now);
+  const localValue = type => localParts.find(item => item.type === type)?.value || "";
+  const todayKey = [localValue("year"), localValue("month"), localValue("day")].join("-");
+  const monthKey = todayKey.slice(0, 7);
+
+  const localDayFor = value => {
+    if (!value) return "";
+    try {
+      const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "America/Sao_Paulo",
+        year: "numeric", month: "2-digit", day: "2-digit"
+      }).formatToParts(new Date(value));
+      const get = type => parts.find(item => item.type === type)?.value || "";
+      return [get("year"), get("month"), get("day")].join("-");
+    } catch { return ""; }
+  };
+
+  const rows = [...storedRows];
+  const clients = loadClients();
+  for (const client of clients) {
+    for (const time of client.postTimes || []) {
+      if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(time))) continue;
+      const exists = rows.some(row =>
+        row.clientId === client.id
+        && String(row.scheduledHour || "") === String(time)
+        && localDayFor(row.scheduledFor || row.createdAt) === todayKey
+      );
+      if (exists) continue;
+
+      const scheduledDate = new Date(todayKey + "T" + time + ":00-03:00");
+      if (!Number.isFinite(scheduledDate.getTime())) continue;
+      const overdue = now.getTime() > scheduledDate.getTime() + 15 * 60 * 1000;
+      rows.push({
+        id: "expected:" + client.id + ":" + todayKey + ":" + time,
+        clientId: client.id,
+        clientName: client.name || client.id,
+        instagram: client.instagram || "",
+        scheduledFor: scheduledDate.toISOString(),
+        scheduledHour: String(time),
+        status: overdue ? "skipped" : "scheduled",
+        costUsd: 0,
+        costCalculated: true,
+        model: "",
+        mediaId: "",
+        error: overdue ? "Horário passou sem confirmação de publicação pelo agente." : "",
+        createdAt: scheduledDate.toISOString(),
+        updatedAt: scheduledDate.toISOString(),
+        virtual: true
+      });
+    }
+  }
+
+  rows.sort((a, b) => String(b.scheduledFor || b.updatedAt || b.createdAt).localeCompare(String(a.scheduledFor || a.updatedAt || a.createdAt)));
+  const monthRows = rows.filter(row => localDayFor(row.scheduledFor || row.createdAt).slice(0, 7) === monthKey);
   const byClientMap = new Map();
   for (const row of monthRows) {
     const key = row.clientId;
@@ -342,7 +399,7 @@ function postLedgerSummary() {
     };
     item.posts += 1;
     if (row.status === "published") item.published += 1;
-    if (row.status === "failed") item.failed += 1;
+    if (row.status === "failed" || row.status === "skipped") item.failed += 1;
     item.costUsd += Number(row.costUsd || 0);
     byClientMap.set(key, item);
   }
@@ -352,7 +409,7 @@ function postLedgerSummary() {
     totalCostUsd: monthRows.reduce((sum, row) => sum + Number(row.costUsd || 0), 0),
     totalPosts: monthRows.length,
     published: monthRows.filter(row => row.status === "published").length,
-    failed: monthRows.filter(row => row.status === "failed").length,
+    failed: monthRows.filter(row => row.status === "failed" || row.status === "skipped").length,
     byClient,
     posts: rows.slice(0, 300)
   };
