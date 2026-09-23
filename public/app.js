@@ -163,6 +163,52 @@ async function updateSupportTicket(ticketId, status) {
   renderSupportNotifications(support);
 }
 
+function renderOpenAIClientControls() {
+  const root = $("#openai-client-controls");
+  if (!root) return;
+  const clients = state.clients.filter(client => client.id !== "ragnar-one");
+  if (!clients.length) {
+    root.innerHTML = '<div class="ai-credit-empty">Nenhum cliente NEXUS gerenciado ainda.</div>';
+    return;
+  }
+  root.innerHTML = clients.map(client => {
+    const mode = client.aiMode || "hybrid";
+    const used = Number(client.aiImagesUsed || 0);
+    const limit = Math.max(1, Number(client.aiMonthlyImageLimit || 10));
+    const remaining = Math.max(0, limit - used);
+    const pct = Math.min(100, Math.round((used / limit) * 100));
+    const status = mode === "hybrid" ? (used >= limit ? "LIMITE ATINGIDO" : "ATIVO") : "IA PAGA PAUSADA";
+    return `<article class="ai-credit-card" data-ai-client="${escapeHtml(client.id)}">
+      <div class="ai-credit-card-head">
+        <div><strong>${escapeHtml(client.name)}</strong><small>${escapeHtml(client.instagram || client.niche || "Cliente NEXUS")}</small></div>
+        ${badge(status, mode === "hybrid" && used < limit)}
+      </div>
+      <div class="ai-credit-stats">
+        <div><span>Usados</span><strong>${used}</strong></div>
+        <div><span>Limite</span><strong>${limit}</strong></div>
+        <div><span>Restantes</span><strong>${remaining}</strong></div>
+      </div>
+      <div class="bar ai-credit-bar"><i style="width:${pct}%"></i></div>
+      <div class="ai-credit-controls">
+        <label>Uso da OpenAI
+          <select data-ai-mode>
+            <option value="hybrid" ${mode === "hybrid" ? "selected" : ""}>NEXUS central ativo</option>
+            <option value="economy" ${mode === "economy" ? "selected" : ""}>Pausar IA paga</option>
+          </select>
+        </label>
+        <label>Créditos de imagem / mês
+          <input data-ai-limit type="number" min="1" max="10000" step="1" value="${limit}">
+        </label>
+        <div class="ai-credit-actions">
+          <button type="button" class="primary" data-ai-save>Salvar limite</button>
+          <button type="button" class="ghost" data-ai-reset>Zerar consumo</button>
+        </div>
+      </div>
+      <small class="ai-credit-message" data-ai-message></small>
+    </article>`;
+  }).join("");
+}
+
 async function loadIntegrations() {
   try {
     const [status, openai, instagram] = await Promise.all([
@@ -193,18 +239,32 @@ async function loadIntegrations() {
     ];
     $("#integration-list").innerHTML = items.map(item => `<div class="integration"><div><strong>${item.name}</strong><small>${item.detail}</small></div>${badge(item.label, item.ready)}</div>`).join("");
 
-    const state = $("#openai-master-state");
-    if (state) {
-      state.textContent = openai.apiConnected && openai.billingConnected ? "CONECTADA" : openai.connected ? "PARCIAL" : "NÃO CONECTADA";
-      state.classList.toggle("off", !openai.connected);
+    const openaiState = $("#openai-master-state");
+    if (openaiState) {
+      openaiState.textContent = openai.apiConnected && openai.billingConnected
+        ? "CENTRAL ATIVA"
+        : openai.apiConnected
+          ? "API ATIVA · CUSTOS PENDENTES"
+          : openai.billingConnected
+            ? "CUSTOS ATIVOS · API PENDENTE"
+            : "NÃO CONECTADA";
+      openaiState.classList.toggle("off", !openai.connected);
     }
     const money = value => Number.isFinite(Number(value)) ? "US$ " + Number(value).toFixed(2) : "—";
     $("#openai-balance").textContent = money(openai.balanceEstimatedUsd);
     $("#openai-month-cost").textContent = money(openai.monthCostUsd);
-    $("#openai-spend-limit").textContent = money(openai.spendLimitUsd);
+    $("#openai-month-budget").textContent = money(openai.monthlyBudgetUsd);
+    $("#openai-budget-remaining").textContent = money(openai.budgetRemainingUsd);
     $("#openai-balance-note").textContent = openai.balanceEstimatedUsd != null
       ? "estimativa automática desde o último saldo informado"
-      : "informe o saldo atual uma vez";
+      : "informe seu saldo atual uma vez";
+    const budgetNote = $("#openai-budget-note");
+    if (budgetNote) {
+      budgetNote.textContent = openai.budgetPercent != null
+        ? openai.budgetPercent + "% do orçamento consumido"
+        : "defina o orçamento mensal";
+    }
+    renderOpenAIClientControls();
     const igState=$("#instagram-master-state");
     if(igState){
       igState.textContent=instagram.configured?"CONFIGURADO":"NÃO CONFIGURADO";
@@ -285,10 +345,61 @@ document.addEventListener("click", async event => {
     return;
   }
 
+  const aiSave = event.target.closest("[data-ai-save]");
+  if (aiSave) {
+    const card = aiSave.closest("[data-ai-client]");
+    const clientId = card?.dataset.aiClient;
+    const mode = card?.querySelector("[data-ai-mode]")?.value || "hybrid";
+    const limit = Number(card?.querySelector("[data-ai-limit]")?.value || 10);
+    const message = card?.querySelector("[data-ai-message]");
+    aiSave.disabled = true;
+    if (message) message.textContent = "Salvando…";
+    try {
+      await api("/api/clients/" + encodeURIComponent(clientId), {
+        method: "PATCH",
+        body: JSON.stringify({ aiMode: mode, aiMonthlyImageLimit: limit })
+      });
+      const clients = await api("/api/clients");
+      state.clients = clients;
+      render();
+      renderOpenAIClientControls();
+      const updated = $("#openai-client-controls")?.querySelector('[data-ai-client="' + CSS.escape(clientId) + '"] [data-ai-message]');
+      if (updated) updated.textContent = "Limite atualizado.";
+    } catch (error) {
+      if (message) message.textContent = "Não foi possível salvar.";
+      aiSave.disabled = false;
+    }
+    return;
+  }
+
+  const aiReset = event.target.closest("[data-ai-reset]");
+  if (aiReset) {
+    const card = aiReset.closest("[data-ai-client]");
+    const clientId = card?.dataset.aiClient;
+    if (!window.confirm("Zerar o consumo mensal de créditos deste cliente?")) return;
+    const message = card?.querySelector("[data-ai-message]");
+    aiReset.disabled = true;
+    if (message) message.textContent = "Zerando…";
+    try {
+      await api("/api/clients/" + encodeURIComponent(clientId), {
+        method: "PATCH",
+        body: JSON.stringify({ aiImagesUsed: 0, aiUsageMonth: new Date().toISOString().slice(0,7) })
+      });
+      const clients = await api("/api/clients");
+      state.clients = clients;
+      render();
+      renderOpenAIClientControls();
+    } catch {
+      if (message) message.textContent = "Não foi possível zerar.";
+      aiReset.disabled = false;
+    }
+    return;
+  }
+
   const filterButton = event.target.closest("[data-support-filter]");
   if (filterButton) {
     state.supportFilter = filterButton.dataset.supportFilter || "all";
-    $$("[data-support-filter]").forEach(btn => btn.classList.toggle("active", btn === filterButton));
+    $("[data-support-filter]").forEach(btn => btn.classList.toggle("active", btn === filterButton));
     renderSupportNotifications();
   }
 });
@@ -321,8 +432,9 @@ if(openaiMasterForm)openaiMasterForm.addEventListener("submit",async event=>{
   const data=Object.fromEntries(new FormData(form));
   try{
     await api("/api/master/openai",{method:"POST",body:JSON.stringify(data)});
-    form.reset();
-    if(message)message.textContent="OpenAI NEXUS atualizada com segurança.";
+    form.querySelector('input[name="apiKey"]').value="";
+    form.querySelector('input[name="adminKey"]').value="";
+    if(message)message.textContent="Controle OpenAI NEXUS atualizado.";
     await loadIntegrations();
   }catch(error){
     if(message)message.textContent="Não foi possível conectar: "+error.message;
