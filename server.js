@@ -27,6 +27,8 @@ const portalUsersFile = path.join(DATA_DIR, "portal-users.json");
 const masterIntegrationsFile = path.join(DATA_DIR, "master-integrations.json");
 const supportTicketsFile = path.join(DATA_DIR, "support-tickets.json");
 const postLedgerFile = path.join(DATA_DIR, "post-ledger.json");
+const agentExecutionsFile = path.join(DATA_DIR, "agent-executions.json");
+const agentCoreStateFile = path.join(DATA_DIR, "agent-core-state.json");
 const videoJobsFile = path.join(DATA_DIR, "video-jobs.json");
 const videoFoldersFile = path.join(DATA_DIR, "video-folders.json");
 const clientLogoDir = path.join(DATA_DIR, "client-logos");
@@ -276,6 +278,616 @@ function loadPostLedger() {
 function savePostLedger(value) {
   const rows = Array.isArray(value) ? value.slice(-5000) : [];
   writeJsonAtomic(postLedgerFile, rows);
+}
+
+
+const AGENT_CORE_MODULES = Object.freeze([
+  { id: "radar", name: "RADAR" },
+  { id: "estrategista", name: "ESTRATEGISTA" },
+  { id: "creator", name: "CREATOR" },
+  { id: "publisher", name: "PUBLISHER" },
+  { id: "auditor", name: "AUDITOR" },
+  { id: "odin", name: "ODIN" }
+]);
+
+function loadAgentExecutions() {
+  return readJsonFile(agentExecutionsFile, []);
+}
+
+function saveAgentExecutions(value) {
+  writeJsonAtomic(agentExecutionsFile, Array.isArray(value) ? value.slice(-5000) : []);
+}
+
+function loadAgentCoreState() {
+  return readObjectFile(agentCoreStateFile, {});
+}
+
+function saveAgentCoreState(value) {
+  writeJsonAtomic(agentCoreStateFile, value && typeof value === "object" && !Array.isArray(value) ? value : {});
+}
+
+function defaultAgentCoreConfig() {
+  return {
+    enabled: true,
+    approvalRequired: true,
+    autoPublish: false,
+    cycleMinutes: 60,
+    modules: {
+      radar: true,
+      estrategista: true,
+      creator: true,
+      publisher: true,
+      auditor: true,
+      odin: true
+    }
+  };
+}
+
+function agentCoreConfig(client) {
+  const defaults = defaultAgentCoreConfig();
+  const current = client?.agentCore && typeof client.agentCore === "object" ? client.agentCore : {};
+  const cycleMinutes = Math.max(15, Math.min(1440, Number(current.cycleMinutes || defaults.cycleMinutes)));
+  const modules = {};
+  for (const module of AGENT_CORE_MODULES) {
+    modules[module.id] = current.modules?.[module.id] !== false;
+  }
+  const autoPublish = current.autoPublish === true;
+  return {
+    enabled: current.enabled !== false,
+    approvalRequired: autoPublish ? current.approvalRequired === true : true,
+    autoPublish,
+    cycleMinutes,
+    modules
+  };
+}
+
+function agentCoreStateFor(clientId) {
+  const state = loadAgentCoreState();
+  return state[clientId] && typeof state[clientId] === "object" ? state[clientId] : {};
+}
+
+function patchAgentCoreState(clientId, patch) {
+  const state = loadAgentCoreState();
+  const current = state[clientId] && typeof state[clientId] === "object" ? state[clientId] : {};
+  state[clientId] = { ...current, ...patch, updatedAt: new Date().toISOString() };
+  saveAgentCoreState(state);
+  return state[clientId];
+}
+
+function agentCoreExecutionView(row) {
+  return {
+    id: row.id,
+    clientId: row.clientId,
+    clientName: row.clientName,
+    agent: row.agent,
+    function: row.function,
+    trigger: row.trigger,
+    status: row.status,
+    model: row.model,
+    quantity: Number(row.quantity || 0),
+    costUsd: Number(row.costUsd || 0),
+    message: row.message || "",
+    startedAt: row.startedAt || null,
+    finishedAt: row.finishedAt || null,
+    durationMs: Number(row.durationMs || 0),
+    metadata: row.metadata && typeof row.metadata === "object" ? row.metadata : {}
+  };
+}
+
+function recordAgentExecution(client, agent, details = {}) {
+  const finishedAt = new Date().toISOString();
+  const startedAt = details.startedAt || finishedAt;
+  const durationMs = Math.max(0, new Date(finishedAt).getTime() - new Date(startedAt).getTime());
+  const row = {
+    id: crypto.randomUUID(),
+    clientId: client.id,
+    clientName: client.name || client.id,
+    agent: String(agent || "").toUpperCase(),
+    function: String(details.function || "cycle").slice(0, 120),
+    trigger: String(details.trigger || "scheduler").slice(0, 80),
+    status: ["success","warning","failed","blocked"].includes(String(details.status)) ? String(details.status) : "success",
+    model: String(details.model || "local-rules").slice(0, 120),
+    quantity: Math.max(0, Number(details.quantity || 0)),
+    costUsd: Math.max(0, Number(details.costUsd || 0)),
+    message: String(details.message || "").slice(0, 1000),
+    startedAt,
+    finishedAt,
+    durationMs,
+    metadata: details.metadata && typeof details.metadata === "object" ? details.metadata : {}
+  };
+  const rows = loadAgentExecutions();
+  rows.push(row);
+  saveAgentExecutions(rows);
+  const state = agentCoreStateFor(client.id);
+  const modules = state.modules && typeof state.modules === "object" ? state.modules : {};
+  modules[String(agent || "").toLowerCase()] = {
+    status: row.status,
+    lastExecutionAt: row.finishedAt,
+    message: row.message
+  };
+  patchAgentCoreState(client.id, { modules });
+  return row;
+}
+
+function agentExecutionsForClient(clientId, limit = 80) {
+  return loadAgentExecutions()
+    .filter(item => item.clientId === clientId)
+    .sort((a, b) => String(b.finishedAt || b.startedAt).localeCompare(String(a.finishedAt || a.startedAt)))
+    .slice(0, Math.max(1, Math.min(300, Number(limit || 80))))
+    .map(agentCoreExecutionView);
+}
+
+function agentCoreLocalDay(value = new Date()) {
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Sao_Paulo",
+      year: "numeric", month: "2-digit", day: "2-digit"
+    }).formatToParts(value instanceof Date ? value : new Date(value));
+    const get = type => parts.find(item => item.type === type)?.value || "";
+    return [get("year"), get("month"), get("day")].join("-");
+  } catch {
+    return new Date(value).toISOString().slice(0, 10);
+  }
+}
+
+function agentCoreScheduleIso(time, slotIndex = 0) {
+  const clean = /^([01]\d|2[0-3]):[0-5]\d$/.test(String(time || "")) ? String(time) : "09:00";
+  const today = agentCoreLocalDay();
+  let scheduled = new Date(today + "T" + clean + ":00-03:00");
+  const minFuture = Date.now() + Math.max(0, slotIndex) * 60000;
+  if (!Number.isFinite(scheduled.getTime()) || scheduled.getTime() <= minFuture) {
+    scheduled = new Date(scheduled.getTime() + 86400000);
+  }
+  return scheduled.toISOString();
+}
+
+function agentCoreTopTerms(texts, limit = 6) {
+  const stop = new Set(["para","como","mais","uma","com","sem","que","dos","das","por","seu","sua","nos","nas","the","and","isso","este","esta","voce","você","hoje","agora","aqui","sobre","muito"]);
+  const counts = new Map();
+  for (const text of texts || []) {
+    const words = String(text || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+      .replace(/https?:\/\/\S+/g, " ")
+      .replace(/[^a-z0-9#]+/g, " ")
+      .split(/\s+/)
+      .filter(word => word.length >= 4 && !stop.has(word));
+    for (const word of words) counts.set(word, (counts.get(word) || 0) + 1);
+  }
+  return [...counts.entries()].sort((a,b) => b[1]-a[1]).slice(0, limit).map(([term,count]) => ({ term, count }));
+}
+
+async function fetchInstagramMediaSnapshot(clientId) {
+  const connection = directConnection(clientId, "meta");
+  const accessToken = decryptSecret(connection?.accessToken || "");
+  const igUserId = String(connection?.igUserId || "").trim();
+  if (!accessToken || !igUserId) return { source: "local", items: [], error: "instagram_not_connected" };
+  try {
+    const fields = "id,caption,timestamp,media_type,like_count,comments_count,permalink";
+    const endpoint = "https://graph.instagram.com/" + encodeURIComponent(igUserId) + "/media?fields=" + encodeURIComponent(fields) + "&limit=25";
+    const response = await fetch(endpoint, {
+      headers: {
+        authorization: "Bearer " + accessToken,
+        accept: "application/json",
+        "user-agent": "NEXUS-AI-AgentCore/1.0"
+      },
+      signal: AbortSignal.timeout(9000)
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(String(payload?.error?.message || "instagram_media_" + response.status));
+    const items = Array.isArray(payload?.data) ? payload.data.map(item => ({
+      id: String(item.id || ""),
+      caption: String(item.caption || "").slice(0, 2200),
+      timestamp: item.timestamp || null,
+      mediaType: String(item.media_type || ""),
+      likeCount: Math.max(0, Number(item.like_count || 0)),
+      commentsCount: Math.max(0, Number(item.comments_count || 0)),
+      permalink: String(item.permalink || "")
+    })) : [];
+    return { source: "instagram-api", items };
+  } catch (error) {
+    return { source: "local", items: [], error: String(error?.message || error).slice(0, 300) };
+  }
+}
+
+async function runRadarAgent(client, options = {}) {
+  const startedAt = new Date().toISOString();
+  const snapshot = await fetchInstagramMediaSnapshot(client.id);
+  const ledger = loadPostLedger()
+    .filter(row => row.clientId === client.id)
+    .sort((a,b) => String(b.publishedAt || b.updatedAt || b.createdAt).localeCompare(String(a.publishedAt || a.updatedAt || a.createdAt)))
+    .slice(0, 40);
+  const captions = [
+    ...snapshot.items.map(item => item.caption),
+    ...ledger.map(item => item.caption || "")
+  ].filter(Boolean);
+  const topTerms = agentCoreTopTerms(captions, 8);
+  const ranked = [...snapshot.items].sort((a,b) => (b.likeCount+b.commentsCount*2)-(a.likeCount+a.commentsCount*2));
+  const output = {
+    source: snapshot.source,
+    scannedMedia: snapshot.items.length,
+    topTerms,
+    bestRecent: ranked[0] || null,
+    signals: [
+      topTerms[0]?.term ? "Reforçar temas já associados a " + topTerms[0].term : "Testar ganchos orientados à principal dor do cliente",
+      "Variar prova, benefício e chamada para ação sem repetir criativo",
+      "Não prometer viralização; priorizar sinais observados e histórico próprio"
+    ]
+  };
+  recordAgentExecution(client, "RADAR", {
+    function: "trend-scan",
+    trigger: options.trigger,
+    startedAt,
+    status: snapshot.error && !snapshot.items.length ? "warning" : "success",
+    model: "local-rules+instagram-api",
+    quantity: snapshot.items.length + ledger.length,
+    costUsd: 0,
+    message: snapshot.items.length ? "Sinais atualizados com dados recentes do Instagram." : "Sinais atualizados com histórico local; Instagram sem leitura de mídia.",
+    metadata: { source: snapshot.source, topTerms, apiError: snapshot.error || "" }
+  });
+  patchAgentCoreState(client.id, { radar: output });
+  return output;
+}
+
+async function runStrategistAgent(client, context = {}, options = {}) {
+  const startedAt = new Date().toISOString();
+  const profile = { ...defaultPostingProfile(), ...(client.postingProfile || {}) };
+  const ledger = loadPostLedger().filter(row => row.clientId === client.id);
+  const published = ledger.filter(row => row.status === "published").length;
+  const failed = ledger.filter(row => row.status === "failed" || row.status === "skipped").length;
+  const pending = ledger.filter(row => row.approvalStatus === "pending" || row.approvalStatus === "correction_requested").length;
+  const leadData = await fetchAgentLeads(client).catch(() => ({ summary: { total: 0, hot: 0, warm: 0, cold: 0 }, source: "stored" }));
+  const radar = context.radar || agentCoreStateFor(client.id).radar || {};
+  const auditor = context.auditor || agentCoreStateFor(client.id).auditor || {};
+  const themes = [
+    profile.morningTheme || "Dor do cliente e solução",
+    profile.afternoonTheme || "Produto, benefício e prova",
+    profile.eveningTheme || "Conversão e chamada para ação"
+  ];
+  const plan = {
+    niche: client.niche || "Outro",
+    audience: profile.targetAudience,
+    objective: profile.contentStrategy,
+    tone: profile.tone,
+    themes,
+    contentFocus: profile.contentFocus,
+    cta: profile.cta,
+    hashtags: profile.hashtags,
+    avoidTopics: profile.avoidTopics,
+    radarTerms: Array.isArray(radar.topTerms) ? radar.topTerms.slice(0, 5) : [],
+    feedback: auditor.feedback || "",
+    metrics: { published, failed, pending, leads: leadData.summary || {} }
+  };
+  recordAgentExecution(client, "ESTRATEGISTA", {
+    function: options.feedback ? "feedback-loop" : "content-plan",
+    trigger: options.trigger,
+    startedAt,
+    status: "success",
+    model: "local-rules",
+    quantity: 1,
+    costUsd: 0,
+    message: options.feedback ? "Estratégia atualizada após leitura do Auditor." : "Plano editorial atualizado com nicho, histórico, Radar e leads.",
+    metadata: { published, failed, pending, leadSource: leadData.source || "stored" }
+  });
+  patchAgentCoreState(client.id, { strategy: plan });
+  return plan;
+}
+
+async function runCreatorAgent(client, strategy, options = {}) {
+  const startedAt = new Date().toISOString();
+  const config = agentCoreConfig(client);
+  const times = (Array.isArray(client.postTimes) && client.postTimes.length ? client.postTimes : ["09:00","12:00","18:00"]).slice(0, 6);
+  const ledger = loadPostLedger();
+  const created = [];
+  const hooks = [
+    "Pare de perder resultado por um problema que dá para evitar.",
+    "Antes de escolher uma solução, confira estes pontos.",
+    "O que separa uma experiência comum de uma experiência confiável?"
+  ];
+  const themes = Array.isArray(strategy?.themes) && strategy.themes.length ? strategy.themes : ["Dor e solução","Benefício e prova","Conversão"];
+  const focus = String(strategy?.contentFocus || "Benefícios reais, autoridade e conversão").trim();
+  const cta = String(strategy?.cta || 'Comente "QUERO" e saiba mais').trim();
+  const hashtags = String(strategy?.hashtags || "").trim();
+
+  for (let index=0; index<times.length; index++) {
+    const time = times[index];
+    const scheduledFor = agentCoreScheduleIso(time, index);
+    const day = agentCoreLocalDay(scheduledFor);
+    const exists = ledger.some(row =>
+      row.clientId === client.id
+      && String(row.source || "").startsWith("agent-core:creator")
+      && String(row.scheduledHour || "") === String(time)
+      && agentCoreLocalDay(row.scheduledFor || row.createdAt) === day
+    );
+    if (exists) continue;
+    const theme = themes[index % themes.length];
+    const caption = [
+      hooks[index % hooks.length],
+      "",
+      String(theme) + ". " + focus + ".",
+      "",
+      cta,
+      hashtags ? "" : null,
+      hashtags || null
+    ].filter(value => value !== null).join("\n").slice(0, 2200);
+    const approvalStatus = config.autoPublish && !config.approvalRequired ? "approved" : "pending";
+    const row = {
+      id: "agentcore:" + client.id + ":" + day + ":" + String(time).replace(":", ""),
+      clientId: client.id,
+      clientName: client.name || client.id,
+      instagram: client.instagram || "",
+      scheduledFor,
+      scheduledHour: time,
+      status: "ready",
+      approvalStatus,
+      costUsd: 0,
+      costCalculated: true,
+      model: "local-rules",
+      mediaId: "",
+      imageUrl: "",
+      caption,
+      title: String(theme).slice(0, 160),
+      source: "agent-core:creator",
+      error: "",
+      retryCount: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    ledger.push(row);
+    created.push(row);
+  }
+  if (created.length) savePostLedger(ledger);
+  recordAgentExecution(client, "CREATOR", {
+    function: "draft-generation",
+    trigger: options.trigger,
+    startedAt,
+    status: "success",
+    model: "local-rules",
+    quantity: created.length,
+    costUsd: 0,
+    message: created.length
+      ? created.length + " pauta(s) criada(s) e deixada(s) aguardando aprovação."
+      : "Nenhuma pauta duplicada criada; agenda já estava preparada.",
+    metadata: { approvalRequired: config.approvalRequired, autoPublish: config.autoPublish, draftIds: created.map(item => item.id) }
+  });
+  return created;
+}
+
+async function runPublisherAgent(client, options = {}) {
+  const startedAt = new Date().toISOString();
+  const ledger = loadPostLedger();
+  const now = Date.now();
+  let published = 0;
+  let failed = 0;
+  let awaitingApproval = 0;
+  let awaitingMedia = 0;
+  let changed = false;
+
+  const candidates = ledger.filter(row => {
+    if (row.clientId !== client.id || row.status === "published") return false;
+    const due = !row.scheduledFor || new Date(row.scheduledFor).getTime() <= now;
+    const retryDue = !row.nextRetryAt || new Date(row.nextRetryAt).getTime() <= now;
+    return due && retryDue && ["ready","scheduled","failed"].includes(String(row.status || ""));
+  });
+
+  for (const row of candidates.slice(0, 8)) {
+    const approval = cleanApprovalStatus(row.approvalStatus);
+    if (approval !== "approved") {
+      awaitingApproval += 1;
+      continue;
+    }
+    if (!row.imageUrl) {
+      awaitingMedia += 1;
+      continue;
+    }
+    const retryCount = Math.max(0, Number(row.retryCount || 0));
+    if (retryCount >= 3 && row.status === "failed") continue;
+    row.status = "publishing";
+    row.attemptedAt = new Date().toISOString();
+    row.updatedAt = row.attemptedAt;
+    changed = true;
+    savePostLedger(ledger);
+    try {
+      const result = await publishInstagramImageForClient(client.id, row.imageUrl, row.caption || "");
+      row.status = "published";
+      row.approvalStatus = "approved";
+      row.mediaId = String(result?.id || result?.mediaId || "");
+      row.publishedAt = new Date().toISOString();
+      row.error = "";
+      row.nextRetryAt = null;
+      published += 1;
+    } catch (error) {
+      row.retryCount = retryCount + 1;
+      row.status = "failed";
+      row.error = String(error?.message || error).slice(0, 900);
+      row.nextRetryAt = row.retryCount < 3 ? new Date(Date.now() + row.retryCount * 5 * 60000).toISOString() : null;
+      failed += 1;
+    }
+    row.updatedAt = new Date().toISOString();
+  }
+  if (changed || published || failed) savePostLedger(ledger);
+  const status = failed ? "warning" : "success";
+  recordAgentExecution(client, "PUBLISHER", {
+    function: "queue-sweep",
+    trigger: options.trigger,
+    startedAt,
+    status,
+    model: "local-rules+meta-api",
+    quantity: candidates.length,
+    costUsd: 0,
+    message: published + " publicada(s), " + awaitingApproval + " aguardando aprovação, " + awaitingMedia + " aguardando mídia, " + failed + " falha(s).",
+    metadata: { published, failed, awaitingApproval, awaitingMedia }
+  });
+  return { published, failed, awaitingApproval, awaitingMedia };
+}
+
+async function runAuditorAgent(client, options = {}) {
+  const startedAt = new Date().toISOString();
+  const snapshot = await fetchInstagramMediaSnapshot(client.id);
+  const items = snapshot.items || [];
+  const averages = items.length ? {
+    likes: items.reduce((sum,item)=>sum+Number(item.likeCount||0),0)/items.length,
+    comments: items.reduce((sum,item)=>sum+Number(item.commentsCount||0),0)/items.length
+  } : { likes: 0, comments: 0 };
+  const ranked = [...items].sort((a,b)=>(b.likeCount+b.commentsCount*2)-(a.likeCount+a.commentsCount*2));
+  const ledger = loadPostLedger().filter(row => row.clientId === client.id);
+  const published = ledger.filter(row => row.status === "published").length;
+  const failed = ledger.filter(row => row.status === "failed" || row.status === "skipped").length;
+  const feedback = ranked[0]
+    ? "Reaproveitar padrões de tema e gancho do conteúdo com melhor interação, sem copiar o criativo."
+    : (failed > 0 ? "Priorizar estabilidade da fila e revisar falhas antes de aumentar frequência." : "Manter variedade de ganchos e coletar mais dados antes de alterar a estratégia.");
+  const output = { source: snapshot.source, averages, published, failed, topMedia: ranked[0] || null, feedback };
+  recordAgentExecution(client, "AUDITOR", {
+    function: "performance-review",
+    trigger: options.trigger,
+    startedAt,
+    status: snapshot.error && !items.length ? "warning" : "success",
+    model: "local-rules+instagram-api",
+    quantity: items.length || ledger.length,
+    costUsd: 0,
+    message: "Métricas pós-publicação revisadas e feedback enviado ao Estrategista.",
+    metadata: { source: snapshot.source, averages, published, failed, apiError: snapshot.error || "" }
+  });
+  patchAgentCoreState(client.id, { auditor: output });
+  return output;
+}
+
+async function runOdinAgent(client, options = {}) {
+  const startedAt = new Date().toISOString();
+  const data = await fetchAgentLeads(client).catch(() => ({
+    summary: {
+      total: Number(client?.leads?.total || 0),
+      hot: Number(client?.leads?.hot || 0),
+      warm: Number(client?.leads?.warm || 0),
+      cold: Number(client?.leads?.cold || 0),
+      needsHuman: 0
+    },
+    leads: [],
+    source: "stored"
+  }));
+  const hot = (data.leads || []).filter(lead => lead.temperature === "hot" || lead.needsHuman).slice(0, 20);
+  const output = { source: data.source || "stored", summary: data.summary || {}, priority: hot };
+  recordAgentExecution(client, "ODIN", {
+    function: "lead-qualification",
+    trigger: options.trigger,
+    startedAt,
+    status: data.error ? "warning" : "success",
+    model: "local-rules",
+    quantity: Number(data.summary?.total || 0),
+    costUsd: 0,
+    message: hot.length ? hot.length + " lead(s) priorizado(s) para atenção comercial." : "Leads classificados; nenhum lead quente exige ação imediata.",
+    metadata: { source: data.source || "stored", summary: data.summary || {} }
+  });
+  patchAgentCoreState(client.id, { odin: output });
+  return output;
+}
+
+const agentCoreRunning = new Set();
+
+async function runAgentCoreCycle(clientId, options = {}) {
+  if (agentCoreRunning.has(clientId)) return { ok: false, skipped: "already_running" };
+  const client = loadClients().find(item => item.id === clientId);
+  if (!client) throw new Error("client_not_found");
+  const config = agentCoreConfig(client);
+  const requested = String(options.agent || "all").toLowerCase();
+  if (requested !== "all" && !AGENT_CORE_MODULES.some(item => item.id === requested)) throw new Error("invalid_agent");
+  if (!config.enabled && options.trigger !== "manual") return { ok: false, skipped: "agent_core_disabled" };
+
+  agentCoreRunning.add(clientId);
+  const result = { ok: true, clientId, trigger: options.trigger || "manual", agents: {} };
+  try {
+    const state = agentCoreStateFor(client.id);
+    let radar = state.radar || {};
+    let strategy = state.strategy || {};
+    let auditor = state.auditor || {};
+
+    const run = id => requested === "all" || requested === id;
+    if (run("radar") && config.modules.radar) result.agents.radar = radar = await runRadarAgent(client, options);
+    if (run("estrategista") && config.modules.estrategista) result.agents.estrategista = strategy = await runStrategistAgent(client, { radar, auditor }, options);
+    if (run("creator") && config.modules.creator) result.agents.creator = await runCreatorAgent(client, strategy, options);
+    if (run("publisher") && config.modules.publisher) result.agents.publisher = await runPublisherAgent(client, options);
+    if (run("auditor") && config.modules.auditor) {
+      result.agents.auditor = auditor = await runAuditorAgent(client, options);
+      if (requested === "all" && config.modules.estrategista) {
+        result.agents.estrategistaFeedback = await runStrategistAgent(client, { radar, auditor }, { ...options, feedback: true });
+      }
+    }
+    if (run("odin") && config.modules.odin) result.agents.odin = await runOdinAgent(client, options);
+
+    const now = new Date().toISOString();
+    patchAgentCoreState(client.id, {
+      lastCycleAt: now,
+      nextCycleAt: new Date(Date.now() + config.cycleMinutes * 60000).toISOString(),
+      lastCycleStatus: "success"
+    });
+    return result;
+  } catch (error) {
+    patchAgentCoreState(client.id, { lastCycleAt: new Date().toISOString(), lastCycleStatus: "failed", lastCycleError: String(error?.message || error).slice(0, 500) });
+    throw error;
+  } finally {
+    agentCoreRunning.delete(clientId);
+  }
+}
+
+let agentCoreSchedulerRunning = false;
+async function processAgentCoreScheduler() {
+  if (agentCoreSchedulerRunning) return;
+  agentCoreSchedulerRunning = true;
+  try {
+    const clients = loadClients().filter(client => client.status === "online");
+    const now = Date.now();
+    for (const client of clients) {
+      const config = agentCoreConfig(client);
+      if (!config.enabled) continue;
+      const state = agentCoreStateFor(client.id);
+      const lastCycle = state.lastCycleAt ? new Date(state.lastCycleAt).getTime() : 0;
+      const dueFullCycle = !lastCycle || now - lastCycle >= config.cycleMinutes * 60000;
+      if (dueFullCycle) {
+        await runAgentCoreCycle(client.id, { trigger: "scheduler", agent: "all" }).catch(error => {
+          console.warn("Agent Core cycle failed for " + client.id + ": " + String(error?.message || error));
+        });
+        continue;
+      }
+      const lastPublisher = state.lastPublisherSweepAt ? new Date(state.lastPublisherSweepAt).getTime() : 0;
+      if (config.modules.publisher && (!lastPublisher || now - lastPublisher >= 5 * 60000)) {
+        await runPublisherAgent(client, { trigger: "scheduler" }).catch(error => {
+          console.warn("Publisher sweep failed for " + client.id + ": " + String(error?.message || error));
+        });
+        patchAgentCoreState(client.id, { lastPublisherSweepAt: new Date().toISOString() });
+      }
+    }
+  } finally {
+    agentCoreSchedulerRunning = false;
+  }
+}
+
+function agentCoreDashboard() {
+  const clients = loadClients();
+  const executions = loadAgentExecutions().map(agentCoreExecutionView);
+  const today = agentCoreLocalDay();
+  const month = today.slice(0, 7);
+  const byClient = clients.map(client => {
+    const rows = executions.filter(row => row.clientId === client.id);
+    const todayRows = rows.filter(row => agentCoreLocalDay(row.finishedAt || row.startedAt) === today);
+    const monthRows = rows.filter(row => agentCoreLocalDay(row.finishedAt || row.startedAt).slice(0,7) === month);
+    return {
+      clientId: client.id,
+      clientName: client.name || client.id,
+      config: agentCoreConfig(client),
+      state: agentCoreStateFor(client.id),
+      executionsToday: todayRows.length,
+      costTodayUsd: todayRows.reduce((sum,row)=>sum+Number(row.costUsd||0),0),
+      costMonthUsd: monthRows.reduce((sum,row)=>sum+Number(row.costUsd||0),0),
+      lastExecutions: rows.sort((a,b)=>String(b.finishedAt||"").localeCompare(String(a.finishedAt||""))).slice(0,12)
+    };
+  });
+  return {
+    modules: AGENT_CORE_MODULES,
+    today,
+    month,
+    totalExecutionsToday: byClient.reduce((sum,item)=>sum+item.executionsToday,0),
+    totalCostTodayUsd: byClient.reduce((sum,item)=>sum+item.costTodayUsd,0),
+    totalCostMonthUsd: byClient.reduce((sum,item)=>sum+item.costMonthUsd,0),
+    clients: byClient
+  };
 }
 
 function loadVideoJobs() {
