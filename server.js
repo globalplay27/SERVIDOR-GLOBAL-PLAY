@@ -3236,7 +3236,7 @@ const server = http.createServer(async (req, res) => {
         requestedClips,
         status: "queued",
         progress: 5,
-        message: "Upload concluído. Aguardando o processador de cortes do NEXUS.",
+        message: "Upload concluído. Preparando os cortes para sua revisão; nada será publicado automaticamente.",
         clips: [],
         createdAt: now,
         updatedAt: now
