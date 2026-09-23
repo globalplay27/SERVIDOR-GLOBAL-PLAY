@@ -2,7 +2,7 @@ const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 let sessionAuth=null,currentClient=null;
 
 function nextPostTime(times=[]){if(!Array.isArray(times)||!times.length)return"—";const parts=new Intl.DateTimeFormat("pt-BR",{timeZone:"America/Sao_Paulo",hour:"2-digit",minute:"2-digit",hour12:false}).formatToParts(new Date());const now=Number(parts.find(p=>p.type==="hour")?.value||0)*60+Number(parts.find(p=>p.type==="minute")?.value||0);const sorted=times.map(v=>{const[h,m]=String(v).split(":").map(Number);return{v,m:h*60+m}}).filter(x=>Number.isFinite(x.m)).sort((a,b)=>a.m-b.m);return sorted.find(x=>x.m>now)?.v||sorted[0]?.v||"—";}
-function showView(name){$$("[data-view]").forEach(b=>b.classList.toggle("active",b.dataset.view===name));["overview","posts","videos","posting","support","setup"].forEach(v=>{const el=$("#view-"+v);if(el)el.hidden=v!==name;});if(name==="support")loadSupportTickets();if(name==="posts")loadClientPosts();if(name==="videos")loadVideoJobs();}
+function showView(name){$$("[data-view]").forEach(b=>b.classList.toggle("active",b.dataset.view===name));["overview","posts","leads","videos","posting","support","setup"].forEach(v=>{const el=$("#view-"+v);if(el)el.hidden=v!==name;});if(name==="support")loadSupportTickets();if(name==="posts")loadClientPosts();if(name==="leads")loadClientLeads();if(name==="videos")loadVideoJobs();}
 function onboardingKeys(){return["github","railway","openai","facebook","instagram","metaApp","creativeProfile","supportRequested"];}
 function setupPercent(){const o=currentClient?.onboarding||{};const keys=onboardingKeys();return Math.round(keys.filter(k=>o[k]).length/keys.length*100);}
 function renderOnboarding(){
@@ -316,6 +316,47 @@ async function loadSupportTickets(){
   }catch{if(list)list.innerHTML='<p class="muted">Não foi possível carregar os chamados agora.</p>';}
 }
 
+let clientLeadData={summary:{total:0,hot:0,warm:0,cold:0,needsHuman:0},leads:[],source:"stored"};
+function leadTemperatureMeta(value){
+  const map={hot:["QUENTE","hot"],warm:["MORNO","warm"],cold:["FRIO","cold"]};
+  return map[value]||["FRIO","cold"];
+}
+function formatLeadDate(value){
+  if(!value)return"—";
+  const date=typeof value==="number"?new Date(value*1000):new Date(value);
+  try{return new Intl.DateTimeFormat("pt-BR",{timeZone:"America/Sao_Paulo",dateStyle:"short",timeStyle:"short"}).format(date);}catch{return"—";}
+}
+function renderClientLeads(data={}){
+  clientLeadData=data||clientLeadData;
+  const summary=clientLeadData.summary||{};
+  [["#client-leads-total","total"],["#client-leads-hot","hot"],["#client-leads-warm","warm"],["#client-leads-cold","cold"],["#client-leads-human","needsHuman"]].forEach(([selector,key])=>{const el=$(selector);if(el)el.textContent=Number(summary[key]||0);});
+  const source=$("#client-leads-source");if(source)source.textContent=clientLeadData.source==="agent"?"ODIN sincronizado em tempo real":"Aguardando sincronização do agente";
+  const body=$("#client-leads-body");if(!body)return;
+  const leads=Array.isArray(clientLeadData.leads)?clientLeadData.leads:[];
+  body.innerHTML=leads.length?leads.map(lead=>{
+    const [label,cls]=leadTemperatureMeta(lead.temperature);
+    const handle=lead.instagramUsername?"@"+escapeSupport(String(lead.instagramUsername).replace(/^@/,"")):(lead.instagramUserId?"ID …"+escapeSupport(String(lead.instagramUserId).slice(-6)):"Sem @");
+    return `<tr>
+      <td><strong>${handle}</strong>${lead.needsHuman?'<small class="human-needed">ATENDIMENTO HUMANO</small>':""}</td>
+      <td><span class="lead-temp ${cls}">${label}</span></td>
+      <td><strong>${Number(lead.score||0)}</strong></td>
+      <td>${escapeSupport(lead.intent||lead.triggerKeyword||"—")}</td>
+      <td>${escapeSupport(lead.stage||"—")}</td>
+      <td>${formatLeadDate(lead.updatedAt||lead.lastContactAt)}</td>
+    </tr>`;
+  }).join(""):'<tr><td colspan="6">Nenhum lead captado ainda.</td></tr>';
+}
+async function loadClientLeads(){
+  try{
+    const r=await fetch("/api/portal/leads",{credentials:"same-origin"});
+    if(!r.ok)throw new Error("Não foi possível sincronizar o Odin.");
+    renderClientLeads(await r.json());
+  }catch(error){
+    const source=$("#client-leads-source");if(source)source.textContent=error.message;
+    const body=$("#client-leads-body");if(body)body.innerHTML='<tr><td colspan="6">O Odin não respondeu agora. Tente atualizar.</td></tr>';
+  }
+}
+
 let clientPosts=[];
 function saoPauloDay(value=new Date()){
   const date=value instanceof Date?value:new Date(value);
@@ -502,7 +543,9 @@ document.addEventListener("click",event=>{
   const own=event.target.closest("[data-post-own-save]");
   if(own){saveOwnPost(own.dataset.postOwnSave,own);return;}
 });
-$$("[data-view]").forEach(b=>b.addEventListener("click",()=>showView(b.dataset.view)));$$("[data-open-setup]").forEach(b=>b.addEventListener("click",()=>showView("setup")));$$("[data-open-posting]").forEach(b=>b.addEventListener("click",()=>showView("posting")));
+$("[data-view]").forEach(b=>b.addEventListener("click",()=>showView(b.dataset.view)));
+const refreshClientPosts=$("#refresh-client-posts");if(refreshClientPosts)refreshClientPosts.addEventListener("click",loadClientPosts);
+const refreshClientLeads=$("#refresh-client-leads");if(refreshClientLeads)refreshClientLeads.addEventListener("click",loadClientLeads);$$("[data-open-setup]").forEach(b=>b.addEventListener("click",()=>showView("setup")));$$("[data-open-posting]").forEach(b=>b.addEventListener("click",()=>showView("posting")));
 $$("[data-profile-tab]").forEach(button=>button.addEventListener("click",()=>{
   $$("[data-profile-tab]").forEach(item=>item.classList.toggle("active",item===button));
   $$("[data-profile-panel]").forEach(panel=>panel.classList.toggle("active",panel.dataset.profilePanel===button.dataset.profileTab));
@@ -707,6 +750,7 @@ async function resumeCookieSession(){
     providerUsage();
     loadConnections();
     loadClientPosts();
+    loadClientLeads();
     loadVideoJobs();
   }catch{}
 }
