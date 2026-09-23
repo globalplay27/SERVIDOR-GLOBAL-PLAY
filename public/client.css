@@ -542,3 +542,13 @@ footer span{color:#a8c8d7!important}
 .video-smart-meta{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-top:7px}
 .video-smart-meta span{display:inline-flex;padding:4px 7px;border-radius:999px;background:rgba(93,211,255,.08);border:1px solid rgba(93,211,255,.18);color:#9fe7ff;font-size:8px;font-weight:900}
 .video-smart-meta b{font-size:9px;color:#a8bdc7;font-weight:600;line-height:1.4}
+
+
+/* Agent Core client approvals */
+.client-post-draft{margin:12px 0;padding:14px;border:1px solid rgba(93,211,255,.13);border-radius:12px;background:rgba(93,211,255,.035)}
+.client-post-draft>span{display:block;margin-bottom:5px;color:#76dfff;font-size:8px;font-weight:900;letter-spacing:.12em}
+.client-post-draft>strong{display:block;color:#eefbff;font-size:14px}
+.client-post-draft p{margin:8px 0 0;color:#a8bec8;font-size:10px;line-height:1.55;white-space:pre-wrap}
+.client-post-draft img{display:block;width:min(260px,100%);margin-top:10px;border:1px solid rgba(93,211,255,.12);border-radius:10px}
+.client-post-actions .post-approve{background:linear-gradient(135deg,#5dd3ff,#1d88b7)!important;color:#031017!important}
+.client-post-actions .post-reject{background:#351318!important;color:#ffabb4!important}
