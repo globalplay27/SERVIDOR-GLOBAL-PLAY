@@ -64,6 +64,7 @@
         <button type="button" data-view="posts">Postagens</button>
         <button type="button" data-view="leads">Leads</button>
         <button type="button" data-view="videos">Vídeos</button>
+        <button type="button" data-view="trailers">Trailers</button>
         <button type="button" data-view="posting">Perfil do Agente</button>
         <button type="button" data-view="support">Suporte</button>
         <button type="button" class="setup-nav-main" data-view="setup" hidden>Conexões</button>
@@ -120,6 +121,10 @@
               <button type="button" id="instagram-connect" class="managed-instagram-button">Conectar Instagram</button>
               <span id="instagram-connect-status" class="provider-line"></span>
             </div>
+          </article>
+          <article class="panel nexus-agent-team">
+            <div class="panel-heading"><div><p class="eyebrow">EQUIPE DIGITAL</p><h2>Agentes trabalhando agora</h2></div><button type="button" id="refresh-agent-team" class="ghost-action">Atualizar</button></div>
+            <div id="client-agent-team" class="client-agent-team"><div class="post-client-empty"><strong>Carregando equipe...</strong><span>Sincronizando RADAR, ESTRATEGISTA, CREATOR, PUBLISHER, AUDITOR e ODIN.</span></div></div>
           </article>
         </section>
       </div>
@@ -184,7 +189,7 @@
           <div>
             <p class="eyebrow">NEXUS VIDEO CUTTER</p>
             <h1>Transforme vídeos longos em cortes</h1>
-            <p class="muted">Envie o vídeo. O NEXUS prepara o arquivo para transcrição, seleção dos melhores trechos e geração dos cortes para sua aprovação.</p>
+            <p class="muted">Envie o vídeo. Os 6 agentes analisam o conteúdo inteiro, transcrevem, escolhem os melhores momentos e só então geram os cortes. Se a IA falhar, o NEXUS não cria um corte técnico falso.</p>
           </div>
           <span id="video-upload-status" class="save-status"></span>
         </section>
@@ -201,7 +206,7 @@
               </label>
               <div class="video-options">
                 <label><span>Objetivo</span><select id="video-goal"><option value="viral">Cortes com potencial de engajamento</option><option value="sales">Vendas</option><option value="educational">Conteúdo educativo</option><option value="podcast">Podcast / entrevista</option><option value="testimonial">Depoimento</option></select></label>
-                <label><span>Duração aproximada</span><select id="video-clip-duration"><option value="15">15 segundos</option><option value="30" selected>30 segundos</option><option value="60">60 segundos</option><option value="90">90 segundos</option></select></label>
+                <label><span>Duração desejada</span><select id="video-clip-duration"><option value="15">15 segundos</option><option value="30" selected>30 segundos</option><option value="45">45 segundos</option><option value="60">60 segundos</option><option value="90">90 segundos</option></select></label>
                 <label><span>Opções de melhores cortes</span><input id="video-requested-clips" type="number" min="1" max="12" value="3"></label>
                 <label><span>Formato de saída</span><select id="video-output-format"><option value="reel" selected>Reels / Stories 9:16</option><option value="feed">Feed do Instagram 4:5</option><option value="square">Quadrado 1:1</option></select></label>
                 <label><span>Pasta</span><select id="video-upload-folder"><option value="default">Meus vídeos</option></select></label>
@@ -228,6 +233,27 @@
               <div class="post-client-empty"><strong>Nenhum vídeo enviado</strong><span>Seus trabalhos aparecerão aqui com o andamento.</span></div>
             </div>
           </article>
+        </section>
+      </div>
+
+      <div id="view-trailers" class="client-view" hidden>
+        <section class="settings-heading">
+          <div>
+            <p class="eyebrow">NEXUS TRAILER FINDER</p>
+            <h1>Filmes e séries</h1>
+            <p class="muted">Pesquise pelo título. O NEXUS localiza a obra e prioriza o trailer oficial publicado no YouTube pelo estúdio ou distribuidora quando o provedor estiver configurado.</p>
+          </div>
+          <span id="trailer-search-status" class="save-status"></span>
+        </section>
+        <section class="panel settings-panel wide-panel trailer-search-panel">
+          <form id="trailer-search-form" class="trailer-search-form">
+            <label><span>Tipo</span><select id="trailer-type"><option value="movie">Filme</option><option value="series">Série</option></select></label>
+            <label class="trailer-query"><span>Nome</span><input id="trailer-query" maxlength="120" placeholder="Ex.: Avatar, The Last of Us, Stranger Things" required></label>
+            <button type="submit" class="connection-submit">Pesquisar trailer oficial</button>
+          </form>
+          <div id="trailer-results" class="trailer-results">
+            <div class="post-client-empty"><strong>Pesquise um título</strong><span>Os resultados aparecem aqui com capa, ano, sinopse e link do trailer.</span></div>
+          </div>
         </section>
       </div>
 
