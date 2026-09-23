@@ -2920,6 +2920,7 @@ function clientPortalView(client) {
     },
     postingProfile: { ...defaultPostingProfile(), ...(client.postingProfile || {}) },
     agentProfile: client.agentProfile && typeof client.agentProfile === "object" ? client.agentProfile : {},
+    agentCore: agentCoreConfig(client),
     connections: connectionSummary(client)
   };
 }
@@ -3361,6 +3362,30 @@ const server = http.createServer(async (req, res) => {
     return send(res, 200, { ok: true, post: row });
   }
 
+  const agentCoreEventMatch = url.pathname.match(/^\/api\/agent\/([^/]+)\/core\/event$/);
+  if (agentCoreEventMatch && req.method === "POST") {
+    const clientId = agentCoreEventMatch[1];
+    if (!agentBearerAuthorized(req, clientId)) return send(res, 401, { error: "unauthorized" });
+    const client = loadClients().find(item => item.id === clientId);
+    if (!client) return send(res, 404, { error: "not_found" });
+    const body = await readBody(req);
+    const agentId = String(body.agent || "").toLowerCase();
+    const module = AGENT_CORE_MODULES.find(item => item.id === agentId || item.name.toLowerCase() === agentId);
+    if (!module) return send(res, 400, { error: "invalid_agent" });
+    const row = recordAgentExecution(client, module.name, {
+      function: String(body.function || body.task || "external-event").slice(0, 120),
+      trigger: "external-agent",
+      status: String(body.status || "success"),
+      model: String(body.model || "external-agent").slice(0, 120),
+      quantity: Math.max(0, Number(body.quantity || 0)),
+      costUsd: Math.max(0, Number(body.costUsd || 0)),
+      message: String(body.message || "").slice(0, 1000),
+      startedAt: normalizeIso(body.startedAt) || new Date().toISOString(),
+      metadata: body.metadata && typeof body.metadata === "object" ? body.metadata : {}
+    });
+    return send(res, 200, { ok: true, execution: agentCoreExecutionView(row) });
+  }
+
   const agentConfigMatch = url.pathname.match(/^\/api\/agent-config\/([^/]+)$/);
   if (agentConfigMatch && req.method === "GET") {
     const clientId = agentConfigMatch[1];
@@ -3378,7 +3403,8 @@ const server = http.createServer(async (req, res) => {
       primaryColor: view.primaryColor,
       secondaryColor: view.secondaryColor,
       postTimes: view.postTimes,
-      postingProfile: view.postingProfile
+      postingProfile: view.postingProfile,
+      agentCore: agentCoreConfig(client)
     });
   }
 
@@ -3880,12 +3906,52 @@ const server = http.createServer(async (req, res) => {
     return send(res, 200, data);
   }
 
+  if (url.pathname === "/api/portal/agent-core" && req.method === "GET") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    const posts = loadPostLedger().filter(row => row.clientId === client.id);
+    return send(res, 200, {
+      modules: AGENT_CORE_MODULES,
+      config: agentCoreConfig(client),
+      state: agentCoreStateFor(client.id),
+      executions: agentExecutionsForClient(client.id, 60),
+      pendingApproval: posts.filter(row => cleanApprovalStatus(row.approvalStatus) === "pending").length,
+      correctionRequested: posts.filter(row => cleanApprovalStatus(row.approvalStatus) === "correction_requested").length
+    });
+  }
+
   if (url.pathname === "/api/portal/posts" && req.method === "GET") {
     const client = portalClientForRequest(req);
     if (!client) return send(res, 401, { error: "unauthorized" });
     return send(res, 200, {
       posts: portalPostsForClient(client),
       schedule: Array.isArray(client.postTimes) ? client.postTimes : []
+    });
+  }
+
+  const portalPostDecisionMatch = url.pathname.match(/^\/api\/portal\/posts\/([^/]+)\/decision$/);
+  if (portalPostDecisionMatch && req.method === "POST") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    const postId = decodeURIComponent(portalPostDecisionMatch[1]);
+    const body = await readBody(req);
+    const decision = String(body.decision || "").toLowerCase();
+    if (!["approved","rejected"].includes(decision)) return send(res, 400, { error: "invalid_decision" });
+    const found = materializePortalPost(client, postId);
+    if (!found.row) return send(res, 404, { error: "not_found" });
+    found.row.approvalStatus = decision;
+    found.row.updatedAt = new Date().toISOString();
+    if (decision === "approved" && found.row.status === "failed") {
+      found.row.status = "ready";
+      found.row.error = "";
+    }
+    savePostLedger(found.ledger);
+    return send(res, 200, {
+      ok: true,
+      post: portalPostView(found.row),
+      message: decision === "approved"
+        ? (found.row.imageUrl ? "Conteúdo aprovado e liberado para o Publisher." : "Pauta aprovada; aguardando mídia antes da publicação.")
+        : "Pauta reprovada e bloqueada para publicação."
     });
   }
 
@@ -4371,6 +4437,71 @@ const server = http.createServer(async (req, res) => {
     return send(res, 401, { error: "unauthorized" });
   }
 
+  if (url.pathname === "/api/master/agent-core" && req.method === "GET") {
+    return send(res, 200, agentCoreDashboard());
+  }
+
+  const masterAgentCoreMatch = url.pathname.match(/^\/api\/master\/agent-core\/([^/]+)$/);
+  if (masterAgentCoreMatch && req.method === "GET") {
+    const clientId = decodeURIComponent(masterAgentCoreMatch[1]);
+    const client = loadClients().find(item => item.id === clientId);
+    if (!client) return send(res, 404, { error: "not_found" });
+    return send(res, 200, {
+      clientId,
+      clientName: client.name || client.id,
+      modules: AGENT_CORE_MODULES,
+      config: agentCoreConfig(client),
+      state: agentCoreStateFor(clientId),
+      executions: agentExecutionsForClient(clientId, 200)
+    });
+  }
+
+  if (masterAgentCoreMatch && req.method === "PATCH") {
+    const clientId = decodeURIComponent(masterAgentCoreMatch[1]);
+    const body = await readBody(req);
+    const clients = loadClients();
+    const client = clients.find(item => item.id === clientId);
+    if (!client) return send(res, 404, { error: "not_found" });
+    const current = agentCoreConfig(client);
+    const next = {
+      enabled: Object.prototype.hasOwnProperty.call(body, "enabled") ? body.enabled === true : current.enabled,
+      autoPublish: Object.prototype.hasOwnProperty.call(body, "autoPublish") ? body.autoPublish === true : current.autoPublish,
+      approvalRequired: current.approvalRequired,
+      cycleMinutes: Object.prototype.hasOwnProperty.call(body, "cycleMinutes")
+        ? Math.max(15, Math.min(1440, Number(body.cycleMinutes || 60)))
+        : current.cycleMinutes,
+      modules: { ...current.modules }
+    };
+    if (Object.prototype.hasOwnProperty.call(body, "approvalRequired")) {
+      // Disabling approval only takes effect when auto publishing was explicitly enabled.
+      next.approvalRequired = next.autoPublish ? body.approvalRequired !== false : true;
+    } else if (!next.autoPublish) {
+      next.approvalRequired = true;
+    }
+    if (body.modules && typeof body.modules === "object") {
+      for (const module of AGENT_CORE_MODULES) {
+        if (Object.prototype.hasOwnProperty.call(body.modules, module.id)) next.modules[module.id] = body.modules[module.id] !== false;
+      }
+    }
+    client.agentCore = next;
+    saveClients(clients);
+    return send(res, 200, { ok: true, config: agentCoreConfig(client) });
+  }
+
+  const masterAgentRunMatch = url.pathname.match(/^\/api\/master\/agent-core\/([^/]+)\/run$/);
+  if (masterAgentRunMatch && req.method === "POST") {
+    const clientId = decodeURIComponent(masterAgentRunMatch[1]);
+    const body = await readBody(req);
+    try {
+      const result = await runAgentCoreCycle(clientId, { trigger: "manual", agent: body.agent || "all" });
+      return send(res, 200, result);
+    } catch (error) {
+      const code = String(error?.message || error);
+      const status = code === "client_not_found" ? 404 : code === "invalid_agent" ? 400 : 500;
+      return send(res, status, { error: code });
+    }
+  }
+
   if (url.pathname === "/api/master/leads" && req.method === "GET") {
     return send(res, 200, await masterLeadSummary());
   }
@@ -4779,5 +4910,8 @@ server.listen(PORT, "0.0.0.0", () => {
   console.log(`NEXUS AI Agent Central listening on ${PORT}`);
   startPendingVideoJobs();
   const videoTimer = setInterval(() => processDueVideoSchedules().catch(() => {}), 30000);
+  const agentCoreTimer = setInterval(() => processAgentCoreScheduler().catch(() => {}), 60000);
+  setTimeout(() => processAgentCoreScheduler().catch(() => {}), 15000);
+  if (typeof agentCoreTimer.unref === "function") agentCoreTimer.unref();
   videoTimer.unref?.();
 });
