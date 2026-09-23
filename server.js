@@ -3579,57 +3579,6 @@ const server = http.createServer(async (req, res) => {
     return send(res, 200, { ok: true, clientId, url: "/portal.html?assumed=1" });
   }
 
-  if (url.pathname === "/api/master/videos" && req.method === "GET") {
-    const jobs = loadVideoJobs()
-      .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
-      .map(portalVideoJobView);
-    return send(res, 200, { jobs });
-  }
-
-  const masterVideoApprovalMatch = url.pathname.match(/^\/api\/master\/videos\/([^/]+)\/([^/]+)\/([^/]+)\/approval$/);
-  if (masterVideoApprovalMatch && req.method === "POST") {
-    try {
-      const body = await readBody(req);
-      const clip = await setVideoClipApproval(decodeURIComponent(masterVideoApprovalMatch[1]), decodeURIComponent(masterVideoApprovalMatch[2]), decodeURIComponent(masterVideoApprovalMatch[3]), body.status);
-      return send(res, 200, { ok: true, clip });
-    } catch (error) {
-      return send(res, 400, { error: String(error?.message || "video_approval_failed") });
-    }
-  }
-
-  const masterVideoScheduleMatch = url.pathname.match(/^\/api\/master\/videos\/([^/]+)\/([^/]+)\/([^/]+)\/schedule$/);
-  if (masterVideoScheduleMatch && req.method === "POST") {
-    try {
-      const body = await readBody(req);
-      const clip = await scheduleVideoClip(decodeURIComponent(masterVideoScheduleMatch[1]), decodeURIComponent(masterVideoScheduleMatch[2]), decodeURIComponent(masterVideoScheduleMatch[3]), body.scheduledFor, body.caption);
-      return send(res, 200, { ok: true, clip });
-    } catch (error) {
-      return send(res, 400, { error: String(error?.message || "video_schedule_failed") });
-    }
-  }
-
-  const masterVideoPublishMatch = url.pathname.match(/^\/api\/master\/videos\/([^/]+)\/([^/]+)\/([^/]+)\/publish$/);
-  if (masterVideoPublishMatch && req.method === "POST") {
-    try {
-      const body = await readBody(req);
-      const clip = await publishVideoClipNow(decodeURIComponent(masterVideoPublishMatch[1]), decodeURIComponent(masterVideoPublishMatch[2]), decodeURIComponent(masterVideoPublishMatch[3]), body.caption);
-      return send(res, 200, { ok: true, clip });
-    } catch (error) {
-      return send(res, 400, { error: String(error?.message || "video_publish_failed") });
-    }
-  }
-
-  const masterVideoAdjustMatch = url.pathname.match(/^\/api\/master\/videos\/([^/]+)\/([^/]+)\/([^/]+)\/adjust$/);
-  if (masterVideoAdjustMatch && req.method === "POST") {
-    try {
-      const body = await readBody(req);
-      const clip = await adjustVideoClip(decodeURIComponent(masterVideoAdjustMatch[1]), decodeURIComponent(masterVideoAdjustMatch[2]), decodeURIComponent(masterVideoAdjustMatch[3]), body);
-      return send(res, 200, { ok: true, clip });
-    } catch (error) {
-      return send(res, 400, { error: String(error?.message || "video_adjust_failed") });
-    }
-  }
-
   if (url.pathname === "/api/master/posts" && req.method === "GET") {
     return send(res, 200, postLedgerSummary());
   }
