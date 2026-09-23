@@ -313,6 +313,13 @@ if(openaiMasterForm)openaiMasterForm.addEventListener("submit",async event=>{
 });
 
 load();
+setInterval(async()=>{
+  try{
+    const support=await api("/api/master/support");
+    state.supportTickets=support.tickets||[];
+    renderSupportNotifications(support);
+  }catch{}
+},20000);
 
 const copyAccessButton=$("#copy-client-access");
 if(copyAccessButton)copyAccessButton.addEventListener("click",async()=>{
