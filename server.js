@@ -3125,7 +3125,7 @@ const server = http.createServer(async (req, res) => {
 
   if (url.pathname === "/login" && req.method === "GET") {
     res.writeHead(303, {
-      location: "/portal.html?v=24&login=1",
+      location: "/portal.html?v=25&login=1",
       "set-cookie": "nexus_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0",
       "cache-control": "no-store",
       "content-length": "0"
@@ -3201,12 +3201,18 @@ const server = http.createServer(async (req, res) => {
     try {
       const body = await readFormBody(req);
       const client = clientFromCredentials(String(body.username || "").trim(), String(body.password || ""));
-      if (!client) return redirectWithCookie(res, "/portal.html?v=24&error=1");
+      if (!client) return redirectWithCookie(res, "/portal.html?v=25&error=1");
 
+      const remember = String(body.remember || "") === "1";
+      const maxAgeSeconds = remember ? 30 * 24 * 60 * 60 : 12 * 60 * 60;
       const token = crypto.randomBytes(32).toString("base64url");
-      portalSessions.set(token, { clientId: client.id, expiresAt: Date.now() + 12 * 60 * 60 * 1000 });
-      const cookie = "nexus_session=" + encodeURIComponent(token) + "; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=43200";
-      return redirectWithCookie(res, "/portal.html?v=24&auth=1", cookie);
+      portalSessions.set(token, {
+        clientId: client.id,
+        expiresAt: Date.now() + maxAgeSeconds * 1000,
+        remembered: remember
+      });
+      const cookie = "nexus_session=" + encodeURIComponent(token) + "; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=" + maxAgeSeconds;
+      return redirectWithCookie(res, "/portal.html?v=25&auth=1", cookie);
     } catch {
       return redirectWithCookie(res, "/portal.html?v=24&error=1");
     }
