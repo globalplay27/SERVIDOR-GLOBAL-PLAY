@@ -790,9 +790,10 @@ function renderVideoJobs(data={}){
       <article class="video-clip-card ${bulkVideoSelection.has(videoClipKey(job.id,clip.id))?"video-bulk-selected":""}" data-video-clip="${escapeSupport(clip.id)}" data-video-job-id="${escapeSupport(job.id)}">
         <video controls preload="metadata" src="${escapeSupport(clip.previewUrl)}"></video>
         <div class="video-clip-body">
-          ${clip.status==="ready"&&clip.publishStatus!=="published"?`<label class="video-bulk-check"><input type="checkbox" data-video-bulk-select="${escapeSupport(job.id)}|${escapeSupport(clip.id)}" ${bulkVideoSelection.has(videoClipKey(job.id,clip.id))?"checked":""}> Agendar este vídeo em lote</label>`:""}
-          <div class="video-clip-top"><strong>${escapeSupport(clip.title||"Corte")}</strong><span class="video-approval ${escapeSupport(clip.approvalStatus||"pending")}">${videoApprovalLabel(clip.approvalStatus)}</span></div>
-          <small>${escapeSupport(clip.reason||"Trecho selecionado pelo NEXUS")}</small>
+          ${clip.status==="ready"&&clip.publishStatus!=="published"?`<label class="video-bulk-check"><input type="checkbox" data-video-bulk-select="${escapeSupport(job.id)}|${escapeSupport(clip.id)}" ${bulkVideoSelection.has(videoClipKey(job.id,clip.id))?"checked":""}> Selecionar para a agenda do mês</label>`:""}
+          <div class="video-clip-top"><strong>Opção ${Number(clip.rank||1)} · ${escapeSupport(clip.title||"Melhor corte")}</strong><span class="video-approval ${escapeSupport(clip.approvalStatus||"pending")}">${videoApprovalLabel(clip.approvalStatus)}</span></div>
+          <div class="video-smart-meta">${clip.qualityScore?`<span>IA ${Number(clip.qualityScore)}/100</span>`:""}${clip.hook?`<b>${escapeSupport(clip.hook)}</b>`:""}</div>
+          <small>${escapeSupport(clip.reason||"Trecho selecionado por potencial de postagem")}</small>
           ${clip.transcript?`<p class="video-transcript">${escapeSupport(clip.transcript)}</p>`:""}
           <div class="video-clip-state"><span>${videoPublishLabel(clip)}</span>${clip.scheduledFor?`<b>${formatClientPostDate(clip.scheduledFor)}</b>`:""}</div>
           ${clip.error?`<p class="video-error">${escapeSupport(clip.error)}</p>`:""}
@@ -808,6 +809,8 @@ function renderVideoJobs(data={}){
             </div>
             <label>Título<input data-video-title maxlength="100" value="${escapeSupport(clip.title||"")}"></label>
             <label>Legenda<textarea data-video-caption rows="3" maxlength="2200">${escapeSupport(clip.caption||clip.title||"")}</textarea></label>
+            <label>Frase final<input data-video-end-text maxlength="90" value="${escapeSupport(clip.endText||job.endText||"")}"></label>
+            <label>Contato / CTA final<input data-video-end-contact maxlength="90" value="${escapeSupport(clip.endContact||job.endContact||"")}"></label>
             <button type="button" data-video-adjust="${escapeSupport(job.id)}|${escapeSupport(clip.id)}">Salvar novo corte</button>
           </div>
           ${clip.approvalStatus==="approved"?`<div class="video-schedule-panel">
@@ -852,9 +855,10 @@ async function adjustVideo(button){
   const {jobId,clipId,card}=videoActionParts(button);
   const start=Number(card.querySelector("[data-video-start]").value),end=Number(card.querySelector("[data-video-end]").value);
   const title=card.querySelector("[data-video-title]").value,caption=card.querySelector("[data-video-caption]").value;
+  const endText=card.querySelector("[data-video-end-text]")?.value||"",endContact=card.querySelector("[data-video-end-contact]")?.value||"";
   button.disabled=true;button.textContent="Recortando…";
   try{
-    const r=await fetch(`/api/portal/videos/${encodeURIComponent(jobId)}/clips/${encodeURIComponent(clipId)}/adjust`,{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({start,end,title,caption})});
+    const r=await fetch(`/api/portal/videos/${encodeURIComponent(jobId)}/clips/${encodeURIComponent(clipId)}/adjust`,{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({start,end,title,caption,endText,endContact})});
     const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||"Falha ao ajustar o corte.");
     setVideoResponse(card,"Novo corte criado. Revise e aprove novamente.","ok");await loadVideoJobs();
   }catch(error){setVideoResponse(card,error.message,"error");}finally{button.disabled=false;button.textContent="Salvar novo corte";}
