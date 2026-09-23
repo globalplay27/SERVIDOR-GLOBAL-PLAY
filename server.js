@@ -356,9 +356,20 @@ function responseOutputText(payload) {
   return parts.join("\n").trim();
 }
 
-async function transcribeVideoAudio(audioPath, durationSeconds) {
-  const apiKey = masterOpenAIProjectKey();
-  if (!apiKey) throw new Error("openai_not_configured");
+function videoOpenAIKeyForClient(clientId) {
+  // Ragnar is intentionally isolated from the shared NEXUS OpenAI account.
+  // If Ragnar has no key stored directly in NEXUS, video cutting falls back to technical cuts
+  // instead of spending the central account.
+  if (clientId === "ragnar-one") {
+    const direct = loadConnections()?.[clientId]?.openai;
+    return direct?.apiKey ? decryptSecret(direct.apiKey) : "";
+  }
+  return masterOpenAIProjectKey();
+}
+
+async function transcribeVideoAudio(audioPath, durationSeconds, clientId) {
+  const apiKey = videoOpenAIKeyForClient(clientId);
+  if (!apiKey) throw new Error(clientId === "ragnar-one" ? "ragnar_openai_not_available" : "openai_not_configured");
   const bytes = fs.readFileSync(audioPath);
   if (bytes.length > 25 * 1024 * 1024) throw new Error("audio_too_large_for_transcription");
   const form = new FormData();
@@ -413,7 +424,7 @@ function transcriptForRange(segments, start, end) {
     .slice(0, 1200);
 }
 
-async function selectSmartClips(transcription, duration, count, targetDuration, goal) {
+async function selectSmartClips(transcription, duration, count, targetDuration, goal, clientId) {
   const segments = Array.isArray(transcription?.segments) ? transcription.segments : [];
   if (!segments.length) return { clips: fallbackClipSelections(duration, count, targetDuration), costUsd: 0, model: "fallback" };
 
@@ -429,8 +440,12 @@ Duração total: ${duration.toFixed(1)} segundos.
 Transcrição com timestamps:
 ${compact}`;
 
-  const apiKey = masterOpenAIProjectKey();
-  if (!apiKey) return { clips: fallbackClipSelections(duration, count, targetDuration), costUsd: 0, model: "fallback" };
+  const apiKey = videoOpenAIKeyForClient(clientId);
+  if (!apiKey) return {
+    clips: fallbackClipSelections(duration, count, targetDuration),
+    costUsd: 0,
+    model: clientId === "ragnar-one" ? "ragnar-own-key-unavailable-fallback" : "fallback"
+  };
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
@@ -517,7 +532,7 @@ async function processVideoJob(jobId) {
     try {
       await execMedia("ffmpeg", ["-y", "-i", initial.storedPath, "-vn", "-ac", "1", "-ar", "16000", "-b:a", "24k", audioPath]);
       updateVideoJob(jobId, { status: "transcribing", progress: 28, message: "Transcrevendo o áudio…" });
-      transcription = await transcribeVideoAudio(audioPath, duration);
+      transcription = await transcribeVideoAudio(audioPath, duration, initial.clientId);
     } catch (error) {
       console.warn("Video transcription fallback " + jobId + ": " + String(error?.message || error));
     }
@@ -538,7 +553,8 @@ async function processVideoJob(jobId) {
         duration,
         Number(initial.requestedClips || 3),
         Number(initial.clipDuration || 30),
-        initial.goal || "viral"
+        initial.goal || "viral",
+        initial.clientId
       );
     } catch (error) {
       console.warn("Video smart selection fallback " + jobId + ": " + String(error?.message || error));
@@ -723,6 +739,76 @@ async function scheduleVideoClip(clientId, jobId, clipId, scheduledFor, caption)
   found.clip.error = "";
   saveVideoClipState(found.jobs, found.job);
   return found.clip;
+}
+
+async function bulkScheduleVideoClips(clientId, items) {
+  if (!Array.isArray(items) || !items.length) throw new Error("no_videos_selected");
+  if (items.length > 100) throw new Error("too_many_videos");
+
+  const jobs = loadVideoJobs();
+  const results = [];
+  const seen = new Set();
+  const now = Date.now();
+
+  for (const raw of items) {
+    const jobId = String(raw?.jobId || "");
+    const clipId = String(raw?.clipId || "");
+    const unique = jobId + "|" + clipId;
+    if (!jobId || !clipId || seen.has(unique)) {
+      results.push({ jobId, clipId, ok: false, error: "invalid_item" });
+      continue;
+    }
+    seen.add(unique);
+
+    const job = jobs.find(item => item.id === jobId && item.clientId === clientId);
+    const clip = job && Array.isArray(job.clips) ? job.clips.find(item => item.id === clipId) : null;
+    if (!job || !clip) {
+      results.push({ jobId, clipId, ok: false, error: "clip_not_found" });
+      continue;
+    }
+    if (clip.publishStatus === "published") {
+      results.push({ jobId, clipId, ok: false, error: "already_published" });
+      continue;
+    }
+    if (clip.status !== "ready") {
+      results.push({ jobId, clipId, ok: false, error: "clip_not_ready" });
+      continue;
+    }
+
+    const date = new Date(raw?.scheduledFor);
+    if (!Number.isFinite(date.getTime())) {
+      results.push({ jobId, clipId, ok: false, error: "invalid_schedule" });
+      continue;
+    }
+    if (date.getTime() < now - 60 * 1000) {
+      results.push({ jobId, clipId, ok: false, error: "schedule_in_past" });
+      continue;
+    }
+
+    // Scheduling from the client is itself the client's approval.
+    // No Master approval is required.
+    clip.approvalStatus = "approved";
+    clip.caption = String(raw?.caption || clip.caption || clip.title || "").slice(0, 2200);
+    clip.scheduledFor = date.toISOString();
+    clip.publishStatus = "scheduled";
+    clip.error = "";
+    job.updatedAt = new Date().toISOString();
+    results.push({
+      jobId,
+      clipId,
+      ok: true,
+      scheduledFor: clip.scheduledFor,
+      publishStatus: clip.publishStatus,
+      approvalStatus: clip.approvalStatus
+    });
+  }
+
+  saveVideoJobs(jobs);
+  return {
+    scheduled: results.filter(item => item.ok).length,
+    failed: results.filter(item => !item.ok).length,
+    results
+  };
 }
 
 async function publishVideoClipNow(clientId, jobId, clipId, caption) {
@@ -3169,6 +3255,18 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { ok: true, clip });
     } catch (error) {
       return send(res, 400, { error: String(error?.message || "video_adjust_failed") });
+    }
+  }
+
+  if (url.pathname === "/api/portal/videos/bulk-schedule" && req.method === "POST") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    try {
+      const body = await readBody(req);
+      const result = await bulkScheduleVideoClips(client.id, body.items || []);
+      return send(res, 200, { ok: true, ...result });
+    } catch (error) {
+      return send(res, 400, { error: String(error?.message || "video_bulk_schedule_failed") });
     }
   }
 
