@@ -2,7 +2,7 @@ const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 let sessionAuth=null,currentClient=null;
 
 function nextPostTime(times=[]){if(!Array.isArray(times)||!times.length)return"—";const parts=new Intl.DateTimeFormat("pt-BR",{timeZone:"America/Sao_Paulo",hour:"2-digit",minute:"2-digit",hour12:false}).formatToParts(new Date());const now=Number(parts.find(p=>p.type==="hour")?.value||0)*60+Number(parts.find(p=>p.type==="minute")?.value||0);const sorted=times.map(v=>{const[h,m]=String(v).split(":").map(Number);return{v,m:h*60+m}}).filter(x=>Number.isFinite(x.m)).sort((a,b)=>a.m-b.m);return sorted.find(x=>x.m>now)?.v||sorted[0]?.v||"—";}
-function showView(name){$("[data-view]").forEach(b=>b.classList.toggle("active",b.dataset.view===name));["overview","posts","leads","videos","trailers","posting","support","setup"].forEach(v=>{const el=$("#view-"+v);if(el)el.hidden=v!==name;});if(name==="support")loadSupportTickets();if(name==="posts")loadClientPosts();if(name==="leads")loadClientLeads();if(name==="videos"){ensureBulkVideoScheduler();loadVideoJobs();}if(name==="overview")loadAgentTeam();}
+function showView(name){$$("[data-view]").forEach(b=>b.classList.toggle("active",b.dataset.view===name));["overview","posts","leads","videos","trailers","posting","support","setup"].forEach(v=>{const el=$("#view-"+v);if(el)el.hidden=v!==name;});if(name==="support")loadSupportTickets();if(name==="posts")loadClientPosts();if(name==="leads")loadClientLeads();if(name==="videos"){ensureBulkVideoScheduler();loadVideoJobs();}if(name==="overview")loadAgentTeam();}
 function onboardingKeys(){return["github","railway","openai","facebook","instagram","metaApp","creativeProfile","supportRequested"];}
 function setupPercent(){const o=currentClient?.onboarding||{};const keys=onboardingKeys();return Math.round(keys.filter(k=>o[k]).length/keys.length*100);}
 function renderOnboarding(){
@@ -653,7 +653,7 @@ function renderBulkVideoScheduler(){
     const when=bulkVideoTimes.get(key)||found.clip.scheduledFor||"";
     return `<div class="video-bulk-row" data-bulk-key="${escapeSupport(key)}"><div><strong>${escapeSupport(found.clip.title||("Vídeo "+(index+1)))}</strong><small>${escapeSupport(found.job.filename||"")} · ${Math.round(Number(found.clip.duration||0))}s</small></div><input type="datetime-local" data-bulk-time value="${escapeSupport(localInputValue(when))}"></div>`;
   }).join("");
-  $("[data-bulk-time]").forEach(input=>input.addEventListener("change",()=>{
+  $$("[data-bulk-time]").forEach(input=>input.addEventListener("change",()=>{
     const row=input.closest("[data-bulk-key]");if(!row)return;
     const date=new Date(input.value);bulkVideoTimes.set(row.dataset.bulkKey,Number.isFinite(date.getTime())?date.toISOString():"");
   }));
