@@ -3120,6 +3120,58 @@ const server = http.createServer(async (req, res) => {
     return send(res, 200, { jobs });
   }
 
+  const portalVideoApprovalMatch = url.pathname.match(/^\/api\/portal\/videos\/([^/]+)\/clips\/([^/]+)\/approval$/);
+  if (portalVideoApprovalMatch && req.method === "POST") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    try {
+      const body = await readBody(req);
+      const clip = await setVideoClipApproval(client.id, decodeURIComponent(portalVideoApprovalMatch[1]), decodeURIComponent(portalVideoApprovalMatch[2]), body.status);
+      return send(res, 200, { ok: true, clip, jobs: loadVideoJobs().filter(job => job.clientId === client.id).map(portalVideoJobView) });
+    } catch (error) {
+      return send(res, 400, { error: String(error?.message || "video_approval_failed") });
+    }
+  }
+
+  const portalVideoScheduleMatch = url.pathname.match(/^\/api\/portal\/videos\/([^/]+)\/clips\/([^/]+)\/schedule$/);
+  if (portalVideoScheduleMatch && req.method === "POST") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    try {
+      const body = await readBody(req);
+      const clip = await scheduleVideoClip(client.id, decodeURIComponent(portalVideoScheduleMatch[1]), decodeURIComponent(portalVideoScheduleMatch[2]), body.scheduledFor, body.caption);
+      return send(res, 200, { ok: true, clip });
+    } catch (error) {
+      return send(res, 400, { error: String(error?.message || "video_schedule_failed") });
+    }
+  }
+
+  const portalVideoPublishMatch = url.pathname.match(/^\/api\/portal\/videos\/([^/]+)\/clips\/([^/]+)\/publish$/);
+  if (portalVideoPublishMatch && req.method === "POST") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    try {
+      const body = await readBody(req);
+      const clip = await publishVideoClipNow(client.id, decodeURIComponent(portalVideoPublishMatch[1]), decodeURIComponent(portalVideoPublishMatch[2]), body.caption);
+      return send(res, 200, { ok: true, clip });
+    } catch (error) {
+      return send(res, 400, { error: String(error?.message || "video_publish_failed") });
+    }
+  }
+
+  const portalVideoAdjustMatch = url.pathname.match(/^\/api\/portal\/videos\/([^/]+)\/clips\/([^/]+)\/adjust$/);
+  if (portalVideoAdjustMatch && req.method === "POST") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    try {
+      const body = await readBody(req);
+      const clip = await adjustVideoClip(client.id, decodeURIComponent(portalVideoAdjustMatch[1]), decodeURIComponent(portalVideoAdjustMatch[2]), body);
+      return send(res, 200, { ok: true, clip });
+    } catch (error) {
+      return send(res, 400, { error: String(error?.message || "video_adjust_failed") });
+    }
+  }
+
   if (url.pathname === "/api/portal/videos" && req.method === "POST") {
     const client = portalClientForRequest(req);
     if (!client) return send(res, 401, { error: "unauthorized" });
@@ -3193,7 +3245,46 @@ const server = http.createServer(async (req, res) => {
       jobs.push(job);
       saveVideoJobs(jobs);
       send(res, 201, { ok: true, job: portalVideoJobView(job) });
+      setTimeout(() => processVideoJob(job.id).catch(() => {}), 300);
     });
+    return;
+  }
+
+  if (url.pathname.startsWith("/video-media/") && req.method === "GET") {
+    const publicName = path.basename(decodeURIComponent(url.pathname.slice("/video-media/".length)));
+    const jobs = loadVideoJobs();
+    let file = "";
+    for (const job of jobs) {
+      const clip = (job.clips || []).find(item => item.publicName === publicName);
+      if (clip?.storedPath && fs.existsSync(clip.storedPath)) {
+        file = clip.storedPath;
+        break;
+      }
+    }
+    if (!file) return send(res, 404, "Not found", "text/plain; charset=utf-8");
+    const stat = fs.statSync(file);
+    const range = String(req.headers.range || "");
+    res.setHeader("accept-ranges", "bytes");
+    res.setHeader("content-type", "video/mp4");
+    res.setHeader("cache-control", "public, max-age=3600");
+    res.setHeader("x-content-type-options", "nosniff");
+    if (range) {
+      const match = /bytes=(\d*)-(\d*)/.exec(range);
+      const start = match?.[1] ? Number(match[1]) : 0;
+      const end = match?.[2] ? Math.min(Number(match[2]), stat.size - 1) : stat.size - 1;
+      if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end < start || start >= stat.size) {
+        res.writeHead(416, { "content-range": "bytes */" + stat.size });
+        return res.end();
+      }
+      res.writeHead(206, {
+        "content-range": "bytes " + start + "-" + end + "/" + stat.size,
+        "content-length": end - start + 1
+      });
+      fs.createReadStream(file, { start, end }).pipe(res);
+      return;
+    }
+    res.writeHead(200, { "content-length": stat.size });
+    fs.createReadStream(file).pipe(res);
     return;
   }
 
@@ -3238,6 +3329,57 @@ const server = http.createServer(async (req, res) => {
     portalSessions.set(token, { clientId, expiresAt: Date.now() + 2 * 60 * 60 * 1000, assumedByMaster: true });
     res.setHeader("set-cookie", "nexus_session=" + encodeURIComponent(token) + "; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=7200");
     return send(res, 200, { ok: true, clientId, url: "/portal.html?assumed=1" });
+  }
+
+  if (url.pathname === "/api/master/videos" && req.method === "GET") {
+    const jobs = loadVideoJobs()
+      .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
+      .map(portalVideoJobView);
+    return send(res, 200, { jobs });
+  }
+
+  const masterVideoApprovalMatch = url.pathname.match(/^\/api\/master\/videos\/([^/]+)\/([^/]+)\/([^/]+)\/approval$/);
+  if (masterVideoApprovalMatch && req.method === "POST") {
+    try {
+      const body = await readBody(req);
+      const clip = await setVideoClipApproval(decodeURIComponent(masterVideoApprovalMatch[1]), decodeURIComponent(masterVideoApprovalMatch[2]), decodeURIComponent(masterVideoApprovalMatch[3]), body.status);
+      return send(res, 200, { ok: true, clip });
+    } catch (error) {
+      return send(res, 400, { error: String(error?.message || "video_approval_failed") });
+    }
+  }
+
+  const masterVideoScheduleMatch = url.pathname.match(/^\/api\/master\/videos\/([^/]+)\/([^/]+)\/([^/]+)\/schedule$/);
+  if (masterVideoScheduleMatch && req.method === "POST") {
+    try {
+      const body = await readBody(req);
+      const clip = await scheduleVideoClip(decodeURIComponent(masterVideoScheduleMatch[1]), decodeURIComponent(masterVideoScheduleMatch[2]), decodeURIComponent(masterVideoScheduleMatch[3]), body.scheduledFor, body.caption);
+      return send(res, 200, { ok: true, clip });
+    } catch (error) {
+      return send(res, 400, { error: String(error?.message || "video_schedule_failed") });
+    }
+  }
+
+  const masterVideoPublishMatch = url.pathname.match(/^\/api\/master\/videos\/([^/]+)\/([^/]+)\/([^/]+)\/publish$/);
+  if (masterVideoPublishMatch && req.method === "POST") {
+    try {
+      const body = await readBody(req);
+      const clip = await publishVideoClipNow(decodeURIComponent(masterVideoPublishMatch[1]), decodeURIComponent(masterVideoPublishMatch[2]), decodeURIComponent(masterVideoPublishMatch[3]), body.caption);
+      return send(res, 200, { ok: true, clip });
+    } catch (error) {
+      return send(res, 400, { error: String(error?.message || "video_publish_failed") });
+    }
+  }
+
+  const masterVideoAdjustMatch = url.pathname.match(/^\/api\/master\/videos\/([^/]+)\/([^/]+)\/([^/]+)\/adjust$/);
+  if (masterVideoAdjustMatch && req.method === "POST") {
+    try {
+      const body = await readBody(req);
+      const clip = await adjustVideoClip(decodeURIComponent(masterVideoAdjustMatch[1]), decodeURIComponent(masterVideoAdjustMatch[2]), decodeURIComponent(masterVideoAdjustMatch[3]), body);
+      return send(res, 200, { ok: true, clip });
+    } catch (error) {
+      return send(res, 400, { error: String(error?.message || "video_adjust_failed") });
+    }
   }
 
   if (url.pathname === "/api/master/posts" && req.method === "GET") {
@@ -3632,4 +3774,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`NEXUS AI Agent Central listening on ${PORT}`);
+  startPendingVideoJobs();
+  const videoTimer = setInterval(() => processDueVideoSchedules().catch(() => {}), 30000);
+  videoTimer.unref?.();
 });
