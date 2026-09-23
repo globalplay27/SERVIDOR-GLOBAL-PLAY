@@ -3,7 +3,7 @@
   "short_name": "NEXUS AI",
   "description": "Central inteligente para operação do seu agente NEXUS.",
   "id": "/portal.html",
-  "start_url": "/portal.html?v=22",
+  "start_url": "/portal.html?v=24",
   "scope": "/",
   "display": "standalone",
   "orientation": "any",
