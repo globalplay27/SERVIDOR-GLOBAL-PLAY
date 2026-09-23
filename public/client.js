@@ -38,7 +38,16 @@ function renderClient(c){
   $("#client-name").textContent=c.name;
   $("#client-meta").textContent=(c.niche||"Outro")+" · ambiente exclusivo";
   $("#next-post").textContent=nextPostTime(c.postTimes);
-  $("#instagram-card").textContent=c.instagram||"Pendente";
+  $("#instagram-card").textContent=c.instagram||"Aguardando conexão";
+  const aiMode=c.id==="ragnar-one"?"own-key":(c.aiMode||"economy");
+  const aiLabels={economy:"ECONÔMICA",hybrid:"HÍBRIDA","own-key":"CHAVE PRÓPRIA"};
+  const aiCard=$("#ai-mode-card"),aiDetail=$("#ai-mode-detail");
+  if(aiCard)aiCard.textContent=aiLabels[aiMode]||"NEXUS";
+  if(aiDetail)aiDetail.textContent=c.id==="ragnar-one"
+    ?"conta OpenAI própria · separada do NEXUS"
+    :aiMode==="hybrid"
+      ?`${Number(c.aiImagesUsed||0)} / ${Number(c.aiMonthlyImageLimit||0)} imagens IA no mês`
+      :aiMode==="own-key"?"custos na conta do cliente":"sem imagem IA paga nas postagens";
   $("#overview-agent-status").textContent=online?"ONLINE":"CONFIGURANDO";
   $("#niche").textContent=c.niche||"Outro";
   $("#agent-status").textContent=online?"Online":"Em configuração";
@@ -49,6 +58,7 @@ function renderClient(c){
 function populatePosting(c){const p=c.postingProfile||{};$("#cfg-niche").value=[...$("#cfg-niche").options].some(o=>o.value===c.niche)?c.niche:"Outro";$("#cfg-audience").value=p.targetAudience||"Misto";$("#cfg-strategy").value=p.contentStrategy||"Vendas + engajamento";$("#cfg-style").value=p.visualStyle||"Tecnológico premium";$("#cfg-tone").value=p.tone||"Firme, direto e profissional";$("#cfg-focus").value=p.contentFocus||"";$("#cfg-avoid").value=p.avoidTopics||"";$("#cfg-primary").value=c.primaryColor||"#22c55e";$("#cfg-secondary").value=c.secondaryColor||"#050807";$("#cfg-cta").value=p.cta||'Comente "QUERO" e saiba mais';$("#cfg-hashtags").value=p.hashtags||"";const t=c.postTimes||["09:00","12:00","18:00"];$("#time-1").value=t[0]||"09:00";$("#time-2").value=t[1]||"12:00";$("#time-3").value=t[2]||"18:00";$("#theme-1").value=p.morningTheme||"";$("#theme-2").value=p.afternoonTheme||"";$("#theme-3").value=p.eveningTheme||"";$("#preview-title").textContent=c.name||"Seu agente";updatePreview();}
 function updatePreview(){const p=$("#cfg-primary").value,s=$("#cfg-secondary").value;$("#cfg-primary-text").textContent=p;$("#cfg-secondary-text").textContent=s;$("#creative-preview").style.background=`radial-gradient(circle at 80% 15%,${p}55,transparent 35%),linear-gradient(135deg,${s},#090d0b)`;$("#creative-preview").style.borderColor=p;$("#preview-cta").textContent=$("#cfg-cta").value||"CTA";}
 async function providerUsage(){
+  if(currentClient?.managedInfrastructure)return;
   try{
     const r=await fetch("/api/portal/provider-usage",{headers:{"x-nexus-session":sessionAuth}});
     if(!r.ok)return;

@@ -21,6 +21,7 @@ const runtimeFile = path.join(DATA_DIR, "runtime.json");
 const connectionsFile = path.join(DATA_DIR, "connections.json");
 const oauthStateFile = path.join(DATA_DIR, "oauth-states.json");
 const portalUsersFile = path.join(DATA_DIR, "portal-users.json");
+const masterIntegrationsFile = path.join(DATA_DIR, "master-integrations.json");
 const portalSessions = new Map();
 const masterSessions = new Map();
 
@@ -162,6 +163,14 @@ function savePortalUsers(value) {
   writeJsonAtomic(portalUsersFile, value);
 }
 
+function loadMasterIntegrations() {
+  return readObjectFile(masterIntegrationsFile, {});
+}
+
+function saveMasterIntegrations(value) {
+  writeJsonAtomic(masterIntegrationsFile, value);
+}
+
 function createPortalPasswordRecord(password) {
   const salt = crypto.randomBytes(16).toString("hex");
   const hash = crypto.scryptSync(String(password), salt, 32).toString("hex");
@@ -218,7 +227,7 @@ function directConnection(clientId, provider) {
 }
 
 function providerLooksConnected(value) {
-  return ["connected","configured","active","ready"].includes(String(value || "").toLowerCase());
+  return ["connected","configured","active","ready","managed"].includes(String(value || "").toLowerCase());
 }
 
 function connectionSummary(client) {
@@ -291,6 +300,112 @@ async function validateOpenAIAdminKey(key) {
   });
   if (!response.ok) throw new Error("openai_admin_auth_failed");
   return true;
+}
+
+function masterOpenAIRecord() {
+  return loadMasterIntegrations()?.openai || {};
+}
+
+function masterOpenAIAdminKey() {
+  return String(process.env.OPENAI_ADMIN_KEY || "").trim()
+    || decryptSecret(masterOpenAIRecord().adminKey || "");
+}
+
+function masterOpenAIProjectKey() {
+  return String(process.env.OPENAI_API_KEY || "").trim()
+    || decryptSecret(masterOpenAIRecord().apiKey || "");
+}
+
+async function fetchOpenAICostTotal(adminKey, startTime, endTime = null) {
+  if (!adminKey) return null;
+  let total = 0;
+  let page = "";
+  let loops = 0;
+  do {
+    const query = new URLSearchParams({
+      start_time: String(Math.max(0, Math.floor(startTime))),
+      bucket_width: "1d",
+      limit: "180"
+    });
+    if (endTime) query.set("end_time", String(Math.floor(endTime)));
+    if (page) query.set("page", page);
+    const response = await fetch("https://api.openai.com/v1/organization/costs?" + query.toString(), {
+      headers: { authorization: "Bearer " + adminKey, "user-agent": "NEXUS-AI/1.0" }
+    });
+    if (!response.ok) throw new Error("openai_costs_failed_" + response.status);
+    const payload = await response.json();
+    for (const bucket of payload.data || []) {
+      for (const item of bucket.results || []) {
+        const amount = item.amount || {};
+        if (String(amount.currency || "").toLowerCase() === "usd") total += Number(amount.value || 0);
+      }
+    }
+    page = payload.has_more ? String(payload.next_page || "") : "";
+    loops += 1;
+  } while (page && loops < 12);
+  return total;
+}
+
+async function fetchOpenAISpendLimit(adminKey) {
+  if (!adminKey) return null;
+  try {
+    const response = await fetch("https://api.openai.com/v1/organization/spend_limit", {
+      headers: { authorization: "Bearer " + adminKey, "user-agent": "NEXUS-AI/1.0" }
+    });
+    if (!response.ok) return null;
+    const payload = await response.json();
+    const raw = Number(payload.threshold_amount);
+    if (!Number.isFinite(raw)) return null;
+    return raw / 100;
+  } catch {
+    return null;
+  }
+}
+
+async function masterOpenAISummary() {
+  const record = masterOpenAIRecord();
+  const adminKey = masterOpenAIAdminKey();
+  const apiKey = masterOpenAIProjectKey();
+  const now = Math.floor(Date.now() / 1000);
+  const date = new Date();
+  const monthStart = Math.floor(new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1)).getTime() / 1000);
+  const baselineAt = Number(record.balanceBaselineAt || 0);
+  const baselineUsd = Number(record.balanceBaselineUsd);
+  let monthCostUsd = null;
+  let baselineCostUsd = null;
+  let spendLimitUsd = null;
+  let error = "";
+
+  if (adminKey) {
+    try {
+      monthCostUsd = await fetchOpenAICostTotal(adminKey, monthStart, now);
+      if (baselineAt > 0 && Number.isFinite(baselineUsd)) {
+        baselineCostUsd = await fetchOpenAICostTotal(adminKey, baselineAt, now);
+      }
+      spendLimitUsd = await fetchOpenAISpendLimit(adminKey);
+    } catch (err) {
+      error = String(err?.message || "openai_summary_failed");
+    }
+  }
+
+  const balanceEstimatedUsd =
+    Number.isFinite(baselineUsd) && baselineAt > 0 && Number.isFinite(baselineCostUsd)
+      ? Math.max(0, baselineUsd - baselineCostUsd)
+      : null;
+
+  return {
+    apiConnected: Boolean(apiKey),
+    billingConnected: Boolean(adminKey),
+    connected: Boolean(apiKey || adminKey),
+    monthCostUsd,
+    spendLimitUsd,
+    balanceEstimatedUsd,
+    balanceBaselineUsd: Number.isFinite(baselineUsd) ? baselineUsd : null,
+    balanceBaselineAt: baselineAt || null,
+    exactPrepaidBalanceAvailable: false,
+    ragnarExcluded: true,
+    error
+  };
 }
 
 function railwayRedirectUri(req) {
@@ -514,13 +629,13 @@ function defaultPostingProfile() {
     contentStrategy: "Vendas + engajamento",
     targetAudience: "Misto",
     visualStyle: "Tecnológico premium",
-    contentFocus: "Estabilidade, suporte, futebol, filmes e séries",
-    morningTheme: "Dores do cliente e estabilidade",
-    afternoonTheme: "Filmes, séries e entretenimento",
-    eveningTheme: "Futebol e jogos ao vivo",
+    contentFocus: "Benefícios reais do negócio, autoridade, produto e conversão",
+    morningTheme: "Dor do cliente e solução",
+    afternoonTheme: "Produto, benefício e prova",
+    eveningTheme: "Conversão e chamada para ação",
     tone: "Firme, direto e profissional",
     cta: 'Comente "QUERO" e saiba mais',
-    hashtags: "#RagnarOne #Streaming #FutebolAoVivo #FilmesESeries #Entretenimento",
+    hashtags: "#ConteudoDigital #Vendas #Automacao",
     avoidTopics: "Promessas irreais, informações não confirmadas e poluição visual"
   };
 }
@@ -539,6 +654,10 @@ function clientPortalView(client) {
     postTimes: client.postTimes,
     leads: client.leads,
     usage: client.usage,
+    aiMode: client.aiMode || (client.id === "ragnar-one" ? "own-key" : "economy"),
+    aiMonthlyImageLimit: Number(client.aiMonthlyImageLimit || 0),
+    aiImagesUsed: Number(client.aiImagesUsed || 0),
+    managedInfrastructure: client.id !== "ragnar-one" ? client.managedInfrastructure !== false : false,
     onboarding: client.onboarding || {},
     setupMode: client.setupMode || "ready",
     integrationState: {
@@ -915,8 +1034,38 @@ const server = http.createServer(async (req, res) => {
       return send(res, 401, { error: "unauthorized" });
     }
 
+    const client = loadClients().find(item => item.id === clientId);
+    if (!client) return send(res, 404, { error: "not_found" });
+
     const record = directConnection(clientId, "openai");
-    const apiKey = decryptSecret(record?.apiKey || "");
+    const ownKey = decryptSecret(record?.apiKey || "");
+    const aiMode = client.aiMode || (clientId === "ragnar-one" ? "own-key" : "economy");
+
+    // Ragnar is intentionally excluded from the shared NEXUS OpenAI account.
+    let apiKey = ownKey;
+    if (clientId !== "ragnar-one" && aiMode !== "own-key") {
+      if (aiMode === "economy") {
+        return send(res, 409, { error: "ai_mode_economy_uses_local_creatives" });
+      }
+      const month = new Date().toISOString().slice(0, 7);
+      if (client.aiUsageMonth !== month) {
+        client.aiUsageMonth = month;
+        client.aiImagesUsed = 0;
+        const allClients = loadClients();
+        const stored = allClients.find(item => item.id === clientId);
+        if (stored) {
+          stored.aiUsageMonth = month;
+          stored.aiImagesUsed = 0;
+          saveClients(allClients);
+        }
+      }
+      const limit = Math.max(0, Number(client.aiMonthlyImageLimit || 0));
+      if (limit > 0 && Number(client.aiImagesUsed || 0) >= limit) {
+        return send(res, 429, { error: "ai_monthly_image_limit_reached" });
+      }
+      apiKey = masterOpenAIProjectKey();
+    }
+
     if (!apiKey) {
       return send(res, 409, { error: "openai_not_connected" });
     }
@@ -958,6 +1107,21 @@ const server = http.createServer(async (req, res) => {
 
       const encoded = payload?.data?.[0]?.b64_json;
       if (!encoded) return send(res, 502, { error: "image_data_missing" });
+
+      if (clientId !== "ragnar-one" && aiMode === "hybrid") {
+        const allClients = loadClients();
+        const stored = allClients.find(item => item.id === clientId);
+        if (stored) {
+          const month = new Date().toISOString().slice(0, 7);
+          if (stored.aiUsageMonth !== month) {
+            stored.aiUsageMonth = month;
+            stored.aiImagesUsed = 0;
+          }
+          stored.aiImagesUsed = Number(stored.aiImagesUsed || 0) + 1;
+          saveClients(allClients);
+        }
+      }
+
       return send(res, 200, { b64_json: encoded, model });
     } catch {
       return send(res, 502, { error: "openai_unavailable" });
@@ -1105,6 +1269,15 @@ const server = http.createServer(async (req, res) => {
     if (!id) id = crypto.randomUUID();
     if (clients.some(c => c.id === id)) id += "-" + String(Date.now()).slice(-5);
 
+    const aiModes = new Set(["economy", "hybrid", "own-key"]);
+    const aiMode = aiModes.has(String(body.aiMode || "")) ? String(body.aiMode) : "economy";
+    const requestedAiLimit = Number(body.aiMonthlyImageLimit);
+    const aiMonthlyImageLimit = aiMode === "economy"
+      ? 0
+      : aiMode === "hybrid"
+        ? (Number.isFinite(requestedAiLimit) && requestedAiLimit >= 0 ? Math.min(500, Math.floor(requestedAiLimit)) : 10)
+        : 0;
+
     const client = {
       id,
       name: body.name || "Novo cliente",
@@ -1114,20 +1287,26 @@ const server = http.createServer(async (req, res) => {
       primaryColor: body.primaryColor || "#18c96e",
       secondaryColor: body.secondaryColor || "#07140c",
       status: "setup",
-      github: "",
-      railway: "",
-      openai: "pending",
+      github: "managed",
+      railway: "managed",
+      openai: aiMode === "own-key" ? "pending" : "managed",
       meta: "pending",
       odin: true,
       postTimes: ["09:00", "12:00", "18:00"],
       leads: { total: 0, hot: 0, warm: 0, cold: 0 },
       usage: { openaiPercent: 0, railwayPercent: 0 },
+      aiMode,
+      aiMonthlyImageLimit,
+      aiImagesUsed: 0,
+      aiUsageMonth: new Date().toISOString().slice(0, 7),
+      managedInfrastructure: true,
       onboarding: {
-        github: false, railway: false, openai: false,
-        instagram: false, facebook: false, metaApp: false
+        github: true, railway: true, openai: aiMode !== "own-key",
+        instagram: false, facebook: true, metaApp: true,
+        creativeProfile: false, supportRequested: false
       },
       postingProfile: defaultPostingProfile(),
-      setupMode: "new",
+      setupMode: "managed",
       agentApiUrl: ""
     };
 
@@ -1180,13 +1359,68 @@ const server = http.createServer(async (req, res) => {
     const allowed = [
       "name","niche","instagram","theme","primaryColor","secondaryColor",
       "status","github","railway","openai","meta","odin","postTimes",
-      "leads","usage","onboarding","agentApiUrl","setupMode"
+      "leads","usage","onboarding","agentApiUrl","setupMode",
+      "aiMode","aiMonthlyImageLimit","aiImagesUsed","aiUsageMonth","managedInfrastructure"
     ];
     for (const key of allowed) {
       if (Object.prototype.hasOwnProperty.call(body, key)) client[key] = body[key];
     }
     saveClients(clients);
     return send(res, 200, client);
+  }
+
+  if (url.pathname === "/api/master/openai" && req.method === "GET") {
+    try {
+      return send(res, 200, await masterOpenAISummary());
+    } catch (error) {
+      return send(res, 200, {
+        apiConnected: Boolean(masterOpenAIProjectKey()),
+        billingConnected: Boolean(masterOpenAIAdminKey()),
+        connected: Boolean(masterOpenAIProjectKey() || masterOpenAIAdminKey()),
+        monthCostUsd: null,
+        spendLimitUsd: null,
+        balanceEstimatedUsd: null,
+        exactPrepaidBalanceAvailable: false,
+        ragnarExcluded: true,
+        error: String(error?.message || "openai_summary_failed")
+      });
+    }
+  }
+
+  if (url.pathname === "/api/master/openai" && req.method === "POST") {
+    try {
+      const body = await readBody(req);
+      const current = loadMasterIntegrations();
+      const previous = current.openai || {};
+      const suppliedApiKey = String(body.apiKey || "").trim();
+      const suppliedAdminKey = String(body.adminKey || "").trim();
+      const apiKey = suppliedApiKey || masterOpenAIProjectKey();
+      const adminKey = suppliedAdminKey || masterOpenAIAdminKey();
+
+      if (!apiKey && !adminKey) return send(res, 400, { error: "openai_key_required" });
+      if (suppliedApiKey) await validateOpenAIKey(suppliedApiKey);
+      if (suppliedAdminKey) await validateOpenAIAdminKey(suppliedAdminKey);
+
+      const next = { ...previous };
+      if (suppliedApiKey) next.apiKey = encryptSecret(suppliedApiKey);
+      if (suppliedAdminKey) next.adminKey = encryptSecret(suppliedAdminKey);
+
+      if (Object.prototype.hasOwnProperty.call(body, "currentBalanceUsd") && String(body.currentBalanceUsd).trim() !== "") {
+        const balance = Number(body.currentBalanceUsd);
+        if (!Number.isFinite(balance) || balance < 0 || balance > 1000000) {
+          return send(res, 400, { error: "invalid_balance" });
+        }
+        next.balanceBaselineUsd = balance;
+        next.balanceBaselineAt = Math.floor(Date.now() / 1000);
+      }
+      next.connectedAt = previous.connectedAt || new Date().toISOString();
+      next.updatedAt = new Date().toISOString();
+      current.openai = next;
+      saveMasterIntegrations(current);
+      return send(res, 200, await masterOpenAISummary());
+    } catch (error) {
+      return send(res, 400, { error: String(error?.message || "openai_connection_failed") });
+    }
   }
 
   if (url.pathname === "/api/system/status" && req.method === "GET") {
@@ -1201,7 +1435,8 @@ const server = http.createServer(async (req, res) => {
         || (process.env.RAILWAY_OAUTH_CLIENT_ID && process.env.RAILWAY_OAUTH_CLIENT_SECRET)
       ),
       railwayMode: process.env.RAILWAY_API_TOKEN ? "api-token" : "oauth",
-      openaiAdminConfigured: Boolean(process.env.OPENAI_ADMIN_KEY),
+      openaiAdminConfigured: Boolean(masterOpenAIAdminKey()),
+      openaiApiConfigured: Boolean(masterOpenAIProjectKey()),
       openaiAdminOptional: true,
       clientPortalConfigured: portalAccounts().length > 0,
       metaMode: "per-client",

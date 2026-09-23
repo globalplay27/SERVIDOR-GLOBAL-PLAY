@@ -438,3 +438,9 @@ footer span{color:#a8c8d7!important}
 .install-app-button[hidden]{display:none!important}
 .installed-app .install-app-button{display:none!important}
 @media(max-width:640px){.top-actions .install-app-button.compact{display:none!important}}
+
+/* Managed-client experience */
+.managed-metrics{grid-template-columns:repeat(5,minmax(0,1fr))}
+.managed-instagram-button[disabled]{opacity:.72;cursor:default}
+@media(max-width:1120px){.managed-metrics{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:700px){.managed-metrics{grid-template-columns:1fr 1fr}}

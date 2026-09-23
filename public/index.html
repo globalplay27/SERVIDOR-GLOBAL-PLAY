@@ -41,7 +41,7 @@
         </div>
       </section>
 
-      <section id="clients" class="view"><div class="panel"><div class="panel-head"><div><p class="eyebrow">GESTÃO</p><h2>Todos os clientes</h2></div><button class="primary" data-go="onboarding">＋ Adicionar cliente</button></div><div class="table-wrap"><table><thead><tr><th>Cliente</th><th>Status</th><th>Instagram</th><th>Odin</th><th>Horários</th><th>Infraestrutura</th></tr></thead><tbody id="clients-table"></tbody></table></div></div></section>
+      <section id="clients" class="view"><div class="panel"><div class="panel-head"><div><p class="eyebrow">GESTÃO</p><h2>Todos os clientes</h2></div><button class="primary" data-go="onboarding">＋ Adicionar cliente</button></div><div class="table-wrap"><table><thead><tr><th>Cliente</th><th>Status</th><th>Instagram</th><th>Odin</th><th>Horários</th><th>IA do cliente</th></tr></thead><tbody id="clients-table"></tbody></table></div></div></section>
 
       <section id="portal" class="view">
         <div class="portal-toolbar"><div><p class="eyebrow">VISÃO DO CLIENTE</p><h2>Portal personalizado</h2></div><label>Visualizar como<select id="portal-client"></select></label></div>
@@ -55,9 +55,65 @@
 
       <section id="odin" class="view"><div class="grid-main"><div class="panel"><p class="eyebrow">MÓDULO COMERCIAL</p><h2>Odin</h2><p class="muted">Captação, qualificação e encaminhamento de leads quentes para atendimento humano.</p><div class="funnel"><div><strong id="funnel-total">0</strong><span>Total</span></div><div><strong id="funnel-warm">0</strong><span>Mornos</span></div><div><strong id="funnel-hot">0</strong><span>Quentes</span></div></div></div><div class="panel"><p class="eyebrow">AUTOMAÇÃO</p><h2>Recursos preparados</h2><ul class="checklist"><li>Comentários “QUERO”</li><li>Classificação frio, morno e quente</li><li>Score e intenção de compra</li><li>Assinatura, revenda e suporte</li><li>Encaminhamento para WhatsApp</li></ul></div></div></section>
 
-      <section id="onboarding" class="view"><div class="panel form-panel"><p class="eyebrow">PORTAL DO CLIENTE</p><h2>Cadastrar novo cliente</h2><p class="muted">Crie a configuração inicial. Autorizações OAuth serão adicionadas na próxima fase.</p><form id="client-form"><div class="form-grid"><label>Empresa / nome<input name="name" required placeholder="Ex.: Ragnar One"></label><label>Nicho<input name="niche" placeholder="Ex.: Streaming"></label><label>Instagram<input name="instagram" placeholder="@usuario"></label><label>Usuário do aplicativo<input name="username" placeholder="Gerado automaticamente"></label><label>Senha inicial<input name="password" type="text" minlength="8" placeholder="Gerada automaticamente"></label><label>Tema<select name="theme"><option value="green-black">Preto + Verde</option><option value="red-black">Preto + Vermelho</option><option value="blue-white">Azul + Branco</option><option value="gold-black">Preto + Dourado</option></select></label></div><div class="theme-preview" id="theme-preview"><span>PRÉVIA</span><strong>Seu agente, sua marca.</strong><small>Automação inteligente e independente</small></div><button class="primary" type="submit">Criar cliente NEXUS</button><span id="form-status" class="form-status"></span></form><div id="new-client-access" class="theme-preview" hidden><span>ACESSO DO CLIENTE</span><strong id="new-client-user">—</strong><small id="new-client-password">—</small><button id="copy-client-access" class="ghost" type="button">Copiar acesso</button></div></div></section>
+      <section id="onboarding" class="view">
+        <div class="panel form-panel compact-create">
+          <div class="panel-head">
+            <div><p class="eyebrow">CADASTRO EXPRESSO</p><h2>Novo cliente NEXUS</h2><p class="muted">O cliente não cria GitHub, Railway, Cloudflare ou OpenAI. Você cria o acesso e ele autoriza apenas o Instagram.</p></div>
+            <span class="managed-chip">INFRA GERENCIADA</span>
+          </div>
+          <form id="client-form">
+            <div class="form-grid">
+              <label>Empresa / nome<input name="name" required placeholder="Ex.: Loja Alpha"></label>
+              <label>Nicho<input name="niche" placeholder="Ex.: Restaurante, loja, streaming"></label>
+              <label>Instagram<input name="instagram" placeholder="@usuario (pode conectar depois)"></label>
+              <label>Usuário do aplicativo<input name="username" placeholder="Gerado automaticamente"></label>
+              <label>Senha inicial<input name="password" type="text" minlength="8" placeholder="Gerada automaticamente"></label>
+              <label>Tema<select name="theme"><option value="green-black">Preto + Verde</option><option value="red-black">Preto + Vermelho</option><option value="blue-white">Azul + Branco</option><option value="gold-black">Preto + Dourado</option></select></label>
+              <label>Modo de IA<select name="aiMode" id="ai-mode"><option value="economy">Econômico · sem imagem IA paga</option><option value="hybrid">Híbrido · franquia de imagens IA</option><option value="own-key">Chave própria do cliente</option></select></label>
+              <label id="ai-limit-wrap" hidden>Imagens IA / mês<input name="aiMonthlyImageLimit" id="ai-limit" type="number" min="1" max="500" value="10"></label>
+            </div>
+            <div class="automation-summary">
+              <div><span>1</span><strong>Você cria o acesso</strong><small>Usuário e senha saem daqui.</small></div>
+              <div><span>2</span><strong>Cliente entra no NEXUS</strong><small>Sem cadastro técnico externo.</small></div>
+              <div><span>3</span><strong>Autoriza o Instagram</strong><small>Única autorização prevista para o cliente.</small></div>
+            </div>
+            <div class="theme-preview" id="theme-preview"><span>PRÉVIA</span><strong>Seu agente, sua marca.</strong><small>Automação inteligente e independente</small></div>
+            <button class="primary" type="submit">Criar acesso do cliente</button>
+            <span id="form-status" class="form-status"></span>
+          </form>
+          <div id="new-client-access" class="access-result" hidden>
+            <div><span>ACESSO CRIADO</span><strong id="new-client-user">—</strong><small id="new-client-password">—</small></div>
+            <div class="access-actions"><button id="copy-client-access" class="ghost" type="button">Copiar acesso</button><a id="open-client-login" class="primary link-button" href="/login" target="_blank" rel="noopener">Abrir login do cliente</a></div>
+          </div>
+        </div>
+      </section>
 
-      <section id="settings" class="view"><div class="panel"><p class="eyebrow">SEGURANÇA & ACESSO</p><h2>Integrações administrativas</h2><p class="muted">A Central não guarda senhas nem códigos 2FA. Segredos permanecem em variáveis de ambiente.</p><div id="integration-list" class="integration-list"></div></div></section>
+      <section id="settings" class="view">
+        <div class="panel">
+          <div class="panel-head"><div><p class="eyebrow">NEXUS CORE</p><h2>Infraestrutura central</h2><p class="muted">Estas conexões pertencem ao NEXUS. Seus clientes não precisam criar contas técnicas.</p></div></div>
+          <div id="integration-list" class="integration-list"></div>
+        </div>
+
+        <div class="panel master-openai-panel">
+          <div class="panel-head">
+            <div><p class="eyebrow">CONTROLE DE CUSTO</p><h2>OpenAI NEXUS</h2><p class="muted">Conta central para os próximos clientes. A OpenAI do Ragnar permanece separada e não entra neste controle.</p></div>
+            <span id="openai-master-state" class="badge off">NÃO CONECTADA</span>
+          </div>
+          <div class="finance-grid">
+            <article><span>Saldo estimado</span><strong id="openai-balance">—</strong><small id="openai-balance-note">Informe o saldo atual uma vez.</small></article>
+            <article><span>Gasto no mês</span><strong id="openai-month-cost">—</strong><small>dados da API administrativa</small></article>
+            <article><span>Limite mensal</span><strong id="openai-spend-limit">—</strong><small>quando configurado na organização</small></article>
+          </div>
+          <form id="openai-master-form" class="openai-master-form">
+            <label>Chave API do projeto NEXUS<input name="apiKey" type="password" autocomplete="off" placeholder="sk-... · deixe vazio para manter a atual"></label>
+            <label>Admin API Key<input name="adminKey" type="password" autocomplete="off" placeholder="Chave administrativa para custos"></label>
+            <label>Saldo atual da conta (US$)<input name="currentBalanceUsd" type="number" min="0" step="0.01" placeholder="Ex.: 25.00"></label>
+            <button class="primary" type="submit">Conectar / atualizar OpenAI</button>
+            <span id="openai-master-message" class="form-status"></span>
+          </form>
+          <p class="disclaimer">A API oficial fornece custos e limites, mas não expõe diretamente o saldo pré-pago atual. Por isso o NEXUS calcula o saldo estimado a partir do valor que você informar e desconta o consumo registrado depois disso.</p>
+        </div>
+      </section>
     </main>
   </div>
   <script src="/app.js" defer></script>

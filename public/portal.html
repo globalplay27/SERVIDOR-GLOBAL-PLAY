@@ -94,16 +94,17 @@
           </div>
         </section>
 
-        <section class="metrics operational-metrics">
+        <section class="metrics operational-metrics managed-metrics">
           <article><div class="metric-icon">◉</div><span>Status do agente</span><strong id="overview-agent-status">—</strong><small>operação NEXUS</small></article>
+          <article><div class="metric-icon">＠</div><span>Instagram</span><strong id="instagram-card">—</strong><small>única conta que o cliente autoriza</small></article>
+          <article><div class="metric-icon">AI</div><span>Inteligência artificial</span><strong id="ai-mode-card">—</strong><small id="ai-mode-detail">gerenciada pelo NEXUS</small></article>
           <article><div class="metric-icon">◷</div><span>Próxima postagem</span><strong id="next-post">—</strong><small>horário programado</small></article>
           <article><div class="metric-icon">✓</div><span>Última postagem</span><strong id="last-post">—</strong><small id="last-post-detail">aguardando telemetria</small></article>
-          <article><div class="metric-icon">＠</div><span>Instagram</span><strong id="instagram-card">—</strong><small>conta vinculada</small></article>
         </section>
 
         <section class="content-grid compact-overview">
           <article class="panel">
-            <div class="panel-heading"><div><p class="eyebrow">OPERAÇÃO</p><h2>Ragnar em tempo real</h2></div><span id="agent-live-chip" class="status-chip">VERIFICANDO</span></div>
+            <div class="panel-heading"><div><p class="eyebrow">OPERAÇÃO</p><h2>Agente em tempo real</h2></div><span id="agent-live-chip" class="status-chip">VERIFICANDO</span></div>
             <div class="details compact-details">
               <div><span>Segmento</span><strong id="niche">—</strong></div>
               <div><span>Status</span><strong id="agent-status">—</strong></div>
@@ -112,14 +113,14 @@
             </div>
             <div class="overview-actions">
               <button type="button" data-open-posting>Configurar postagens</button>
-              <button type="button" data-open-setup>Ver conexões</button>
+              <button type="button" class="managed-instagram-button" disabled>Instagram · autorização pelo NEXUS</button>
             </div>
           </article>
         </section>
       </div>
 
       <div id="view-posting" class="client-view" hidden>
-        <section class="settings-heading"><div><p class="eyebrow">CONTROLE EDITORIAL</p><h1>Como o agente vai postar</h1><p class="muted">O Ragnar lê estas regras antes das próximas publicações automáticas.</p></div><span id="save-status" class="save-status"></span></section>
+        <section class="settings-heading"><div><p class="eyebrow">CONTROLE EDITORIAL</p><h1>Como o agente vai postar</h1><p class="muted">Seu agente lê estas regras antes das próximas publicações automáticas.</p></div><span id="save-status" class="save-status"></span></section>
         <form id="posting-form">
           <section class="settings-grid">
             <article class="panel settings-panel">
