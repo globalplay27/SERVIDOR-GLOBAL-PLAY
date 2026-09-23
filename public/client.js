@@ -887,15 +887,25 @@ async function publishVideoNow(button){
   }catch(error){setVideoResponse(card,error.message,"error");}finally{button.disabled=false;button.textContent="Publicar agora";}
 }
 
-document.addEventListener("change",event=>{
+document.addEventListener("change",async event=>{
   const folderMove=event.target.closest?.("[data-video-folder-move]");
   if(folderMove){moveVideoJob(folderMove.dataset.videoFolderMove,folderMove.value);return;}
   const input=event.target.closest?.("[data-video-bulk-select]");
   if(!input)return;
   const key=String(input.dataset.videoBulkSelect||"");
-  if(input.checked)bulkVideoSelection.add(key);else{bulkVideoSelection.delete(key);bulkVideoTimes.delete(key);}
-  const card=input.closest("[data-video-clip]");if(card)card.classList.toggle("video-bulk-selected",input.checked);
-  renderBulkVideoScheduler();
+  const [jobId,clipId]=key.split("|");
+  const selected=input.checked;
+  input.disabled=true;
+  try{
+    const r=await fetch(`/api/portal/videos/${encodeURIComponent(jobId)}/clips/${encodeURIComponent(clipId)}/select`,{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({selected})});
+    const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||"Não foi possível salvar a seleção.");
+    if(selected)bulkVideoSelection.add(key);else{bulkVideoSelection.delete(key);bulkVideoTimes.delete(key);}
+    const card=input.closest("[data-video-clip]");if(card)card.classList.toggle("video-bulk-selected",selected);
+    renderBulkVideoScheduler();
+  }catch(error){
+    input.checked=!selected;
+    const card=input.closest("[data-video-clip]");setVideoResponse(card,error.message,"error");
+  }finally{input.disabled=false;}
 });
 document.addEventListener("click",event=>{
   const renameJob=event.target.closest("[data-video-rename-job]");if(renameJob){renameVideoJob(renameJob.dataset.videoRenameJob);return;}
@@ -1014,6 +1024,8 @@ function uploadSingleVideo(file,index,total,settings,progress){
     xhr.setRequestHeader("X-Requested-Clips",settings.clips);
     xhr.setRequestHeader("X-Output-Format",settings.outputFormat);
     xhr.setRequestHeader("X-Video-Folder",settings.folderId);
+    xhr.setRequestHeader("X-Video-End-Text",encodeURIComponent(settings.endText||""));
+    xhr.setRequestHeader("X-Video-End-Contact",encodeURIComponent(settings.endContact||""));
     xhr.upload.onprogress=e=>{
       if(!e.lengthComputable||!progress)return;
       const local=e.loaded/e.total;
@@ -1041,7 +1053,9 @@ if(videoUploadForm)videoUploadForm.addEventListener("submit",async event=>{
     duration:$("#video-clip-duration").value,
     clips:$("#video-requested-clips").value,
     outputFormat:$("#video-output-format")?.value||"reel",
-    folderId:$("#video-upload-folder")?.value||"default"
+    folderId:$("#video-upload-folder")?.value||"default",
+    endText:$("#video-end-text")?.value?.trim()||"",
+    endContact:$("#video-end-contact")?.value?.trim()||""
   };
   button.disabled=true;
   if(status){status.textContent="Carregando "+files.length+" vídeo(s)…";status.className="save-status";}
