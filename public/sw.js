@@ -1,9 +1,9 @@
-const CACHE="nexus-ai-v38";
+const CACHE="nexus-ai-v39";
 const SHELL=[
   "/",
-  "/portal.html?v=38",
-  "/client.css?v=38",
-  "/client.js?v=38",
+  "/portal.html?v=39",
+  "/client.css?v=39",
+  "/client.js?v=39",
   "/manifest.webmanifest?v=1",
   "/assets/nexus-ai-logo.png?v=3",
   "/assets/nexus-ai-mark.svg"
@@ -23,7 +23,7 @@ self.addEventListener("fetch",event=>{
   if(url.origin!==location.origin)return;
   if(url.pathname.startsWith("/api/"))return;
   if(request.mode==="navigate"){
-    event.respondWith(fetch(request).catch(()=>caches.match("/portal.html?v=38")));
+    event.respondWith(fetch(request).catch(()=>caches.match("/portal.html?v=39")));
     return;
   }
   event.respondWith(caches.match(request).then(cached=>cached||fetch(request).then(response=>{
