@@ -55,7 +55,66 @@ function render() {
       : `<button type="button" class="small-danger" data-delete-client="${escapeHtml(client.id)}" data-client-name="${escapeHtml(client.name)}">Excluir</button>`;
     return `<tr><td><strong>${escapeHtml(client.name)}</strong><br><small>${escapeHtml(client.niche || "Outro")}</small></td><td>${badge(client.status === "online" ? "ONLINE" : "SETUP", client.status === "online")}</td><td>${escapeHtml(client.instagram || "Aguardando conexão")}</td><td>${client.odin ? badge("ATIVO") : badge("DESLIGADO", false)}</td><td>${(client.postTimes || []).join(" · ") || "—"}</td><td><strong>${mode}</strong>${extra}</td><td>${action}</td></tr>`;
   }).join("");
+  renderAgentProfiles();
   renderPortalSelector();
+}
+
+function renderAgentProfiles() {
+  const root = $("#master-agent-profiles");
+  if (!root) return;
+  const clients = state.clients.filter(client => client.id !== "ragnar-one");
+  if (!clients.length) {
+    root.innerHTML = '<div class="master-profile-empty">Os perfis enviados pelos clientes aparecerão aqui.</div>';
+    return;
+  }
+  root.innerHTML = clients.map(client => {
+    const p = client.agentProfile || {};
+    if (!p.submittedAt) {
+      return `<article class="master-profile-card waiting"><div class="master-profile-head"><div class="master-profile-logo fallback">${initials(client.name)}</div><div><span class="profile-kicker">AGUARDANDO CLIENTE</span><h3>${escapeHtml(client.name)}</h3><small>O perfil do agente ainda não foi enviado.</small></div></div></article>`;
+    }
+    const logo = p.logoUrl
+      ? `<div class="master-profile-logo"><img src="${escapeHtml(p.logoUrl)}" alt=""></div>`
+      : `<div class="master-profile-logo fallback" style="--profile-color:${escapeHtml(p.primaryColor||client.primaryColor||"#22c55e")}">${initials(p.brandName||client.name)}</div>`;
+    const status = p.status === "configured" ? "CONFIGURADO" : "NOVO PERFIL";
+    const post = client.postingProfile || {};
+    const times = Array.isArray(client.postTimes) ? client.postTimes : ["09:00","12:00","18:00"];
+    return `<article class="master-profile-card" data-master-profile="${escapeHtml(client.id)}">
+      <div class="master-profile-head">
+        ${logo}
+        <div class="master-profile-title"><span class="profile-kicker">${escapeHtml(p.agentName||"AGENTE NEXUS")}</span><h3>${escapeHtml(p.brandName||client.name)}</h3><small>${escapeHtml(p.niche||client.niche||"Outro")} · enviado ${formatSupportDate(p.submittedAt)}</small></div>
+        ${badge(status,p.status==="configured")}
+      </div>
+      <div class="master-profile-colorline"><i style="background:${escapeHtml(p.primaryColor||client.primaryColor||"#22c55e")}"></i><i style="background:${escapeHtml(p.secondaryColor||client.secondaryColor||"#050807")}"></i><span>Identidade enviada pelo cliente</span></div>
+      <div class="master-profile-facts">
+        <div><span>Público</span><strong>${escapeHtml(p.audience||"—")}</strong></div>
+        <div><span>Objetivo</span><strong>${escapeHtml(p.goal||"—")}</strong></div>
+        <div><span>Região</span><strong>${escapeHtml(p.region||"—")}</strong></div>
+        <div><span>WhatsApp</span><strong>${escapeHtml(p.whatsapp||"—")}</strong></div>
+      </div>
+      <div class="master-profile-text"><span>O que oferece</span><p>${escapeHtml(p.offer||"Não informado")}</p></div>
+      <div class="master-profile-text"><span>Produtos / serviços</span><p>${escapeHtml(p.services||"Não informado")}</p></div>
+      <div class="master-profile-text"><span>Diferenciais</span><p>${escapeHtml(p.differentials||"Não informado")}</p></div>
+      <details class="master-agent-config" ${p.status!=="configured"?"open":""}>
+        <summary>Configurar operação do agente</summary>
+        <div class="master-config-grid">
+          <label>Horário 1<input data-master-time="0" type="time" value="${escapeHtml(times[0]||"09:00")}"></label>
+          <label>Horário 2<input data-master-time="1" type="time" value="${escapeHtml(times[1]||"12:00")}"></label>
+          <label>Horário 3<input data-master-time="2" type="time" value="${escapeHtml(times[2]||"18:00")}"></label>
+          <label>Estratégia<input data-master-field="contentStrategy" value="${escapeHtml(post.contentStrategy||"Vendas + engajamento")}"></label>
+          <label>Estilo visual<input data-master-field="visualStyle" value="${escapeHtml(post.visualStyle||"Tecnológico premium")}"></label>
+          <label>Tom<input data-master-field="tone" value="${escapeHtml(post.tone||p.tone||"Firme, direto e profissional")}"></label>
+          <label class="wide">Foco principal<textarea data-master-field="contentFocus" rows="3">${escapeHtml(post.contentFocus||p.offer||"")}</textarea></label>
+          <label class="wide">Tema da manhã<input data-master-field="morningTheme" value="${escapeHtml(post.morningTheme||"")}"></label>
+          <label class="wide">Tema da tarde<input data-master-field="afternoonTheme" value="${escapeHtml(post.afternoonTheme||"")}"></label>
+          <label class="wide">Tema da noite<input data-master-field="eveningTheme" value="${escapeHtml(post.eveningTheme||"")}"></label>
+          <label class="wide">CTA<input data-master-field="cta" value="${escapeHtml(post.cta||p.cta||"")}"></label>
+          <label class="wide">Hashtags<textarea data-master-field="hashtags" rows="2">${escapeHtml(post.hashtags||"")}</textarea></label>
+          <label class="wide">Não publicar<textarea data-master-field="avoidTopics" rows="2">${escapeHtml(post.avoidTopics||p.avoidTopics||"")}</textarea></label>
+        </div>
+        <div class="master-config-actions"><button type="button" class="primary" data-master-profile-save>Salvar configuração do agente</button><span data-master-profile-message></span></div>
+      </details>
+    </article>`;
+  }).join("");
 }
 
 function renderPortalSelector() {
@@ -342,6 +401,32 @@ document.addEventListener("click", async event => {
     ticketButton.disabled = true;
     try { await updateSupportTicket(ticketButton.dataset.ticketId, ticketButton.dataset.ticketStatus); }
     catch { alert("Não foi possível atualizar o chamado."); }
+    return;
+  }
+
+  const masterProfileSave = event.target.closest("[data-master-profile-save]");
+  if (masterProfileSave) {
+    const card = masterProfileSave.closest("[data-master-profile]");
+    const clientId = card?.dataset.masterProfile;
+    const message = card?.querySelector("[data-master-profile-message]");
+    const fields = {};
+    card?.querySelectorAll("[data-master-field]").forEach(input => { fields[input.dataset.masterField] = input.value; });
+    const postTimes = [...(card?.querySelectorAll("[data-master-time]") || [])].map(input=>input.value).filter(Boolean);
+    masterProfileSave.disabled = true;
+    if (message) message.textContent = "Salvando configuração…";
+    try {
+      await api("/api/master/agent-config/" + encodeURIComponent(clientId), {
+        method: "PATCH",
+        body: JSON.stringify({ postTimes, postingProfile: fields })
+      });
+      state.clients = await api("/api/clients");
+      render();
+      const updated = $("#master-agent-profiles")?.querySelector('[data-master-profile="' + CSS.escape(clientId) + '"] [data-master-profile-message]');
+      if (updated) updated.textContent = "Agente configurado com sucesso.";
+    } catch {
+      if (message) message.textContent = "Não foi possível salvar.";
+      masterProfileSave.disabled = false;
+    }
     return;
   }
 

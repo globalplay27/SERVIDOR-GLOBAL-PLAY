@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#080b0a">
   <title>NEXUS AI · Agent Control Center</title>
-  <link rel="stylesheet" href="/styles.css?v=9">
+  <link rel="stylesheet" href="/styles.css?v=10">
 </head>
 <body>
   <div class="shell">
@@ -42,7 +42,13 @@
         </div>
       </section>
 
-      <section id="clients" class="view"><div class="panel"><div class="panel-head"><div><p class="eyebrow">GESTÃO</p><h2>Todos os clientes</h2></div><button class="primary" data-go="onboarding">＋ Adicionar cliente</button></div><div class="table-wrap"><table><thead><tr><th>Cliente</th><th>Status</th><th>Instagram</th><th>Odin</th><th>Horários</th><th>IA do cliente</th><th>Ações</th></tr></thead><tbody id="clients-table"></tbody></table></div></div></section>
+      <section id="clients" class="view">
+        <div class="panel"><div class="panel-head"><div><p class="eyebrow">GESTÃO</p><h2>Todos os clientes</h2></div><button class="primary" data-go="onboarding">＋ Adicionar cliente</button></div><div class="table-wrap"><table><thead><tr><th>Cliente</th><th>Status</th><th>Instagram</th><th>Odin</th><th>Horários</th><th>IA do cliente</th><th>Ações</th></tr></thead><tbody id="clients-table"></tbody></table></div></div>
+        <div class="panel master-profiles-panel">
+          <div class="panel-head"><div><p class="eyebrow">PERFIS RECEBIDOS</p><h2>Configuração dos agentes</h2><p class="muted">O cliente informa o negócio, identidade e logo. Aqui você revisa o perfil e define toda a operação do agente.</p></div></div>
+          <div id="master-agent-profiles" class="master-agent-profiles"></div>
+        </div>
+      </section>
 
       <section id="notifications" class="view">
         <div class="panel">
@@ -157,6 +163,6 @@
       </section>
     </main>
   </div>
-  <script src="/app.js?v=9" defer></script>
+  <script src="/app.js?v=10" defer></script>
 </body>
 </html>

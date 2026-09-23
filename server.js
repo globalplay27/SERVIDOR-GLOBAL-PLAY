@@ -23,6 +23,8 @@ const oauthStateFile = path.join(DATA_DIR, "oauth-states.json");
 const portalUsersFile = path.join(DATA_DIR, "portal-users.json");
 const masterIntegrationsFile = path.join(DATA_DIR, "master-integrations.json");
 const supportTicketsFile = path.join(DATA_DIR, "support-tickets.json");
+const clientLogoDir = path.join(DATA_DIR, "client-logos");
+fs.mkdirSync(clientLogoDir, { recursive: true });
 const portalSessions = new Map();
 const masterSessions = new Map();
 
@@ -783,6 +785,7 @@ function clientPortalView(client) {
       meta: client.meta || "pending"
     },
     postingProfile: { ...defaultPostingProfile(), ...(client.postingProfile || {}) },
+    agentProfile: client.agentProfile && typeof client.agentProfile === "object" ? client.agentProfile : {},
     connections: connectionSummary(client)
   };
 }
@@ -1267,6 +1270,100 @@ const server = http.createServer(async (req, res) => {
     });
   }
 
+  if (url.pathname === "/api/portal/agent-profile" && req.method === "POST") {
+    const sessionClient = portalClientForRequest(req);
+    if (!sessionClient) return send(res, 401, { error: "unauthorized" });
+    try {
+      const body = await readBody(req);
+      const clients = loadClients();
+      const client = clients.find(item => item.id === sessionClient.id);
+      if (!client) return send(res, 404, { error: "not_found" });
+
+      const textValue = (value, max = 1200) =>
+        typeof value === "string" ? value.trim().slice(0, max) : "";
+      const colorValue = (value, fallback) =>
+        typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value) ? value : fallback;
+
+      const previous = client.agentProfile && typeof client.agentProfile === "object" ? client.agentProfile : {};
+      let logoUrl = String(previous.logoUrl || "");
+
+      if (body.removeLogo) {
+        for (const ext of ["png","jpg","webp"]) {
+          const file = path.join(clientLogoDir, slug(client.id) + "." + ext);
+          try { if (fs.existsSync(file)) fs.unlinkSync(file); } catch {}
+        }
+        logoUrl = "";
+      }
+
+      if (typeof body.logoDataUrl === "string" && body.logoDataUrl.trim()) {
+        const match = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/.exec(body.logoDataUrl.trim());
+        if (!match) return send(res, 400, { error: "invalid_logo" });
+        const bytes = Buffer.from(match[2], "base64");
+        if (!bytes.length || bytes.length > 900 * 1024) return send(res, 400, { error: "logo_too_large" });
+        const ext = match[1] === "jpeg" ? "jpg" : match[1];
+        for (const oldExt of ["png","jpg","webp"]) {
+          const oldFile = path.join(clientLogoDir, slug(client.id) + "." + oldExt);
+          try { if (fs.existsSync(oldFile)) fs.unlinkSync(oldFile); } catch {}
+        }
+        const filename = slug(client.id) + "." + ext;
+        fs.writeFileSync(path.join(clientLogoDir, filename), bytes);
+        logoUrl = "/client-logo/" + filename + "?v=" + Date.now();
+      }
+
+      const primaryColor = colorValue(body.primaryColor, client.primaryColor || "#22c55e");
+      const secondaryColor = colorValue(body.secondaryColor, client.secondaryColor || "#050807");
+      const niche = textValue(body.niche, 80) || client.niche || "Outro";
+      const now = new Date().toISOString();
+
+      client.niche = niche;
+      client.primaryColor = primaryColor;
+      client.secondaryColor = secondaryColor;
+      client.agentProfile = {
+        ...previous,
+        agentName: textValue(body.agentName, 80),
+        brandName: textValue(body.brandName, 120) || client.name,
+        niche,
+        audience: textValue(body.audience, 120),
+        goal: textValue(body.goal, 100),
+        region: textValue(body.region, 120),
+        offer: textValue(body.offer, 900),
+        services: textValue(body.services, 900),
+        differentials: textValue(body.differentials, 700),
+        tone: textValue(body.tone, 120),
+        cta: textValue(body.cta, 180),
+        avoidTopics: textValue(body.avoidTopics, 700),
+        notes: textValue(body.notes, 1200),
+        whatsapp: textValue(body.whatsapp, 40),
+        website: textValue(body.website, 220),
+        primaryColor,
+        secondaryColor,
+        logoUrl,
+        status: "submitted",
+        submittedAt: now,
+        updatedAt: now
+      };
+      client.onboarding = client.onboarding && typeof client.onboarding === "object" ? client.onboarding : {};
+      client.onboarding.creativeProfile = true;
+      saveClients(clients);
+      return send(res, 200, clientPortalView(client));
+    } catch (error) {
+      return send(res, 400, { error: String(error?.message || "agent_profile_save_failed") });
+    }
+  }
+
+  if (url.pathname.startsWith("/client-logo/") && req.method === "GET") {
+    const filename = path.basename(url.pathname.slice("/client-logo/".length));
+    const full = path.join(clientLogoDir, filename);
+    const portalClient = portalClientForRequest(req);
+    const masterOk = masterSessionAuthorized(req);
+    const portalOk = portalClient && filename.startsWith(slug(portalClient.id) + ".");
+    if (!masterOk && !portalOk) return send(res, 403, "Forbidden", "text/plain; charset=utf-8");
+    if (!filename || !full.startsWith(clientLogoDir) || !fs.existsSync(full)) return send(res, 404, "Not found", "text/plain; charset=utf-8");
+    const ext = path.extname(filename).toLowerCase();
+    const type = ext === ".png" ? "image/png" : ext === ".webp" ? "image/webp" : "image/jpeg";
+    return send(res, 200, fs.readFileSync(full), type);
+  }
+
   if (url.pathname === "/api/portal/settings" && req.method === "PATCH") {
     const sessionClient = portalClientForRequest(req);
     if (!sessionClient) {
@@ -1672,6 +1769,44 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname.startsWith("/api/") && !masterAuthorized(req)) {
     res.setHeader("WWW-Authenticate", 'Basic realm="NEXUS AI Agent Central"');
     return send(res, 401, { error: "unauthorized" });
+  }
+
+  const masterAgentConfigMatch = url.pathname.match(/^\/api\/master\/agent-config\/([^/]+)$/);
+  if (masterAgentConfigMatch && req.method === "PATCH") {
+    const clientId = masterAgentConfigMatch[1];
+    const body = await readBody(req);
+    const clients = loadClients();
+    const client = clients.find(item => item.id === clientId);
+    if (!client) return send(res, 404, { error: "not_found" });
+
+    const textValue = (value, fallback = "", max = 700) =>
+      typeof value === "string" ? value.trim().slice(0, max) : fallback;
+    const validTime = value => /^([01]\d|2[0-3]):[0-5]\d$/.test(String(value || ""));
+    const requestedTimes = Array.isArray(body.postTimes) ? body.postTimes.map(String).filter(validTime) : [];
+    if (requestedTimes.length) client.postTimes = [...new Set(requestedTimes)].slice(0, 6);
+
+    const defaults = defaultPostingProfile();
+    const current = { ...defaults, ...(client.postingProfile || {}) };
+    const incoming = body.postingProfile && typeof body.postingProfile === "object" ? body.postingProfile : {};
+    client.postingProfile = {
+      contentStrategy: textValue(incoming.contentStrategy, current.contentStrategy, 100),
+      targetAudience: textValue(incoming.targetAudience, current.targetAudience, 100),
+      visualStyle: textValue(incoming.visualStyle, current.visualStyle, 100),
+      contentFocus: textValue(incoming.contentFocus, current.contentFocus, 400),
+      morningTheme: textValue(incoming.morningTheme, current.morningTheme, 250),
+      afternoonTheme: textValue(incoming.afternoonTheme, current.afternoonTheme, 250),
+      eveningTheme: textValue(incoming.eveningTheme, current.eveningTheme, 250),
+      tone: textValue(incoming.tone, current.tone, 180),
+      cta: textValue(incoming.cta, current.cta, 180),
+      hashtags: textValue(incoming.hashtags, current.hashtags, 350),
+      avoidTopics: textValue(incoming.avoidTopics, current.avoidTopics, 500)
+    };
+    if (client.agentProfile && typeof client.agentProfile === "object") {
+      client.agentProfile.status = "configured";
+      client.agentProfile.reviewedAt = new Date().toISOString();
+    }
+    saveClients(clients);
+    return send(res, 200, client);
   }
 
   if (url.pathname === "/api/clients" && req.method === "GET") {

@@ -10,7 +10,7 @@
   <title>NEXUS AI · Portal do Cliente</title>
   <link rel="icon" href="/assets/nexus-ai-mark.svg" type="image/svg+xml">
   <link rel="manifest" href="/manifest.webmanifest?v=1">
-  <link rel="stylesheet" href="/client.css?v=26">
+  <link rel="stylesheet" href="/client.css?v=27">
 </head>
 <body>
   <div id="nexus-boot" class="nexus-boot" hidden>
@@ -61,7 +61,7 @@
 
       <nav class="client-nav">
         <button type="button" class="active" data-view="overview">Visão geral</button>
-        <button type="button" data-view="posting">Postagens</button>
+        <button type="button" data-view="posting">Perfil do Agente</button>
         <button type="button" data-view="support">Suporte</button>
         <button type="button" class="setup-nav-main" data-view="setup" hidden>Conexões</button>
       </nav>
@@ -113,7 +113,7 @@
               <div><span>Último erro</span><strong id="last-agent-error">Nenhum</strong></div>
             </div>
             <div class="overview-actions">
-              <button type="button" data-open-posting>Configurar postagens</button>
+              <button type="button" data-open-posting>Editar perfil do agente</button>
               <button type="button" id="instagram-connect" class="managed-instagram-button">Conectar Instagram</button>
               <span id="instagram-connect-status" class="provider-line"></span>
             </div>
@@ -122,51 +122,98 @@
       </div>
 
       <div id="view-posting" class="client-view" hidden>
-        <section class="settings-heading"><div><p class="eyebrow">CONTROLE EDITORIAL</p><h1>Como o agente vai postar</h1><p class="muted">Seu agente lê estas regras antes das próximas publicações automáticas.</p></div><span id="save-status" class="save-status"></span></section>
-        <form id="posting-form">
-          <section class="settings-grid">
-            <article class="panel settings-panel">
-              <p class="eyebrow">ESTRATÉGIA</p><h2>Direção do conteúdo</h2>
-              <div class="form-grid">
-                <label><span>Nicho / segmento</span><input id="cfg-niche" list="niche-options" maxlength="80" placeholder="Digite ou escolha um nicho"><datalist id="niche-options"><option value="Streaming"><option value="Restaurante"><option value="Delivery"><option value="Loja / E-commerce"><option value="Serviços"><option value="Imobiliária"><option value="Automotivo"><option value="Academia / Fitness"><option value="Beleza / Estética"><option value="Barbearia"><option value="Saúde / Clínica"><option value="Odontologia"><option value="Advocacia"><option value="Contabilidade"><option value="Educação / Cursos"><option value="Infoprodutos"><option value="Marketing / Agência"><option value="Tecnologia / Software"><option value="Turismo / Hotelaria"><option value="Moda / Roupas"><option value="Pet Shop / Veterinária"><option value="Construção / Reformas"><option value="Energia Solar"><option value="Seguros"><option value="Financeiro"><option value="Fotografia / Vídeo"><option value="Eventos / Festas"><option value="Música / Artista"><option value="Influenciador / Criador"><option value="Supermercado / Mercado"><option value="Farmácia"><option value="Outro"></datalist></label>
-                <label><span>Público principal</span><select id="cfg-audience"><option>Cliente final</option><option>Revendedores</option><option>Misto</option><option>Empresas</option><option>Personalizado</option></select></label>
-                <label><span>Objetivo</span><select id="cfg-strategy"><option>Vendas + engajamento</option><option>Vendas diretas</option><option>Engajamento</option><option>Autoridade</option><option>Educativo</option><option>Misto</option></select></label>
-                <label><span>Estilo visual</span><select id="cfg-style"><option>Tecnológico premium</option><option>Luxuoso</option><option>Cinematográfico</option><option>Minimalista</option><option>Esportivo</option><option>Direto para vendas</option></select></label>
-                <label><span>Tom da comunicação</span><input id="cfg-tone" maxlength="180"></label>
-                <label class="wide"><span>Foco principal do conteúdo</span><textarea id="cfg-focus" rows="3" maxlength="400"></textarea></label>
-                <label class="wide"><span>O agente NÃO deve postar</span><textarea id="cfg-avoid" rows="3" maxlength="500"></textarea></label>
-              </div>
-            </article>
+        <section class="settings-heading">
+          <div>
+            <p class="eyebrow">PERFIL DO AGENTE</p>
+            <h1>Conte ao NEXUS sobre sua empresa</h1>
+            <p class="muted">Preencha as informações do seu negócio. Depois de salvar, o perfil será enviado ao Painel Master e a configuração técnica ficará por conta do administrador NEXUS.</p>
+          </div>
+          <span id="profile-save-status" class="save-status"></span>
+        </section>
 
-            <article class="panel settings-panel">
-              <p class="eyebrow">IDENTIDADE VISUAL</p><h2>Cores dos criativos</h2>
-              <div class="color-grid">
-                <label><span>Cor principal</span><div class="color-control"><input id="cfg-primary" type="color"><code id="cfg-primary-text">#22c55e</code></div></label>
-                <label><span>Cor secundária</span><div class="color-control"><input id="cfg-secondary" type="color"><code id="cfg-secondary-text">#050807</code></div></label>
-              </div>
-              <div id="creative-preview" class="creative-preview"><span>PRÉVIA DO ESTILO</span><strong id="preview-title">Seu agente</strong><small id="preview-cta">Comente QUERO e saiba mais</small></div>
-            </article>
+        <form id="agent-profile-form">
+          <nav class="profile-tabs" aria-label="Etapas do perfil">
+            <button type="button" class="active" data-profile-tab="business">1 · Negócio</button>
+            <button type="button" data-profile-tab="identity">2 · Cores e visual</button>
+            <button type="button" data-profile-tab="brand">3 · Logo e contato</button>
+          </nav>
 
+          <section class="profile-tab-panel active" data-profile-panel="business">
             <article class="panel settings-panel wide-panel">
-              <p class="eyebrow">PAUTA DIÁRIA</p><h2>O que publicar em cada horário</h2>
-              <div class="schedule-editor">
-                <div><label><span>Horário 1</span><input id="time-1" type="time"></label><label><span>Tema / orientação</span><input id="theme-1" maxlength="250"></label></div>
-                <div><label><span>Horário 2</span><input id="time-2" type="time"></label><label><span>Tema / orientação</span><input id="theme-2" maxlength="250"></label></div>
-                <div><label><span>Horário 3</span><input id="time-3" type="time"></label><label><span>Tema / orientação</span><input id="theme-3" maxlength="250"></label></div>
+              <p class="eyebrow">SUA EMPRESA</p><h2>Informações para treinar o agente</h2>
+              <div class="form-grid profile-form-grid">
+                <label><span>Nome do agente</span><input id="profile-agent-name" maxlength="80" placeholder="Ex.: Claire, Ragnar, Luna"></label>
+                <label><span>Nome da empresa / marca</span><input id="profile-brand-name" maxlength="120" placeholder="Ex.: Flow Arts"></label>
+                <label><span>Nicho / segmento</span><input id="profile-niche" list="profile-niche-options" maxlength="80" placeholder="Digite ou escolha"><datalist id="profile-niche-options"><option value="Streaming"><option value="Restaurante"><option value="Delivery"><option value="Loja / E-commerce"><option value="Serviços"><option value="Imobiliária"><option value="Automotivo"><option value="Academia / Fitness"><option value="Beleza / Estética"><option value="Barbearia"><option value="Saúde / Clínica"><option value="Odontologia"><option value="Advocacia"><option value="Contabilidade"><option value="Educação / Cursos"><option value="Infoprodutos"><option value="Marketing / Agência"><option value="Tecnologia / Software"><option value="Turismo / Hotelaria"><option value="Moda / Roupas"><option value="Pet Shop / Veterinária"><option value="Construção / Reformas"><option value="Energia Solar"><option value="Seguros"><option value="Financeiro"><option value="Fotografia / Vídeo"><option value="Eventos / Festas"><option value="Música / Artista"><option value="Influenciador / Criador"><option value="Supermercado / Mercado"><option value="Farmácia"><option value="Outro"></datalist></label>
+                <label><span>Público principal</span><input id="profile-audience" maxlength="120" placeholder="Ex.: pequenas empresas e empreendedores"></label>
+                <label><span>Objetivo principal</span><select id="profile-goal"><option>Vender mais</option><option>Captar leads</option><option>Ganhar seguidores</option><option>Fortalecer a marca</option><option>Gerar autoridade</option><option>Divulgar produtos e serviços</option><option>Outro</option></select></label>
+                <label><span>Cidade / região de atendimento</span><input id="profile-region" maxlength="120" placeholder="Ex.: Cabo Frio - RJ ou atendimento online"></label>
+                <label class="wide"><span>O que sua empresa vende ou oferece?</span><textarea id="profile-offer" rows="4" maxlength="900" placeholder="Explique de forma simples o que você vende e como ajuda seus clientes."></textarea></label>
+                <label class="wide"><span>Principais produtos / serviços</span><textarea id="profile-services" rows="4" maxlength="900" placeholder="Liste os produtos ou serviços mais importantes."></textarea></label>
+                <label class="wide"><span>Diferenciais da empresa</span><textarea id="profile-differentials" rows="3" maxlength="700" placeholder="Preço, atendimento, experiência, rapidez, qualidade, garantia..."></textarea></label>
+                <label><span>Tom da comunicação</span><input id="profile-tone" maxlength="120" placeholder="Ex.: profissional, direto e moderno"></label>
+                <label><span>Chamada preferida (CTA)</span><input id="profile-cta" maxlength="180" placeholder='Ex.: Comente "QUERO" ou chame no direct'></label>
+                <label class="wide"><span>O que o agente NÃO deve publicar?</span><textarea id="profile-avoid" rows="3" maxlength="700" placeholder="Assuntos, palavras, promessas ou temas que devem ser evitados."></textarea></label>
+                <label class="wide"><span>Informações adicionais</span><textarea id="profile-notes" rows="4" maxlength="1200" placeholder="Conte qualquer detalhe que ajude o NEXUS a entender melhor sua empresa."></textarea></label>
               </div>
-              <div class="preset-row">
-                <button type="button" data-preset="final">Streaming · Cliente final</button>
-                <button type="button" data-preset="reseller">Streaming · Revendedores</button>
-                <button type="button" data-preset="mixed">Streaming · Misto</button>
-              </div>
-            </article>
-
-            <article class="panel settings-panel wide-panel">
-              <p class="eyebrow">CONVERSÃO</p><h2>Legenda e chamada</h2>
-              <div class="form-grid"><label class="wide"><span>CTA padrão</span><input id="cfg-cta" maxlength="180"></label><label class="wide"><span>Hashtags padrão</span><textarea id="cfg-hashtags" rows="3" maxlength="350"></textarea></label></div>
             </article>
           </section>
-          <div class="save-bar"><div><strong>Alterações operacionais</strong><span>Depois de salvar, as próximas postagens usam as novas regras.</span></div><div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end"><button type="button" id="publish-test-now">Publicar teste agora</button><button type="submit" id="save-posting-settings">Salvar e aplicar ao agente</button></div></div>
+
+          <section class="profile-tab-panel" data-profile-panel="identity">
+            <article class="panel settings-panel wide-panel">
+              <p class="eyebrow">IDENTIDADE VISUAL</p><h2>Escolha as cores da sua marca</h2>
+              <p class="muted">Mexa nas cores abaixo e veja uma prévia de como a identidade do seu agente pode ficar.</p>
+              <div class="color-grid profile-color-grid">
+                <label><span>Cor principal</span><div class="color-control"><input id="profile-primary" type="color"><code id="profile-primary-text">#22c55e</code></div></label>
+                <label><span>Cor secundária</span><div class="color-control"><input id="profile-secondary" type="color"><code id="profile-secondary-text">#050807</code></div></label>
+              </div>
+              <div id="agent-profile-preview" class="agent-profile-preview">
+                <div class="profile-preview-glow"></div>
+                <div class="profile-preview-logo">
+                  <img id="profile-preview-logo" alt="Logo da empresa" hidden>
+                  <span id="profile-preview-initials">NX</span>
+                </div>
+                <div class="profile-preview-copy">
+                  <small id="profile-preview-niche">SEU SEGMENTO</small>
+                  <strong id="profile-preview-brand">Sua marca</strong>
+                  <span id="profile-preview-agent">Agente NEXUS</span>
+                  <em id="profile-preview-cta">Sua chamada aparecerá aqui</em>
+                </div>
+              </div>
+            </article>
+          </section>
+
+          <section class="profile-tab-panel" data-profile-panel="brand">
+            <article class="panel settings-panel wide-panel">
+              <p class="eyebrow">MARCA E CONTATO</p><h2>Logo e canais da empresa</h2>
+              <div class="profile-brand-grid">
+                <div class="profile-logo-uploader">
+                  <div class="profile-logo-stage">
+                    <img id="profile-logo-stage-image" alt="Prévia da logo" hidden>
+                    <span id="profile-logo-stage-placeholder">LOGO</span>
+                  </div>
+                  <label class="profile-file-button">Selecionar logo
+                    <input id="profile-logo-file" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+                  </label>
+                  <button id="profile-logo-remove" type="button" class="profile-logo-remove">Remover logo</button>
+                  <small>PNG, JPG ou WebP. A imagem será otimizada antes do envio.</small>
+                </div>
+                <div class="form-grid profile-contact-grid">
+                  <label><span>WhatsApp</span><input id="profile-whatsapp" maxlength="40" placeholder="Ex.: 22 99999-9999"></label>
+                  <label><span>Site</span><input id="profile-website" maxlength="220" placeholder="https://seusite.com.br"></label>
+                  <div class="profile-info-card wide">
+                    <strong>O que acontece depois?</strong>
+                    <span>Ao salvar, o Painel Master recebe seu perfil completo, cores, logo e informações comerciais. O administrador configura horários, estratégia, automações, IA e regras de publicação.</span>
+                  </div>
+                </div>
+              </div>
+            </article>
+          </section>
+
+          <div class="save-bar profile-save-bar">
+            <div><strong>Enviar perfil ao NEXUS</strong><span>Você poderá atualizar estas informações depois.</span></div>
+            <button type="submit" id="save-agent-profile">Salvar perfil do meu agente</button>
+          </div>
         </form>
       </div>
 
@@ -235,6 +282,6 @@
       <footer><span>NEXUS AI</span><small>Client Portal · ambiente exclusivo</small></footer>
     </section>
   </main>
-  <script src="/client.js?v=27" defer></script>
+  <script src="/client.js?v=28" defer></script>
 </body>
 </html>

@@ -56,13 +56,82 @@ function renderClient(c){
     igButton.classList.toggle("connected",connected);
   }
   if(igStatus)igStatus.textContent=c.instagram?c.instagram+" autorizado":"";
-  const publishTest=$("#publish-test-now");
-  if(publishTest)publishTest.hidden=c.id!=="testador";
-  populatePosting(c);
+  populateAgentProfile(c);
   renderOnboarding();
 }
-function populatePosting(c){const p=c.postingProfile||{};$("#cfg-niche").value=c.niche||"Outro";$("#cfg-audience").value=p.targetAudience||"Misto";$("#cfg-strategy").value=p.contentStrategy||"Vendas + engajamento";$("#cfg-style").value=p.visualStyle||"Tecnológico premium";$("#cfg-tone").value=p.tone||"Firme, direto e profissional";$("#cfg-focus").value=p.contentFocus||"";$("#cfg-avoid").value=p.avoidTopics||"";$("#cfg-primary").value=c.primaryColor||"#22c55e";$("#cfg-secondary").value=c.secondaryColor||"#050807";$("#cfg-cta").value=p.cta||'Comente "QUERO" e saiba mais';$("#cfg-hashtags").value=p.hashtags||"";const t=c.postTimes||["09:00","12:00","18:00"];$("#time-1").value=t[0]||"09:00";$("#time-2").value=t[1]||"12:00";$("#time-3").value=t[2]||"18:00";$("#theme-1").value=p.morningTheme||"";$("#theme-2").value=p.afternoonTheme||"";$("#theme-3").value=p.eveningTheme||"";$("#preview-title").textContent=c.name||"Seu agente";updatePreview();}
-function updatePreview(){const p=$("#cfg-primary").value,s=$("#cfg-secondary").value;$("#cfg-primary-text").textContent=p;$("#cfg-secondary-text").textContent=s;$("#creative-preview").style.background=`radial-gradient(circle at 80% 15%,${p}55,transparent 35%),linear-gradient(135deg,${s},#090d0b)`;$("#creative-preview").style.borderColor=p;$("#preview-cta").textContent=$("#cfg-cta").value||"CTA";}
+
+let pendingProfileLogo=null;
+let removeProfileLogo=false;
+function setField(id,value){const el=$(id);if(el)el.value=value??"";}
+function profileInitials(value){return String(value||"NX").trim().split(/\s+/).filter(Boolean).map(v=>v[0]).join("").slice(0,2).toUpperCase()||"NX";}
+function updateAgentProfilePreview(){
+  const primary=$("#profile-primary")?.value||"#22c55e";
+  const secondary=$("#profile-secondary")?.value||"#050807";
+  const preview=$("#agent-profile-preview");
+  if(preview){
+    preview.style.setProperty("--profile-primary",primary);
+    preview.style.setProperty("--profile-secondary",secondary);
+  }
+  if($("#profile-primary-text"))$("#profile-primary-text").textContent=primary;
+  if($("#profile-secondary-text"))$("#profile-secondary-text").textContent=secondary;
+  const brand=$("#profile-brand-name")?.value||currentClient?.name||"Sua marca";
+  const agent=$("#profile-agent-name")?.value||"Agente NEXUS";
+  const niche=$("#profile-niche")?.value||"Seu segmento";
+  const cta=$("#profile-cta")?.value||"Sua chamada aparecerá aqui";
+  if($("#profile-preview-brand"))$("#profile-preview-brand").textContent=brand;
+  if($("#profile-preview-agent"))$("#profile-preview-agent").textContent=agent;
+  if($("#profile-preview-niche"))$("#profile-preview-niche").textContent=niche.toUpperCase();
+  if($("#profile-preview-cta"))$("#profile-preview-cta").textContent=cta;
+  if($("#profile-preview-initials"))$("#profile-preview-initials").textContent=profileInitials(brand);
+}
+function showStoredProfileLogo(url){
+  const preview=$("#profile-preview-logo"),stage=$("#profile-logo-stage-image"),initials=$("#profile-preview-initials"),placeholder=$("#profile-logo-stage-placeholder");
+  if(url){
+    if(preview){preview.src=url;preview.hidden=false;}
+    if(stage){stage.src=url;stage.hidden=false;}
+    if(initials)initials.hidden=true;
+    if(placeholder)placeholder.hidden=true;
+  }else{
+    if(preview){preview.removeAttribute("src");preview.hidden=true;}
+    if(stage){stage.removeAttribute("src");stage.hidden=true;}
+    if(initials)initials.hidden=false;
+    if(placeholder)placeholder.hidden=false;
+  }
+}
+function populateAgentProfile(c){
+  const p=c.agentProfile||{};
+  setField("#profile-agent-name",p.agentName||"");
+  setField("#profile-brand-name",p.brandName||c.name||"");
+  setField("#profile-niche",p.niche||c.niche||"");
+  setField("#profile-audience",p.audience||"");
+  setField("#profile-goal",p.goal||"Vender mais");
+  setField("#profile-region",p.region||"");
+  setField("#profile-offer",p.offer||"");
+  setField("#profile-services",p.services||"");
+  setField("#profile-differentials",p.differentials||"");
+  setField("#profile-tone",p.tone||"");
+  setField("#profile-cta",p.cta||"");
+  setField("#profile-avoid",p.avoidTopics||"");
+  setField("#profile-notes",p.notes||"");
+  setField("#profile-whatsapp",p.whatsapp||"");
+  setField("#profile-website",p.website||"");
+  setField("#profile-primary",p.primaryColor||c.primaryColor||"#22c55e");
+  setField("#profile-secondary",p.secondaryColor||c.secondaryColor||"#050807");
+  pendingProfileLogo=null;
+  removeProfileLogo=false;
+  showStoredProfileLogo(p.logoUrl||"");
+  updateAgentProfilePreview();
+  const status=$("#profile-save-status");
+  if(status)status.textContent=p.submittedAt?"Perfil enviado ao NEXUS. Você pode atualizá-lo quando quiser.":"";
+}
+async function optimizeLogo(file){
+  if(!file||!file.type.startsWith("image/"))throw new Error("Selecione uma imagem válida.");
+  if(file.size>6*1024*1024)throw new Error("A logo deve ter no máximo 6 MB.");
+  const source=await new Promise((resolve,reject)=>{const img=new Image();img.onload=()=>resolve(img);img.onerror=()=>reject(new Error("Não foi possível ler a imagem."));img.src=URL.createObjectURL(file);});
+  const max=700,scale=Math.min(1,max/Math.max(source.width,source.height)),w=Math.max(1,Math.round(source.width*scale)),h=Math.max(1,Math.round(source.height*scale));
+  const canvas=document.createElement("canvas");canvas.width=w;canvas.height=h;canvas.getContext("2d").drawImage(source,0,0,w,h);
+  return canvas.toDataURL("image/webp",0.86);
+}
 async function providerUsage(){
   if(currentClient?.managedInfrastructure)return;
   try{
@@ -247,7 +316,32 @@ async function loadSupportTickets(){
   }catch{if(list)list.innerHTML='<p class="muted">Não foi possível carregar os chamados agora.</p>';}
 }
 $$("[data-view]").forEach(b=>b.addEventListener("click",()=>showView(b.dataset.view)));$$("[data-open-setup]").forEach(b=>b.addEventListener("click",()=>showView("setup")));$$("[data-open-posting]").forEach(b=>b.addEventListener("click",()=>showView("posting")));
-$("#cfg-primary").addEventListener("input",updatePreview);$("#cfg-secondary").addEventListener("input",updatePreview);$("#cfg-cta").addEventListener("input",updatePreview);
+$("[data-profile-tab]").forEach(button=>button.addEventListener("click",()=>{
+  $("[data-profile-tab]").forEach(item=>item.classList.toggle("active",item===button));
+  $("[data-profile-panel]").forEach(panel=>panel.classList.toggle("active",panel.dataset.profilePanel===button.dataset.profileTab));
+}));
+["#profile-primary","#profile-secondary","#profile-agent-name","#profile-brand-name","#profile-niche","#profile-cta"].forEach(selector=>{
+  const el=$(selector);if(el)el.addEventListener("input",updateAgentProfilePreview);
+});
+const profileLogoFile=$("#profile-logo-file");
+if(profileLogoFile)profileLogoFile.addEventListener("change",async event=>{
+  const file=event.target.files?.[0];if(!file)return;
+  const status=$("#profile-save-status");
+  try{
+    if(status)status.textContent="Preparando logo…";
+    pendingProfileLogo=await optimizeLogo(file);
+    removeProfileLogo=false;
+    showStoredProfileLogo(pendingProfileLogo);
+    if(status)status.textContent="Logo pronta para salvar.";
+  }catch(error){
+    if(status)status.textContent=error.message;
+    event.target.value="";
+  }
+});
+const profileLogoRemove=$("#profile-logo-remove");
+if(profileLogoRemove)profileLogoRemove.addEventListener("click",()=>{
+  pendingProfileLogo=null;removeProfileLogo=true;showStoredProfileLogo("");$("#profile-logo-file").value="";
+});
 $$("[data-complete]").forEach(b=>b.addEventListener("click",async()=>{b.disabled=true;try{await patchOnboarding({[b.dataset.complete]:true});}finally{b.disabled=false;}}));
 $$("[data-connect]").forEach(b=>b.addEventListener("click",()=>{const provider=b.dataset.connect;if(provider==="railway")startRailwayConnection();else openConnectionModal(provider);}));
 $("#connection-close").addEventListener("click",closeConnectionModal);
@@ -293,39 +387,44 @@ if(supportForm)supportForm.addEventListener("submit",async event=>{
   }finally{button.disabled=false;}
 });
 
-const presets={
-  final:{audience:"Cliente final",focus:"Estabilidade, suporte, futebol, filmes e séries para quem quer assistir sem dor de cabeça.",themes:["Dor do cliente: travamento, delay e suporte que não responde","Filmes, séries, variedade de conteúdo e experiência em vários dispositivos","Futebol, jogos ao vivo, estabilidade e chamada para teste"],cta:'Comente "QUERO" para testar'},
-  reseller:{audience:"Revendedores",focus:"Captação de revendedores destacando estabilidade, suporte, painel e oportunidade comercial.",themes:["Dor do revendedor: fornecedor some, cliente reclama e painel instável","Estrutura, suporte e recursos para revender com mais tranquilidade","Oportunidade comercial, equipe, crescimento e chamada para abrir painel"],cta:'Comente "QUERO" para saber sobre revenda'},
-  mixed:{audience:"Misto",focus:"Misturar aquisição de cliente final com captação de novos revendedores.",themes:["Cliente final: dor de travamento e estabilidade","Entretenimento, filmes e séries para cliente final","Revenda: oportunidade, suporte e estrutura"],cta:'Comente "QUERO" e escolha assinatura ou revenda'}
-};
-$$("[data-preset]").forEach(b=>b.addEventListener("click",()=>{const p=presets[b.dataset.preset];$("#cfg-niche").value="Streaming";$("#cfg-audience").value=p.audience;$("#cfg-focus").value=p.focus;$("#theme-1").value=p.themes[0];$("#theme-2").value=p.themes[1];$("#theme-3").value=p.themes[2];$("#cfg-cta").value=p.cta;updatePreview();}));
-
-$("#posting-form").addEventListener("submit",async e=>{e.preventDefault();const saveButton=$("#save-posting-settings");if(saveButton)saveButton.style.display="none";$("#save-status").textContent="Salvando…";$("#save-status").className="save-status";const payload={niche:$("#cfg-niche").value,primaryColor:$("#cfg-primary").value,secondaryColor:$("#cfg-secondary").value,postTimes:[$("#time-1").value,$("#time-2").value,$("#time-3").value].filter(Boolean),postingProfile:{contentStrategy:$("#cfg-strategy").value,targetAudience:$("#cfg-audience").value,visualStyle:$("#cfg-style").value,contentFocus:$("#cfg-focus").value,morningTheme:$("#theme-1").value,afternoonTheme:$("#theme-2").value,eveningTheme:$("#theme-3").value,tone:$("#cfg-tone").value,cta:$("#cfg-cta").value,hashtags:$("#cfg-hashtags").value,avoidTopics:$("#cfg-avoid").value}};try{const r=await fetch("/api/portal/settings",{method:"PATCH",headers:{"x-nexus-session":sessionAuth,"content-type":"application/json"},body:JSON.stringify(payload)});if(!r.ok)throw new Error("Não foi possível salvar.");const c=await r.json();renderClient(c);document.documentElement.style.setProperty("--accent",c.primaryColor||"#22c55e");$("#save-status").textContent="Salvo. O agente usará estas regras nas próximas postagens.";$("#save-status").className="save-status ok";await patchOnboarding({creativeProfile:true});}catch(err){$("#save-status").textContent=err.message;$("#save-status").className="save-status error";}});
-
-const publishTestButton=$("#publish-test-now");
-if(publishTestButton)publishTestButton.addEventListener("click",async()=>{
-  publishTestButton.style.display="none";
-  $("#save-status").textContent="Publicando no Instagram…";
-  $("#save-status").className="save-status";
-  const originalText=publishTestButton.textContent;
-  $("#save-status").textContent="Enviando imagem ao Instagram…";
-  $("#save-status").className="save-status";
+const agentProfileForm=$("#agent-profile-form");
+if(agentProfileForm)agentProfileForm.addEventListener("submit",async event=>{
+  event.preventDefault();
+  const button=$("#save-agent-profile"),status=$("#profile-save-status");
+  button.disabled=true;button.textContent="Enviando perfil…";
+  if(status){status.textContent="Salvando e enviando ao Painel Master…";status.className="save-status";}
   const payload={
-    imageUrl:"https://cdn.openart.ai/openart-uploads/production/attachment-transfers/2be36b8d8426d0dc34aeea7466c37256badd4decfc736a8136840c21c81a7fd3.jpg",
-    caption:'🚀 Sua empresa precisa aparecer mais?\n\nCriamos imagens profissionais, vídeos promocionais, automação para Instagram e sites modernos para transformar sua presença digital em mais autoridade, oportunidades e vendas.\n\n✅ Imagens profissionais\n✅ Vídeos promocionais\n✅ Automação de Instagram\n✅ Sites profissionais\n\nQuer levar sua empresa para outro nível?\nComente “QUERO” ou chame no direct.\n\n#MarketingDigital #AutomacaoInstagram #CriacaoDeSites #DesignProfissional #VideosPromocionais #ConteudoDigital #PresencaDigital #VendasOnline #Empreendedorismo #SocialMedia'
+    agentName:$("#profile-agent-name").value,
+    brandName:$("#profile-brand-name").value,
+    niche:$("#profile-niche").value,
+    audience:$("#profile-audience").value,
+    goal:$("#profile-goal").value,
+    region:$("#profile-region").value,
+    offer:$("#profile-offer").value,
+    services:$("#profile-services").value,
+    differentials:$("#profile-differentials").value,
+    tone:$("#profile-tone").value,
+    cta:$("#profile-cta").value,
+    avoidTopics:$("#profile-avoid").value,
+    notes:$("#profile-notes").value,
+    whatsapp:$("#profile-whatsapp").value,
+    website:$("#profile-website").value,
+    primaryColor:$("#profile-primary").value,
+    secondaryColor:$("#profile-secondary").value,
+    removeLogo:removeProfileLogo
   };
+  if(pendingProfileLogo)payload.logoDataUrl=pendingProfileLogo;
   try{
-    const r=await fetch("/api/portal/instagram/publish-test",{method:"POST",headers:{"x-nexus-session":sessionAuth,"content-type":"application/json"},body:JSON.stringify(payload)});
+    const r=await fetch("/api/portal/agent-profile",{method:"POST",headers:{"x-nexus-session":sessionAuth,"content-type":"application/json"},body:JSON.stringify(payload)});
     const d=await r.json().catch(()=>({}));
-    if(!r.ok)throw new Error(d.message||d.error||"Falha ao publicar.");
-    $("#save-status").textContent=d.permalink?"Publicado com sucesso. Abrindo Instagram…":"Publicado com sucesso no Instagram.";
-    $("#save-status").className="save-status ok";
-    if(d.permalink)window.open(d.permalink,"_blank","noopener");
-  }catch(err){
-    $("#save-status").textContent=err.message;
-    $("#save-status").className="save-status error";
-  }finally{
-    publishTestButton.textContent=originalText;
+    if(!r.ok)throw new Error(d.message||d.error||"Não foi possível salvar o perfil.");
+    renderClient(d);
+    if(status){status.textContent="Perfil enviado ao Painel Master com sucesso.";status.className="save-status ok";}
+    button.style.display="none";
+    setTimeout(()=>{button.style.display="";button.textContent="Atualizar perfil do meu agente";button.disabled=false;},1800);
+  }catch(error){
+    if(status){status.textContent=error.message;status.className="save-status error";}
+    button.disabled=false;button.textContent="Salvar perfil do meu agente";
   }
 });
 
