@@ -1356,6 +1356,7 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === "/api/portal/instagram/publish-test" && req.method === "POST") {
     const client = portalClientForRequest(req);
     if (!client) return send(res, 401, { error: "unauthorized" });
+    if (client.id !== "testador") return send(res, 403, { error: "test_publish_only" });
 
     const connection = directConnection(client.id, "meta");
     const accessToken = decryptSecret(connection?.accessToken || "");
