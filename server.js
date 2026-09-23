@@ -777,6 +777,21 @@ async function processVideoJob(jobId) {
       selection = { clips: heuristic, costUsd: 0, model: "transcript-heuristic" };
     }
 
+    const wantedClips = Math.max(1, Number(initial.requestedClips || 3));
+    if ((selection.clips || []).length < wantedClips) {
+      const extras = transcriptHeuristicSelections(
+        transcription.segments || [],
+        duration,
+        wantedClips,
+        Number(initial.clipDuration || 30)
+      );
+      for (const extra of extras) {
+        if ((selection.clips || []).some(item => Math.max(item.start, extra.start) < Math.min(item.end, extra.end))) continue;
+        selection.clips.push(extra);
+        if (selection.clips.length >= wantedClips) break;
+      }
+    }
+
     selection.clips = (selection.clips || []).map(clip =>
       refineClipBoundary(
         clip,
@@ -854,11 +869,15 @@ async function processVideoJob(jobId) {
     });
   } catch (error) {
     console.error("Video processing failed", jobId, error);
+    const code = String(error?.message || error);
+    const smartUnavailable = ["smart_clip_analysis_unavailable","smart_transcript_required","ragnar_openai_not_available","openai_not_configured"].some(item => code.includes(item));
     updateVideoJob(jobId, {
       status: "failed",
       progress: 100,
-      message: "Falha ao processar o vídeo.",
-      error: String(error?.message || error).slice(0, 900)
+      message: smartUnavailable
+        ? "Não consegui analisar as melhores partes com IA. O NEXUS não vai simplesmente dividir o vídeo; corrija a conexão de IA e tente novamente."
+        : "Falha ao processar o vídeo.",
+      error: code.slice(0, 900)
     });
   } finally {
     if (audioPath) {
