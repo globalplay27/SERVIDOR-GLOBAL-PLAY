@@ -1,0 +1,43 @@
+name: Build NEXUS AI Master Windows Installer
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "desktop-master/**"
+      - ".github/workflows/build-nexus-master-windows.yml"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Restore
+        run: dotnet restore desktop-master/NexusAI.Master/NexusAI.Master.csproj
+
+      - name: Publish Windows x64
+        run: dotnet publish desktop-master/NexusAI.Master/NexusAI.Master.csproj -c Release -r win-x64 --self-contained true -o desktop-master/publish
+
+      - name: Install Inno Setup
+        shell: powershell
+        run: choco install innosetup -y --no-progress
+
+      - name: Build installer
+        shell: powershell
+        run: '& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "desktop-master\installer.iss"'
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: NEXUS-AI-MASTER-Windows
+          path: desktop-master/output/NEXUS-AI-MASTER-Setup.exe
+          if-no-files-found: error
