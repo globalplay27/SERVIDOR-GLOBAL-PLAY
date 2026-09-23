@@ -343,7 +343,7 @@ function masterInstagramAppSecret() {
 }
 
 function publicOrigin(req) {
-  const host = String(process.env.RAILWAY_PUBLIC_DOMAIN || req.headers.host || "servidor-global-play-production.up.railway.app")
+  const host = String(req.headers.host || process.env.RAILWAY_PUBLIC_DOMAIN || "servidor-global-play-production.up.railway.app")
     .replace(/^https?:\/\//, "")
     .replace(/\/$/, "");
   return "https://" + host;
