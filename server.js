@@ -1191,12 +1191,21 @@ const server = http.createServer(async (req, res) => {
 
   if (url.pathname === "/api/system/status" && req.method === "GET") {
     return send(res, 200, {
-      githubConfigured: Boolean(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET),
-      railwayConfigured: Boolean(process.env.RAILWAY_API_TOKEN),
+      githubConfigured: Boolean(
+        (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET)
+        || process.env.GITHUB_CONNECTED === "true"
+      ),
+      githubMode: process.env.GITHUB_CONNECTED === "true" ? "source-connected" : "oauth",
+      railwayConfigured: Boolean(
+        process.env.RAILWAY_API_TOKEN
+        || (process.env.RAILWAY_OAUTH_CLIENT_ID && process.env.RAILWAY_OAUTH_CLIENT_SECRET)
+      ),
+      railwayMode: process.env.RAILWAY_API_TOKEN ? "api-token" : "oauth",
       openaiAdminConfigured: Boolean(process.env.OPENAI_ADMIN_KEY),
+      openaiAdminOptional: true,
       clientPortalConfigured: portalAccounts().length > 0,
-      metaMode: "manual-assisted",
-      note: "A versão 1 organiza o onboarding e a administração. OAuth automático entra na próxima etapa."
+      metaMode: "per-client",
+      note: "Status operacional do NEXUS Core e integrações administrativas opcionais."
     });
   }
 

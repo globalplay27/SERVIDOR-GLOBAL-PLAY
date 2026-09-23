@@ -93,8 +93,33 @@ async function load() {
 async function loadIntegrations() {
   try {
     const status = await api("/api/system/status");
-    const items = [["GitHub OAuth", status.githubConfigured], ["Railway API", status.railwayConfigured], ["OpenAI Admin", status.openaiAdminConfigured], ["Meta", false]];
-    $("#integration-list").innerHTML = items.map(([name, ready]) => `<div class="integration"><div><strong>${name}</strong><small>${name === "Meta" ? "Configuração assistida" : "Variáveis de ambiente"}</small></div>${badge(ready ? "CONFIGURADO" : "PENDENTE", ready)}</div>`).join("");
+    const items = [
+      {
+        name: "GitHub Core",
+        detail: status.githubConfigured ? "Repositório de produção conectado" : "OAuth administrativo não configurado",
+        label: status.githubConfigured ? "CONECTADO" : "OPCIONAL",
+        ready: Boolean(status.githubConfigured)
+      },
+      {
+        name: "Railway Core",
+        detail: status.railwayMode === "oauth" ? "OAuth conectado" : "Integração de infraestrutura",
+        label: status.railwayConfigured ? "CONECTADO" : "PENDENTE",
+        ready: Boolean(status.railwayConfigured)
+      },
+      {
+        name: "OpenAI Admin",
+        detail: status.openaiAdminConfigured ? "Leitura administrativa configurada" : "Opcional · usado para custos centralizados",
+        label: status.openaiAdminConfigured ? "CONECTADO" : "OPCIONAL",
+        ready: Boolean(status.openaiAdminConfigured)
+      },
+      {
+        name: "Meta / Instagram",
+        detail: "Conexão individual por cliente",
+        label: "POR CLIENTE",
+        ready: true
+      }
+    ];
+    $("#integration-list").innerHTML = items.map(item => `<div class="integration"><div><strong>${item.name}</strong><small>${item.detail}</small></div>${badge(item.label, item.ready)}</div>`).join("");
   } catch (error) { console.error(error); }
 }
 
