@@ -475,6 +475,80 @@ function transcriptForRange(segments, start, end) {
     .slice(0, 1200);
 }
 
+async function detectSpeechSilences(audioPath) {
+  try {
+    const { stderr = "" } = await execMedia("ffmpeg", [
+      "-hide_banner",
+      "-i", audioPath,
+      "-af", "silencedetect=noise=-35dB:d=0.18",
+      "-f", "null",
+      "-"
+    ], { timeout: 120000, maxBuffer: 4 * 1024 * 1024 });
+    const starts = [];
+    const ends = [];
+    for (const line of String(stderr).split("\n")) {
+      const start = /silence_start:\s*([0-9.]+)/.exec(line);
+      if (start) starts.push(Number(start[1]));
+      const end = /silence_end:\s*([0-9.]+)/.exec(line);
+      if (end) ends.push(Number(end[1]));
+    }
+    return { starts: starts.filter(Number.isFinite), ends: ends.filter(Number.isFinite) };
+  } catch {
+    return { starts: [], ends: [] };
+  }
+}
+
+function sentenceLooksFinished(text) {
+  return /[.!?…]["')\]]?$/.test(String(text || "").trim());
+}
+
+function refineClipBoundary(clip, segments, silences, duration, targetDuration) {
+  const maxDuration = Math.min(95, Math.max(Number(targetDuration || 30) + 18, Number(targetDuration || 30) * 1.6));
+  let start = Math.max(0, Number(clip.start || 0));
+  let end = Math.min(Number(duration || 0), Number(clip.end || (start + targetDuration)));
+
+  if (segments.length) {
+    const startIndex = Math.max(0, segments.findIndex(seg => seg.end >= start));
+    if (segments[startIndex]) start = Math.max(0, segments[startIndex].start - 0.12);
+
+    let endIndex = segments.findIndex(seg => seg.end >= end);
+    if (endIndex < 0) endIndex = segments.length - 1;
+
+    if (segments[endIndex]) {
+      end = Math.min(duration, segments[endIndex].end + 0.28);
+      let current = endIndex;
+      while (current + 1 < segments.length) {
+        const seg = segments[current];
+        const next = segments[current + 1];
+        const gap = Math.max(0, next.start - seg.end);
+        const currentLength = end - start;
+        if (sentenceLooksFinished(seg.text) && gap >= 0.18) break;
+        if (currentLength >= maxDuration) break;
+        if (next.end - start > 95) break;
+        current += 1;
+        end = Math.min(duration, next.end + 0.28);
+        if (sentenceLooksFinished(next.text) && (current + 1 >= segments.length || segments[current + 1].start - next.end >= 0.12)) break;
+      }
+    }
+  }
+
+  // Prefer cutting at the next actual silence instead of on an active syllable.
+  const nextSilence = (silences?.starts || [])
+    .filter(point => point >= end - 0.2 && point <= Math.min(duration, end + 6))
+    .sort((a, b) => a - b)[0];
+  if (Number.isFinite(nextSilence) && nextSilence - start <= 95) {
+    end = Math.min(duration, nextSilence + 0.08);
+  } else if (!segments.length) {
+    // Technical fallback: give the speaker extra room when no transcription is available.
+    end = Math.min(duration, end + 2.5);
+  }
+
+  if (end <= start + 2.5) end = Math.min(duration, start + Math.max(3, targetDuration));
+  if (end - start > 95) end = start + 95;
+
+  return { ...clip, start, end };
+}
+
 async function selectSmartClips(transcription, duration, count, targetDuration, goal, clientId) {
   const segments = Array.isArray(transcription?.segments) ? transcription.segments : [];
   if (!segments.length) return { clips: fallbackClipSelections(duration, count, targetDuration), costUsd: 0, model: "fallback" };
@@ -482,7 +556,9 @@ async function selectSmartClips(transcription, duration, count, targetDuration, 
   const compact = segments.map(item => "[" + item.start.toFixed(1) + "-" + item.end.toFixed(1) + "] " + item.text).join("\n").slice(0, 120000);
   const prompt = `Você é o editor de vídeos curtos do NEXUS AI.
 Escolha ${count} trechos independentes com maior potencial para ${goal || "engajamento"}.
-Cada corte deve ter aproximadamente ${targetDuration} segundos, com começo compreensível, gancho rápido e final que não corte uma frase importante.
+Cada corte deve ter aproximadamente ${targetDuration} segundos, mas a duração pode passar desse alvo para terminar a fala naturalmente.
+REGRA CRÍTICA: jamais encerre o corte no meio de uma palavra, frase, resposta, CTA ou despedida. Prefira alguns segundos a mais a cortar a fala final.
+Escolha o end no fim de uma frase completa ou em uma pausa natural.
 Não invente falas e não escolha trechos sobrepostos.
 Responda SOMENTE JSON válido neste formato:
 {"clips":[{"start":12.3,"end":42.0,"title":"Título curto","reason":"Por que este trecho funciona"}]}
@@ -589,12 +665,15 @@ async function processVideoJob(jobId) {
     audioPath = path.join(workDir, "audio.mp3");
 
     let transcription = { text: "", segments: [], costUsd: 0 };
+    let speechSilences = { starts: [], ends: [] };
     try {
       await execMedia("ffmpeg", ["-y", "-i", initial.storedPath, "-vn", "-ac", "1", "-ar", "16000", "-b:a", "24k", audioPath]);
       updateVideoJob(jobId, { status: "transcribing", progress: 28, message: "Transcrevendo o áudio…" });
       transcription = await transcribeVideoAudio(audioPath, duration, initial.clientId);
+      speechSilences = await detectSpeechSilences(audioPath);
     } catch (error) {
       console.warn("Video transcription fallback " + jobId + ": " + String(error?.message || error));
+      try { speechSilences = await detectSpeechSilences(audioPath); } catch {}
     }
 
     updateVideoJob(jobId, job => {
@@ -620,6 +699,16 @@ async function processVideoJob(jobId) {
       console.warn("Video smart selection fallback " + jobId + ": " + String(error?.message || error));
       selection = { clips: fallbackClipSelections(duration, initial.requestedClips, initial.clipDuration), costUsd: 0, model: "fallback" };
     }
+
+    selection.clips = (selection.clips || []).map(clip =>
+      refineClipBoundary(
+        clip,
+        transcription.segments || [],
+        speechSilences,
+        duration,
+        Number(initial.clipDuration || 30)
+      )
+    );
 
     updateVideoJob(jobId, job => {
       job.status = "cutting";
