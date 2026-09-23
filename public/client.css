@@ -536,3 +536,9 @@ footer span{color:#a8c8d7!important}
 .video-delete-button{border:1px solid rgba(255,82,105,.24);background:rgba(255,82,105,.08);color:#ff9eaa;border-radius:8px;padding:7px 9px;font-size:9px;font-weight:900;cursor:pointer}
 .video-options{grid-template-columns:1fr 1fr}
 @media(max-width:760px){.video-library-heading{flex-direction:column}.video-library-actions{justify-content:flex-start;width:100%}.video-library-actions select,.video-library-actions input{flex:1 1 140px}.video-library-row{align-items:stretch}.video-library-row select{flex:1}.video-options{grid-template-columns:1fr}}
+
+
+/* Smart clip ranking */
+.video-smart-meta{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-top:7px}
+.video-smart-meta span{display:inline-flex;padding:4px 7px;border-radius:999px;background:rgba(93,211,255,.08);border:1px solid rgba(93,211,255,.18);color:#9fe7ff;font-size:8px;font-weight:900}
+.video-smart-meta b{font-size:9px;color:#a8bdc7;font-weight:600;line-height:1.4}
