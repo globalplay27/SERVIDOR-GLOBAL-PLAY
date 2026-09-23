@@ -27,6 +27,8 @@ const portalUsersFile = path.join(DATA_DIR, "portal-users.json");
 const masterIntegrationsFile = path.join(DATA_DIR, "master-integrations.json");
 const supportTicketsFile = path.join(DATA_DIR, "support-tickets.json");
 const postLedgerFile = path.join(DATA_DIR, "post-ledger.json");
+const agentExecutionsFile = path.join(DATA_DIR, "agent-executions.json");
+const agentCoreStateFile = path.join(DATA_DIR, "agent-core-state.json");
 const videoJobsFile = path.join(DATA_DIR, "video-jobs.json");
 const videoFoldersFile = path.join(DATA_DIR, "video-folders.json");
 const clientLogoDir = path.join(DATA_DIR, "client-logos");
@@ -276,6 +278,619 @@ function loadPostLedger() {
 function savePostLedger(value) {
   const rows = Array.isArray(value) ? value.slice(-5000) : [];
   writeJsonAtomic(postLedgerFile, rows);
+}
+
+
+const AGENT_CORE_MODULES = Object.freeze([
+  { id: "radar", name: "RADAR" },
+  { id: "estrategista", name: "ESTRATEGISTA" },
+  { id: "creator", name: "CREATOR" },
+  { id: "publisher", name: "PUBLISHER" },
+  { id: "auditor", name: "AUDITOR" },
+  { id: "odin", name: "ODIN" }
+]);
+
+function loadAgentExecutions() {
+  return readJsonFile(agentExecutionsFile, []);
+}
+
+function saveAgentExecutions(value) {
+  writeJsonAtomic(agentExecutionsFile, Array.isArray(value) ? value.slice(-5000) : []);
+}
+
+function loadAgentCoreState() {
+  return readObjectFile(agentCoreStateFile, {});
+}
+
+function saveAgentCoreState(value) {
+  writeJsonAtomic(agentCoreStateFile, value && typeof value === "object" && !Array.isArray(value) ? value : {});
+}
+
+function defaultAgentCoreConfig() {
+  return {
+    enabled: true,
+    approvalRequired: true,
+    autoPublish: false,
+    cycleMinutes: 60,
+    modules: {
+      radar: true,
+      estrategista: true,
+      creator: true,
+      publisher: true,
+      auditor: true,
+      odin: true
+    }
+  };
+}
+
+function agentCoreConfig(client) {
+  const defaults = defaultAgentCoreConfig();
+  const current = client?.agentCore && typeof client.agentCore === "object" ? client.agentCore : {};
+  const cycleMinutes = Math.max(15, Math.min(1440, Number(current.cycleMinutes || defaults.cycleMinutes)));
+  const modules = {};
+  for (const module of AGENT_CORE_MODULES) {
+    modules[module.id] = current.modules?.[module.id] !== false;
+  }
+  const autoPublish = current.autoPublish === true;
+  return {
+    enabled: current.enabled !== false,
+    approvalRequired: autoPublish ? current.approvalRequired === true : true,
+    autoPublish,
+    cycleMinutes,
+    modules
+  };
+}
+
+function agentCoreStateFor(clientId) {
+  const state = loadAgentCoreState();
+  return state[clientId] && typeof state[clientId] === "object" ? state[clientId] : {};
+}
+
+function patchAgentCoreState(clientId, patch) {
+  const state = loadAgentCoreState();
+  const current = state[clientId] && typeof state[clientId] === "object" ? state[clientId] : {};
+  state[clientId] = { ...current, ...patch, updatedAt: new Date().toISOString() };
+  saveAgentCoreState(state);
+  return state[clientId];
+}
+
+function agentCoreExecutionView(row) {
+  return {
+    id: row.id,
+    clientId: row.clientId,
+    clientName: row.clientName,
+    agent: row.agent,
+    function: row.function,
+    trigger: row.trigger,
+    status: row.status,
+    model: row.model,
+    quantity: Number(row.quantity || 0),
+    costUsd: Number(row.costUsd || 0),
+    message: row.message || "",
+    startedAt: row.startedAt || null,
+    finishedAt: row.finishedAt || null,
+    durationMs: Number(row.durationMs || 0),
+    metadata: row.metadata && typeof row.metadata === "object" ? row.metadata : {}
+  };
+}
+
+function recordAgentExecution(client, agent, details = {}) {
+  const finishedAt = new Date().toISOString();
+  const startedAt = details.startedAt || finishedAt;
+  const durationMs = Math.max(0, new Date(finishedAt).getTime() - new Date(startedAt).getTime());
+  const row = {
+    id: crypto.randomUUID(),
+    clientId: client.id,
+    clientName: client.name || client.id,
+    agent: String(agent || "").toUpperCase(),
+    function: String(details.function || "cycle").slice(0, 120),
+    trigger: String(details.trigger || "scheduler").slice(0, 80),
+    status: ["success","warning","failed","blocked"].includes(String(details.status)) ? String(details.status) : "success",
+    model: String(details.model || "local-rules").slice(0, 120),
+    quantity: Math.max(0, Number(details.quantity || 0)),
+    costUsd: Math.max(0, Number(details.costUsd || 0)),
+    message: String(details.message || "").slice(0, 1000),
+    startedAt,
+    finishedAt,
+    durationMs,
+    metadata: details.metadata && typeof details.metadata === "object" ? details.metadata : {}
+  };
+  const rows = loadAgentExecutions();
+  rows.push(row);
+  saveAgentExecutions(rows);
+  const state = agentCoreStateFor(client.id);
+  const modules = state.modules && typeof state.modules === "object" ? state.modules : {};
+  modules[String(agent || "").toLowerCase()] = {
+    status: row.status,
+    lastExecutionAt: row.finishedAt,
+    message: row.message
+  };
+  patchAgentCoreState(client.id, { modules });
+  return row;
+}
+
+function agentExecutionsForClient(clientId, limit = 80) {
+  return loadAgentExecutions()
+    .filter(item => item.clientId === clientId)
+    .sort((a, b) => String(b.finishedAt || b.startedAt).localeCompare(String(a.finishedAt || a.startedAt)))
+    .slice(0, Math.max(1, Math.min(300, Number(limit || 80))))
+    .map(agentCoreExecutionView);
+}
+
+function agentCoreLocalDay(value = new Date()) {
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Sao_Paulo",
+      year: "numeric", month: "2-digit", day: "2-digit"
+    }).formatToParts(value instanceof Date ? value : new Date(value));
+    const get = type => parts.find(item => item.type === type)?.value || "";
+    return [get("year"), get("month"), get("day")].join("-");
+  } catch {
+    return new Date(value).toISOString().slice(0, 10);
+  }
+}
+
+function agentCoreScheduleIso(time, slotIndex = 0) {
+  const clean = /^([01]\d|2[0-3]):[0-5]\d$/.test(String(time || "")) ? String(time) : "09:00";
+  const today = agentCoreLocalDay();
+  let scheduled = new Date(today + "T" + clean + ":00-03:00");
+  const minFuture = Date.now() + Math.max(0, slotIndex) * 60000;
+  if (!Number.isFinite(scheduled.getTime()) || scheduled.getTime() <= minFuture) {
+    scheduled = new Date(scheduled.getTime() + 86400000);
+  }
+  return scheduled.toISOString();
+}
+
+function agentCoreTopTerms(texts, limit = 6) {
+  const stop = new Set(["para","como","mais","uma","com","sem","que","dos","das","por","seu","sua","nos","nas","the","and","isso","este","esta","voce","você","hoje","agora","aqui","sobre","muito"]);
+  const counts = new Map();
+  for (const text of texts || []) {
+    const words = String(text || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+      .replace(/https?:\/\/\S+/g, " ")
+      .replace(/[^a-z0-9#]+/g, " ")
+      .split(/\s+/)
+      .filter(word => word.length >= 4 && !stop.has(word));
+    for (const word of words) counts.set(word, (counts.get(word) || 0) + 1);
+  }
+  return [...counts.entries()].sort((a,b) => b[1]-a[1]).slice(0, limit).map(([term,count]) => ({ term, count }));
+}
+
+async function fetchInstagramMediaSnapshot(clientId) {
+  const connection = directConnection(clientId, "meta");
+  const accessToken = decryptSecret(connection?.accessToken || "");
+  const igUserId = String(connection?.igUserId || "").trim();
+  if (!accessToken || !igUserId) return { source: "local", items: [], error: "instagram_not_connected" };
+  try {
+    const fields = "id,caption,timestamp,media_type,like_count,comments_count,permalink";
+    const endpoint = "https://graph.instagram.com/" + encodeURIComponent(igUserId) + "/media?fields=" + encodeURIComponent(fields) + "&limit=25";
+    const response = await fetch(endpoint, {
+      headers: {
+        authorization: "Bearer " + accessToken,
+        accept: "application/json",
+        "user-agent": "NEXUS-AI-AgentCore/1.0"
+      },
+      signal: AbortSignal.timeout(9000)
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(String(payload?.error?.message || "instagram_media_" + response.status));
+    const items = Array.isArray(payload?.data) ? payload.data.map(item => ({
+      id: String(item.id || ""),
+      caption: String(item.caption || "").slice(0, 2200),
+      timestamp: item.timestamp || null,
+      mediaType: String(item.media_type || ""),
+      likeCount: Math.max(0, Number(item.like_count || 0)),
+      commentsCount: Math.max(0, Number(item.comments_count || 0)),
+      permalink: String(item.permalink || "")
+    })) : [];
+    return { source: "instagram-api", items };
+  } catch (error) {
+    return { source: "local", items: [], error: String(error?.message || error).slice(0, 300) };
+  }
+}
+
+async function runRadarAgent(client, options = {}) {
+  const startedAt = new Date().toISOString();
+  const snapshot = await fetchInstagramMediaSnapshot(client.id);
+  const ledger = loadPostLedger()
+    .filter(row => row.clientId === client.id)
+    .sort((a,b) => String(b.publishedAt || b.updatedAt || b.createdAt).localeCompare(String(a.publishedAt || a.updatedAt || a.createdAt)))
+    .slice(0, 40);
+  const captions = [
+    ...snapshot.items.map(item => item.caption),
+    ...ledger.map(item => item.caption || "")
+  ].filter(Boolean);
+  const topTerms = agentCoreTopTerms(captions, 8);
+  const ranked = [...snapshot.items].sort((a,b) => (b.likeCount+b.commentsCount*2)-(a.likeCount+a.commentsCount*2));
+  const output = {
+    source: snapshot.source,
+    scannedMedia: snapshot.items.length,
+    topTerms,
+    bestRecent: ranked[0] || null,
+    signals: [
+      topTerms[0]?.term ? "Reforçar temas já associados a " + topTerms[0].term : "Testar ganchos orientados à principal dor do cliente",
+      "Variar prova, benefício e chamada para ação sem repetir criativo",
+      "Não prometer viralização; priorizar sinais observados e histórico próprio"
+    ]
+  };
+  recordAgentExecution(client, "RADAR", {
+    function: "trend-scan",
+    trigger: options.trigger,
+    startedAt,
+    status: snapshot.error && !snapshot.items.length ? "warning" : "success",
+    model: "local-rules+instagram-api",
+    quantity: snapshot.items.length + ledger.length,
+    costUsd: 0,
+    message: snapshot.items.length ? "Sinais atualizados com dados recentes do Instagram." : "Sinais atualizados com histórico local; Instagram sem leitura de mídia.",
+    metadata: { source: snapshot.source, topTerms, apiError: snapshot.error || "" }
+  });
+  patchAgentCoreState(client.id, { radar: output });
+  return output;
+}
+
+async function runStrategistAgent(client, context = {}, options = {}) {
+  const startedAt = new Date().toISOString();
+  const profile = { ...defaultPostingProfile(), ...(client.postingProfile || {}) };
+  const ledger = loadPostLedger().filter(row => row.clientId === client.id);
+  const published = ledger.filter(row => row.status === "published").length;
+  const failed = ledger.filter(row => row.status === "failed" || row.status === "skipped").length;
+  const pending = ledger.filter(row => row.approvalStatus === "pending" || row.approvalStatus === "correction_requested").length;
+  const leadData = await fetchAgentLeads(client).catch(() => ({ summary: { total: 0, hot: 0, warm: 0, cold: 0 }, source: "stored" }));
+  const radar = context.radar || agentCoreStateFor(client.id).radar || {};
+  const auditor = context.auditor || agentCoreStateFor(client.id).auditor || {};
+  const themes = [
+    profile.morningTheme || "Dor do cliente e solução",
+    profile.afternoonTheme || "Produto, benefício e prova",
+    profile.eveningTheme || "Conversão e chamada para ação"
+  ];
+  const plan = {
+    niche: client.niche || "Outro",
+    audience: profile.targetAudience,
+    objective: profile.contentStrategy,
+    tone: profile.tone,
+    themes,
+    contentFocus: profile.contentFocus,
+    cta: profile.cta,
+    hashtags: profile.hashtags,
+    avoidTopics: profile.avoidTopics,
+    radarTerms: Array.isArray(radar.topTerms) ? radar.topTerms.slice(0, 5) : [],
+    feedback: auditor.feedback || "",
+    metrics: { published, failed, pending, leads: leadData.summary || {} }
+  };
+  recordAgentExecution(client, "ESTRATEGISTA", {
+    function: options.feedback ? "feedback-loop" : "content-plan",
+    trigger: options.trigger,
+    startedAt,
+    status: "success",
+    model: "local-rules",
+    quantity: 1,
+    costUsd: 0,
+    message: options.feedback ? "Estratégia atualizada após leitura do Auditor." : "Plano editorial atualizado com nicho, histórico, Radar e leads.",
+    metadata: { published, failed, pending, leadSource: leadData.source || "stored" }
+  });
+  patchAgentCoreState(client.id, { strategy: plan });
+  return plan;
+}
+
+async function runCreatorAgent(client, strategy, options = {}) {
+  const startedAt = new Date().toISOString();
+  const config = agentCoreConfig(client);
+  const times = (Array.isArray(client.postTimes) && client.postTimes.length ? client.postTimes : ["09:00","12:00","18:00"]).slice(0, 6);
+  const ledger = loadPostLedger();
+  const created = [];
+  const hooks = [
+    "Pare de perder resultado por um problema que dá para evitar.",
+    "Antes de escolher uma solução, confira estes pontos.",
+    "O que separa uma experiência comum de uma experiência confiável?"
+  ];
+  const themes = Array.isArray(strategy?.themes) && strategy.themes.length ? strategy.themes : ["Dor e solução","Benefício e prova","Conversão"];
+  const focus = String(strategy?.contentFocus || "Benefícios reais, autoridade e conversão").trim();
+  const cta = String(strategy?.cta || 'Comente "QUERO" e saiba mais').trim();
+  const hashtags = String(strategy?.hashtags || "").trim();
+
+  for (let index=0; index<times.length; index++) {
+    const time = times[index];
+    const scheduledFor = agentCoreScheduleIso(time, index);
+    const day = agentCoreLocalDay(scheduledFor);
+    const exists = ledger.some(row =>
+      row.clientId === client.id
+      && String(row.source || "").startsWith("agent-core:creator")
+      && String(row.scheduledHour || "") === String(time)
+      && agentCoreLocalDay(row.scheduledFor || row.createdAt) === day
+    );
+    if (exists) continue;
+    const theme = themes[index % themes.length];
+    const caption = [
+      hooks[index % hooks.length],
+      "",
+      String(theme) + ". " + focus + ".",
+      "",
+      cta,
+      hashtags ? "" : null,
+      hashtags || null
+    ].filter(value => value !== null).join("\n").slice(0, 2200);
+    const approvalStatus = config.autoPublish && !config.approvalRequired ? "approved" : "pending";
+    const row = {
+      id: "agentcore:" + client.id + ":" + day + ":" + String(time).replace(":", ""),
+      clientId: client.id,
+      clientName: client.name || client.id,
+      instagram: client.instagram || "",
+      scheduledFor,
+      scheduledHour: time,
+      status: "ready",
+      approvalStatus,
+      costUsd: 0,
+      costCalculated: true,
+      model: "local-rules",
+      mediaId: "",
+      imageUrl: "",
+      caption,
+      title: String(theme).slice(0, 160),
+      source: "agent-core:creator",
+      error: "",
+      retryCount: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    ledger.push(row);
+    created.push(row);
+  }
+  if (created.length) savePostLedger(ledger);
+  recordAgentExecution(client, "CREATOR", {
+    function: "draft-generation",
+    trigger: options.trigger,
+    startedAt,
+    status: "success",
+    model: "local-rules",
+    quantity: created.length,
+    costUsd: 0,
+    message: created.length
+      ? created.length + " pauta(s) criada(s) e deixada(s) aguardando aprovação."
+      : "Nenhuma pauta duplicada criada; agenda já estava preparada.",
+    metadata: { approvalRequired: config.approvalRequired, autoPublish: config.autoPublish, draftIds: created.map(item => item.id) }
+  });
+  return created;
+}
+
+async function runPublisherAgent(client, options = {}) {
+  const startedAt = new Date().toISOString();
+  const ledger = loadPostLedger();
+  const now = Date.now();
+  let published = 0;
+  let failed = 0;
+  let awaitingApproval = 0;
+  let awaitingMedia = 0;
+  let changed = false;
+
+  const candidates = ledger.filter(row => {
+    if (row.clientId !== client.id || row.status === "published") return false;
+    const due = !row.scheduledFor || new Date(row.scheduledFor).getTime() <= now;
+    const retryDue = !row.nextRetryAt || new Date(row.nextRetryAt).getTime() <= now;
+    return due && retryDue && ["ready","scheduled","failed"].includes(String(row.status || ""));
+  });
+
+  for (const row of candidates.slice(0, 8)) {
+    const approval = cleanApprovalStatus(row.approvalStatus);
+    if (approval !== "approved") {
+      awaitingApproval += 1;
+      continue;
+    }
+    if (!row.imageUrl) {
+      awaitingMedia += 1;
+      continue;
+    }
+    const retryCount = Math.max(0, Number(row.retryCount || 0));
+    if (retryCount >= 3 && row.status === "failed") continue;
+    row.status = "publishing";
+    row.attemptedAt = new Date().toISOString();
+    row.updatedAt = row.attemptedAt;
+    changed = true;
+    savePostLedger(ledger);
+    try {
+      const result = await publishInstagramImageForClient(client.id, row.imageUrl, row.caption || "");
+      row.status = "published";
+      row.approvalStatus = "approved";
+      row.mediaId = String(result?.id || result?.mediaId || "");
+      row.publishedAt = new Date().toISOString();
+      row.error = "";
+      row.nextRetryAt = null;
+      published += 1;
+    } catch (error) {
+      row.retryCount = retryCount + 1;
+      row.status = "failed";
+      row.error = String(error?.message || error).slice(0, 900);
+      row.nextRetryAt = row.retryCount < 3 ? new Date(Date.now() + row.retryCount * 5 * 60000).toISOString() : null;
+      failed += 1;
+    }
+    row.updatedAt = new Date().toISOString();
+  }
+  if (changed || published || failed) savePostLedger(ledger);
+  const status = failed ? "warning" : "success";
+  const shouldLog = candidates.length > 0 || options.trigger !== "scheduler";
+  if (shouldLog) {
+    recordAgentExecution(client, "PUBLISHER", {
+      function: "queue-sweep",
+      trigger: options.trigger,
+      startedAt,
+      status,
+      model: "local-rules+meta-api",
+      quantity: candidates.length,
+      costUsd: 0,
+      message: published + " publicada(s), " + awaitingApproval + " aguardando aprovação, " + awaitingMedia + " aguardando mídia, " + failed + " falha(s).",
+      metadata: { published, failed, awaitingApproval, awaitingMedia }
+    });
+  }
+  return { published, failed, awaitingApproval, awaitingMedia };
+}
+
+async function runAuditorAgent(client, options = {}) {
+  const startedAt = new Date().toISOString();
+  const snapshot = await fetchInstagramMediaSnapshot(client.id);
+  const items = snapshot.items || [];
+  const averages = items.length ? {
+    likes: items.reduce((sum,item)=>sum+Number(item.likeCount||0),0)/items.length,
+    comments: items.reduce((sum,item)=>sum+Number(item.commentsCount||0),0)/items.length
+  } : { likes: 0, comments: 0 };
+  const ranked = [...items].sort((a,b)=>(b.likeCount+b.commentsCount*2)-(a.likeCount+a.commentsCount*2));
+  const ledger = loadPostLedger().filter(row => row.clientId === client.id);
+  const published = ledger.filter(row => row.status === "published").length;
+  const failed = ledger.filter(row => row.status === "failed" || row.status === "skipped").length;
+  const feedback = ranked[0]
+    ? "Reaproveitar padrões de tema e gancho do conteúdo com melhor interação, sem copiar o criativo."
+    : (failed > 0 ? "Priorizar estabilidade da fila e revisar falhas antes de aumentar frequência." : "Manter variedade de ganchos e coletar mais dados antes de alterar a estratégia.");
+  const output = { source: snapshot.source, averages, published, failed, topMedia: ranked[0] || null, feedback };
+  recordAgentExecution(client, "AUDITOR", {
+    function: "performance-review",
+    trigger: options.trigger,
+    startedAt,
+    status: snapshot.error && !items.length ? "warning" : "success",
+    model: "local-rules+instagram-api",
+    quantity: items.length || ledger.length,
+    costUsd: 0,
+    message: "Métricas pós-publicação revisadas e feedback enviado ao Estrategista.",
+    metadata: { source: snapshot.source, averages, published, failed, apiError: snapshot.error || "" }
+  });
+  patchAgentCoreState(client.id, { auditor: output });
+  return output;
+}
+
+async function runOdinAgent(client, options = {}) {
+  const startedAt = new Date().toISOString();
+  const data = await fetchAgentLeads(client).catch(() => ({
+    summary: {
+      total: Number(client?.leads?.total || 0),
+      hot: Number(client?.leads?.hot || 0),
+      warm: Number(client?.leads?.warm || 0),
+      cold: Number(client?.leads?.cold || 0),
+      needsHuman: 0
+    },
+    leads: [],
+    source: "stored"
+  }));
+  const hot = (data.leads || []).filter(lead => lead.temperature === "hot" || lead.needsHuman).slice(0, 20);
+  const output = { source: data.source || "stored", summary: data.summary || {}, priority: hot };
+  recordAgentExecution(client, "ODIN", {
+    function: "lead-qualification",
+    trigger: options.trigger,
+    startedAt,
+    status: data.error ? "warning" : "success",
+    model: "local-rules",
+    quantity: Number(data.summary?.total || 0),
+    costUsd: 0,
+    message: hot.length ? hot.length + " lead(s) priorizado(s) para atenção comercial." : "Leads classificados; nenhum lead quente exige ação imediata.",
+    metadata: { source: data.source || "stored", summary: data.summary || {} }
+  });
+  patchAgentCoreState(client.id, { odin: output });
+  return output;
+}
+
+const agentCoreRunning = new Set();
+
+async function runAgentCoreCycle(clientId, options = {}) {
+  if (agentCoreRunning.has(clientId)) return { ok: false, skipped: "already_running" };
+  const client = loadClients().find(item => item.id === clientId);
+  if (!client) throw new Error("client_not_found");
+  const config = agentCoreConfig(client);
+  const requested = String(options.agent || "all").toLowerCase();
+  if (requested !== "all" && !AGENT_CORE_MODULES.some(item => item.id === requested)) throw new Error("invalid_agent");
+  if (!config.enabled && options.trigger !== "manual") return { ok: false, skipped: "agent_core_disabled" };
+
+  agentCoreRunning.add(clientId);
+  const result = { ok: true, clientId, trigger: options.trigger || "manual", agents: {} };
+  try {
+    const state = agentCoreStateFor(client.id);
+    let radar = state.radar || {};
+    let strategy = state.strategy || {};
+    let auditor = state.auditor || {};
+
+    const run = id => requested === "all" || requested === id;
+    if (run("radar") && config.modules.radar) result.agents.radar = radar = await runRadarAgent(client, options);
+    if (run("estrategista") && config.modules.estrategista) result.agents.estrategista = strategy = await runStrategistAgent(client, { radar, auditor }, options);
+    if (run("creator") && config.modules.creator) result.agents.creator = await runCreatorAgent(client, strategy, options);
+    if (run("publisher") && config.modules.publisher) result.agents.publisher = await runPublisherAgent(client, options);
+    if (run("auditor") && config.modules.auditor) {
+      result.agents.auditor = auditor = await runAuditorAgent(client, options);
+      if (requested === "all" && config.modules.estrategista) {
+        result.agents.estrategistaFeedback = await runStrategistAgent(client, { radar, auditor }, { ...options, feedback: true });
+      }
+    }
+    if (run("odin") && config.modules.odin) result.agents.odin = await runOdinAgent(client, options);
+
+    const now = new Date().toISOString();
+    patchAgentCoreState(client.id, {
+      lastCycleAt: now,
+      nextCycleAt: new Date(Date.now() + config.cycleMinutes * 60000).toISOString(),
+      lastCycleStatus: "success"
+    });
+    return result;
+  } catch (error) {
+    patchAgentCoreState(client.id, { lastCycleAt: new Date().toISOString(), lastCycleStatus: "failed", lastCycleError: String(error?.message || error).slice(0, 500) });
+    throw error;
+  } finally {
+    agentCoreRunning.delete(clientId);
+  }
+}
+
+let agentCoreSchedulerRunning = false;
+async function processAgentCoreScheduler() {
+  if (agentCoreSchedulerRunning) return;
+  agentCoreSchedulerRunning = true;
+  try {
+    const clients = loadClients().filter(client => client.status === "online");
+    const now = Date.now();
+    for (const client of clients) {
+      const config = agentCoreConfig(client);
+      if (!config.enabled) continue;
+      const state = agentCoreStateFor(client.id);
+      const lastCycle = state.lastCycleAt ? new Date(state.lastCycleAt).getTime() : 0;
+      const dueFullCycle = !lastCycle || now - lastCycle >= config.cycleMinutes * 60000;
+      if (dueFullCycle) {
+        await runAgentCoreCycle(client.id, { trigger: "scheduler", agent: "all" }).catch(error => {
+          console.warn("Agent Core cycle failed for " + client.id + ": " + String(error?.message || error));
+        });
+        continue;
+      }
+      const lastPublisher = state.lastPublisherSweepAt ? new Date(state.lastPublisherSweepAt).getTime() : 0;
+      if (config.modules.publisher && (!lastPublisher || now - lastPublisher >= 5 * 60000)) {
+        await runPublisherAgent(client, { trigger: "scheduler" }).catch(error => {
+          console.warn("Publisher sweep failed for " + client.id + ": " + String(error?.message || error));
+        });
+        patchAgentCoreState(client.id, { lastPublisherSweepAt: new Date().toISOString() });
+      }
+    }
+  } finally {
+    agentCoreSchedulerRunning = false;
+  }
+}
+
+function agentCoreDashboard() {
+  const clients = loadClients();
+  const executions = loadAgentExecutions().map(agentCoreExecutionView);
+  const today = agentCoreLocalDay();
+  const month = today.slice(0, 7);
+  const byClient = clients.map(client => {
+    const rows = executions.filter(row => row.clientId === client.id);
+    const todayRows = rows.filter(row => agentCoreLocalDay(row.finishedAt || row.startedAt) === today);
+    const monthRows = rows.filter(row => agentCoreLocalDay(row.finishedAt || row.startedAt).slice(0,7) === month);
+    return {
+      clientId: client.id,
+      clientName: client.name || client.id,
+      config: agentCoreConfig(client),
+      state: agentCoreStateFor(client.id),
+      executionsToday: todayRows.length,
+      costTodayUsd: todayRows.reduce((sum,row)=>sum+Number(row.costUsd||0),0),
+      costMonthUsd: monthRows.reduce((sum,row)=>sum+Number(row.costUsd||0),0),
+      lastExecutions: rows.sort((a,b)=>String(b.finishedAt||"").localeCompare(String(a.finishedAt||""))).slice(0,12)
+    };
+  });
+  return {
+    modules: AGENT_CORE_MODULES,
+    today,
+    month,
+    totalExecutionsToday: byClient.reduce((sum,item)=>sum+item.executionsToday,0),
+    totalCostTodayUsd: byClient.reduce((sum,item)=>sum+item.costTodayUsd,0),
+    totalCostMonthUsd: byClient.reduce((sum,item)=>sum+item.costMonthUsd,0),
+    clients: byClient
+  };
 }
 
 function loadVideoJobs() {
@@ -1421,9 +2036,11 @@ function portalPostView(row) {
     mediaId: row.mediaId || "",
     error: row.error || "",
     revisionRequest: row.revisionRequest || "",
+    title: row.title || "",
     caption: row.caption || "",
     imageUrl: row.imageUrl || "",
     source: row.source || "",
+    retryCount: Math.max(0, Number(row.retryCount || 0)),
     updatedAt: row.updatedAt || row.createdAt || null
   };
 }
@@ -2308,6 +2925,7 @@ function clientPortalView(client) {
     },
     postingProfile: { ...defaultPostingProfile(), ...(client.postingProfile || {}) },
     agentProfile: client.agentProfile && typeof client.agentProfile === "object" ? client.agentProfile : {},
+    agentCore: agentCoreConfig(client),
     connections: connectionSummary(client)
   };
 }
@@ -2739,6 +3357,1156 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  const agentPostEventMatch = url.pathname.match(/^\/api\/agent\/([^/]+)\/posts\/event$/);
+  if (agentPostEventMatch && req.method === "POST") {
+    const clientId = agentPostEventMatch[1];
+    if (!agentBearerAuthorized(req, clientId)) return send(res, 401, { error: "unauthorized" });
+    const body = await readBody(req);
+    const row = upsertPostLedger(clientId, body);
+    if (!row) return send(res, 404, { error: "not_found" });
+    return send(res, 200, { ok: true, post: row });
+  }
+
+  const agentCoreEventMatch = url.pathname.match(/^\/api\/agent\/([^/]+)\/core\/event$/);
+  if (agentCoreEventMatch && req.method === "POST") {
+    const clientId = agentCoreEventMatch[1];
+    if (!agentBearerAuthorized(req, clientId)) return send(res, 401, { error: "unauthorized" });
+    const client = loadClients().find(item => item.id === clientId);
+    if (!client) return send(res, 404, { error: "not_found" });
+    const body = await readBody(req);
+    const agentId = String(body.agent || "").toLowerCase();
+    const module = AGENT_CORE_MODULES.find(item => item.id === agentId || item.name.toLowerCase() === agentId);
+    if (!module) return send(res, 400, { error: "invalid_agent" });
+    const row = recordAgentExecution(client, module.name, {
+      function: String(body.function || body.task || "external-event").slice(0, 120),
+      trigger: "external-agent",
+      status: String(body.status || "success"),
+      model: String(body.model || "external-agent").slice(0, 120),
+      quantity: Math.max(0, Number(body.quantity || 0)),
+      costUsd: Math.max(0, Number(body.costUsd || 0)),
+      message: String(body.message || "").slice(0, 1000),
+      startedAt: normalizeIso(body.startedAt) || new Date().toISOString(),
+      metadata: body.metadata && typeof body.metadata === "object" ? body.metadata : {}
+    });
+    return send(res, 200, { ok: true, execution: agentCoreExecutionView(row) });
+  }
+
+  const agentConfigMatch = url.pathname.match(/^\/api\/agent-config\/([^/]+)$/);
+  if (agentConfigMatch && req.method === "GET") {
+    const clientId = agentConfigMatch[1];
+    if (!agentBearerAuthorized(req, clientId)) {
+      return send(res, 401, { error: "unauthorized" });
+    }
+    const client = loadClients().find(item => item.id === clientId);
+    if (!client) return send(res, 404, { error: "not_found" });
+    const view = clientPortalView(client);
+    return send(res, 200, {
+      id: view.id,
+      name: view.name,
+      niche: view.niche,
+      instagram: view.instagram,
+      primaryColor: view.primaryColor,
+      secondaryColor: view.secondaryColor,
+      postTimes: view.postTimes,
+      postingProfile: view.postingProfile,
+      agentCore: agentCoreConfig(client)
+    });
+  }
+
+  if (url.pathname === "/api/portal/agent-profile" && req.method === "POST") {
+    const sessionClient = portalClientForRequest(req);
+    if (!sessionClient) return send(res, 401, { error: "unauthorized" });
+    try {
+      const body = await readBody(req);
+      const clients = loadClients();
+      const client = clients.find(item => item.id === sessionClient.id);
+      if (!client) return send(res, 404, { error: "not_found" });
+
+      const textValue = (value, max = 1200) =>
+        typeof value === "string" ? value.trim().slice(0, max) : "";
+      const colorValue = (value, fallback) =>
+        typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value) ? value : fallback;
+
+      const previous = client.agentProfile && typeof client.agentProfile === "object" ? client.agentProfile : {};
+      let logoUrl = String(previous.logoUrl || "");
+
+      if (body.removeLogo) {
+        for (const ext of ["png","jpg","webp"]) {
+          const file = path.join(clientLogoDir, slug(client.id) + "." + ext);
+          try { if (fs.existsSync(file)) fs.unlinkSync(file); } catch {}
+        }
+        logoUrl = "";
+      }
+
+      if (typeof body.logoDataUrl === "string" && body.logoDataUrl.trim()) {
+        const match = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/.exec(body.logoDataUrl.trim());
+        if (!match) return send(res, 400, { error: "invalid_logo" });
+        const bytes = Buffer.from(match[2], "base64");
+        if (!bytes.length || bytes.length > 900 * 1024) return send(res, 400, { error: "logo_too_large" });
+        const ext = match[1] === "jpeg" ? "jpg" : match[1];
+        for (const oldExt of ["png","jpg","webp"]) {
+          const oldFile = path.join(clientLogoDir, slug(client.id) + "." + oldExt);
+          try { if (fs.existsSync(oldFile)) fs.unlinkSync(oldFile); } catch {}
+        }
+        const filename = slug(client.id) + "." + ext;
+        fs.writeFileSync(path.join(clientLogoDir, filename), bytes);
+        logoUrl = "/client-logo/" + filename + "?v=" + Date.now();
+      }
+
+      const primaryColor = colorValue(body.primaryColor, client.primaryColor || "#22c55e");
+      const secondaryColor = colorValue(body.secondaryColor, client.secondaryColor || "#050807");
+      const niche = textValue(body.niche, 80) || client.niche || "Outro";
+      const now = new Date().toISOString();
+
+      client.niche = niche;
+      client.primaryColor = primaryColor;
+      client.secondaryColor = secondaryColor;
+      client.agentProfile = {
+        ...previous,
+        agentName: textValue(body.agentName, 80),
+        brandName: textValue(body.brandName, 120) || client.name,
+        niche,
+        audience: textValue(body.audience, 120),
+        goal: textValue(body.goal, 100),
+        region: textValue(body.region, 120),
+        offer: textValue(body.offer, 900),
+        services: textValue(body.services, 900),
+        differentials: textValue(body.differentials, 700),
+        tone: textValue(body.tone, 120),
+        cta: textValue(body.cta, 180),
+        avoidTopics: textValue(body.avoidTopics, 700),
+        notes: textValue(body.notes, 1200),
+        whatsapp: textValue(body.whatsapp, 40),
+        website: textValue(body.website, 220),
+        primaryColor,
+        secondaryColor,
+        logoUrl,
+        status: "submitted",
+        submittedAt: now,
+        updatedAt: now
+      };
+      client.onboarding = client.onboarding && typeof client.onboarding === "object" ? client.onboarding : {};
+      client.onboarding.creativeProfile = true;
+      saveClients(clients);
+      return send(res, 200, clientPortalView(client));
+    } catch (error) {
+      return send(res, 400, { error: String(error?.message || "agent_profile_save_failed") });
+    }
+  }
+
+  if (url.pathname.startsWith("/client-logo/") && req.method === "GET") {
+    const filename = path.basename(url.pathname.slice("/client-logo/".length));
+    const full = path.join(clientLogoDir, filename);
+    const portalClient = portalClientForRequest(req);
+    const masterOk = masterSessionAuthorized(req);
+    const portalOk = portalClient && filename.startsWith(slug(portalClient.id) + ".");
+    if (!masterOk && !portalOk) return send(res, 403, "Forbidden", "text/plain; charset=utf-8");
+    if (!filename || !full.startsWith(clientLogoDir) || !fs.existsSync(full)) return send(res, 404, "Not found", "text/plain; charset=utf-8");
+    const ext = path.extname(filename).toLowerCase();
+    const type = ext === ".png" ? "image/png" : ext === ".webp" ? "image/webp" : "image/jpeg";
+    return send(res, 200, fs.readFileSync(full), type);
+  }
+
+  if (url.pathname === "/api/portal/settings" && req.method === "PATCH") {
+    const sessionClient = portalClientForRequest(req);
+    if (!sessionClient) {
+      return send(res, 401, { error: "unauthorized" });
+    }
+
+    const body = await readBody(req);
+    const clients = loadClients();
+    const client = clients.find(item => item.id === sessionClient.id);
+    if (!client) return send(res, 404, { error: "not_found" });
+
+    const textValue = (value, fallback = "", max = 500) =>
+      typeof value === "string" ? value.trim().slice(0, max) : fallback;
+    const colorValue = (value, fallback) =>
+      typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value) ? value : fallback;
+    const timeValues = (value, fallback) => {
+      if (!Array.isArray(value)) return fallback;
+      const valid = [...new Set(value.map(String).filter(item => /^([01]\\d|2[0-3]):[0-5]\\d$/.test(item)))].sort();
+      return valid.length ? valid.slice(0, 6) : fallback;
+    };
+
+    client.niche = textValue(body.niche, client.niche || "Outro", 80);
+    client.primaryColor = colorValue(body.primaryColor, client.primaryColor || "#22c55e");
+    client.secondaryColor = colorValue(body.secondaryColor, client.secondaryColor || "#050807");
+    client.postTimes = timeValues(body.postTimes, client.postTimes || ["09:00", "12:00", "18:00"]);
+
+    const defaults = defaultPostingProfile();
+    const current = { ...defaults, ...(client.postingProfile || {}) };
+    const incoming = body.postingProfile && typeof body.postingProfile === "object" ? body.postingProfile : {};
+    client.postingProfile = {
+      contentStrategy: textValue(incoming.contentStrategy, current.contentStrategy, 100),
+      targetAudience: textValue(incoming.targetAudience, current.targetAudience, 100),
+      visualStyle: textValue(incoming.visualStyle, current.visualStyle, 100),
+      contentFocus: textValue(incoming.contentFocus, current.contentFocus, 400),
+      morningTheme: textValue(incoming.morningTheme, current.morningTheme, 250),
+      afternoonTheme: textValue(incoming.afternoonTheme, current.afternoonTheme, 250),
+      eveningTheme: textValue(incoming.eveningTheme, current.eveningTheme, 250),
+      tone: textValue(incoming.tone, current.tone, 180),
+      cta: textValue(incoming.cta, current.cta, 180),
+      hashtags: textValue(incoming.hashtags, current.hashtags, 350),
+      avoidTopics: textValue(incoming.avoidTopics, current.avoidTopics, 500)
+    };
+
+    saveClients(clients);
+    return send(res, 200, clientPortalView(client));
+  }
+
+  if (url.pathname === "/api/portal/onboarding" && req.method === "PATCH") {
+    const sessionClient = portalClientForRequest(req);
+    if (!sessionClient) {
+      return send(res, 401, { error: "unauthorized" });
+    }
+    const body = await readBody(req);
+    const clients = loadClients();
+    const client = clients.find(item => item.id === sessionClient.id);
+    if (!client) return send(res, 404, { error: "not_found" });
+
+    const allowedSteps = ["github","railway","openai","facebook","instagram","metaApp","creativeProfile","supportRequested"];
+    const current = client.onboarding && typeof client.onboarding === "object" ? client.onboarding : {};
+    for (const step of allowedSteps) {
+      if (Object.prototype.hasOwnProperty.call(body, step)) current[step] = Boolean(body[step]);
+    }
+    client.onboarding = current;
+    if (body.setupMode === "new" || body.setupMode === "ready") client.setupMode = body.setupMode;
+    saveClients(clients);
+    return send(res, 200, clientPortalView(client));
+  }
+
+  if (url.pathname === "/api/portal/live-status" && req.method === "GET") {
+    const client = portalClientForRequest(req);
+    if (!client) {
+      return send(res, 401, { error: "unauthorized" });
+    }
+
+    const base = String(client.agentApiUrl || "").replace(/\/+$/, "");
+    if (!base) return send(res, 200, { connected: false, reason: "agent_url_missing" });
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6000);
+    try {
+      const token = String(process.env.RAGNAR_AGENT_TOKEN || "");
+      const response = await fetch(base + "/nexus/status", {
+        headers: {
+          "accept": "application/json",
+          "user-agent": "NEXUS-AI-Control-Center/1.0",
+          ...(token ? { authorization: "Bearer " + token } : {})
+        },
+        signal: controller.signal
+      });
+      if (!response.ok) return send(res, 200, { connected: false, reason: "agent_http_" + response.status });
+      const payload = await response.json();
+      return send(res, 200, { connected: true, ...payload });
+    } catch (error) {
+      return send(res, 200, { connected: false, reason: "agent_unavailable" });
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  if (url.pathname === "/api/portal/instagram/publish-test" && req.method === "POST") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    if (client.id !== "testador") return send(res, 403, { error: "test_publish_only" });
+
+    const connection = directConnection(client.id, "meta");
+    const accessToken = decryptSecret(connection?.accessToken || "");
+    const igUserId = String(connection?.igUserId || "").trim();
+    if (!accessToken || !igUserId) {
+      return send(res, 409, { error: "instagram_not_connected" });
+    }
+
+    const body = await readBody(req);
+    const imageUrl = String(body.imageUrl || "").trim();
+    const caption = String(body.caption || "").trim().slice(0, 2200);
+    if (!/^https:\/\//i.test(imageUrl)) return send(res, 400, { error: "invalid_image_url" });
+    if (!caption) return send(res, 400, { error: "caption_required" });
+
+    const graphRequest = async (pathName, method = "GET", form = null) => {
+      const endpoint = "https://graph.instagram.com/" + String(pathName).replace(/^\/+/, "");
+      const options = {
+        method,
+        headers: {
+          authorization: "Bearer " + accessToken,
+          "user-agent": "NEXUS-AI/1.0"
+        }
+      };
+      if (form) {
+        options.headers["content-type"] = "application/x-www-form-urlencoded";
+        options.body = new URLSearchParams(form);
+      }
+      const response = await fetch(endpoint, options);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const metaError = payload?.error || {};
+        const err = new Error(String(metaError.message || "instagram_api_failed"));
+        err.code = metaError.code || response.status;
+        err.type = metaError.type || "";
+        throw err;
+      }
+      return payload;
+    };
+
+    try {
+      const created = await graphRequest(igUserId + "/media", "POST", {
+        image_url: imageUrl,
+        caption
+      });
+      const containerId = String(created?.id || "");
+      if (!containerId) throw new Error("instagram_container_missing");
+
+      const deadline = Date.now() + 90000;
+      let lastStatus = "";
+      while (Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        const status = await graphRequest(containerId + "?fields=status_code,status");
+        const code = String(status?.status_code || "").toUpperCase();
+        lastStatus = String(status?.status || code || "");
+        if (code === "FINISHED") {
+          const published = await graphRequest(igUserId + "/media_publish", "POST", {
+            creation_id: containerId
+          });
+          const mediaId = String(published?.id || "");
+          let permalink = "";
+          if (mediaId) {
+            try {
+              const media = await graphRequest(mediaId + "?fields=permalink");
+              permalink = String(media?.permalink || "");
+            } catch {}
+          }
+          return send(res, 200, {
+            ok: true,
+            username: connection?.meta?.username || "",
+            mediaId,
+            containerId,
+            permalink
+          });
+        }
+        if (code === "ERROR" || code === "EXPIRED") {
+          return send(res, 400, { error: "instagram_media_processing_failed", status: lastStatus });
+        }
+      }
+      return send(res, 504, { error: "instagram_media_processing_timeout", status: lastStatus });
+    } catch (error) {
+      return send(res, 400, {
+        error: "instagram_publish_failed",
+        code: error?.code || "",
+        type: error?.type || "",
+        message: String(error?.message || "Falha ao publicar no Instagram").slice(0, 500)
+      });
+    }
+  }
+
+  if (url.pathname === "/api/portal/instagram/start" && req.method === "GET") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+
+    const appId = masterInstagramAppId();
+    const appSecret = masterInstagramAppSecret();
+    if (!appId || !appSecret) {
+      return send(res, 503, {
+        error: "instagram_nexus_not_configured",
+        message: "A conexão do Instagram ainda precisa ser ativada pelo administrador NEXUS."
+      });
+    }
+
+    const state = "ig_" + crypto.randomBytes(24).toString("base64url");
+    const states = loadOauthStates();
+    const now = Date.now();
+    for (const [key, value] of Object.entries(states)) {
+      if (!value?.createdAt || now - Number(value.createdAt) > 15 * 60 * 1000) delete states[key];
+    }
+    states[state] = { provider: "instagram", clientId: client.id, createdAt: now };
+    saveOauthStates(states);
+
+    const authorize = new URL("https://www.instagram.com/oauth/authorize");
+    authorize.searchParams.set("client_id", appId);
+    authorize.searchParams.set("redirect_uri", instagramRedirectUri(req));
+    authorize.searchParams.set("response_type", "code");
+    authorize.searchParams.set(
+      "scope",
+      "instagram_business_basic,instagram_business_content_publish,instagram_business_manage_messages,instagram_business_manage_comments"
+    );
+    authorize.searchParams.set("state", state);
+    authorize.searchParams.set("force_reauth", "true");
+    authorize.searchParams.set("enable_fb_login", "0");
+    return send(res, 200, { url: authorize.toString() });
+  }
+
+  if (url.pathname === "/api/oauth/instagram/callback" && req.method === "GET") {
+    const code = String(url.searchParams.get("code") || "").split("#")[0];
+    const state = String(url.searchParams.get("state") || "");
+    const oauthError = String(url.searchParams.get("error") || "");
+    const states = loadOauthStates();
+    const saved = states[state];
+
+    const oauthPage = (ok, message) => send(
+      res,
+      ok ? 200 : 400,
+      `<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>NEXUS AI</title><body style="margin:0;background:#050807;color:#f4f8f5;font-family:system-ui;display:grid;place-items:center;min-height:100vh"><div style="max-width:520px;padding:30px;border:1px solid #173549;border-radius:20px;background:#071018;text-align:center"><h1 style="margin-top:0;color:${ok ? "#5dd3ff" : "#ff9898"}">${ok ? "Instagram conectado" : "Falha na conexão"}</h1><p style="color:#aab9c2;line-height:1.5">${message}</p><p>Você pode fechar esta janela e voltar ao NEXUS AI.</p></div><script>try{if(window.opener)window.opener.postMessage({type:"nexus-instagram-oauth",ok:${ok ? "true" : "false"}},"*");}catch(e){}setTimeout(()=>window.close(),900);<\/script></body></html>`,
+      "text/html; charset=utf-8"
+    );
+
+    if (oauthError) return oauthPage(false, "A autorização foi cancelada ou recusada.");
+    if (!code || !state || !saved || saved.provider !== "instagram" || Date.now() - Number(saved.createdAt || 0) > 15 * 60 * 1000) {
+      return oauthPage(false, "Esta autorização expirou. Inicie novamente pelo painel.");
+    }
+
+    try {
+      const appId = masterInstagramAppId();
+      const appSecret = masterInstagramAppSecret();
+      if (!appId || !appSecret) throw new Error("instagram_nexus_not_configured");
+
+      const tokenBody = new URLSearchParams({
+        client_id: appId,
+        client_secret: appSecret,
+        grant_type: "authorization_code",
+        redirect_uri: instagramRedirectUri(req),
+        code
+      });
+      const tokenResponse = await fetch("https://api.instagram.com/oauth/access_token", {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: tokenBody
+      });
+      const tokenPayload = await tokenResponse.json().catch(() => ({}));
+      if (!tokenResponse.ok || !tokenPayload.access_token) {
+        throw new Error("instagram_token_exchange_failed");
+      }
+
+      let accessToken = String(tokenPayload.access_token);
+      let expiresIn = Number(tokenPayload.expires_in || 3600);
+
+      try {
+        const longUrl = new URL("https://graph.instagram.com/access_token");
+        longUrl.searchParams.set("grant_type", "ig_exchange_token");
+        longUrl.searchParams.set("client_secret", appSecret);
+        longUrl.searchParams.set("access_token", accessToken);
+        const longResponse = await fetch(longUrl);
+        if (longResponse.ok) {
+          const longPayload = await longResponse.json();
+          if (longPayload.access_token) accessToken = String(longPayload.access_token);
+          if (longPayload.expires_in) expiresIn = Number(longPayload.expires_in);
+        }
+      } catch {}
+
+      const meUrl = new URL("https://graph.instagram.com/me");
+      meUrl.searchParams.set("fields", "id,username,account_type");
+      meUrl.searchParams.set("access_token", accessToken);
+      const meResponse = await fetch(meUrl);
+      const profile = await meResponse.json().catch(() => ({}));
+      if (!meResponse.ok || !profile.id) throw new Error("instagram_profile_failed");
+
+      const username = String(profile.username || "").replace(/^@/, "");
+      saveProviderConnection(saved.clientId, "meta", {
+        accessToken: encryptSecret(accessToken),
+        expiresAt: Date.now() + Math.max(3600, expiresIn) * 1000,
+        igUserId: String(profile.id || tokenPayload.user_id || ""),
+        accountType: String(profile.account_type || ""),
+        scopes: [
+          "instagram_business_basic",
+          "instagram_business_content_publish",
+          "instagram_business_manage_messages",
+          "instagram_business_manage_comments"
+        ],
+        meta: {
+          username,
+          label: username ? "@" + username : "Instagram conectado"
+        }
+      });
+
+      const clients = loadClients();
+      const client = clients.find(item => item.id === saved.clientId);
+      if (!client) throw new Error("client_not_found");
+      client.instagram = username ? "@" + username : "Instagram conectado";
+      client.meta = "connected";
+      client.onboarding = client.onboarding && typeof client.onboarding === "object" ? client.onboarding : {};
+      client.onboarding.instagram = true;
+      saveClients(clients);
+
+      delete states[state];
+      saveOauthStates(states);
+      return oauthPage(true, username ? "Conta @" + username + " autorizada com sucesso." : "Conta autorizada com sucesso.");
+    } catch (error) {
+      console.warn("Instagram OAuth callback failed:", error.message);
+      return oauthPage(false, "Não foi possível concluir a autorização do Instagram.");
+    }
+  }
+
+  if (url.pathname === "/api/meta/instagram/deauthorize" && req.method === "POST") {
+    const body = await readFormBody(req);
+    const payload = decodeMetaSignedRequest(body.signed_request);
+    if (!payload) return send(res, 400, { error: "invalid_signed_request" });
+    const igUserId = String(payload.user_id || payload.data?.user_id || "");
+    disconnectInstagramUser(igUserId);
+    return send(res, 200, { success: true });
+  }
+
+  if (url.pathname === "/api/meta/instagram/data-deletion" && req.method === "POST") {
+    const body = await readFormBody(req);
+    const payload = decodeMetaSignedRequest(body.signed_request);
+    if (!payload) return send(res, 400, { error: "invalid_signed_request" });
+    const igUserId = String(payload.user_id || payload.data?.user_id || "");
+    disconnectInstagramUser(igUserId);
+    const confirmationCode = crypto.randomBytes(12).toString("hex");
+    const statusUrl = publicOrigin(req) + "/api/meta/instagram/data-deletion/status?code=" + encodeURIComponent(confirmationCode);
+    return send(res, 200, { url: statusUrl, confirmation_code: confirmationCode });
+  }
+
+  if (url.pathname === "/api/meta/instagram/data-deletion/status" && req.method === "GET") {
+    const code = String(url.searchParams.get("code") || "");
+    if (!code) return send(res, 400, "Código de confirmação ausente.", "text/plain; charset=utf-8");
+    return send(
+      res,
+      200,
+      `<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>NEXUS AI</title><body style="margin:0;background:#050807;color:#f4f8f5;font-family:system-ui;display:grid;place-items:center;min-height:100vh"><div style="max-width:560px;padding:30px;border:1px solid #173549;border-radius:20px;background:#071018"><h1>Exclusão processada</h1><p>Os dados de conexão do Instagram associados à solicitação foram removidos do NEXUS AI.</p><p><strong>Código:</strong> ${code.replace(/[^a-zA-Z0-9_-]/g, "")}</p></div></body></html>`,
+      "text/html; charset=utf-8"
+    );
+  }
+
+  if (url.pathname === "/api/portal/support" && req.method === "GET") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    const tickets = loadSupportTickets()
+      .filter(item => item.clientId === client.id)
+      .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
+      .slice(0, 30)
+      .map(supportTicketView);
+    return send(res, 200, { tickets });
+  }
+
+  if (url.pathname === "/api/portal/support" && req.method === "POST") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    const body = await readBody(req);
+    const category = String(body.category || "Suporte geral").trim().slice(0, 80);
+    const subject = String(body.subject || "").trim().slice(0, 140);
+    const message = String(body.message || "").trim().slice(0, 3000);
+    if (!subject || !message) return send(res, 400, { error: "subject_and_message_required" });
+
+    const now = new Date().toISOString();
+    const ticket = {
+      id: "sup_" + crypto.randomBytes(9).toString("hex"),
+      clientId: client.id,
+      clientName: client.name || client.id,
+      category,
+      subject,
+      message,
+      status: "new",
+      createdAt: now,
+      updatedAt: now
+    };
+    const tickets = loadSupportTickets();
+    tickets.push(ticket);
+    saveSupportTickets(tickets);
+    return send(res, 201, supportTicketView(ticket));
+  }
+
+  if (url.pathname === "/api/portal/leads" && req.method === "GET") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    const data = await fetchAgentLeads(client);
+    return send(res, 200, data);
+  }
+
+  if (url.pathname === "/api/portal/agent-core" && req.method === "GET") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    const posts = loadPostLedger().filter(row => row.clientId === client.id);
+    return send(res, 200, {
+      modules: AGENT_CORE_MODULES,
+      config: agentCoreConfig(client),
+      state: agentCoreStateFor(client.id),
+      executions: agentExecutionsForClient(client.id, 60),
+      pendingApproval: posts.filter(row => cleanApprovalStatus(row.approvalStatus) === "pending").length,
+      correctionRequested: posts.filter(row => cleanApprovalStatus(row.approvalStatus) === "correction_requested").length
+    });
+  }
+
+  if (url.pathname === "/api/portal/posts" && req.method === "GET") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    return send(res, 200, {
+      posts: portalPostsForClient(client),
+      schedule: Array.isArray(client.postTimes) ? client.postTimes : []
+    });
+  }
+
+  const portalPostDecisionMatch = url.pathname.match(/^\/api\/portal\/posts\/([^/]+)\/decision$/);
+  if (portalPostDecisionMatch && req.method === "POST") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    const postId = decodeURIComponent(portalPostDecisionMatch[1]);
+    const body = await readBody(req);
+    const decision = String(body.decision || "").toLowerCase();
+    if (!["approved","rejected"].includes(decision)) return send(res, 400, { error: "invalid_decision" });
+    const found = materializePortalPost(client, postId);
+    if (!found.row) return send(res, 404, { error: "not_found" });
+    found.row.approvalStatus = decision;
+    found.row.updatedAt = new Date().toISOString();
+    if (decision === "approved" && found.row.status === "failed") {
+      found.row.status = "ready";
+      found.row.error = "";
+    }
+    savePostLedger(found.ledger);
+    return send(res, 200, {
+      ok: true,
+      post: portalPostView(found.row),
+      message: decision === "approved"
+        ? (found.row.imageUrl ? "Conteúdo aprovado e liberado para o Publisher." : "Pauta aprovada; aguardando mídia antes da publicação.")
+        : "Pauta reprovada e bloqueada para publicação."
+    });
+  }
+
+  const portalPostRevisionMatch = url.pathname.match(/^\/api\/portal\/posts\/([^/]+)\/revision$/);
+  if (portalPostRevisionMatch && req.method === "POST") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    const body = await readBody(req);
+    const instructions = String(body.instructions || "").trim().slice(0, 1600);
+    if (!instructions) return send(res, 400, { error: "revision_instructions_required" });
+
+    const postId = decodeURIComponent(portalPostRevisionMatch[1]);
+    const materialized = materializePortalPost(client, postId);
+    if (!materialized.row) return send(res, 404, { error: "post_not_found" });
+    const row = materialized.row;
+    row.approvalStatus = "correction_requested";
+    row.revisionRequest = instructions;
+    row.error = "";
+    row.updatedAt = new Date().toISOString();
+    savePostLedger(materialized.ledger);
+
+    const now = new Date().toISOString();
+    const tickets = loadSupportTickets();
+    tickets.push({
+      id: "sup_" + crypto.randomBytes(9).toString("hex"),
+      clientId: client.id,
+      clientName: client.name || client.id,
+      category: "Postagens / correção",
+      subject: "Correção solicitada · " + (row.scheduledHour || "postagem"),
+      message: instructions,
+      status: "new",
+      createdAt: now,
+      updatedAt: now,
+      postId: row.id
+    });
+    saveSupportTickets(tickets);
+
+    return send(res, 200, {
+      ok: true,
+      message: "Correção enviada ao NEXUS.",
+      post: portalPostView(row)
+    });
+  }
+
+  const portalPostContentMatch = url.pathname.match(/^\/api\/portal\/posts\/([^/]+)\/content$/);
+  if (portalPostContentMatch && req.method === "POST") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    try {
+      const body = await readLargeJsonBody(req, 14 * 1024 * 1024);
+      const caption = String(body.caption || "").trim().slice(0, 2200);
+      const imageDataUrl = String(body.imageDataUrl || "").trim();
+      if (!caption) return send(res, 400, { error: "caption_required" });
+      if (!imageDataUrl) return send(res, 400, { error: "image_required" });
+
+      const match = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/.exec(imageDataUrl);
+      if (!match) return send(res, 400, { error: "invalid_image" });
+      const bytes = Buffer.from(match[2], "base64");
+      if (!bytes.length || bytes.length > 10 * 1024 * 1024) {
+        return send(res, 400, { error: "image_too_large" });
+      }
+
+      const postId = decodeURIComponent(portalPostContentMatch[1]);
+      const materialized = materializePortalPost(client, postId);
+      if (!materialized.row) return send(res, 404, { error: "post_not_found" });
+      const row = materialized.row;
+
+      const ext = match[1] === "jpeg" ? "jpg" : match[1];
+      const filename = slug(client.id) + "-" + crypto.randomBytes(12).toString("hex") + "." + ext;
+      fs.writeFileSync(path.join(manualPostDir, filename), bytes);
+
+      row.caption = caption;
+      row.imageUrl = publicOrigin(req) + "/manual-post/" + filename;
+      row.source = "client_manual";
+      row.approvalStatus = "approved";
+      row.status = "ready";
+      row.error = "";
+      row.revisionRequest = "";
+      row.updatedAt = new Date().toISOString();
+      savePostLedger(materialized.ledger);
+
+      return send(res, 200, {
+        ok: true,
+        message: "Conteúdo manual aprovado e pronto para envio.",
+        post: portalPostView(row)
+      });
+    } catch (error) {
+      return send(res, 400, { error: String(error?.message || "manual_content_failed") });
+    }
+  }
+
+  const portalPostManualMatch = url.pathname.match(/^\/api\/portal\/posts\/([^/]+)\/manual$/);
+  if (portalPostManualMatch && req.method === "POST") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+
+    const postId = decodeURIComponent(portalPostManualMatch[1]);
+    const materialized = materializePortalPost(client, postId);
+    if (!materialized.row) return send(res, 404, { error: "post_not_found" });
+    const row = materialized.row;
+    const approvalStatus = row.approvalStatus
+      ? cleanApprovalStatus(row.approvalStatus)
+      : row.status === "published" ? "approved" : "pending";
+
+    if (row.status === "published") {
+      return send(res, 409, {
+        error: "already_published",
+        message: "Esta postagem já foi enviada.",
+        post: portalPostView(row)
+      });
+    }
+    if (approvalStatus !== "approved") {
+      return send(res, 409, {
+        error: "post_not_approved",
+        message: "O servidor bloqueou o envio porque esta postagem ainda não foi aprovada. Envie para correção ou use seu próprio conteúdo.",
+        post: portalPostView(row)
+      });
+    }
+    if (!row.imageUrl || !row.caption) {
+      return send(res, 409, {
+        error: "post_content_not_ready",
+        message: "A postagem está aprovada, mas o arquivo final ainda não está disponível no NEXUS.",
+        post: portalPostView(row)
+      });
+    }
+
+    row.status = "publishing";
+    row.attemptedAt = new Date().toISOString();
+    row.error = "";
+    row.updatedAt = row.attemptedAt;
+    savePostLedger(materialized.ledger);
+
+    try {
+      const result = await publishInstagramImageForClient(client.id, row.imageUrl, row.caption);
+      row.status = "published";
+      row.approvalStatus = "approved";
+      row.mediaId = result.mediaId || "";
+      row.permalink = result.permalink || "";
+      row.publishedAt = new Date().toISOString();
+      row.updatedAt = row.publishedAt;
+      savePostLedger(materialized.ledger);
+      return send(res, 200, {
+        ok: true,
+        message: "Postagem enviada manualmente com sucesso.",
+        post: portalPostView(row),
+        permalink: row.permalink
+      });
+    } catch (error) {
+      row.status = "failed";
+      row.error = String(error?.message || "Falha ao publicar").slice(0, 900);
+      row.updatedAt = new Date().toISOString();
+      savePostLedger(materialized.ledger);
+      return send(res, 400, {
+        error: "manual_publish_failed",
+        message: row.error,
+        post: portalPostView(row)
+      });
+    }
+  }
+
+  if (url.pathname === "/api/portal/videos" && req.method === "GET") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    const jobs = loadVideoJobs()
+      .filter(job => job.clientId === client.id)
+      .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
+      .slice(0, 300)
+      .map(portalVideoJobView);
+    return send(res, 200, { jobs, folders: videoFoldersForClient(client.id) });
+  }
+
+  if (url.pathname === "/api/portal/video-folders" && req.method === "POST") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    const body = await readBody(req);
+    const name = String(body.name || "").trim().slice(0, 80);
+    if (!name) return send(res, 400, { error: "folder_name_required" });
+    const rows = loadVideoFolders();
+    const folder = { id: "fld_" + crypto.randomBytes(7).toString("hex"), clientId: client.id, name, createdAt: new Date().toISOString() };
+    rows.push(folder);
+    saveVideoFolders(rows);
+    return send(res, 201, { ok: true, folder, folders: videoFoldersForClient(client.id) });
+  }
+
+  const portalFolderMatch = url.pathname.match(/^\/api\/portal\/video-folders\/([^/]+)$/);
+  if (portalFolderMatch && req.method === "PATCH") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    const folderId = decodeURIComponent(portalFolderMatch[1]);
+    if (folderId === "default") return send(res, 400, { error: "default_folder_locked" });
+    const body = await readBody(req);
+    const name = String(body.name || "").trim().slice(0, 80);
+    if (!name) return send(res, 400, { error: "folder_name_required" });
+    const rows = loadVideoFolders();
+    const folder = rows.find(item => item.clientId === client.id && item.id === folderId);
+    if (!folder) return send(res, 404, { error: "folder_not_found" });
+    folder.name = name;
+    folder.updatedAt = new Date().toISOString();
+    saveVideoFolders(rows);
+    return send(res, 200, { ok: true, folder, folders: videoFoldersForClient(client.id) });
+  }
+
+  if (portalFolderMatch && req.method === "DELETE") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    const folderId = decodeURIComponent(portalFolderMatch[1]);
+    if (folderId === "default") return send(res, 400, { error: "default_folder_locked" });
+    const rows = loadVideoFolders();
+    if (!rows.some(item => item.clientId === client.id && item.id === folderId)) return send(res, 404, { error: "folder_not_found" });
+    saveVideoFolders(rows.filter(item => !(item.clientId === client.id && item.id === folderId)));
+    const jobs = loadVideoJobs();
+    for (const job of jobs) if (job.clientId === client.id && job.folderId === folderId) job.folderId = "default";
+    saveVideoJobs(jobs);
+    return send(res, 200, { ok: true, folders: videoFoldersForClient(client.id) });
+  }
+
+  const portalVideoManageMatch = url.pathname.match(/^\/api\/portal\/videos\/([^/]+)$/);
+  if (portalVideoManageMatch && req.method === "PATCH") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    const jobId = decodeURIComponent(portalVideoManageMatch[1]);
+    const body = await readBody(req);
+    const jobs = loadVideoJobs();
+    const job = jobs.find(item => item.id === jobId && item.clientId === client.id);
+    if (!job) return send(res, 404, { error: "video_not_found" });
+    if (Object.prototype.hasOwnProperty.call(body, "displayName")) {
+      const name = String(body.displayName || "").trim().slice(0, 120);
+      if (!name) return send(res, 400, { error: "video_name_required" });
+      job.displayName = name;
+    }
+    if (Object.prototype.hasOwnProperty.call(body, "folderId")) {
+      const folderId = String(body.folderId || "default");
+      const allowed = videoFoldersForClient(client.id).some(item => item.id === folderId);
+      if (!allowed) return send(res, 400, { error: "folder_not_found" });
+      job.folderId = folderId;
+    }
+    job.updatedAt = new Date().toISOString();
+    saveVideoJobs(jobs);
+    return send(res, 200, { ok: true, job: portalVideoJobView(job) });
+  }
+
+  if (portalVideoManageMatch && req.method === "DELETE") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    const jobId = decodeURIComponent(portalVideoManageMatch[1]);
+    if (videoProcessing.has(jobId)) return send(res, 409, { error: "video_processing", message: "Aguarde o processamento terminar para excluir este vídeo." });
+    const jobs = loadVideoJobs();
+    const job = jobs.find(item => item.id === jobId && item.clientId === client.id);
+    if (!job) return send(res, 404, { error: "video_not_found" });
+    deleteVideoJobFiles(job);
+    saveVideoJobs(jobs.filter(item => !(item.id === jobId && item.clientId === client.id)));
+    return send(res, 200, { ok: true, message: "Vídeo excluído da biblioteca do NEXUS." });
+  }
+
+  const portalVideoSelectMatch = url.pathname.match(/^\/api\/portal\/videos\/([^/]+)\/clips\/([^/]+)\/select$/);
+  if (portalVideoSelectMatch && req.method === "POST") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    const body = await readBody(req);
+    const found = findVideoClip(client.id, decodeURIComponent(portalVideoSelectMatch[1]), decodeURIComponent(portalVideoSelectMatch[2]));
+    if (!found.job || !found.clip) return send(res, 404, { error: "clip_not_found" });
+    if (found.clip.publishStatus === "published") return send(res, 409, { error: "already_published" });
+    found.clip.selectedForSchedule = Boolean(body.selected);
+    saveVideoClipState(found.jobs, found.job);
+    return send(res, 200, { ok: true, selectedForSchedule: found.clip.selectedForSchedule });
+  }
+
+  const portalVideoApprovalMatch = url.pathname.match(/^\/api\/portal\/videos\/([^/]+)\/clips\/([^/]+)\/approval$/);
+  if (portalVideoApprovalMatch && req.method === "POST") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    try {
+      const body = await readBody(req);
+      const clip = await setVideoClipApproval(client.id, decodeURIComponent(portalVideoApprovalMatch[1]), decodeURIComponent(portalVideoApprovalMatch[2]), body.status);
+      return send(res, 200, { ok: true, clip, jobs: loadVideoJobs().filter(job => job.clientId === client.id).map(portalVideoJobView) });
+    } catch (error) {
+      return send(res, 400, { error: String(error?.message || "video_approval_failed") });
+    }
+  }
+
+  const portalVideoScheduleMatch = url.pathname.match(/^\/api\/portal\/videos\/([^/]+)\/clips\/([^/]+)\/schedule$/);
+  if (portalVideoScheduleMatch && req.method === "POST") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    try {
+      const body = await readBody(req);
+      const clip = await scheduleVideoClip(client.id, decodeURIComponent(portalVideoScheduleMatch[1]), decodeURIComponent(portalVideoScheduleMatch[2]), body.scheduledFor, body.caption);
+      return send(res, 200, { ok: true, clip });
+    } catch (error) {
+      return send(res, 400, { error: String(error?.message || "video_schedule_failed") });
+    }
+  }
+
+  const portalVideoPublishMatch = url.pathname.match(/^\/api\/portal\/videos\/([^/]+)\/clips\/([^/]+)\/publish$/);
+  if (portalVideoPublishMatch && req.method === "POST") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    try {
+      const body = await readBody(req);
+      const clip = await publishVideoClipNow(client.id, decodeURIComponent(portalVideoPublishMatch[1]), decodeURIComponent(portalVideoPublishMatch[2]), body.caption);
+      return send(res, 200, { ok: true, clip });
+    } catch (error) {
+      return send(res, 400, { error: String(error?.message || "video_publish_failed") });
+    }
+  }
+
+  const portalVideoAdjustMatch = url.pathname.match(/^\/api\/portal\/videos\/([^/]+)\/clips\/([^/]+)\/adjust$/);
+  if (portalVideoAdjustMatch && req.method === "POST") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    try {
+      const body = await readBody(req);
+      const clip = await adjustVideoClip(client.id, decodeURIComponent(portalVideoAdjustMatch[1]), decodeURIComponent(portalVideoAdjustMatch[2]), body);
+      return send(res, 200, { ok: true, clip });
+    } catch (error) {
+      return send(res, 400, { error: String(error?.message || "video_adjust_failed") });
+    }
+  }
+
+  if (url.pathname === "/api/portal/videos/bulk-schedule" && req.method === "POST") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    try {
+      const body = await readBody(req);
+      const result = await bulkScheduleVideoClips(client.id, body.items || []);
+      return send(res, 200, { ok: true, ...result });
+    } catch (error) {
+      return send(res, 400, { error: String(error?.message || "video_bulk_schedule_failed") });
+    }
+  }
+
+  if (url.pathname === "/api/portal/videos" && req.method === "POST") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+
+    const contentType = String(req.headers["content-type"] || "").toLowerCase();
+    if (!contentType.startsWith("video/") && contentType !== "application/octet-stream") {
+      return send(res, 415, { error: "video_required" });
+    }
+
+    const contentLength = Number(req.headers["content-length"] || 0);
+    const maxBytes = 750 * 1024 * 1024;
+    if (contentLength > maxBytes) return send(res, 413, { error: "video_too_large" });
+
+    const original = decodeURIComponent(String(req.headers["x-file-name"] || "video.mp4")).slice(0, 180);
+    const safeBase = path.basename(original).replace(/[^a-zA-Z0-9._-]+/g, "_") || "video.mp4";
+    const ext = path.extname(safeBase).toLowerCase();
+    const allowedExt = new Set([".mp4",".mov",".m4v",".webm",".mkv"]);
+    if (!allowedExt.has(ext)) return send(res, 400, { error: "unsupported_video_format" });
+
+    const jobId = "vid_" + crypto.randomBytes(10).toString("hex");
+    const clientDir = path.join(clientVideoDir, slug(client.id));
+    fs.mkdirSync(clientDir, { recursive: true });
+    const storedName = jobId + ext;
+    const destination = path.join(clientDir, storedName);
+    const stream = fs.createWriteStream(destination);
+    let received = 0;
+    let failed = false;
+
+    req.on("data", chunk => {
+      received += chunk.length;
+      if (received > maxBytes && !failed) {
+        failed = true;
+        stream.destroy();
+        req.destroy();
+      }
+    });
+
+    req.pipe(stream);
+    stream.on("error", () => {
+      if (!res.headersSent) send(res, 500, { error: "video_store_failed" });
+    });
+    stream.on("finish", () => {
+      if (failed || received > maxBytes) {
+        try { fs.unlinkSync(destination); } catch {}
+        if (!res.headersSent) send(res, 413, { error: "video_too_large" });
+        return;
+      }
+
+      const goal = String(req.headers["x-video-goal"] || "viral").slice(0, 40);
+      const outputFormat = videoFormatSpec(String(req.headers["x-output-format"] || "reel")).key;
+      const endText = decodeURIComponent(String(req.headers["x-video-end-text"] || "")).trim().slice(0, 90);
+      const endContact = decodeURIComponent(String(req.headers["x-video-end-contact"] || "")).trim().slice(0, 90);
+      const requestedFolder = String(req.headers["x-video-folder"] || "default");
+      const folderId = videoFoldersForClient(client.id).some(item => item.id === requestedFolder) ? requestedFolder : "default";
+      const clipDuration = Math.min(90, Math.max(10, Number(req.headers["x-clip-duration"] || 30) || 30));
+      const requestedClips = Math.min(12, Math.max(1, Number(req.headers["x-requested-clips"] || 3) || 3));
+      const now = new Date().toISOString();
+      const job = {
+        id: jobId,
+        clientId: client.id,
+        clientName: client.name || client.id,
+        filename: safeBase,
+        displayName: path.basename(safeBase, path.extname(safeBase)),
+        folderId,
+        outputFormat,
+        endText,
+        endContact,
+        storedPath: destination,
+        sizeBytes: received,
+        goal,
+        clipDuration,
+        requestedClips,
+        status: "queued",
+        progress: 5,
+        message: "Upload concluído. Preparando os cortes para sua revisão; nada será publicado automaticamente.",
+        clips: [],
+        createdAt: now,
+        updatedAt: now
+      };
+      const jobs = loadVideoJobs();
+      jobs.push(job);
+      saveVideoJobs(jobs);
+      send(res, 201, { ok: true, job: portalVideoJobView(job) });
+      setTimeout(() => processVideoJob(job.id).catch(() => {}), 300);
+    });
+    return;
+  }
+
+  if (url.pathname.startsWith("/video-media/") && req.method === "GET") {
+    const publicName = path.basename(decodeURIComponent(url.pathname.slice("/video-media/".length)));
+    const jobs = loadVideoJobs();
+    let file = "";
+    for (const job of jobs) {
+      const clip = (job.clips || []).find(item => item.publicName === publicName);
+      if (clip?.storedPath && fs.existsSync(clip.storedPath)) {
+        file = clip.storedPath;
+        break;
+      }
+    }
+    if (!file) return send(res, 404, "Not found", "text/plain; charset=utf-8");
+    const stat = fs.statSync(file);
+    const range = String(req.headers.range || "");
+    res.setHeader("accept-ranges", "bytes");
+    res.setHeader("content-type", "video/mp4");
+    res.setHeader("cache-control", "public, max-age=3600");
+    res.setHeader("x-content-type-options", "nosniff");
+    if (range) {
+      const match = /bytes=(\d*)-(\d*)/.exec(range);
+      const start = match?.[1] ? Number(match[1]) : 0;
+      const end = match?.[2] ? Math.min(Number(match[2]), stat.size - 1) : stat.size - 1;
+      if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end < start || start >= stat.size) {
+        res.writeHead(416, { "content-range": "bytes */" + stat.size });
+        return res.end();
+      }
+      res.writeHead(206, {
+        "content-range": "bytes " + start + "-" + end + "/" + stat.size,
+        "content-length": end - start + 1
+      });
+      fs.createReadStream(file, { start, end }).pipe(res);
+      return;
+    }
+    res.writeHead(200, { "content-length": stat.size });
+    fs.createReadStream(file).pipe(res);
+    return;
+  }
+
+  if (url.pathname.startsWith("/manual-post/") && req.method === "GET") {
+    const filename = path.basename(url.pathname.slice("/manual-post/".length));
+    const full = path.join(manualPostDir, filename);
+    if (!filename || !full.startsWith(manualPostDir) || !fs.existsSync(full)) {
+      return send(res, 404, "Not found", "text/plain; charset=utf-8");
+    }
+    const ext = path.extname(filename).toLowerCase();
+    const type = ext === ".png" ? "image/png" : ext === ".webp" ? "image/webp" : "image/jpeg";
+    res.writeHead(200, {
+      "content-type": type,
+      "content-length": fs.statSync(full).size,
+      "cache-control": "public, max-age=31536000, immutable",
+      "x-content-type-options": "nosniff"
+    });
+    fs.createReadStream(full).pipe(res);
+    return;
+  }
+
+  if (url.pathname === "/index.html" && req.method === "GET") {
+    res.writeHead(303, { location: "/master", "cache-control": "no-store", "content-length": "0" });
+    return res.end();
+  }
+
+  if (url.pathname.startsWith("/api/") && !masterAuthorized(req)) {
+    res.setHeader("WWW-Authenticate", 'Basic realm="NEXUS AI Agent Central"');
+    return send(res, 401, { error: "unauthorized" });
+  }
+
+  if (url.pathname === "/api/master/agent-core" && req.method === "GET") {
+    return send(res, 200, agentCoreDashboard());
+  }
+
+  const masterAgentCoreMatch = url.pathname.match(/^\/api\/master\/agent-core\/([^/]+)$/);
+  if (masterAgentCoreMatch && req.method === "GET") {
+    const clientId = decodeURIComponent(masterAgentCoreMatch[1]);
+    const client = loadClients().find(item => item.id === clientId);
+    if (!client) return send(res, 404, { error: "not_found" });
+    return send(res, 200, {
+      clientId,
+      clientName: client.name || client.id,
+      modules: AGENT_CORE_MODULES,
+      config: agentCoreConfig(client),
+      state: agentCoreStateFor(clientId),
+      executions: agentExecutionsForClient(clientId, 200)
+    });
+  }
+
+  if (masterAgentCoreMatch && req.method === "PATCH") {
+    const clientId = decodeURIComponent(masterAgentCoreMatch[1]);
+    const body = await readBody(req);
+    const clients = loadClients();
+    const client = clients.find(item => item.id === clientId);
+    if (!client) return send(res, 404, { error: "not_found" });
+    const current = agentCoreConfig(client);
+    const next = {
+      enabled: Object.prototype.hasOwnProperty.call(body, "enabled") ? body.enabled === true : current.enabled,
+      autoPublish: Object.prototype.hasOwnProperty.call(body, "autoPublish") ? body.autoPublish === true : current.autoPublish,
+      approvalRequired: current.approvalRequired,
+      cycleMinutes: Object.prototype.hasOwnProperty.call(body, "cycleMinutes")
+        ? Math.max(15, Math.min(1440, Number(body.cycleMinutes || 60)))
+        : current.cycleMinutes,
+      modules: { ...current.modules }
+    };
+    if (Object.prototype.hasOwnProperty.call(body, "approvalRequired")) {
+      // Disabling approval only takes effect when auto publishing was explicitly enabled.
+      next.approvalRequired = next.autoPublish ? body.approvalRequired !== false : true;
+    } else if (!next.autoPublish) {
+      next.approvalRequired = true;
+    }
+    if (body.modules && typeof body.modules === "object") {
+      for (const module of AGENT_CORE_MODULES) {
+        if (Object.prototype.hasOwnProperty.call(body.modules, module.id)) next.modules[module.id] = body.modules[module.id] !== false;
+      }
+    }
+    client.agentCore = next;
+    saveClients(clients);
+    return send(res, 200, { ok: true, config: agentCoreConfig(client) });
+  }
+
+  const masterAgentRunMatch = url.pathname.match(/^\/api\/master\/agent-core\/([^/]+)\/run$/);
+  if (masterAgentRunMatch && req.method === "POST") {
+    const clientId = decodeURIComponent(masterAgentRunMatch[1]);
+    const body = await readBody(req);
+    try {
+      const result = await runAgentCoreCycle(clientId, { trigger: "manual", agent: body.agent || "all" });
+      return send(res, 200, result);
+    } catch (error) {
+      const code = String(error?.message || error);
+      const status = code === "client_not_found" ? 404 : code === "invalid_agent" ? 400 : 500;
+      return send(res, status, { error: code });
+    }
+  }
+
   if (url.pathname === "/api/master/leads" && req.method === "GET") {
     return send(res, 200, await masterLeadSummary());
   }
@@ -3147,5 +4915,8 @@ server.listen(PORT, "0.0.0.0", () => {
   console.log(`NEXUS AI Agent Central listening on ${PORT}`);
   startPendingVideoJobs();
   const videoTimer = setInterval(() => processDueVideoSchedules().catch(() => {}), 30000);
+  const agentCoreTimer = setInterval(() => processAgentCoreScheduler().catch(() => {}), 60000);
+  setTimeout(() => processAgentCoreScheduler().catch(() => {}), 15000);
+  if (typeof agentCoreTimer.unref === "function") agentCoreTimer.unref();
   videoTimer.unref?.();
 });

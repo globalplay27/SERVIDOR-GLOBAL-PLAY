@@ -409,8 +409,10 @@ function renderClientPosts(data={}){
         <div class="client-post-title"><strong>Postagem do agente</strong><span class="client-post-status ${state.cls}">${state.label}</span></div>
         <div class="client-post-meta"><span>Previsão: <b>${escapeSupport(post.scheduledHour||"—")}</b></span><span>${sentAt?"Última ação: "+formatClientPostDate(sentAt):"Aguardando execução"}</span></div>
         ${detail?`<p class="client-post-detail">${detail}</p>`:""}
+        ${post.title?`<div class="client-post-draft"><span>PAUTA</span><strong>${escapeSupport(post.title)}</strong>${post.caption?`<p>${escapeSupport(post.caption)}</p>`:""}${post.imageUrl?`<img src="${escapeSupport(post.imageUrl)}" alt="Prévia da pauta">`:""}</div>`:""}
         <div class="client-post-response" data-post-response></div>
         ${canAct?`<div class="client-post-actions">
+          ${post.approvalStatus==="pending"||post.approvalStatus==="correction_requested"?`<button type="button" class="post-approve" data-post-decision="${escapeSupport(post.id)}" data-decision="approved">Aprovar pauta</button><button type="button" class="post-reject" data-post-decision="${escapeSupport(post.id)}" data-decision="rejected">Reprovar</button>`:""}
           <button type="button" class="post-send-now" data-post-manual="${escapeSupport(post.id)}">Enviar agora</button>
           <button type="button" class="post-correct" data-post-edit="${escapeSupport(post.id)}">Corrigir / usar meu conteúdo</button>
         </div>
@@ -448,6 +450,25 @@ function setPostResponse(card,message,type=""){
   el.textContent=message||"";
   el.className="client-post-response "+type;
 }
+async function decidePost(postId,decision,button){
+  const card=postCardForButton(button);
+  const original=button.textContent;
+  button.disabled=true;
+  button.textContent=decision==="approved"?"Aprovando…":"Reprovando…";
+  setPostResponse(card,"");
+  try{
+    const r=await fetch("/api/portal/posts/"+encodeURIComponent(postId)+"/decision",{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({decision})});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(d.message||d.error||"Não foi possível registrar a decisão.");
+    setPostResponse(card,d.message||"Decisão salva.","ok");
+    await loadClientPosts();
+  }catch(error){
+    setPostResponse(card,error.message,"error");
+    button.disabled=false;
+    button.textContent=original;
+  }
+}
+
 async function sendPostNow(postId,button){
   const card=postCardForButton(button);
   button.disabled=true;button.textContent="Consultando servidor…";setPostResponse(card,"");
@@ -910,6 +931,8 @@ document.addEventListener("change",async event=>{
 document.addEventListener("click",event=>{
   const renameJob=event.target.closest("[data-video-rename-job]");if(renameJob){renameVideoJob(renameJob.dataset.videoRenameJob);return;}
   const deleteJob=event.target.closest("[data-video-delete-job]");if(deleteJob){deleteVideoJob(deleteJob.dataset.videoDeleteJob);return;}
+  const decision=event.target.closest("[data-post-decision]");
+  if(decision){decidePost(decision.dataset.postDecision,decision.dataset.decision,decision);return;}
   const manual=event.target.closest("[data-post-manual]");
   if(manual){sendPostNow(manual.dataset.postManual,manual);return;}
   const edit=event.target.closest("[data-post-edit]");

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#080b0a">
   <title>NEXUS AI · Agent Control Center</title>
-  <link rel="stylesheet" href="/styles.css?v=12">
+  <link rel="stylesheet" href="/styles.css?v=13">
 </head>
 <body>
   <div class="shell">
@@ -14,6 +14,7 @@
       <nav>
         <button class="nav-item active" data-view="dashboard">▦ <span>Visão geral</span></button>
         <button class="nav-item" data-view="clients">◉ <span>Clientes</span></button>
+        <button class="nav-item" data-view="agents">⬡ <span>Agent Core</span></button>
         <button class="nav-item" data-view="posts">▤ <span>Postagens & custos</span></button>
         <button class="nav-item nav-notifications" data-view="notifications">✦ <span>Notificações</span><b id="notification-count" class="notification-count" hidden>0</b></button>
         <button class="nav-item" data-view="portal">⌁ <span>Portal do cliente</span></button>
@@ -49,6 +50,73 @@
           <div class="panel-head"><div><p class="eyebrow">PERFIS RECEBIDOS</p><h2>Configuração dos agentes</h2><p class="muted">O cliente informa o negócio, identidade e logo. Aqui você revisa o perfil e define toda a operação do agente.</p></div></div>
           <div id="master-agent-profiles" class="master-agent-profiles"></div>
         </div>
+      </section>
+
+      <section id="agents" class="view">
+        <div class="agent-core-metrics">
+          <article><span>Execuções hoje</span><strong id="agent-core-executions">0</strong><small>tarefas registradas pelos agentes</small></article>
+          <article><span>Custo hoje</span><strong id="agent-core-cost-today">US$ 0,0000</strong><small>somente custos realmente informados</small></article>
+          <article><span>Custo no mês</span><strong id="agent-core-cost-month">US$ 0,0000</strong><small>somatório das execuções</small></article>
+          <article><span>Clientes ativos</span><strong id="agent-core-active-clients">0</strong><small>Agent Core habilitado</small></article>
+        </div>
+
+        <div class="agent-core-grid" id="agent-core-modules">
+          <article><span>01</span><strong>RADAR</strong><small>Sinais, tendências e histórico real do Instagram.</small></article>
+          <article><span>02</span><strong>ESTRATEGISTA</strong><small>Nicho, público, Radar, leads e feedback do Auditor.</small></article>
+          <article><span>03</span><strong>CREATOR</strong><small>Pautas, ganchos, legendas, CTA e hashtags da marca.</small></article>
+          <article><span>04</span><strong>PUBLISHER</strong><small>Fila, publicação aprovada, tentativas e registro de falhas.</small></article>
+          <article><span>05</span><strong>AUDITOR</strong><small>Métricas pós-publicação e retorno para a estratégia.</small></article>
+          <article><span>06</span><strong>ODIN</strong><small>Intenção, classificação e prioridade comercial dos leads.</small></article>
+        </div>
+
+        <div class="agent-core-layout">
+          <section class="panel agent-core-control">
+            <div class="panel-head">
+              <div><p class="eyebrow">CONTROLE POR CLIENTE</p><h2>Operação dos agentes</h2><p class="muted">Por padrão, o Creator prepara a pauta e o Publisher só publica depois da aprovação do cliente.</p></div>
+              <span id="agent-core-client-state" class="badge">ATIVO</span>
+            </div>
+            <label class="agent-core-client-select">Cliente<select id="agent-core-client"></select></label>
+            <div class="agent-core-config">
+              <label><input type="checkbox" id="agent-core-enabled"> Agent Core habilitado</label>
+              <label><input type="checkbox" id="agent-core-auto-publish"> Modo automático</label>
+              <label><input type="checkbox" id="agent-core-require-approval" checked> Exigir aprovação antes de publicar</label>
+              <label class="agent-core-cycle">Ciclo completo a cada <input id="agent-core-cycle-minutes" type="number" min="15" max="1440" step="5" value="60"> minutos</label>
+            </div>
+            <div class="agent-core-safety"><strong id="agent-core-approval-label">APROVAÇÃO OBRIGATÓRIA</strong><span id="agent-core-approval-note">Nenhuma pauta do Creator será publicada sem aprovação.</span></div>
+            <div id="agent-core-module-toggles" class="agent-core-module-toggles"></div>
+            <div class="agent-core-actions">
+              <button type="button" id="agent-core-save" class="ghost">Salvar configuração</button>
+              <button type="button" id="agent-core-run-all" class="primary">Executar ciclo completo</button>
+              <span id="agent-core-message" class="form-status"></span>
+            </div>
+            <div class="agent-core-manual">
+              <span>Executar individualmente</span>
+              <div>
+                <button type="button" data-run-agent="radar">RADAR</button>
+                <button type="button" data-run-agent="estrategista">ESTRATEGISTA</button>
+                <button type="button" data-run-agent="creator">CREATOR</button>
+                <button type="button" data-run-agent="publisher">PUBLISHER</button>
+                <button type="button" data-run-agent="auditor">AUDITOR</button>
+                <button type="button" data-run-agent="odin">ODIN</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head"><div><p class="eyebrow">ESTADO ATUAL</p><h2>Última atividade</h2><p class="muted">Status persistido de cada módulo do cliente selecionado.</p></div></div>
+            <div id="agent-core-live-state" class="agent-core-live-state"><p class="muted">Carregando estado dos agentes…</p></div>
+          </section>
+        </div>
+
+        <section class="panel agent-core-log-panel">
+          <div class="panel-head"><div><p class="eyebrow">AUDITORIA</p><h2>Execuções e custos</h2><p class="muted">Cliente, agente, função, modelo, quantidade, custo e horário de cada execução.</p></div><button type="button" id="agent-core-refresh" class="ghost">Atualizar</button></div>
+          <div class="table-wrap">
+            <table class="agent-core-log-table">
+              <thead><tr><th>Horário</th><th>Cliente</th><th>Agente</th><th>Função</th><th>Status</th><th>Modelo</th><th>Qtd.</th><th>Custo</th><th>Detalhe</th></tr></thead>
+              <tbody id="agent-core-log-body"><tr><td colspan="9">Nenhuma execução registrada.</td></tr></tbody>
+            </table>
+          </div>
+        </section>
       </section>
 
       <section id="posts" class="view">
@@ -210,6 +278,6 @@
       </section>
     </main>
   </div>
-  <script src="/app.js?v=14" defer></script>
+  <script src="/app.js?v=15" defer></script>
 </body>
 </html>

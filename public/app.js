@@ -1,4 +1,4 @@
-const state = { clients: [], auth: sessionStorage.getItem("nexus-auth"), portalClientId: null, supportTickets: [], supportFilter: "all", postLedger: { posts: [], byClient: [], totalCostUsd: 0, totalPosts: 0, published: 0, failed: 0 }, postClientFilter: "", leadData: { summary:{total:0,hot:0,warm:0,cold:0,needsHuman:0}, leads:[], byClient:[] }, leadClientFilter:"" };
+const state = { clients: [], auth: sessionStorage.getItem("nexus-auth"), portalClientId: null, supportTickets: [], supportFilter: "all", postLedger: { posts: [], byClient: [], totalCostUsd: 0, totalPosts: 0, published: 0, failed: 0 }, postClientFilter: "", leadData: { summary:{total:0,hot:0,warm:0,cold:0,needsHuman:0}, leads:[], byClient:[] }, leadClientFilter:"", agentCore: { modules:[], clients:[], totalExecutionsToday:0, totalCostTodayUsd:0, totalCostMonthUsd:0 }, agentCoreClientId:"" };
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
 
@@ -280,24 +280,157 @@ async function loadMasterLeads(){
   catch(error){console.error(error);}
 }
 
+
+function agentCoreStatusMeta(status){
+  if(status==="success")return["OK","published"];
+  if(status==="failed")return["FALHOU","failed"];
+  if(status==="blocked")return["BLOQUEADO","failed"];
+  return["ATENÇÃO","running"];
+}
+function selectedAgentCoreClient(){
+  const clients=Array.isArray(state.agentCore?.clients)?state.agentCore.clients:[];
+  if(!clients.length)return null;
+  if(!state.agentCoreClientId||!clients.some(item=>item.clientId===state.agentCoreClientId))state.agentCoreClientId=clients[0].clientId;
+  return clients.find(item=>item.clientId===state.agentCoreClientId)||clients[0];
+}
+function syncAgentCoreApprovalUi(){
+  const auto=$("#agent-core-auto-publish"),approval=$("#agent-core-require-approval");
+  if(!auto||!approval)return;
+  if(!auto.checked){approval.checked=true;approval.disabled=true;}
+  else approval.disabled=false;
+  const required=approval.checked;
+  if($("#agent-core-approval-label"))$("#agent-core-approval-label").textContent=required?"APROVAÇÃO OBRIGATÓRIA":"MODO AUTOMÁTICO LIBERADO";
+  if($("#agent-core-approval-note"))$("#agent-core-approval-note").textContent=required
+    ?"Nenhuma pauta do Creator será publicada sem aprovação."
+    :"O Publisher poderá publicar conteúdo pronto sem aprovação manual.";
+}
+function renderAgentCore(){
+  const data=state.agentCore||{};
+  if($("#agent-core-executions"))$("#agent-core-executions").textContent=Number(data.totalExecutionsToday||0);
+  if($("#agent-core-cost-today"))$("#agent-core-cost-today").textContent=moneyPost(data.totalCostTodayUsd);
+  if($("#agent-core-cost-month"))$("#agent-core-cost-month").textContent=moneyPost(data.totalCostMonthUsd);
+  const clients=Array.isArray(data.clients)?data.clients:[];
+  if($("#agent-core-active-clients"))$("#agent-core-active-clients").textContent=clients.filter(item=>item.config?.enabled!==false).length;
+
+  const select=$("#agent-core-client");
+  if(select){
+    const previous=state.agentCoreClientId||select.value||"";
+    select.innerHTML=clients.map(item=>`<option value="${escapeHtml(item.clientId)}">${escapeHtml(item.clientName||item.clientId)}</option>`).join("");
+    state.agentCoreClientId=clients.some(item=>item.clientId===previous)?previous:(clients[0]?.clientId||"");
+    select.value=state.agentCoreClientId;
+  }
+  const selected=selectedAgentCoreClient();
+  if(!selected){
+    if($("#agent-core-log-body"))$("#agent-core-log-body").innerHTML='<tr><td colspan="9">Nenhum cliente disponível.</td></tr>';
+    return;
+  }
+  const config=selected.config||{};
+  if($("#agent-core-enabled"))$("#agent-core-enabled").checked=config.enabled!==false;
+  if($("#agent-core-auto-publish"))$("#agent-core-auto-publish").checked=config.autoPublish===true;
+  if($("#agent-core-require-approval"))$("#agent-core-require-approval").checked=config.approvalRequired!==false;
+  if($("#agent-core-cycle-minutes"))$("#agent-core-cycle-minutes").value=Number(config.cycleMinutes||60);
+  const clientState=$("#agent-core-client-state");
+  if(clientState){clientState.textContent=config.enabled!==false?"ATIVO":"PAUSADO";clientState.classList.toggle("off",config.enabled===false);}
+  syncAgentCoreApprovalUi();
+
+  const moduleRoot=$("#agent-core-module-toggles");
+  const moduleDefs=Array.isArray(data.modules)?data.modules:[];
+  if(moduleRoot)moduleRoot.innerHTML=moduleDefs.map(module=>`
+    <label><input type="checkbox" data-agent-core-module="${escapeHtml(module.id)}" ${config.modules?.[module.id]!==false?"checked":""}> <strong>${escapeHtml(module.name)}</strong></label>
+  `).join("");
+
+  const live=$("#agent-core-live-state");
+  const moduleState=selected.state?.modules||{};
+  if(live)live.innerHTML=moduleDefs.map(module=>{
+    const item=moduleState[module.id]||{};
+    const [label,cls]=item.lastExecutionAt?agentCoreStatusMeta(item.status):["AGUARDANDO","running"];
+    return `<div class="agent-core-live-row"><div><strong>${escapeHtml(module.name)}</strong><small>${escapeHtml(item.message||"Ainda sem execução registrada.")}</small></div><div><span class="post-status ${cls}">${label}</span><small>${item.lastExecutionAt?formatPostDate(item.lastExecutionAt):"—"}</small></div></div>`;
+  }).join("");
+
+  const rows=Array.isArray(selected.lastExecutions)?[...selected.lastExecutions]:[];
+  const body=$("#agent-core-log-body");
+  if(body)body.innerHTML=rows.length?rows.map(row=>{
+    const [label,cls]=agentCoreStatusMeta(row.status);
+    return `<tr>
+      <td>${formatPostDate(row.finishedAt||row.startedAt)}</td>
+      <td><strong>${escapeHtml(row.clientName||selected.clientName||selected.clientId)}</strong></td>
+      <td><strong>${escapeHtml(row.agent||"—")}</strong></td>
+      <td>${escapeHtml(row.function||"—")}</td>
+      <td><span class="post-status ${cls}">${label}</span></td>
+      <td>${escapeHtml(row.model||"—")}</td>
+      <td>${Number(row.quantity||0)}</td>
+      <td><strong>${moneyPost(row.costUsd)}</strong></td>
+      <td class="post-detail">${escapeHtml(row.message||"—")}</td>
+    </tr>`;
+  }).join(""):'<tr><td colspan="9">Nenhuma execução registrada para este cliente.</td></tr>';
+}
+async function loadAgentCore(){
+  try{
+    state.agentCore=await api("/api/master/agent-core");
+    renderAgentCore();
+  }catch(error){console.error(error);}
+}
+async function saveAgentCoreConfig(){
+  const selected=selectedAgentCoreClient();if(!selected)return;
+  const message=$("#agent-core-message");
+  if(message)message.textContent="Salvando…";
+  const modules={};
+  $("[data-agent-core-module]").forEach(input=>{modules[input.dataset.agentCoreModule]=input.checked;});
+  const autoPublish=Boolean($("#agent-core-auto-publish")?.checked);
+  const approvalRequired=autoPublish?Boolean($("#agent-core-require-approval")?.checked):true;
+  const cycleMinutes=Math.max(15,Math.min(1440,Number($("#agent-core-cycle-minutes")?.value||60)));
+  try{
+    await api("/api/master/agent-core/"+encodeURIComponent(selected.clientId),{
+      method:"PATCH",
+      body:JSON.stringify({
+        enabled:Boolean($("#agent-core-enabled")?.checked),
+        autoPublish,
+        approvalRequired,
+        cycleMinutes,
+        modules
+      })
+    });
+    if(message)message.textContent="Configuração salva.";
+    await loadAgentCore();
+  }catch(error){if(message)message.textContent="Não foi possível salvar.";}
+}
+async function runAgentCore(agent="all",button=null){
+  const selected=selectedAgentCoreClient();if(!selected)return;
+  const message=$("#agent-core-message");
+  const original=button?.textContent||"";
+  if(button){button.disabled=true;button.textContent="Executando…";}
+  if(message)message.textContent=agent==="all"?"Executando ciclo completo…":"Executando "+agent.toUpperCase()+"…";
+  try{
+    await api("/api/master/agent-core/"+encodeURIComponent(selected.clientId)+"/run",{
+      method:"POST",body:JSON.stringify({agent})
+    });
+    if(message)message.textContent="Execução concluída e registrada.";
+    await loadAgentCore();
+    await loadPostLedger();
+  }catch(error){if(message)message.textContent="Falha na execução: "+error.message;}
+  finally{if(button){button.disabled=false;button.textContent=original;}}
+}
+
 function showView(id) {
   $$(".view").forEach(view => view.classList.toggle("active", view.id === id));
   $$(".nav-item").forEach(item => item.classList.toggle("active", item.dataset.view === id));
-  const titles = { dashboard: "Visão geral", clients: "Clientes", posts: "Postagens & custos", notifications: "Notificações", portal: "Portal do cliente", odin: "Odin & Leads", onboarding: "Novo cliente", settings: "Integrações" };
+  const titles = { dashboard: "Visão geral", clients: "Clientes", agents: "Agent Core", posts: "Postagens & custos", notifications: "Notificações", portal: "Portal do cliente", odin: "Odin & Leads", onboarding: "Novo cliente", settings: "Integrações" };
   $("#page-title").textContent = titles[id] || "NEXUS AI";
 }
 
 async function load() {
   try {
-    const [clients, support, posts, leads] = await Promise.all([api("/api/clients"), api("/api/master/support"), api("/api/master/posts"), api("/api/master/leads")]);
+    const [clients, support, posts, leads, agentCore] = await Promise.all([api("/api/clients"), api("/api/master/support"), api("/api/master/posts"), api("/api/master/leads"), api("/api/master/agent-core")]);
     state.clients = clients;
     state.supportTickets = support.tickets || [];
     state.postLedger = posts || state.postLedger;
     state.leadData = leads || state.leadData;
+    state.agentCore = agentCore || state.agentCore;
     render();
     renderSupportNotifications(support);
     renderPostLedger();
     renderMasterLeads();
+    renderAgentCore();
   } catch (error) { console.error(error); }
 }
 
@@ -415,6 +548,7 @@ async function loadIntegrations() {
 $$('[data-view]').forEach(button => button.addEventListener("click", async () => {
   showView(button.dataset.view);
   if (button.dataset.view === "settings") loadIntegrations();
+  if (button.dataset.view === "agents") loadAgentCore();
   if (button.dataset.view === "posts") loadPostLedger();
   if (button.dataset.view === "odin") loadMasterLeads();
   if (button.dataset.view === "notifications") {
@@ -435,6 +569,17 @@ if (postClientFilter) postClientFilter.addEventListener("change", event => {
   state.postClientFilter = event.target.value || "";
   renderPostLedger();
 });
+const agentCoreClient=$("#agent-core-client");
+if(agentCoreClient)agentCoreClient.addEventListener("change",event=>{state.agentCoreClientId=event.target.value||"";renderAgentCore();});
+const agentCoreAuto=$("#agent-core-auto-publish");
+if(agentCoreAuto)agentCoreAuto.addEventListener("change",syncAgentCoreApprovalUi);
+const agentCoreSave=$("#agent-core-save");
+if(agentCoreSave)agentCoreSave.addEventListener("click",saveAgentCoreConfig);
+const agentCoreRunAll=$("#agent-core-run-all");
+if(agentCoreRunAll)agentCoreRunAll.addEventListener("click",()=>runAgentCore("all",agentCoreRunAll));
+const agentCoreRefresh=$("#agent-core-refresh");
+if(agentCoreRefresh)agentCoreRefresh.addEventListener("click",loadAgentCore);
+
 $("#client-form").addEventListener("submit", async event => {
   event.preventDefault();
   const form = event.currentTarget;
@@ -462,6 +607,8 @@ $("select[name=theme]").addEventListener("change", event => {
 });
 
 document.addEventListener("click", async event => {
+  const runAgentButton=event.target.closest("[data-run-agent]");
+  if(runAgentButton){await runAgentCore(runAgentButton.dataset.runAgent||"all",runAgentButton);return;}
   const assumeButton=event.target.closest("[data-assume-client]");if(assumeButton){assumeClient(assumeButton.dataset.assumeClient);return;}
   const deleteButton = event.target.closest("[data-delete-client]");
   if (deleteButton) {
