@@ -295,6 +295,49 @@ function saveProviderConnection(clientId, provider, record) {
   saveConnections(all);
 }
 
+function decodeMetaSignedRequest(signedRequest) {
+  const secret = masterInstagramAppSecret();
+  const raw = String(signedRequest || "");
+  const [signaturePart, payloadPart] = raw.split(".");
+  if (!secret || !signaturePart || !payloadPart) return null;
+  try {
+    const supplied = Buffer.from(signaturePart, "base64url");
+    const expected = crypto.createHmac("sha256", secret).update(payloadPart).digest();
+    if (supplied.length !== expected.length || !crypto.timingSafeEqual(supplied, expected)) return null;
+    const payload = JSON.parse(Buffer.from(payloadPart, "base64url").toString("utf8"));
+    return payload && typeof payload === "object" ? payload : null;
+  } catch {
+    return null;
+  }
+}
+
+function disconnectInstagramUser(igUserId) {
+  const targetId = String(igUserId || "").trim();
+  if (!targetId) return [];
+  const connections = loadConnections();
+  const disconnectedClientIds = [];
+  for (const [clientId, providers] of Object.entries(connections)) {
+    if (String(providers?.meta?.igUserId || "") !== targetId) continue;
+    delete providers.meta;
+    if (!Object.keys(providers).length) delete connections[clientId];
+    disconnectedClientIds.push(clientId);
+  }
+  if (disconnectedClientIds.length) saveConnections(connections);
+
+  const clients = loadClients();
+  let changed = false;
+  for (const client of clients) {
+    if (!disconnectedClientIds.includes(client.id)) continue;
+    client.instagram = "";
+    client.meta = "pending";
+    client.onboarding = client.onboarding && typeof client.onboarding === "object" ? client.onboarding : {};
+    client.onboarding.instagram = false;
+    changed = true;
+  }
+  if (changed) saveClients(clients);
+  return disconnectedClientIds;
+}
+
 async function validateGithubToken(token) {
   const response = await fetch("https://api.github.com/user", {
     headers: {
@@ -1444,6 +1487,37 @@ const server = http.createServer(async (req, res) => {
       console.warn("Instagram OAuth callback failed:", error.message);
       return oauthPage(false, "Não foi possível concluir a autorização do Instagram.");
     }
+  }
+
+  if (url.pathname === "/api/meta/instagram/deauthorize" && req.method === "POST") {
+    const body = await readFormBody(req);
+    const payload = decodeMetaSignedRequest(body.signed_request);
+    if (!payload) return send(res, 400, { error: "invalid_signed_request" });
+    const igUserId = String(payload.user_id || payload.data?.user_id || "");
+    disconnectInstagramUser(igUserId);
+    return send(res, 200, { success: true });
+  }
+
+  if (url.pathname === "/api/meta/instagram/data-deletion" && req.method === "POST") {
+    const body = await readFormBody(req);
+    const payload = decodeMetaSignedRequest(body.signed_request);
+    if (!payload) return send(res, 400, { error: "invalid_signed_request" });
+    const igUserId = String(payload.user_id || payload.data?.user_id || "");
+    disconnectInstagramUser(igUserId);
+    const confirmationCode = crypto.randomBytes(12).toString("hex");
+    const statusUrl = publicOrigin(req) + "/api/meta/instagram/data-deletion/status?code=" + encodeURIComponent(confirmationCode);
+    return send(res, 200, { url: statusUrl, confirmation_code: confirmationCode });
+  }
+
+  if (url.pathname === "/api/meta/instagram/data-deletion/status" && req.method === "GET") {
+    const code = String(url.searchParams.get("code") || "");
+    if (!code) return send(res, 400, "Código de confirmação ausente.", "text/plain; charset=utf-8");
+    return send(
+      res,
+      200,
+      `<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>NEXUS AI</title><body style="margin:0;background:#050807;color:#f4f8f5;font-family:system-ui;display:grid;place-items:center;min-height:100vh"><div style="max-width:560px;padding:30px;border:1px solid #173549;border-radius:20px;background:#071018"><h1>Exclusão processada</h1><p>Os dados de conexão do Instagram associados à solicitação foram removidos do NEXUS AI.</p><p><strong>Código:</strong> ${code.replace(/[^a-zA-Z0-9_-]/g, "")}</p></div></body></html>`,
+      "text/html; charset=utf-8"
+    );
   }
 
   if (url.pathname === "/api/portal/support" && req.method === "GET") {
