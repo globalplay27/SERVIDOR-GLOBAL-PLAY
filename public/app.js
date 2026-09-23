@@ -172,11 +172,13 @@ if(aiModeSelect){aiModeSelect.addEventListener("change",syncAiModeFields);syncAi
 
 $("#client-form").addEventListener("submit", async event => {
   event.preventDefault();
-  const data = Object.fromEntries(new FormData(event.currentTarget));
+  const form = event.currentTarget;
+  const data = Object.fromEntries(new FormData(form));
   $("#form-status").textContent = "Salvando…";
   try {
     const result = await api("/api/clients", { method: "POST", body: JSON.stringify(data) });
-    event.currentTarget.reset();
+    form.reset();
+    syncAiModeFields();
     $("#form-status").textContent = "Cliente criado. Envie somente o acesso abaixo.";
     const access = result.portalCredentials || {};
     $("#new-client-user").textContent = "Usuário: " + (access.username || "—");
@@ -198,12 +200,13 @@ $("select[name=theme]").addEventListener("change", event => {
 const openaiMasterForm=$("#openai-master-form");
 if(openaiMasterForm)openaiMasterForm.addEventListener("submit",async event=>{
   event.preventDefault();
+  const form=event.currentTarget;
   const message=$("#openai-master-message");
   if(message)message.textContent="Validando e salvando…";
-  const data=Object.fromEntries(new FormData(event.currentTarget));
+  const data=Object.fromEntries(new FormData(form));
   try{
     await api("/api/master/openai",{method:"POST",body:JSON.stringify(data)});
-    event.currentTarget.reset();
+    form.reset();
     if(message)message.textContent="OpenAI NEXUS atualizada com segurança.";
     await loadIntegrations();
   }catch(error){
