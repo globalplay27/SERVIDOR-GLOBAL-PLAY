@@ -330,6 +330,8 @@ function portalVideoJobView(job) {
     folderId: job.folderId || "default",
     outputFormat: videoFormatSpec(job.outputFormat).key,
     outputFormatLabel: videoFormatSpec(job.outputFormat).label,
+    endText: job.endText || "",
+    endContact: job.endContact || "",
     sizeBytes: Number(job.sizeBytes || 0),
     goal: job.goal || "viral",
     clipDuration: Number(job.clipDuration || 30),
@@ -344,6 +346,10 @@ function portalVideoJobView(job) {
       id: clip.id,
       title: clip.title || "",
       reason: clip.reason || "",
+      hook: clip.hook || "",
+      qualityScore: Number(clip.qualityScore || 0),
+      rank: Number(clip.rank || 0),
+      selectedForSchedule: Boolean(clip.selectedForSchedule),
       transcript: clip.transcript || "",
       start: Number(clip.start || 0),
       end: Number(clip.end || 0),
@@ -357,7 +363,9 @@ function portalVideoJobView(job) {
       error: clip.error || "",
       caption: clip.caption || "",
       previewUrl: clip.previewUrl || "",
-      outputFormat: clip.outputFormat || videoFormatSpec(job.outputFormat).key
+      outputFormat: clip.outputFormat || videoFormatSpec(job.outputFormat).key,
+      endText: clip.endText || job.endText || "",
+      endContact: clip.endContact || job.endContact || ""
     })) : [],
     createdAt: job.createdAt,
     updatedAt: job.updatedAt || job.createdAt
@@ -449,21 +457,51 @@ async function transcribeVideoAudio(audioPath, durationSeconds, clientId) {
   };
 }
 
-function fallbackClipSelections(duration, count, targetDuration) {
-  const usableDuration = Math.max(1, Number(duration || 0));
-  const clipLength = Math.max(3, Math.min(Number(targetDuration || 30), usableDuration));
-  const total = Math.max(1, Math.min(Number(count || 3), Math.floor(usableDuration / Math.max(clipLength * 0.6, 3)) || 1));
-  if (total === 1) return [{ start: 0, end: Math.min(usableDuration, clipLength), title: "Melhor trecho", reason: "Corte técnico automático" }];
-  const maxStart = Math.max(0, usableDuration - clipLength);
-  return Array.from({ length: total }, (_, index) => {
-    const start = maxStart * (index / Math.max(1, total - 1));
-    return {
-      start,
-      end: Math.min(usableDuration, start + clipLength),
-      title: "Corte " + (index + 1),
-      reason: "Corte técnico automático"
-    };
-  });
+function transcriptHeuristicSelections(segments, duration, count, targetDuration) {
+  if (!Array.isArray(segments) || !segments.length) return [];
+  const candidates = [];
+  const desired = Math.max(8, Number(targetDuration || 30));
+  const maxDuration = Math.min(95, desired + 18);
+  const hookWords = /\b(como|porque|por que|segredo|erro|melhor|pior|nunca|sempre|voce|você|aten[cç][aã]o|olha|importante|resultado|dinheiro|venda|cliente|verdade|problema|solu[cç][aã]o|dica|passo|motivo|evite)\b/i;
+
+  for (let i = 0; i < segments.length; i += 1) {
+    const startSeg = segments[i];
+    let text = "";
+    let end = startSeg.end;
+    for (let j = i; j < segments.length; j += 1) {
+      const seg = segments[j];
+      if (seg.end - startSeg.start > maxDuration) break;
+      text += (text ? " " : "") + seg.text;
+      end = seg.end;
+      const len = end - startSeg.start;
+      if (len >= desired * 0.72 && (sentenceLooksFinished(seg.text) || len >= desired)) {
+        const words = text.trim().split(/\s+/).filter(Boolean).length;
+        const density = words / Math.max(1, len);
+        const punctuation = /[!?]/.test(text) ? 12 : /[.]\s*$/.test(text) ? 5 : 0;
+        const hook = hookWords.test(text) ? 14 : 0;
+        const lengthFit = Math.max(0, 18 - Math.abs(len - desired) * 0.8);
+        const score = Math.round(Math.min(99, 35 + density * 8 + punctuation + hook + lengthFit));
+        candidates.push({
+          start: Math.max(0, startSeg.start),
+          end: Math.min(duration, end),
+          title: "Trecho forte",
+          reason: "Selecionado por densidade de fala, gancho e conclusão de ideia.",
+          score,
+          hook: text.slice(0, 160)
+        });
+        break;
+      }
+    }
+  }
+
+  candidates.sort((a, b) => b.score - a.score);
+  const selected = [];
+  for (const candidate of candidates) {
+    if (selected.some(item => Math.max(item.start, candidate.start) < Math.min(item.end, candidate.end))) continue;
+    selected.push(candidate);
+    if (selected.length >= Math.max(1, Number(count || 3))) break;
+  }
+  return selected;
 }
 
 function transcriptForRange(segments, start, end) {
@@ -551,28 +589,26 @@ function refineClipBoundary(clip, segments, silences, duration, targetDuration) 
 
 async function selectSmartClips(transcription, duration, count, targetDuration, goal, clientId) {
   const segments = Array.isArray(transcription?.segments) ? transcription.segments : [];
-  if (!segments.length) return { clips: fallbackClipSelections(duration, count, targetDuration), costUsd: 0, model: "fallback" };
+  if (!segments.length) throw new Error("smart_transcript_required");
 
   const compact = segments.map(item => "[" + item.start.toFixed(1) + "-" + item.end.toFixed(1) + "] " + item.text).join("\n").slice(0, 120000);
   const prompt = `Você é o editor de vídeos curtos do NEXUS AI.
-Escolha ${count} trechos independentes com maior potencial para ${goal || "engajamento"}.
+Escolha exatamente ${count} MELHORES trechos independentes do vídeo, ranqueados por potencial para ${goal || "engajamento"}.
+NÃO divida o vídeo em partes iguais e NÃO escolha trechos só para cobrir começo, meio e fim.
+Cada opção precisa funcionar sozinha como um vídeo publicável: gancho forte, ideia completa, valor claro e final natural.
 Cada corte deve ter aproximadamente ${targetDuration} segundos, mas a duração pode passar desse alvo para terminar a fala naturalmente.
 REGRA CRÍTICA: jamais encerre o corte no meio de uma palavra, frase, resposta, CTA ou despedida. Prefira alguns segundos a mais a cortar a fala final.
 Escolha o end no fim de uma frase completa ou em uma pausa natural.
 Não invente falas e não escolha trechos sobrepostos.
 Responda SOMENTE JSON válido neste formato:
-{"clips":[{"start":12.3,"end":42.0,"title":"Título curto","reason":"Por que este trecho funciona"}]}
+{"clips":[{"start":12.3,"end":42.0,"title":"Título curto","hook":"Primeira ideia forte do trecho","reason":"Por que este trecho funciona sozinho","score":94}]}
 
 Duração total: ${duration.toFixed(1)} segundos.
 Transcrição com timestamps:
 ${compact}`;
 
   const apiKey = videoOpenAIKeyForClient(clientId);
-  if (!apiKey) return {
-    clips: fallbackClipSelections(duration, count, targetDuration),
-    costUsd: 0,
-    model: clientId === "ragnar-one" ? "ragnar-own-key-unavailable-fallback" : "fallback"
-  };
+  if (!apiKey) throw new Error(clientId === "ragnar-one" ? "ragnar_openai_not_available" : "openai_not_configured");
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
@@ -604,9 +640,13 @@ ${compact}`;
       start,
       end,
       title: String(item.title || ("Corte " + (index + 1))).slice(0, 100),
-      reason: String(item.reason || "").slice(0, 300)
+      reason: String(item.reason || "").slice(0, 300),
+      hook: String(item.hook || "").slice(0, 220),
+      score: Math.max(1, Math.min(100, Number(item.score || 70)))
     };
-  }).filter(Boolean).slice(0, Math.max(1, count));
+  }).filter(Boolean)
+    .sort((a, b) => Number(b.score || 0) - Number(a.score || 0))
+    .slice(0, Math.max(1, count));
   const usage = payload.usage || {};
   const inputTokens = Number(usage.input_tokens || 0);
   const outputTokens = Number(usage.output_tokens || 0);
@@ -618,22 +658,50 @@ ${compact}`;
   };
 }
 
-async function renderVideoClip(inputPath, outputPath, start, end, outputFormat = "reel") {
+function escapeFfmpegDrawtext(value) {
+  return String(value || "")
+    .replace(/\\/g, "\\\\")
+    .replace(/'/g, "\\'")
+    .replace(/:/g, "\\:")
+    .replace(/%/g, "\\%");
+}
+
+async function renderVideoClip(inputPath, outputPath, start, end, outputFormat = "reel", endText = "", endContact = "") {
   const duration = Math.max(3, Number(end) - Number(start));
   const spec = videoFormatSpec(outputFormat);
-  const filter = [
+  const finalText = String(endText || "").trim().slice(0, 90);
+  const finalContact = String(endContact || "").trim().slice(0, 90);
+  const outroStart = Math.max(0, duration - 3);
+  const fontFile = "/usr/share/fonts/ttf-dejavu/DejaVuSans-Bold.ttf";
+
+  const filters = [
     "[0:v]split=2[bg][fg]",
     "[bg]scale=" + spec.width + ":" + spec.height + ":force_original_aspect_ratio=increase,crop=" + spec.width + ":" + spec.height + ",boxblur=20:10[bg2]",
     "[fg]scale=" + spec.width + ":" + spec.height + ":force_original_aspect_ratio=decrease[fg2]",
-    "[bg2][fg2]overlay=(W-w)/2:(H-h)/2,format=yuv420p[v]"
-  ].join(";");
+    "[bg2][fg2]overlay=(W-w)/2:(H-h)/2,format=yuv420p[base]"
+  ];
+
+  let videoLabel = "base";
+  if (finalText || finalContact) {
+    filters.push("[" + videoLabel + "]drawbox=x=0:y=ih*0.68:w=iw:h=ih*0.32:color=black@0.62:t=fill:enable='gte(t," + outroStart.toFixed(3) + ")'[outbox]");
+    videoLabel = "outbox";
+    if (finalText) {
+      filters.push("[" + videoLabel + "]drawtext=fontfile=" + fontFile + ":text='" + escapeFfmpegDrawtext(finalText) + "':fontcolor=white:fontsize=" + Math.round(spec.width * 0.052) + ":borderw=2:bordercolor=black@0.7:x=(w-text_w)/2:y=h*0.75:enable='gte(t," + outroStart.toFixed(3) + ")'[outtext]");
+      videoLabel = "outtext";
+    }
+    if (finalContact) {
+      filters.push("[" + videoLabel + "]drawtext=fontfile=" + fontFile + ":text='" + escapeFfmpegDrawtext(finalContact) + "':fontcolor=white:fontsize=" + Math.round(spec.width * 0.035) + ":borderw=2:bordercolor=black@0.7:x=(w-text_w)/2:y=h*0.84:enable='gte(t," + outroStart.toFixed(3) + ")'[outcontact]");
+      videoLabel = "outcontact";
+    }
+  }
+
   await execMedia("ffmpeg", [
     "-y",
     "-ss", Number(start).toFixed(3),
     "-i", inputPath,
     "-t", duration.toFixed(3),
-    "-filter_complex", filter,
-    "-map", "[v]",
+    "-filter_complex", filters.join(";"),
+    "-map", "[" + videoLabel + "]",
     "-map", "0:a?",
     "-r", "30",
     "-c:v", "libx264",
@@ -697,7 +765,16 @@ async function processVideoJob(jobId) {
       );
     } catch (error) {
       console.warn("Video smart selection fallback " + jobId + ": " + String(error?.message || error));
-      selection = { clips: fallbackClipSelections(duration, initial.requestedClips, initial.clipDuration), costUsd: 0, model: "fallback" };
+      const heuristic = transcriptHeuristicSelections(
+        transcription.segments || [],
+        duration,
+        Number(initial.requestedClips || 3),
+        Number(initial.clipDuration || 30)
+      );
+      if (!heuristic.length) {
+        throw new Error("smart_clip_analysis_unavailable");
+      }
+      selection = { clips: heuristic, costUsd: 0, model: "transcript-heuristic" };
     }
 
     selection.clips = (selection.clips || []).map(clip =>
@@ -727,7 +804,15 @@ async function processVideoJob(jobId) {
       const clipId = "clip_" + crypto.randomBytes(7).toString("hex");
       const publicName = initial.id + "-" + clipId + "-" + crypto.randomBytes(6).toString("hex") + ".mp4";
       const outputPath = path.join(clipDir, publicName);
-      await renderVideoClip(initial.storedPath, outputPath, selected.start, selected.end, initial.outputFormat || "reel");
+      await renderVideoClip(
+        initial.storedPath,
+        outputPath,
+        selected.start,
+        selected.end,
+        initial.outputFormat || "reel",
+        initial.endText || "",
+        initial.endContact || ""
+      );
       const transcript = transcriptForRange(transcription.segments, selected.start, selected.end);
       clips.push({
         id: clipId,
@@ -735,6 +820,10 @@ async function processVideoJob(jobId) {
         storedPath: outputPath,
         title: selected.title || "Corte " + (index + 1),
         reason: selected.reason || "",
+        hook: selected.hook || "",
+        qualityScore: Number(selected.score || 0),
+        rank: index + 1,
+        selectedForSchedule: false,
         transcript,
         start: Number(selected.start),
         end: Number(selected.end),
@@ -746,6 +835,8 @@ async function processVideoJob(jobId) {
         caption: selected.title || "",
         previewUrl: "/video-media/" + encodeURIComponent(publicName),
         outputFormat: videoFormatSpec(initial.outputFormat).key,
+        endText: initial.endText || "",
+        endContact: initial.endContact || "",
         createdAt: new Date().toISOString()
       });
       updateVideoJob(jobId, {
@@ -941,6 +1032,7 @@ async function bulkScheduleVideoClips(clientId, items) {
     clip.caption = String(raw?.caption || clip.caption || clip.title || "").slice(0, 2200);
     clip.scheduledFor = date.toISOString();
     clip.publishStatus = "scheduled";
+    clip.selectedForSchedule = false;
     clip.error = "";
     job.updatedAt = new Date().toISOString();
     results.push({
@@ -1005,7 +1097,17 @@ async function adjustVideoClip(clientId, jobId, clipId, body) {
   found.clip.status = "editing";
   found.clip.error = "";
   saveVideoClipState(found.jobs, found.job);
-  await renderVideoClip(found.job.storedPath, found.clip.storedPath, start, end, found.job.outputFormat || found.clip.outputFormat || "reel");
+  const nextEndText = Object.prototype.hasOwnProperty.call(body, "endText") ? String(body.endText || "").slice(0, 90) : (found.clip.endText || found.job.endText || "");
+  const nextEndContact = Object.prototype.hasOwnProperty.call(body, "endContact") ? String(body.endContact || "").slice(0, 90) : (found.clip.endContact || found.job.endContact || "");
+  await renderVideoClip(
+    found.job.storedPath,
+    found.clip.storedPath,
+    start,
+    end,
+    found.job.outputFormat || found.clip.outputFormat || "reel",
+    nextEndText,
+    nextEndContact
+  );
   const fresh = findVideoClip(clientId, jobId, clipId);
   fresh.clip.start = start;
   fresh.clip.end = end;
@@ -1013,6 +1115,8 @@ async function adjustVideoClip(clientId, jobId, clipId, body) {
   if (Object.prototype.hasOwnProperty.call(body, "title")) fresh.clip.title = String(body.title || "").slice(0, 100);
   if (Object.prototype.hasOwnProperty.call(body, "caption")) fresh.clip.caption = String(body.caption || "").slice(0, 2200);
   fresh.clip.transcript = transcriptForRange(fresh.job.transcriptSegments || [], start, end);
+  fresh.clip.endText = nextEndText;
+  fresh.clip.endContact = nextEndContact;
   fresh.clip.status = "ready";
   fresh.clip.approvalStatus = "pending";
   fresh.clip.publishStatus = "";
@@ -3439,6 +3543,19 @@ const server = http.createServer(async (req, res) => {
     return send(res, 200, { ok: true, message: "Vídeo excluído da biblioteca do NEXUS." });
   }
 
+  const portalVideoSelectMatch = url.pathname.match(/^\/api\/portal\/videos\/([^/]+)\/clips\/([^/]+)\/select$/);
+  if (portalVideoSelectMatch && req.method === "POST") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    const body = await readBody(req);
+    const found = findVideoClip(client.id, decodeURIComponent(portalVideoSelectMatch[1]), decodeURIComponent(portalVideoSelectMatch[2]));
+    if (!found.job || !found.clip) return send(res, 404, { error: "clip_not_found" });
+    if (found.clip.publishStatus === "published") return send(res, 409, { error: "already_published" });
+    found.clip.selectedForSchedule = Boolean(body.selected);
+    saveVideoClipState(found.jobs, found.job);
+    return send(res, 200, { ok: true, selectedForSchedule: found.clip.selectedForSchedule });
+  }
+
   const portalVideoApprovalMatch = url.pathname.match(/^\/api\/portal\/videos\/([^/]+)\/clips\/([^/]+)\/approval$/);
   if (portalVideoApprovalMatch && req.method === "POST") {
     const client = portalClientForRequest(req);
@@ -3553,6 +3670,8 @@ const server = http.createServer(async (req, res) => {
 
       const goal = String(req.headers["x-video-goal"] || "viral").slice(0, 40);
       const outputFormat = videoFormatSpec(String(req.headers["x-output-format"] || "reel")).key;
+      const endText = decodeURIComponent(String(req.headers["x-video-end-text"] || "")).trim().slice(0, 90);
+      const endContact = decodeURIComponent(String(req.headers["x-video-end-contact"] || "")).trim().slice(0, 90);
       const requestedFolder = String(req.headers["x-video-folder"] || "default");
       const folderId = videoFoldersForClient(client.id).some(item => item.id === requestedFolder) ? requestedFolder : "default";
       const clipDuration = Math.min(90, Math.max(10, Number(req.headers["x-clip-duration"] || 30) || 30));
@@ -3566,6 +3685,8 @@ const server = http.createServer(async (req, res) => {
         displayName: path.basename(safeBase, path.extname(safeBase)),
         folderId,
         outputFormat,
+        endText,
+        endContact,
         storedPath: destination,
         sizeBytes: received,
         goal,
