@@ -2,7 +2,7 @@ const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 let sessionAuth=null,currentClient=null;
 
 function nextPostTime(times=[]){if(!Array.isArray(times)||!times.length)return"—";const parts=new Intl.DateTimeFormat("pt-BR",{timeZone:"America/Sao_Paulo",hour:"2-digit",minute:"2-digit",hour12:false}).formatToParts(new Date());const now=Number(parts.find(p=>p.type==="hour")?.value||0)*60+Number(parts.find(p=>p.type==="minute")?.value||0);const sorted=times.map(v=>{const[h,m]=String(v).split(":").map(Number);return{v,m:h*60+m}}).filter(x=>Number.isFinite(x.m)).sort((a,b)=>a.m-b.m);return sorted.find(x=>x.m>now)?.v||sorted[0]?.v||"—";}
-function showView(name){$$("[data-view]").forEach(b=>b.classList.toggle("active",b.dataset.view===name));["overview","posting","support","setup"].forEach(v=>{const el=$("#view-"+v);if(el)el.hidden=v!==name;});if(name==="support")loadSupportTickets();}
+function showView(name){$("[data-view]").forEach(b=>b.classList.toggle("active",b.dataset.view===name));["overview","posts","videos","posting","support","setup"].forEach(v=>{const el=$("#view-"+v);if(el)el.hidden=v!==name;});if(name==="support")loadSupportTickets();if(name==="posts")loadClientPosts();if(name==="videos")loadVideoJobs();}
 function onboardingKeys(){return["github","railway","openai","facebook","instagram","metaApp","creativeProfile","supportRequested"];}
 function setupPercent(){const o=currentClient?.onboarding||{};const keys=onboardingKeys();return Math.round(keys.filter(k=>o[k]).length/keys.length*100);}
 function renderOnboarding(){
@@ -315,7 +315,194 @@ async function loadSupportTickets(){
     list.innerHTML=tickets.map(t=>`<article class="client-ticket ${t.status}"><div><strong>${escapeSupport(t.subject)}</strong><span>${escapeSupport(t.category)} · ${supportStatusLabel(t.status)}</span></div><small>${new Date(t.createdAt).toLocaleString("pt-BR")}</small></article>`).join("");
   }catch{if(list)list.innerHTML='<p class="muted">Não foi possível carregar os chamados agora.</p>';}
 }
-$$("[data-view]").forEach(b=>b.addEventListener("click",()=>showView(b.dataset.view)));$$("[data-open-setup]").forEach(b=>b.addEventListener("click",()=>showView("setup")));$$("[data-open-posting]").forEach(b=>b.addEventListener("click",()=>showView("posting")));
+
+let clientPosts=[];
+function saoPauloDay(value=new Date()){
+  const date=value instanceof Date?value:new Date(value);
+  try{
+    const parts=new Intl.DateTimeFormat("en-CA",{timeZone:"America/Sao_Paulo",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(date);
+    const get=t=>parts.find(p=>p.type===t)?.value||"";
+    return get("year")+"-"+get("month")+"-"+get("day");
+  }catch{return"";}
+}
+function formatClientPostDate(value){
+  if(!value)return"—";
+  try{return new Intl.DateTimeFormat("pt-BR",{timeZone:"America/Sao_Paulo",dateStyle:"short",timeStyle:"short"}).format(new Date(value));}
+  catch{return"—";}
+}
+function clientPostState(post){
+  if(post.status==="published")return{label:"ENVIADA",cls:"sent",attention:false};
+  if(post.approvalStatus==="correction_requested")return{label:"CORREÇÃO SOLICITADA",cls:"correction",attention:true};
+  if(post.approvalStatus==="rejected")return{label:"NÃO APROVADA",cls:"rejected",attention:true};
+  if(post.approvalStatus==="approved"&&post.status==="ready")return{label:"APROVADA",cls:"approved",attention:false};
+  if(post.status==="publishing")return{label:"ENVIANDO",cls:"working",attention:false};
+  if(post.status==="generating")return{label:"EM ANDAMENTO",cls:"working",attention:false};
+  if(post.status==="failed")return{label:"FALHOU",cls:"rejected",attention:true};
+  if(post.status==="skipped")return{label:"NÃO ENVIADA",cls:"rejected",attention:true};
+  return{label:"AGENDADA",cls:"scheduled",attention:false};
+}
+function renderClientPosts(data={}){
+  clientPosts=Array.isArray(data.posts)?data.posts:[];
+  const schedule=Array.isArray(data.schedule)?data.schedule:(currentClient?.postTimes||[]);
+  if($("#client-post-schedule"))$("#client-post-schedule").textContent=schedule.join(" · ")||"—";
+  const today=saoPauloDay();
+  const todayPosts=clientPosts.filter(post=>saoPauloDay(post.scheduledFor||post.updatedAt)===today);
+  if($("#client-post-today-count"))$("#client-post-today-count").textContent=todayPosts.length;
+  if($("#client-post-published-count"))$("#client-post-published-count").textContent=todayPosts.filter(post=>post.status==="published").length;
+  if($("#client-post-attention-count"))$("#client-post-attention-count").textContent=todayPosts.filter(post=>clientPostState(post).attention).length;
+
+  const root=$("#client-post-list");
+  if(!root)return;
+  if(!clientPosts.length){
+    root.innerHTML='<div class="post-client-empty"><strong>Nenhuma postagem registrada ainda</strong><span>Quando o agente preparar a agenda, ela aparecerá aqui.</span></div>';
+    return;
+  }
+  root.innerHTML=clientPosts.map(post=>{
+    const state=clientPostState(post);
+    const sentAt=post.publishedAt||post.attemptedAt;
+    const detail=post.error?escapeSupport(post.error):(post.revisionRequest?"Correção: "+escapeSupport(post.revisionRequest):"");
+    const canAct=post.status!=="published";
+    return `<article class="client-post-card ${state.cls}" data-client-post="${escapeSupport(post.id)}">
+      <div class="client-post-time"><span>HORÁRIO</span><strong>${escapeSupport(post.scheduledHour||"—")}</strong><small>${formatClientPostDate(post.scheduledFor)}</small></div>
+      <div class="client-post-main">
+        <div class="client-post-title"><strong>Postagem do agente</strong><span class="client-post-status ${state.cls}">${state.label}</span></div>
+        <div class="client-post-meta"><span>Previsão: <b>${escapeSupport(post.scheduledHour||"—")}</b></span><span>${sentAt?"Última ação: "+formatClientPostDate(sentAt):"Aguardando execução"}</span></div>
+        ${detail?`<p class="client-post-detail">${detail}</p>`:""}
+        <div class="client-post-response" data-post-response></div>
+        ${canAct?`<div class="client-post-actions">
+          <button type="button" class="post-send-now" data-post-manual="${escapeSupport(post.id)}">Enviar agora</button>
+          <button type="button" class="post-correct" data-post-edit="${escapeSupport(post.id)}">Corrigir / usar meu conteúdo</button>
+        </div>
+        <div class="client-post-editor" data-post-editor hidden>
+          <div class="post-editor-block">
+            <label><span>O que deve ser corrigido?</span><textarea data-post-revision rows="3" maxlength="1600" placeholder="Ex.: troque a imagem, deixe o título mais forte, remova esta frase..."></textarea></label>
+            <button type="button" data-post-revision-send="${escapeSupport(post.id)}">Enviar para correção</button>
+          </div>
+          <div class="post-editor-separator"><span>OU</span></div>
+          <div class="post-editor-block">
+            <strong>Usar meu próprio conteúdo</strong>
+            <label class="post-own-file">Selecionar imagem<input type="file" accept="image/png,image/jpeg,image/webp" data-post-own-image hidden></label>
+            <label><span>Legenda</span><textarea data-post-own-caption rows="4" maxlength="2200" placeholder="Escreva a legenda que deve acompanhar a postagem."></textarea></label>
+            <button type="button" data-post-own-save="${escapeSupport(post.id)}">Aprovar meu conteúdo</button>
+          </div>
+        </div>`:""}
+      </div>
+    </article>`;
+  }).join("");
+}
+async function loadClientPosts(){
+  try{
+    const r=await fetch("/api/portal/posts",{credentials:"same-origin"});
+    if(!r.ok)throw new Error("Não foi possível carregar as postagens.");
+    renderClientPosts(await r.json());
+  }catch(error){
+    const root=$("#client-post-list");
+    if(root)root.innerHTML='<div class="post-client-empty"><strong>Falha ao sincronizar</strong><span>'+escapeSupport(error.message)+'</span></div>';
+  }
+}
+function postCardForButton(button){return button.closest("[data-client-post]");}
+function setPostResponse(card,message,type=""){
+  const el=card?.querySelector("[data-post-response]");
+  if(!el)return;
+  el.textContent=message||"";
+  el.className="client-post-response "+type;
+}
+async function sendPostNow(postId,button){
+  const card=postCardForButton(button);
+  button.disabled=true;button.textContent="Consultando servidor…";setPostResponse(card,"");
+  try{
+    const r=await fetch("/api/portal/posts/"+encodeURIComponent(postId)+"/manual",{method:"POST",credentials:"same-origin"});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok){
+      setPostResponse(card,d.message||"O servidor não liberou esta postagem.","error");
+      const editor=card?.querySelector("[data-post-editor]");
+      if(editor)editor.hidden=false;
+      return;
+    }
+    setPostResponse(card,d.message||"Postagem enviada.","ok");
+    await loadClientPosts();
+  }catch{setPostResponse(card,"Não foi possível falar com o servidor agora.","error");}
+  finally{button.disabled=false;button.textContent="Enviar agora";}
+}
+async function sendRevision(postId,button){
+  const card=postCardForButton(button),text=card?.querySelector("[data-post-revision]")?.value?.trim()||"";
+  if(!text){setPostResponse(card,"Explique o que precisa ser corrigido.","error");return;}
+  button.disabled=true;button.textContent="Enviando…";
+  try{
+    const r=await fetch("/api/portal/posts/"+encodeURIComponent(postId)+"/revision",{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({instructions:text})});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(d.message||"Não foi possível pedir a correção.");
+    setPostResponse(card,d.message||"Correção solicitada.","ok");
+    await loadClientPosts();
+  }catch(error){setPostResponse(card,error.message,"error");}
+  finally{button.disabled=false;button.textContent="Enviar para correção";}
+}
+function fileAsDataUrl(file){
+  return new Promise((resolve,reject)=>{
+    if(!file||!file.type.startsWith("image/"))return reject(new Error("Selecione uma imagem."));
+    if(file.size>10*1024*1024)return reject(new Error("A imagem deve ter no máximo 10 MB."));
+    const reader=new FileReader();
+    reader.onload=()=>resolve(String(reader.result||""));
+    reader.onerror=()=>reject(new Error("Não foi possível ler a imagem."));
+    reader.readAsDataURL(file);
+  });
+}
+async function saveOwnPost(postId,button){
+  const card=postCardForButton(button);
+  const file=card?.querySelector("[data-post-own-image]")?.files?.[0];
+  const caption=card?.querySelector("[data-post-own-caption]")?.value?.trim()||"";
+  if(!file||!caption){setPostResponse(card,"Selecione uma imagem e escreva a legenda.","error");return;}
+  button.disabled=true;button.textContent="Preparando…";
+  try{
+    const imageDataUrl=await fileAsDataUrl(file);
+    const r=await fetch("/api/portal/posts/"+encodeURIComponent(postId)+"/content",{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({imageDataUrl,caption})});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(d.message||d.error||"Não foi possível salvar seu conteúdo.");
+    setPostResponse(card,d.message||"Conteúdo pronto para envio.","ok");
+    await loadClientPosts();
+  }catch(error){setPostResponse(card,error.message,"error");}
+  finally{button.disabled=false;button.textContent="Aprovar meu conteúdo";}
+}
+
+function videoJobStatus(job){
+  const labels={queued:"NA FILA",uploaded:"ENVIADO",transcribing:"TRANSCREVENDO",selecting:"ESCOLHENDO CORTES",cutting:"CRIANDO CORTES",ready:"PRONTO",failed:"FALHOU"};
+  return labels[job.status]||String(job.status||"NA FILA").toUpperCase();
+}
+function renderVideoJobs(data={}){
+  const root=$("#client-video-jobs");if(!root)return;
+  const jobs=Array.isArray(data.jobs)?data.jobs:[];
+  if(!jobs.length){root.innerHTML='<div class="post-client-empty"><strong>Nenhum vídeo enviado</strong><span>Seus trabalhos aparecerão aqui com o andamento.</span></div>';return;}
+  root.innerHTML=jobs.map(job=>`<article class="video-job-card">
+    <div><strong>${escapeSupport(job.filename||"Vídeo")}</strong><span>${videoJobStatus(job)} · ${Math.round(Number(job.progress||0))}%</span></div>
+    <div class="video-job-progress"><i style="width:${Math.max(2,Math.min(100,Number(job.progress||0)))}%"></i></div>
+    <small>${escapeSupport(job.message||"Aguardando processamento.")}</small>
+  </article>`).join("");
+}
+async function loadVideoJobs(){
+  try{
+    const r=await fetch("/api/portal/videos",{credentials:"same-origin"});
+    if(!r.ok)throw new Error();
+    renderVideoJobs(await r.json());
+  }catch{
+    const root=$("#client-video-jobs");if(root)root.innerHTML='<p class="muted">Não foi possível carregar seus vídeos agora.</p>';
+  }
+}
+
+document.addEventListener("click",event=>{
+  const manual=event.target.closest("[data-post-manual]");
+  if(manual){sendPostNow(manual.dataset.postManual,manual);return;}
+  const edit=event.target.closest("[data-post-edit]");
+  if(edit){
+    const editor=postCardForButton(edit)?.querySelector("[data-post-editor]");
+    if(editor)editor.hidden=!editor.hidden;
+    return;
+  }
+  const revision=event.target.closest("[data-post-revision-send]");
+  if(revision){sendRevision(revision.dataset.postRevisionSend,revision);return;}
+  const own=event.target.closest("[data-post-own-save]");
+  if(own){saveOwnPost(own.dataset.postOwnSave,own);return;}
+});
+$("[data-view]").forEach(b=>b.addEventListener("click",()=>showView(b.dataset.view)));$$("[data-open-setup]").forEach(b=>b.addEventListener("click",()=>showView("setup")));$$("[data-open-posting]").forEach(b=>b.addEventListener("click",()=>showView("posting")));
 $$("[data-profile-tab]").forEach(button=>button.addEventListener("click",()=>{
   $$("[data-profile-tab]").forEach(item=>item.classList.toggle("active",item===button));
   $$("[data-profile-panel]").forEach(panel=>panel.classList.toggle("active",panel.dataset.profilePanel===button.dataset.profileTab));
@@ -385,6 +572,48 @@ if(supportForm)supportForm.addEventListener("submit",async event=>{
   }catch{
     if(status){status.textContent="Não foi possível abrir o chamado.";status.className="save-status error";}
   }finally{button.disabled=false;}
+});
+
+const videoFileInput=$("#video-file");
+if(videoFileInput)videoFileInput.addEventListener("change",()=>{
+  const file=videoFileInput.files?.[0];
+  if($("#video-file-name"))$("#video-file-name").textContent=file?file.name:"MP4, MOV, WEBM ou MKV";
+});
+const videoUploadForm=$("#video-upload-form");
+if(videoUploadForm)videoUploadForm.addEventListener("submit",event=>{
+  event.preventDefault();
+  const file=videoFileInput?.files?.[0],status=$("#video-upload-status"),button=videoUploadForm.querySelector("button[type=submit]"),progress=$("#video-upload-progress");
+  if(!file){if(status)status.textContent="Selecione um vídeo.";return;}
+  if(file.size>750*1024*1024){if(status)status.textContent="O vídeo deve ter no máximo 750 MB.";return;}
+  button.disabled=true;
+  if(status){status.textContent="Enviando vídeo…";status.className="save-status";}
+  if(progress){progress.hidden=false;progress.querySelector("i").style.width="2%";progress.querySelector("span").textContent="Enviando 0%";}
+  const xhr=new XMLHttpRequest();
+  xhr.open("POST","/api/portal/videos");
+  xhr.setRequestHeader("Content-Type",file.type||"application/octet-stream");
+  xhr.setRequestHeader("X-File-Name",encodeURIComponent(file.name));
+  xhr.setRequestHeader("X-Video-Goal",$("#video-goal").value);
+  xhr.setRequestHeader("X-Clip-Duration",$("#video-clip-duration").value);
+  xhr.setRequestHeader("X-Requested-Clips",$("#video-requested-clips").value);
+  xhr.upload.onprogress=e=>{
+    if(!e.lengthComputable||!progress)return;
+    const pct=Math.max(2,Math.round(e.loaded/e.total*100));
+    progress.querySelector("i").style.width=pct+"%";
+    progress.querySelector("span").textContent="Enviando "+pct+"%";
+  };
+  xhr.onload=async()=>{
+    button.disabled=false;
+    if(progress)progress.hidden=true;
+    let d={};try{d=JSON.parse(xhr.responseText||"{}");}catch{}
+    if(xhr.status>=200&&xhr.status<300){
+      videoUploadForm.reset();
+      if($("#video-file-name"))$("#video-file-name").textContent="MP4, MOV, WEBM ou MKV";
+      if(status){status.textContent="Upload concluído. O vídeo entrou na fila do NEXUS.";status.className="save-status ok";}
+      await loadVideoJobs();
+    }else if(status){status.textContent=d.error==="video_too_large"?"Vídeo acima do limite de 750 MB.":"Não foi possível enviar o vídeo.";status.className="save-status error";}
+  };
+  xhr.onerror=()=>{button.disabled=false;if(progress)progress.hidden=true;if(status){status.textContent="Falha de conexão durante o upload.";status.className="save-status error";}};
+  xhr.send(file);
 });
 
 const agentProfileForm=$("#agent-profile-form");
@@ -477,6 +706,8 @@ async function resumeCookieSession(){
     liveStatus();
     providerUsage();
     loadConnections();
+    loadClientPosts();
+    loadVideoJobs();
   }catch{}
 }
 resumeCookieSession();
