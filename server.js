@@ -22,6 +22,7 @@ const connectionsFile = path.join(DATA_DIR, "connections.json");
 const oauthStateFile = path.join(DATA_DIR, "oauth-states.json");
 const portalUsersFile = path.join(DATA_DIR, "portal-users.json");
 const masterIntegrationsFile = path.join(DATA_DIR, "master-integrations.json");
+const supportTicketsFile = path.join(DATA_DIR, "support-tickets.json");
 const portalSessions = new Map();
 const masterSessions = new Map();
 
@@ -169,6 +170,28 @@ function loadMasterIntegrations() {
 
 function saveMasterIntegrations(value) {
   writeJsonAtomic(masterIntegrationsFile, value);
+}
+
+function loadSupportTickets() {
+  return readJsonFile(supportTicketsFile, []);
+}
+
+function saveSupportTickets(value) {
+  writeJsonAtomic(supportTicketsFile, Array.isArray(value) ? value : []);
+}
+
+function supportTicketView(ticket) {
+  return {
+    id: ticket.id,
+    clientId: ticket.clientId,
+    clientName: ticket.clientName,
+    category: ticket.category,
+    subject: ticket.subject,
+    message: ticket.message,
+    status: ticket.status,
+    createdAt: ticket.createdAt,
+    updatedAt: ticket.updatedAt || ticket.createdAt
+  };
 }
 
 function createPortalPasswordRecord(password) {
@@ -1248,6 +1271,44 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  if (url.pathname === "/api/portal/support" && req.method === "GET") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    const tickets = loadSupportTickets()
+      .filter(item => item.clientId === client.id)
+      .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
+      .slice(0, 30)
+      .map(supportTicketView);
+    return send(res, 200, { tickets });
+  }
+
+  if (url.pathname === "/api/portal/support" && req.method === "POST") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    const body = await readBody(req);
+    const category = String(body.category || "Suporte geral").trim().slice(0, 80);
+    const subject = String(body.subject || "").trim().slice(0, 140);
+    const message = String(body.message || "").trim().slice(0, 3000);
+    if (!subject || !message) return send(res, 400, { error: "subject_and_message_required" });
+
+    const now = new Date().toISOString();
+    const ticket = {
+      id: "sup_" + crypto.randomBytes(9).toString("hex"),
+      clientId: client.id,
+      clientName: client.name || client.id,
+      category,
+      subject,
+      message,
+      status: "new",
+      createdAt: now,
+      updatedAt: now
+    };
+    const tickets = loadSupportTickets();
+    tickets.push(ticket);
+    saveSupportTickets(tickets);
+    return send(res, 201, supportTicketView(ticket));
+  }
+
   if (url.pathname === "/index.html" && req.method === "GET") {
     res.writeHead(303, { location: "/master", "cache-control": "no-store", "content-length": "0" });
     return res.end();
@@ -1282,7 +1343,7 @@ const server = http.createServer(async (req, res) => {
       id,
       name: body.name || "Novo cliente",
       niche: body.niche || "Outro",
-      instagram: body.instagram || "",
+      instagram: "",
       theme: body.theme || "green-black",
       primaryColor: body.primaryColor || "#18c96e",
       secondaryColor: body.secondaryColor || "#07140c",
@@ -1367,6 +1428,74 @@ const server = http.createServer(async (req, res) => {
     }
     saveClients(clients);
     return send(res, 200, client);
+  }
+
+  const deleteClientMatch = url.pathname.match(/^\/api\/clients\/([^/]+)$/);
+  if (deleteClientMatch && req.method === "DELETE") {
+    const clientId = deleteClientMatch[1];
+    if (clientId === "ragnar-one") return send(res, 409, { error: "protected_pilot_client" });
+
+    const clients = loadClients();
+    const client = clients.find(item => item.id === clientId);
+    if (!client) return send(res, 404, { error: "not_found" });
+    saveClients(clients.filter(item => item.id !== clientId));
+
+    const users = loadPortalUsers();
+    if (Object.prototype.hasOwnProperty.call(users, clientId)) {
+      delete users[clientId];
+      savePortalUsers(users);
+    }
+
+    const connections = loadConnections();
+    if (Object.prototype.hasOwnProperty.call(connections, clientId)) {
+      delete connections[clientId];
+      saveConnections(connections);
+    }
+
+    const oauthStates = loadOauthStates();
+    let oauthChanged = false;
+    for (const [state, record] of Object.entries(oauthStates)) {
+      if (record?.clientId === clientId) {
+        delete oauthStates[state];
+        oauthChanged = true;
+      }
+    }
+    if (oauthChanged) saveOauthStates(oauthStates);
+
+    saveSupportTickets(loadSupportTickets().filter(item => item.clientId !== clientId));
+
+    for (const [token, record] of portalSessions.entries()) {
+      if (record?.clientId === clientId) portalSessions.delete(token);
+    }
+
+    return send(res, 200, { ok: true, deletedClientId: clientId });
+  }
+
+  if (url.pathname === "/api/master/support" && req.method === "GET") {
+    const tickets = loadSupportTickets()
+      .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
+      .map(supportTicketView);
+    return send(res, 200, {
+      unreadCount: tickets.filter(item => item.status === "new").length,
+      openCount: tickets.filter(item => item.status !== "resolved").length,
+      tickets
+    });
+  }
+
+  const supportTicketMatch = url.pathname.match(/^\/api\/master\/support\/([^/]+)$/);
+  if (supportTicketMatch && req.method === "PATCH") {
+    const body = await readBody(req);
+    const allowed = new Set(["new", "read", "resolved"]);
+    const nextStatus = String(body.status || "");
+    if (!allowed.has(nextStatus)) return send(res, 400, { error: "invalid_status" });
+
+    const tickets = loadSupportTickets();
+    const ticket = tickets.find(item => item.id === supportTicketMatch[1]);
+    if (!ticket) return send(res, 404, { error: "not_found" });
+    ticket.status = nextStatus;
+    ticket.updatedAt = new Date().toISOString();
+    saveSupportTickets(tickets);
+    return send(res, 200, supportTicketView(ticket));
   }
 
   if (url.pathname === "/api/master/openai" && req.method === "GET") {
