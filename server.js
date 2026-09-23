@@ -705,17 +705,20 @@ async function runPublisherAgent(client, options = {}) {
   }
   if (changed || published || failed) savePostLedger(ledger);
   const status = failed ? "warning" : "success";
-  recordAgentExecution(client, "PUBLISHER", {
-    function: "queue-sweep",
-    trigger: options.trigger,
-    startedAt,
-    status,
-    model: "local-rules+meta-api",
-    quantity: candidates.length,
-    costUsd: 0,
-    message: published + " publicada(s), " + awaitingApproval + " aguardando aprovação, " + awaitingMedia + " aguardando mídia, " + failed + " falha(s).",
-    metadata: { published, failed, awaitingApproval, awaitingMedia }
-  });
+  const shouldLog = candidates.length > 0 || options.trigger !== "scheduler";
+  if (shouldLog) {
+    recordAgentExecution(client, "PUBLISHER", {
+      function: "queue-sweep",
+      trigger: options.trigger,
+      startedAt,
+      status,
+      model: "local-rules+meta-api",
+      quantity: candidates.length,
+      costUsd: 0,
+      message: published + " publicada(s), " + awaitingApproval + " aguardando aprovação, " + awaitingMedia + " aguardando mídia, " + failed + " falha(s).",
+      metadata: { published, failed, awaitingApproval, awaitingMedia }
+    });
+  }
   return { published, failed, awaitingApproval, awaitingMedia };
 }
 
@@ -2033,9 +2036,11 @@ function portalPostView(row) {
     mediaId: row.mediaId || "",
     error: row.error || "",
     revisionRequest: row.revisionRequest || "",
+    title: row.title || "",
     caption: row.caption || "",
     imageUrl: row.imageUrl || "",
     source: row.source || "",
+    retryCount: Math.max(0, Number(row.retryCount || 0)),
     updatedAt: row.updatedAt || row.createdAt || null
   };
 }
