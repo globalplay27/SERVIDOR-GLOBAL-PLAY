@@ -1,4 +1,4 @@
-const state = { clients: [], auth: sessionStorage.getItem("nexus-auth"), portalClientId: null, supportTickets: [], supportFilter: "all", postLedger: { posts: [], byClient: [], totalCostUsd: 0, totalPosts: 0, published: 0, failed: 0 }, postClientFilter: "" };
+const state = { clients: [], auth: sessionStorage.getItem("nexus-auth"), portalClientId: null, supportTickets: [], supportFilter: "all", postLedger: { posts: [], byClient: [], totalCostUsd: 0, totalPosts: 0, published: 0, failed: 0 }, postClientFilter: "", leadData: { summary:{total:0,hot:0,warm:0,cold:0,needsHuman:0}, leads:[], byClient:[] }, leadClientFilter:"", videoData:{jobs:[]}, videoClientFilter:"" };
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
 
@@ -23,7 +23,7 @@ function aiModeLabel(mode) {
 function render() {
   const clients = state.clients;
   const online = clients.filter(client => client.status === "online").length;
-  const totals = clients.reduce((sum, client) => ({ total: sum.total + (client.leads?.total || 0), hot: sum.hot + (client.leads?.hot || 0), warm: sum.warm + (client.leads?.warm || 0) }), { total: 0, hot: 0, warm: 0 });
+  const totals = state.leadData?.summary || { total:0, hot:0, warm:0, cold:0, needsHuman:0 };
   const alerts = clients.filter(client => Math.max(client.usage?.openaiPercent || 0, client.usage?.railwayPercent || 0) >= 80).length;
   $("#metric-clients").textContent = clients.length;
   $("#metric-online").textContent = online;
@@ -50,11 +50,15 @@ function render() {
     const ragnar = client.id === "ragnar-one";
     const mode = ragnar ? "Conta própria" : "NEXUS GERENCIADA";
     const extra = !ragnar ? `<br><small>${Number(client.aiImagesUsed||0)} imagens IA usadas</small>` : "";
-    const action = ragnar
+    const protect = ragnar
       ? `<span class="protected-client">PILOTO PROTEGIDO</span>`
       : client.ownerAccount
         ? `<span class="protected-client">CONTA PRINCIPAL</span>`
-        : `<button type="button" class="small-danger" data-delete-client="${escapeHtml(client.id)}" data-client-name="${escapeHtml(client.name)}">Excluir</button>`;
+        : "";
+    const remove = (!ragnar && !client.ownerAccount)
+      ? `<button type="button" class="small-danger" data-delete-client="${escapeHtml(client.id)}" data-client-name="${escapeHtml(client.name)}">Excluir</button>`
+      : "";
+    const action = `<div class="client-action-stack"><button type="button" class="small-primary" data-assume-client="${escapeHtml(client.id)}">Assumir painel</button>${remove}${protect}</div>`;
     return `<tr><td><strong>${escapeHtml(client.name)}</strong><br><small>${escapeHtml(client.niche || "Outro")}</small></td><td>${badge(client.status === "online" ? "ONLINE" : "SETUP", client.status === "online")}</td><td>${escapeHtml(client.instagram || "Aguardando conexão")}</td><td>${client.odin ? badge("ATIVO") : badge("DESLIGADO", false)}</td><td>${(client.postTimes || []).join(" · ") || "—"}</td><td><strong>${mode}</strong>${extra}</td><td>${action}</td></tr>`;
   }).join("");
   renderAgentProfiles();
@@ -247,22 +251,133 @@ async function loadPostLedger() {
   }
 }
 
+function leadTempMeta(value){
+  const map={hot:["QUENTE","hot"],warm:["MORNO","warm"],cold:["FRIO","cold"]};
+  return map[value]||["FRIO","cold"];
+}
+function leadDate(value){
+  if(!value)return"—";
+  const date=typeof value==="number"?new Date(value*1000):new Date(value);
+  try{return new Intl.DateTimeFormat("pt-BR",{timeZone:"America/Sao_Paulo",dateStyle:"short",timeStyle:"short"}).format(date);}catch{return"—";}
+}
+function renderMasterLeads(){
+  const data=state.leadData||{},summary=data.summary||{};
+  if($("#funnel-total"))$("#funnel-total").textContent=Number(summary.total||0);
+  if($("#funnel-hot"))$("#funnel-hot").textContent=Number(summary.hot||0);
+  if($("#funnel-warm"))$("#funnel-warm").textContent=Number(summary.warm||0);
+  if($("#funnel-cold"))$("#funnel-cold").textContent=Number(summary.cold||0);
+  if($("#funnel-human"))$("#funnel-human").textContent=Number(summary.needsHuman||0);
+  const filter=$("#master-lead-client-filter");
+  if(filter){
+    const previous=state.leadClientFilter||filter.value||"";
+    filter.innerHTML='<option value="">Todos</option>'+state.clients.map(client=>`<option value="${escapeHtml(client.id)}">${escapeHtml(client.name)} · ${escapeHtml(client.instagram||"sem Instagram")}</option>`).join("");
+    filter.value=state.clients.some(c=>c.id===previous)?previous:"";state.leadClientFilter=filter.value;
+  }
+  const body=$("#master-leads-body");if(!body)return;
+  let leads=Array.isArray(data.leads)?data.leads:[];
+  if(state.leadClientFilter)leads=leads.filter(lead=>lead.clientId===state.leadClientFilter);
+  body.innerHTML=leads.length?leads.map(lead=>{
+    const [label,cls]=leadTempMeta(lead.temperature);
+    const handle=lead.instagramUsername?"@"+escapeHtml(String(lead.instagramUsername).replace(/^@/,"")):(lead.instagramUserId?"ID …"+escapeHtml(String(lead.instagramUserId).slice(-6)):"Sem @");
+    return `<tr><td><strong>${escapeHtml(lead.clientName||lead.clientId)}</strong></td><td>${handle}</td><td><span class="master-lead-temp ${cls}">${label}</span></td><td><strong>${Number(lead.score||0)}</strong></td><td>${escapeHtml(lead.intent||lead.triggerKeyword||"—")}</td><td>${escapeHtml(lead.stage||"—")}</td><td>${lead.needsHuman?'<span class="human-flag">SIM</span>':"não"}</td><td>${leadDate(lead.updatedAt||lead.lastContactAt)}</td></tr>`;
+  }).join(""):'<tr><td colspan="8">Nenhum lead captado para este filtro.</td></tr>';
+}
+async function loadMasterLeads(){
+  try{state.leadData=await api("/api/master/leads");renderMasterLeads();render();}
+  catch(error){console.error(error);}
+}
+
+function masterVideoStatus(job){
+  const labels={queued:"RECEBIDO",transcribing:"TRANSCREVENDO",selecting:"SELECIONANDO",cutting:"CRIANDO CORTES",ready:"PRONTO",failed:"FALHOU"};
+  return labels[job.status]||String(job.status||"RECEBIDO").toUpperCase();
+}
+function renderMasterVideos(){
+  const root=$("#master-video-jobs");if(!root)return;
+  const filter=$("#master-video-client-filter");
+  if(filter){
+    const previous=state.videoClientFilter||filter.value||"";
+    filter.innerHTML='<option value="">Todos</option>'+state.clients.map(client=>`<option value="${escapeHtml(client.id)}">${escapeHtml(client.name)}</option>`).join("");
+    filter.value=state.clients.some(c=>c.id===previous)?previous:"";state.videoClientFilter=filter.value;
+  }
+  let jobs=Array.isArray(state.videoData?.jobs)?state.videoData.jobs:[];
+  if(state.videoClientFilter)jobs=jobs.filter(job=>job.clientId===state.videoClientFilter);
+  if(!jobs.length){root.innerHTML='<div class="empty-support"><strong>Nenhum vídeo</strong><span>Os uploads feitos pelos clientes aparecerão aqui.</span></div>';return;}
+  root.innerHTML=jobs.map(job=>{
+    const clips=Array.isArray(job.clips)?job.clips:[];
+    return `<article class="master-video-job" data-master-video-job="${escapeHtml(job.id)}">
+      <div class="master-video-head"><div><span class="profile-kicker">${escapeHtml(job.clientName||job.clientId)}</span><h3>${escapeHtml(job.filename||"Vídeo")}</h3><small>${masterVideoStatus(job)} · ${Number(job.progress||0)}% · custo IA US$ ${Number(job.analysisCostUsd||0).toFixed(4)}</small></div><button type="button" class="ghost" data-assume-client="${escapeHtml(job.clientId)}">Abrir painel do cliente</button></div>
+      <div class="bar"><i style="width:${Math.max(2,Math.min(100,Number(job.progress||0)))}%"></i></div>
+      ${clips.length?`<div class="master-video-clips">${clips.map(clip=>`<article class="master-video-clip" data-master-video-clip="${escapeHtml(clip.id)}">
+        <video controls preload="metadata" src="${escapeHtml(clip.previewUrl)}"></video>
+        <div><strong>${escapeHtml(clip.title||"Corte")}</strong><small>${escapeHtml(clip.reason||"")}</small><p>${escapeHtml(clip.transcript||"")}</p>
+        <div class="master-video-state"><span>${escapeHtml(clip.approvalStatus||"pending")}</span><span>${escapeHtml(clip.publishStatus||"fora da agenda")}</span></div>
+        <div class="master-video-actions"><button data-master-video-approve="${escapeHtml(job.clientId)}|${escapeHtml(job.id)}|${escapeHtml(clip.id)}">Aprovar</button><button class="danger" data-master-video-reject="${escapeHtml(job.clientId)}|${escapeHtml(job.id)}|${escapeHtml(clip.id)}">Reprovar</button><button class="ghost" data-master-video-edit-toggle>Editar</button></div>
+        <div class="master-video-edit" hidden><label>Início<input type="number" step="0.1" data-master-video-start value="${Number(clip.start||0).toFixed(1)}"></label><label>Fim<input type="number" step="0.1" data-master-video-end value="${Number(clip.end||0).toFixed(1)}"></label><label>Título<input data-master-video-title value="${escapeHtml(clip.title||"")}"></label><label>Legenda<textarea data-master-video-caption rows="3">${escapeHtml(clip.caption||clip.title||"")}</textarea></label><button data-master-video-adjust="${escapeHtml(job.clientId)}|${escapeHtml(job.id)}|${escapeHtml(clip.id)}">Salvar corte</button></div>
+        ${clip.approvalStatus==="approved"?`<div class="master-video-schedule"><label>Agendar<input type="datetime-local" data-master-video-time value=""></label><label>Legenda<input data-master-video-publish-caption value="${escapeHtml(clip.caption||clip.title||"")}"></label><button data-master-video-schedule="${escapeHtml(job.clientId)}|${escapeHtml(job.id)}|${escapeHtml(clip.id)}">Agendar separado</button><button data-master-video-publish="${escapeHtml(job.clientId)}|${escapeHtml(job.id)}|${escapeHtml(clip.id)}">Publicar agora</button></div>`:""}
+        <span class="master-video-message" data-master-video-message></span></div>
+      </article>`).join("")}</div>`:`<p class="muted">${escapeHtml(job.message||"Processando vídeo…")}</p>`}
+    </article>`;
+  }).join("");
+}
+async function loadMasterVideos(){
+  try{state.videoData=await api("/api/master/videos");renderMasterVideos();}
+  catch(error){console.error(error);}
+}
+async function assumeClient(clientId){
+  const tab=window.open("about:blank","_blank");
+  try{
+    const result=await api("/api/master/impersonate/"+encodeURIComponent(clientId),{method:"POST",body:"{}"});
+    if(tab)tab.location.href=result.url||"/portal.html?assumed=1";else location.href=result.url||"/portal.html?assumed=1";
+  }catch(error){if(tab)tab.close();alert("Não foi possível assumir o painel deste cliente.");}
+}
+function masterVideoParts(button){
+  const raw=String(button.dataset.masterVideoApprove||button.dataset.masterVideoReject||button.dataset.masterVideoAdjust||button.dataset.masterVideoSchedule||button.dataset.masterVideoPublish||"");
+  const [clientId,jobId,clipId]=raw.split("|");
+  return{clientId,jobId,clipId,card:button.closest("[data-master-video-clip]")};
+}
+function masterVideoMessage(card,text,kind=""){const el=card?.querySelector("[data-master-video-message]");if(el){el.textContent=text;el.className="master-video-message "+kind;}}
+async function masterVideoApproval(button,status){
+  const p=masterVideoParts(button);button.disabled=true;
+  try{await api(`/api/master/videos/${encodeURIComponent(p.clientId)}/${encodeURIComponent(p.jobId)}/${encodeURIComponent(p.clipId)}/approval`,{method:"POST",body:JSON.stringify({status})});masterVideoMessage(p.card,status==="approved"?"Aprovado.":"Reprovado.","ok");await loadMasterVideos();}
+  catch(error){masterVideoMessage(p.card,error.message,"error");}finally{button.disabled=false;}
+}
+async function masterVideoAdjust(button){
+  const p=masterVideoParts(button),card=p.card;button.disabled=true;
+  const body={start:Number(card.querySelector("[data-master-video-start]").value),end:Number(card.querySelector("[data-master-video-end]").value),title:card.querySelector("[data-master-video-title]").value,caption:card.querySelector("[data-master-video-caption]").value};
+  try{await api(`/api/master/videos/${encodeURIComponent(p.clientId)}/${encodeURIComponent(p.jobId)}/${encodeURIComponent(p.clipId)}/adjust`,{method:"POST",body:JSON.stringify(body)});masterVideoMessage(card,"Corte atualizado; precisa de nova aprovação.","ok");await loadMasterVideos();}
+  catch(error){masterVideoMessage(card,error.message,"error");}finally{button.disabled=false;}
+}
+async function masterVideoSchedule(button){
+  const p=masterVideoParts(button),card=p.card,local=card.querySelector("[data-master-video-time]")?.value||"",caption=card.querySelector("[data-master-video-publish-caption]")?.value||"";
+  if(!local){masterVideoMessage(card,"Escolha data e horário.","error");return;}
+  const when=new Date(local);if(!Number.isFinite(when.getTime()))return;
+  button.disabled=true;try{await api(`/api/master/videos/${encodeURIComponent(p.clientId)}/${encodeURIComponent(p.jobId)}/${encodeURIComponent(p.clipId)}/schedule`,{method:"POST",body:JSON.stringify({scheduledFor:when.toISOString(),caption})});masterVideoMessage(card,"Agendado fora da agenda automática.","ok");await loadMasterVideos();}catch(error){masterVideoMessage(card,error.message,"error");}finally{button.disabled=false;}
+}
+async function masterVideoPublish(button){
+  const p=masterVideoParts(button),card=p.card,caption=card.querySelector("[data-master-video-publish-caption]")?.value||"";
+  button.disabled=true;button.textContent="Publicando…";try{await api(`/api/master/videos/${encodeURIComponent(p.clientId)}/${encodeURIComponent(p.jobId)}/${encodeURIComponent(p.clipId)}/publish`,{method:"POST",body:JSON.stringify({caption})});masterVideoMessage(card,"Publicado com sucesso.","ok");await loadMasterVideos();}catch(error){masterVideoMessage(card,error.message,"error");}finally{button.disabled=false;button.textContent="Publicar agora";}
+}
+
 function showView(id) {
   $$(".view").forEach(view => view.classList.toggle("active", view.id === id));
   $$(".nav-item").forEach(item => item.classList.toggle("active", item.dataset.view === id));
-  const titles = { dashboard: "Visão geral", clients: "Clientes", posts: "Postagens & custos", notifications: "Notificações", portal: "Portal do cliente", odin: "Odin & Leads", onboarding: "Novo cliente", settings: "Integrações" };
+  const titles = { dashboard: "Visão geral", clients: "Clientes", posts: "Postagens & custos", videos: "Vídeos", notifications: "Notificações", portal: "Portal do cliente", odin: "Odin & Leads", onboarding: "Novo cliente", settings: "Integrações" };
   $("#page-title").textContent = titles[id] || "NEXUS AI";
 }
 
 async function load() {
   try {
-    const [clients, support, posts] = await Promise.all([api("/api/clients"), api("/api/master/support"), api("/api/master/posts")]);
+    const [clients, support, posts, leads, videos] = await Promise.all([api("/api/clients"), api("/api/master/support"), api("/api/master/posts"), api("/api/master/leads"), api("/api/master/videos")]);
     state.clients = clients;
     state.supportTickets = support.tickets || [];
     state.postLedger = posts || state.postLedger;
+    state.leadData = leads || state.leadData;
+    state.videoData = videos || state.videoData;
     render();
     renderSupportNotifications(support);
     renderPostLedger();
+    renderMasterLeads();
+    renderMasterVideos();
   } catch (error) { console.error(error); }
 }
 
@@ -428,6 +543,8 @@ $$('[data-view]').forEach(button => button.addEventListener("click", async () =>
   showView(button.dataset.view);
   if (button.dataset.view === "settings") loadIntegrations();
   if (button.dataset.view === "posts") loadPostLedger();
+  if (button.dataset.view === "videos") loadMasterVideos();
+  if (button.dataset.view === "odin") loadMasterLeads();
   if (button.dataset.view === "notifications") {
     try {
       const support = await api("/api/master/support");
@@ -439,6 +556,9 @@ $$('[data-view]').forEach(button => button.addEventListener("click", async () =>
 $$('[data-go]').forEach(button => button.addEventListener("click", () => showView(button.dataset.go)));
 $("#refresh").addEventListener("click", load);
 $("#portal-client").addEventListener("change", event => { state.portalClientId = event.target.value; renderPortalSelector(); });
+const masterLeadFilter=$("#master-lead-client-filter");if(masterLeadFilter)masterLeadFilter.addEventListener("change",event=>{state.leadClientFilter=event.target.value||"";renderMasterLeads();});
+const masterVideoFilter=$("#master-video-client-filter");if(masterVideoFilter)masterVideoFilter.addEventListener("change",event=>{state.videoClientFilter=event.target.value||"";renderMasterVideos();});
+const assumeSelected=$("#assume-selected-client");if(assumeSelected)assumeSelected.addEventListener("click",()=>{if(state.portalClientId)assumeClient(state.portalClientId);});
 const postClientFilter = $("#post-client-filter");
 if (postClientFilter) postClientFilter.addEventListener("change", event => {
   state.postClientFilter = event.target.value || "";
@@ -471,6 +591,13 @@ $("select[name=theme]").addEventListener("change", event => {
 });
 
 document.addEventListener("click", async event => {
+  const assumeButton=event.target.closest("[data-assume-client]");if(assumeButton){assumeClient(assumeButton.dataset.assumeClient);return;}
+  const mApprove=event.target.closest("[data-master-video-approve]");if(mApprove){masterVideoApproval(mApprove,"approved");return;}
+  const mReject=event.target.closest("[data-master-video-reject]");if(mReject){masterVideoApproval(mReject,"rejected");return;}
+  const mToggle=event.target.closest("[data-master-video-edit-toggle]");if(mToggle){const p=mToggle.closest("[data-master-video-clip]")?.querySelector(".master-video-edit");if(p)p.hidden=!p.hidden;return;}
+  const mAdjust=event.target.closest("[data-master-video-adjust]");if(mAdjust){masterVideoAdjust(mAdjust);return;}
+  const mSchedule=event.target.closest("[data-master-video-schedule]");if(mSchedule){masterVideoSchedule(mSchedule);return;}
+  const mPublish=event.target.closest("[data-master-video-publish]");if(mPublish){masterVideoPublish(mPublish);return;}
   const deleteButton = event.target.closest("[data-delete-client]");
   if (deleteButton) {
     const clientId = deleteButton.dataset.deleteClient;
