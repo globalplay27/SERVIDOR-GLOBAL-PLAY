@@ -1353,6 +1353,98 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  if (url.pathname === "/api/portal/instagram/publish-test" && req.method === "POST") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+
+    const connection = directConnection(client.id, "meta");
+    const accessToken = decryptSecret(connection?.accessToken || "");
+    const igUserId = String(connection?.igUserId || "").trim();
+    if (!accessToken || !igUserId) {
+      return send(res, 409, { error: "instagram_not_connected" });
+    }
+
+    const body = await readBody(req);
+    const imageUrl = String(body.imageUrl || "").trim();
+    const caption = String(body.caption || "").trim().slice(0, 2200);
+    if (!/^https:\/\//i.test(imageUrl)) return send(res, 400, { error: "invalid_image_url" });
+    if (!caption) return send(res, 400, { error: "caption_required" });
+
+    const graphRequest = async (pathName, method = "GET", form = null) => {
+      const endpoint = "https://graph.instagram.com/" + String(pathName).replace(/^\/+/, "");
+      const options = {
+        method,
+        headers: {
+          authorization: "Bearer " + accessToken,
+          "user-agent": "NEXUS-AI/1.0"
+        }
+      };
+      if (form) {
+        options.headers["content-type"] = "application/x-www-form-urlencoded";
+        options.body = new URLSearchParams(form);
+      }
+      const response = await fetch(endpoint, options);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const metaError = payload?.error || {};
+        const err = new Error(String(metaError.message || "instagram_api_failed"));
+        err.code = metaError.code || response.status;
+        err.type = metaError.type || "";
+        throw err;
+      }
+      return payload;
+    };
+
+    try {
+      const created = await graphRequest(igUserId + "/media", "POST", {
+        image_url: imageUrl,
+        caption
+      });
+      const containerId = String(created?.id || "");
+      if (!containerId) throw new Error("instagram_container_missing");
+
+      const deadline = Date.now() + 90000;
+      let lastStatus = "";
+      while (Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        const status = await graphRequest(containerId + "?fields=status_code,status");
+        const code = String(status?.status_code || "").toUpperCase();
+        lastStatus = String(status?.status || code || "");
+        if (code === "FINISHED") {
+          const published = await graphRequest(igUserId + "/media_publish", "POST", {
+            creation_id: containerId
+          });
+          const mediaId = String(published?.id || "");
+          let permalink = "";
+          if (mediaId) {
+            try {
+              const media = await graphRequest(mediaId + "?fields=permalink");
+              permalink = String(media?.permalink || "");
+            } catch {}
+          }
+          return send(res, 200, {
+            ok: true,
+            username: connection?.meta?.username || "",
+            mediaId,
+            containerId,
+            permalink
+          });
+        }
+        if (code === "ERROR" || code === "EXPIRED") {
+          return send(res, 400, { error: "instagram_media_processing_failed", status: lastStatus });
+        }
+      }
+      return send(res, 504, { error: "instagram_media_processing_timeout", status: lastStatus });
+    } catch (error) {
+      return send(res, 400, {
+        error: "instagram_publish_failed",
+        code: error?.code || "",
+        type: error?.type || "",
+        message: String(error?.message || "Falha ao publicar no Instagram").slice(0, 500)
+      });
+    }
+  }
+
   if (url.pathname === "/api/portal/instagram/start" && req.method === "GET") {
     const client = portalClientForRequest(req);
     if (!client) return send(res, 401, { error: "unauthorized" });
