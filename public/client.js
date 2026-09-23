@@ -1260,6 +1260,51 @@ async function resumeCookieSession(){
     loadAgentTeam();
   }catch{}
 }
+
+/* ===== NEXUS Remember Access ===== */
+const loginForm=$("#login-form");
+const loginUsername=$("#login-username");
+const loginPassword=$("#login-password");
+const rememberAccess=$("#remember-access");
+const toggleLoginPassword=$("#toggle-login-password");
+
+try{
+  const remembered=localStorage.getItem("nexus_remember_access")==="1";
+  const savedUsername=localStorage.getItem("nexus_remember_username")||"";
+  if(rememberAccess)rememberAccess.checked=remembered;
+  if(loginUsername&&remembered&&savedUsername&&!loginUsername.value)loginUsername.value=savedUsername;
+}catch{}
+
+if(toggleLoginPassword&&loginPassword){
+  toggleLoginPassword.addEventListener("click",()=>{
+    const showing=loginPassword.type==="text";
+    loginPassword.type=showing?"password":"text";
+    toggleLoginPassword.setAttribute("aria-label",showing?"Mostrar senha":"Ocultar senha");
+    toggleLoginPassword.title=showing?"Mostrar senha":"Ocultar senha";
+  });
+}
+
+if(loginForm){
+  loginForm.addEventListener("submit",()=>{
+    const remember=Boolean(rememberAccess?.checked);
+    try{
+      if(remember){
+        localStorage.setItem("nexus_remember_access","1");
+        localStorage.setItem("nexus_remember_username",String(loginUsername?.value||"").trim());
+      }else{
+        localStorage.removeItem("nexus_remember_access");
+        localStorage.removeItem("nexus_remember_username");
+      }
+    }catch{}
+    if(remember && "credentials" in navigator && "PasswordCredential" in window){
+      try{
+        const credential=new PasswordCredential(loginForm);
+        navigator.credentials.store(credential).catch(()=>{});
+      }catch{}
+    }
+  });
+}
+
 resumeCookieSession();
 setInterval(()=>{
   const view=$("#view-videos");if(!view||view.hidden)return;
