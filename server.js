@@ -329,6 +329,30 @@ function masterOpenAIRecord() {
   return loadMasterIntegrations()?.openai || {};
 }
 
+function masterInstagramRecord() {
+  return loadMasterIntegrations()?.instagram || {};
+}
+
+function masterInstagramAppId() {
+  return String(process.env.INSTAGRAM_APP_ID || masterInstagramRecord().appId || "").trim();
+}
+
+function masterInstagramAppSecret() {
+  return String(process.env.INSTAGRAM_APP_SECRET || "").trim()
+    || decryptSecret(masterInstagramRecord().appSecret || "");
+}
+
+function publicOrigin(req) {
+  const host = String(process.env.RAILWAY_PUBLIC_DOMAIN || req.headers.host || "servidor-global-play-production.up.railway.app")
+    .replace(/^https?:\/\//, "")
+    .replace(/\/$/, "");
+  return "https://" + host;
+}
+
+function instagramRedirectUri(req) {
+  return publicOrigin(req) + "/api/oauth/instagram/callback";
+}
+
 function masterOpenAIAdminKey() {
   return String(process.env.OPENAI_ADMIN_KEY || "").trim()
     || decryptSecret(masterOpenAIRecord().adminKey || "");
@@ -1271,6 +1295,142 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  if (url.pathname === "/api/portal/instagram/start" && req.method === "GET") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+
+    const appId = masterInstagramAppId();
+    const appSecret = masterInstagramAppSecret();
+    if (!appId || !appSecret) {
+      return send(res, 503, {
+        error: "instagram_nexus_not_configured",
+        message: "A conexão do Instagram ainda precisa ser ativada pelo administrador NEXUS."
+      });
+    }
+
+    const state = "ig_" + crypto.randomBytes(24).toString("base64url");
+    const states = loadOauthStates();
+    const now = Date.now();
+    for (const [key, value] of Object.entries(states)) {
+      if (!value?.createdAt || now - Number(value.createdAt) > 15 * 60 * 1000) delete states[key];
+    }
+    states[state] = { provider: "instagram", clientId: client.id, createdAt: now };
+    saveOauthStates(states);
+
+    const authorize = new URL("https://www.instagram.com/oauth/authorize");
+    authorize.searchParams.set("client_id", appId);
+    authorize.searchParams.set("redirect_uri", instagramRedirectUri(req));
+    authorize.searchParams.set("response_type", "code");
+    authorize.searchParams.set(
+      "scope",
+      "instagram_business_basic,instagram_business_content_publish,instagram_business_manage_messages,instagram_business_manage_comments"
+    );
+    authorize.searchParams.set("state", state);
+    authorize.searchParams.set("force_reauth", "true");
+    authorize.searchParams.set("enable_fb_login", "0");
+    return send(res, 200, { url: authorize.toString() });
+  }
+
+  if (url.pathname === "/api/oauth/instagram/callback" && req.method === "GET") {
+    const code = String(url.searchParams.get("code") || "").split("#")[0];
+    const state = String(url.searchParams.get("state") || "");
+    const oauthError = String(url.searchParams.get("error") || "");
+    const states = loadOauthStates();
+    const saved = states[state];
+
+    const oauthPage = (ok, message) => send(
+      res,
+      ok ? 200 : 400,
+      `<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>NEXUS AI</title><body style="margin:0;background:#050807;color:#f4f8f5;font-family:system-ui;display:grid;place-items:center;min-height:100vh"><div style="max-width:520px;padding:30px;border:1px solid #173549;border-radius:20px;background:#071018;text-align:center"><h1 style="margin-top:0;color:${ok ? "#5dd3ff" : "#ff9898"}">${ok ? "Instagram conectado" : "Falha na conexão"}</h1><p style="color:#aab9c2;line-height:1.5">${message}</p><p>Você pode fechar esta janela e voltar ao NEXUS AI.</p></div><script>try{if(window.opener)window.opener.postMessage({type:"nexus-instagram-oauth",ok:${ok ? "true" : "false"}},"*");}catch(e){}setTimeout(()=>window.close(),900);<\/script></body></html>`,
+      "text/html; charset=utf-8"
+    );
+
+    if (oauthError) return oauthPage(false, "A autorização foi cancelada ou recusada.");
+    if (!code || !state || !saved || saved.provider !== "instagram" || Date.now() - Number(saved.createdAt || 0) > 15 * 60 * 1000) {
+      return oauthPage(false, "Esta autorização expirou. Inicie novamente pelo painel.");
+    }
+
+    try {
+      const appId = masterInstagramAppId();
+      const appSecret = masterInstagramAppSecret();
+      if (!appId || !appSecret) throw new Error("instagram_nexus_not_configured");
+
+      const tokenBody = new URLSearchParams({
+        client_id: appId,
+        client_secret: appSecret,
+        grant_type: "authorization_code",
+        redirect_uri: instagramRedirectUri(req),
+        code
+      });
+      const tokenResponse = await fetch("https://api.instagram.com/oauth/access_token", {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: tokenBody
+      });
+      const tokenPayload = await tokenResponse.json().catch(() => ({}));
+      if (!tokenResponse.ok || !tokenPayload.access_token) {
+        throw new Error("instagram_token_exchange_failed");
+      }
+
+      let accessToken = String(tokenPayload.access_token);
+      let expiresIn = Number(tokenPayload.expires_in || 3600);
+
+      try {
+        const longUrl = new URL("https://graph.instagram.com/access_token");
+        longUrl.searchParams.set("grant_type", "ig_exchange_token");
+        longUrl.searchParams.set("client_secret", appSecret);
+        longUrl.searchParams.set("access_token", accessToken);
+        const longResponse = await fetch(longUrl);
+        if (longResponse.ok) {
+          const longPayload = await longResponse.json();
+          if (longPayload.access_token) accessToken = String(longPayload.access_token);
+          if (longPayload.expires_in) expiresIn = Number(longPayload.expires_in);
+        }
+      } catch {}
+
+      const meUrl = new URL("https://graph.instagram.com/me");
+      meUrl.searchParams.set("fields", "id,username,account_type");
+      meUrl.searchParams.set("access_token", accessToken);
+      const meResponse = await fetch(meUrl);
+      const profile = await meResponse.json().catch(() => ({}));
+      if (!meResponse.ok || !profile.id) throw new Error("instagram_profile_failed");
+
+      const username = String(profile.username || "").replace(/^@/, "");
+      saveProviderConnection(saved.clientId, "meta", {
+        accessToken: encryptSecret(accessToken),
+        expiresAt: Date.now() + Math.max(3600, expiresIn) * 1000,
+        igUserId: String(profile.id || tokenPayload.user_id || ""),
+        accountType: String(profile.account_type || ""),
+        scopes: [
+          "instagram_business_basic",
+          "instagram_business_content_publish",
+          "instagram_business_manage_messages",
+          "instagram_business_manage_comments"
+        ],
+        meta: {
+          username,
+          label: username ? "@" + username : "Instagram conectado"
+        }
+      });
+
+      const clients = loadClients();
+      const client = clients.find(item => item.id === saved.clientId);
+      if (!client) throw new Error("client_not_found");
+      client.instagram = username ? "@" + username : "Instagram conectado";
+      client.meta = "connected";
+      client.onboarding = client.onboarding && typeof client.onboarding === "object" ? client.onboarding : {};
+      client.onboarding.instagram = true;
+      saveClients(clients);
+
+      delete states[state];
+      saveOauthStates(states);
+      return oauthPage(true, username ? "Conta @" + username + " autorizada com sucesso." : "Conta autorizada com sucesso.");
+    } catch (error) {
+      console.warn("Instagram OAuth callback failed:", error.message);
+      return oauthPage(false, "Não foi possível concluir a autorização do Instagram.");
+    }
+  }
+
   if (url.pathname === "/api/portal/support" && req.method === "GET") {
     const client = portalClientForRequest(req);
     if (!client) return send(res, 401, { error: "unauthorized" });
@@ -1330,14 +1490,8 @@ const server = http.createServer(async (req, res) => {
     if (!id) id = crypto.randomUUID();
     if (clients.some(c => c.id === id)) id += "-" + String(Date.now()).slice(-5);
 
-    const aiModes = new Set(["economy", "hybrid", "own-key"]);
-    const aiMode = aiModes.has(String(body.aiMode || "")) ? String(body.aiMode) : "economy";
-    const requestedAiLimit = Number(body.aiMonthlyImageLimit);
-    const aiMonthlyImageLimit = aiMode === "economy"
-      ? 0
-      : aiMode === "hybrid"
-        ? (Number.isFinite(requestedAiLimit) && requestedAiLimit >= 0 ? Math.min(500, Math.floor(requestedAiLimit)) : 10)
-        : 0;
+    const aiMode = "hybrid";
+    const aiMonthlyImageLimit = 10;
 
     const client = {
       id,
@@ -1350,7 +1504,7 @@ const server = http.createServer(async (req, res) => {
       status: "setup",
       github: "managed",
       railway: "managed",
-      openai: aiMode === "own-key" ? "pending" : "managed",
+      openai: "managed",
       meta: "pending",
       odin: true,
       postTimes: ["09:00", "12:00", "18:00"],
@@ -1362,7 +1516,7 @@ const server = http.createServer(async (req, res) => {
       aiUsageMonth: new Date().toISOString().slice(0, 7),
       managedInfrastructure: true,
       onboarding: {
-        github: true, railway: true, openai: aiMode !== "own-key",
+        github: true, railway: true, openai: true,
         instagram: false, facebook: true, metaApp: true,
         creativeProfile: false, supportRequested: false
       },
@@ -1498,6 +1652,49 @@ const server = http.createServer(async (req, res) => {
     return send(res, 200, supportTicketView(ticket));
   }
 
+  if (url.pathname === "/api/master/instagram" && req.method === "GET") {
+    return send(res, 200, {
+      configured: Boolean(masterInstagramAppId() && masterInstagramAppSecret()),
+      appId: masterInstagramAppId(),
+      callbackUrl: instagramRedirectUri(req),
+      scopes: [
+        "instagram_business_basic",
+        "instagram_business_content_publish",
+        "instagram_business_manage_messages",
+        "instagram_business_manage_comments"
+      ]
+    });
+  }
+
+  if (url.pathname === "/api/master/instagram" && req.method === "POST") {
+    try {
+      const body = await readBody(req);
+      const current = loadMasterIntegrations();
+      const previous = current.instagram || {};
+      const appId = String(body.appId || previous.appId || "").trim();
+      const suppliedSecret = String(body.appSecret || "").trim();
+
+      if (!appId || (!suppliedSecret && !masterInstagramAppSecret())) {
+        return send(res, 400, { error: "instagram_app_credentials_required" });
+      }
+
+      current.instagram = {
+        ...previous,
+        appId,
+        ...(suppliedSecret ? { appSecret: encryptSecret(suppliedSecret) } : {}),
+        updatedAt: new Date().toISOString()
+      };
+      saveMasterIntegrations(current);
+      return send(res, 200, {
+        configured: true,
+        appId,
+        callbackUrl: instagramRedirectUri(req)
+      });
+    } catch (error) {
+      return send(res, 400, { error: String(error?.message || "instagram_config_failed") });
+    }
+  }
+
   if (url.pathname === "/api/master/openai" && req.method === "GET") {
     try {
       return send(res, 200, await masterOpenAISummary());
@@ -1568,7 +1765,8 @@ const server = http.createServer(async (req, res) => {
       openaiApiConfigured: Boolean(masterOpenAIProjectKey()),
       openaiAdminOptional: true,
       clientPortalConfigured: portalAccounts().length > 0,
-      metaMode: "per-client",
+      metaMode: "central-oauth",
+      metaConfigured: Boolean(masterInstagramAppId() && masterInstagramAppSecret()),
       note: "Status operacional do NEXUS Core e integrações administrativas opcionais."
     });
   }
