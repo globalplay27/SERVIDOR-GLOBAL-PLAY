@@ -542,9 +542,55 @@ function portalPostView(row) {
 }
 
 function portalPostsForClient(client) {
-  const summary = postLedgerSummary();
-  return summary.posts
-    .filter(row => row.clientId === client.id)
+  const rows = loadPostLedger().filter(row => row.clientId === client.id);
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hourCycle: "h23"
+  }).formatToParts(now);
+  const get = type => parts.find(item => item.type === type)?.value || "";
+  const todayKey = [get("year"), get("month"), get("day")].join("-");
+
+  const localDayFor = value => {
+    if (!value) return "";
+    try {
+      const dayParts = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "America/Sao_Paulo",
+        year: "numeric", month: "2-digit", day: "2-digit"
+      }).formatToParts(new Date(value));
+      const take = type => dayParts.find(item => item.type === type)?.value || "";
+      return [take("year"), take("month"), take("day")].join("-");
+    } catch { return ""; }
+  };
+
+  for (const time of client.postTimes || []) {
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(time))) continue;
+    const exists = rows.some(row =>
+      String(row.scheduledHour || "") === String(time)
+      && localDayFor(row.scheduledFor || row.createdAt) === todayKey
+    );
+    if (exists) continue;
+    const scheduledDate = new Date(todayKey + "T" + time + ":00-03:00");
+    const overdue = now.getTime() > scheduledDate.getTime() + 15 * 60 * 1000;
+    rows.push({
+      id: "expected:" + client.id + ":" + todayKey + ":" + time,
+      clientId: client.id,
+      clientName: client.name || client.id,
+      instagram: client.instagram || "",
+      scheduledFor: scheduledDate.toISOString(),
+      scheduledHour: String(time),
+      status: overdue ? "skipped" : "scheduled",
+      approvalStatus: overdue ? "rejected" : "pending",
+      error: overdue ? "O horário passou sem confirmação de publicação." : "",
+      createdAt: scheduledDate.toISOString(),
+      updatedAt: scheduledDate.toISOString(),
+      virtual: true
+    });
+  }
+
+  return rows
+    .sort((a, b) => String(b.scheduledFor || b.updatedAt || b.createdAt).localeCompare(String(a.scheduledFor || a.updatedAt || a.createdAt)))
     .slice(0, 90)
     .map(portalPostView);
 }
