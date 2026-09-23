@@ -10,7 +10,7 @@
   <title>NEXUS AI · Portal do Cliente</title>
   <link rel="icon" href="/assets/nexus-ai-mark.svg" type="image/svg+xml">
   <link rel="manifest" href="/manifest.webmanifest?v=1">
-  <link rel="stylesheet" href="/client.css?v=25">
+  <link rel="stylesheet" href="/client.css?v=26">
 </head>
 <body>
   <div id="nexus-boot" class="nexus-boot" hidden>
@@ -114,7 +114,8 @@
             </div>
             <div class="overview-actions">
               <button type="button" data-open-posting>Configurar postagens</button>
-              <button type="button" class="managed-instagram-button" disabled>Instagram · autorização pelo NEXUS</button>
+              <button type="button" id="instagram-connect" class="managed-instagram-button">Conectar Instagram</button>
+              <span id="instagram-connect-status" class="provider-line"></span>
             </div>
           </article>
         </section>
@@ -234,6 +235,6 @@
       <footer><span>NEXUS AI</span><small>Client Portal · ambiente exclusivo</small></footer>
     </section>
   </main>
-  <script src="/client.js?v=25" defer></script>
+  <script src="/client.js?v=26" defer></script>
 </body>
 </html>
