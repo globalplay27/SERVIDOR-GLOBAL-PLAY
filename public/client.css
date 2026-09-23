@@ -577,3 +577,15 @@ footer span{color:#a8c8d7!important}
 .trailer-card-copy p{margin:0;color:var(--muted,#8fa2af);font-size:12px;line-height:1.45;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
 .trailer-open{margin-top:auto;display:inline-flex;align-items:center;justify-content:center;min-height:38px;padding:8px 12px;border-radius:10px;text-decoration:none;font-weight:800;border:1px solid rgba(93,211,255,.35);background:rgba(30,154,220,.12);color:#dff7ff}
 @media(max-width:760px){.trailer-search-form{grid-template-columns:1fr}.trailer-card{grid-template-columns:90px 1fr}.trailer-card img,.trailer-poster-empty{width:90px;height:135px}.client-agent-worker{grid-template-columns:1fr}}
+
+
+/* ===== Login: lembrar acesso ===== */
+.password-field{display:grid;grid-template-columns:1fr 44px;gap:8px;align-items:center}
+.password-field input{min-width:0}
+#login-form .password-toggle{height:46px;min-height:46px;padding:0;border-radius:12px;border:1px solid rgba(93,211,255,.18);background:rgba(7,16,23,.88);color:#dff7ff;font-size:17px;box-shadow:none}
+#login-form .password-toggle:hover{transform:none;border-color:rgba(93,211,255,.45);background:rgba(93,211,255,.08)}
+#login-form .remember-access{display:flex;align-items:center;gap:11px;padding:11px 12px;border:1px solid rgba(93,211,255,.12);border-radius:12px;background:rgba(5,12,18,.45);cursor:pointer}
+#login-form .remember-access input{width:18px;height:18px;min-width:18px;accent-color:#39d98a;box-shadow:none}
+#login-form .remember-access span{display:grid;gap:2px}
+#login-form .remember-access strong{font-size:13px;color:#e8f8f0}
+#login-form .remember-access small{font-size:11px;color:#7f96a3;font-weight:500}
