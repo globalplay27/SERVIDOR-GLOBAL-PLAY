@@ -1033,7 +1033,7 @@ if(videoUploadForm)videoUploadForm.addEventListener("submit",async event=>{
     folderId:$("#video-upload-folder")?.value||"default"
   };
   button.disabled=true;
-  if(status){status.textContent="Enviando "+files.length+" vídeo(s)…";status.className="save-status";}
+  if(status){status.textContent="Carregando "+files.length+" vídeo(s)…";status.className="save-status";}
   if(progress){progress.hidden=false;progress.querySelector("i").style.width="2%";progress.querySelector("span").textContent="Preparando envio…";}
   let sent=0,failed=0,lastError="";
   for(let index=0;index<files.length;index++){
@@ -1045,7 +1045,7 @@ if(videoUploadForm)videoUploadForm.addEventListener("submit",async event=>{
   if($("#video-file-name"))$("#video-file-name").textContent="MP4, MOV, WEBM ou MKV";
   syncVideoFolderControls();
   if(status){
-    status.textContent=sent+" vídeo(s) enviado(s) para cortes"+(failed?"; "+failed+" falhou: "+lastError:".");
+    status.textContent=sent+" vídeo(s) carregado(s) para cortes"+(failed?"; "+failed+" falhou: "+lastError:".");
     status.className=failed?"save-status error":"save-status ok";
   }
   await loadVideoJobs();
