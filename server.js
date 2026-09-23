@@ -6,6 +6,7 @@ import crypto from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
+import { buildHookCandidates, captionAudit, classifyInteraction, estimateBeats, humanizeText, performanceAudit, profileAudit, repurposeCandidates, scoreHook, skillCoverageForAgent, suggestFormat } from "./instagram-intelligence.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
@@ -282,12 +283,12 @@ function savePostLedger(value) {
 
 
 const AGENT_CORE_MODULES = Object.freeze([
-  { id: "radar", name: "RADAR" },
-  { id: "estrategista", name: "ESTRATEGISTA" },
-  { id: "creator", name: "CREATOR" },
-  { id: "publisher", name: "PUBLISHER" },
-  { id: "auditor", name: "AUDITOR" },
-  { id: "odin", name: "ODIN" }
+  { id: "radar", name: "RADAR", skills: ["ig-viral","ig-audit","ig-profile"] },
+  { id: "estrategista", name: "ESTRATEGISTA", skills: ["ig-plan"] },
+  { id: "creator", name: "CREATOR", skills: ["ig-reel","ig-caption","ig-carousel","ig-story","ig-repurpose"] },
+  { id: "publisher", name: "PUBLISHER", skills: ["delivery","schedule","meta-publish"] },
+  { id: "auditor", name: "AUDITOR", skills: ["ig-human","ig-audit"] },
+  { id: "odin", name: "ODIN", skills: ["ig-comment","ig-reply","ig-dm"] }
 ]);
 
 function loadAgentExecutions() {
@@ -494,34 +495,42 @@ async function runRadarAgent(client, options = {}) {
   const ledger = loadPostLedger()
     .filter(row => row.clientId === client.id)
     .sort((a,b) => String(b.publishedAt || b.updatedAt || b.createdAt).localeCompare(String(a.publishedAt || a.updatedAt || a.createdAt)))
-    .slice(0, 40);
-  const captions = [
-    ...snapshot.items.map(item => item.caption),
-    ...ledger.map(item => item.caption || "")
-  ].filter(Boolean);
-  const topTerms = agentCoreTopTerms(captions, 8);
-  const ranked = [...snapshot.items].sort((a,b) => (b.likeCount+b.commentsCount*2)-(a.likeCount+a.commentsCount*2));
+    .slice(0, 50);
+  const captions = [...snapshot.items.map(item => item.caption), ...ledger.map(item => item.caption || "")].filter(Boolean);
+  const topTerms = agentCoreTopTerms(captions, 10);
+  const performance = performanceAudit(snapshot.items || []);
+  const profileScore = profileAudit({ ...(client.agentProfile || {}), niche: client.niche || client.agentProfile?.niche || "" });
+  const bestRecent = performance.top?.[0] || null;
   const output = {
     source: snapshot.source,
     scannedMedia: snapshot.items.length,
     topTerms,
-    bestRecent: ranked[0] || null,
+    bestRecent,
+    outliers: (performance.top || []).slice(0,5).map(item => ({
+      id: item.id || "",
+      caption: String(item.caption || "").slice(0,220),
+      outlierMultiple: Number(item.outlierMultiple || 0),
+      engagement: Number(item.engagement || 0)
+    })),
+    profileAudit: profileScore,
+    skills: skillCoverageForAgent("radar").map(item => item.id),
     signals: [
-      topTerms[0]?.term ? "Reforçar temas já associados a " + topTerms[0].term : "Testar ganchos orientados à principal dor do cliente",
-      "Variar prova, benefício e chamada para ação sem repetir criativo",
-      "Não prometer viralização; priorizar sinais observados e histórico próprio"
+      bestRecent?.caption ? "Reaproveitar o mecanismo do melhor conteúdo, sem copiar o criativo." : "Testar ganchos diferentes e medir a resposta da própria conta.",
+      topTerms[0]?.term ? "Explorar novas abordagens para o tema " + topTerms[0].term + "." : "Usar o nicho e as dúvidas reais dos leads como matéria-prima.",
+      profileScore.score < 70 ? "O perfil ainda perde pontos de conversão; priorizar " + (profileScore.priorities[0] || "clareza da oferta") + "." : "Perfil com boa base; focar em conteúdo e conversão.",
+      "Comparar desempenho com a mediana da própria conta, não apenas com views brutas."
     ]
   };
   recordAgentExecution(client, "RADAR", {
-    function: "trend-scan",
+    function: "trend-outlier-profile-scan",
     trigger: options.trigger,
     startedAt,
     status: snapshot.error && !snapshot.items.length ? "warning" : "success",
-    model: "local-rules+instagram-api",
+    model: "instagram-skills+instagram-api",
     quantity: snapshot.items.length + ledger.length,
     costUsd: 0,
-    message: snapshot.items.length ? "Sinais atualizados com dados recentes do Instagram." : "Sinais atualizados com histórico local; Instagram sem leitura de mídia.",
-    metadata: { source: snapshot.source, topTerms, apiError: snapshot.error || "" }
+    message: snapshot.items.length ? "RADAR analisou histórico, outliers e perfil usando ig-viral/ig-audit/ig-profile." : "RADAR analisou histórico local e perfil; leitura de mídia do Instagram indisponível.",
+    metadata: { source: snapshot.source, topTerms, profileScore: profileScore.score, apiError: snapshot.error || "", skills: output.skills }
   });
   patchAgentCoreState(client.id, { radar: output });
   return output;
@@ -534,14 +543,21 @@ async function runStrategistAgent(client, context = {}, options = {}) {
   const published = ledger.filter(row => row.status === "published").length;
   const failed = ledger.filter(row => row.status === "failed" || row.status === "skipped").length;
   const pending = ledger.filter(row => row.approvalStatus === "pending" || row.approvalStatus === "correction_requested").length;
-  const leadData = await fetchAgentLeads(client).catch(() => ({ summary: { total: 0, hot: 0, warm: 0, cold: 0 }, source: "stored" }));
+  const leadData = await fetchAgentLeads(client).catch(() => ({ summary: { total: 0, hot: 0, warm: 0, cold: 0 }, leads: [], source: "stored" }));
   const radar = context.radar || agentCoreStateFor(client.id).radar || {};
   const auditor = context.auditor || agentCoreStateFor(client.id).auditor || {};
   const themes = [
-    profile.morningTheme || "Dor do cliente e solução",
-    profile.afternoonTheme || "Produto, benefício e prova",
+    profile.morningTheme || "Descoberta e benefício",
+    profile.afternoonTheme || "Produto, prova e utilidade",
     profile.eveningTheme || "Conversão e chamada para ação"
   ];
+  const questionLead = (leadData.leads || []).find(lead => classifyInteraction(lead.message || lead.lastMessage || lead.interest || "") === "QUESTION");
+  const format = suggestFormat({
+    goal: profile.contentStrategy,
+    topic: themes[0],
+    leadQuestion: questionLead?.message || questionLead?.lastMessage || "",
+    hasLongVideo: false
+  });
   const plan = {
     niche: client.niche || "Outro",
     audience: profile.targetAudience,
@@ -554,6 +570,9 @@ async function runStrategistAgent(client, context = {}, options = {}) {
     avoidTopics: profile.avoidTopics,
     radarTerms: Array.isArray(radar.topTerms) ? radar.topTerms.slice(0, 5) : [],
     feedback: auditor.feedback || "",
+    recommendedFormat: format,
+    leadQuestion: questionLead?.message || questionLead?.lastMessage || "",
+    skills: skillCoverageForAgent("estrategista").map(item => item.id),
     metrics: { published, failed, pending, leads: leadData.summary || {} }
   };
   recordAgentExecution(client, "ESTRATEGISTA", {
@@ -561,11 +580,11 @@ async function runStrategistAgent(client, context = {}, options = {}) {
     trigger: options.trigger,
     startedAt,
     status: "success",
-    model: "local-rules",
+    model: "instagram-skills",
     quantity: 1,
     costUsd: 0,
-    message: options.feedback ? "Estratégia atualizada após leitura do Auditor." : "Plano editorial atualizado com nicho, histórico, Radar e leads.",
-    metadata: { published, failed, pending, leadSource: leadData.source || "stored" }
+    message: options.feedback ? "Estratégia atualizada após Auditor." : "Plano editorial atualizado com Radar, leads, formato e nicho.",
+    metadata: { published, failed, pending, leadSource: leadData.source || "stored", recommendedFormat: format, skills: plan.skills }
   });
   patchAgentCoreState(client.id, { strategy: plan });
   return plan;
@@ -577,15 +596,11 @@ async function runCreatorAgent(client, strategy, options = {}) {
   const times = (Array.isArray(client.postTimes) && client.postTimes.length ? client.postTimes : ["09:00","12:00","18:00"]).slice(0, 6);
   const ledger = loadPostLedger();
   const created = [];
-  const hooks = [
-    "Pare de perder resultado por um problema que dá para evitar.",
-    "Antes de escolher uma solução, confira estes pontos.",
-    "O que separa uma experiência comum de uma experiência confiável?"
-  ];
-  const themes = Array.isArray(strategy?.themes) && strategy.themes.length ? strategy.themes : ["Dor e solução","Benefício e prova","Conversão"];
+  const themes = Array.isArray(strategy?.themes) && strategy.themes.length ? strategy.themes : ["Descoberta","Benefício","Conversão"];
   const focus = String(strategy?.contentFocus || "Benefícios reais, autoridade e conversão").trim();
   const cta = String(strategy?.cta || 'Comente "QUERO" e saiba mais').trim();
-  const hashtags = String(strategy?.hashtags || "").trim();
+  const hashtags = String(strategy?.hashtags || "").trim().split(/\s+/).filter(Boolean).slice(0,5).join(" ");
+  const skills = skillCoverageForAgent("creator").map(item => item.id);
 
   for (let index=0; index<times.length; index++) {
     const time = times[index];
@@ -598,16 +613,34 @@ async function runCreatorAgent(client, strategy, options = {}) {
       && agentCoreLocalDay(row.scheduledFor || row.createdAt) === day
     );
     if (exists) continue;
+
     const theme = themes[index % themes.length];
-    const caption = [
-      hooks[index % hooks.length],
+    const format = index === 0 && strategy?.recommendedFormat ? strategy.recommendedFormat : suggestFormat({
+      goal: strategy?.objective || "",
+      topic: theme,
+      leadQuestion: strategy?.leadQuestion || "",
+      hasLongVideo: false
+    });
+    const hookOptions = buildHookCandidates({
+      niche: strategy?.niche || client.niche,
+      audience: strategy?.audience || "",
+      topic: theme,
+      focus,
+      question: strategy?.leadQuestion || ""
+    });
+    const hook = hookOptions[index % Math.max(1, hookOptions.length)] || hookOptions[0] || { text: String(theme), score: 50, formula: "local" };
+    const rawCaption = [
+      hook.text,
       "",
       String(theme) + ". " + focus + ".",
       "",
       cta,
       hashtags ? "" : null,
       hashtags || null
-    ].filter(value => value !== null).join("\n").slice(0, 2200);
+    ].filter(value => value !== null).join("\n");
+    const human = humanizeText(rawCaption);
+    const captionCheck = captionAudit(human.text, (strategy?.radarTerms || []).map(item => item.term || item).slice(0,2));
+    const caption = captionCheck.text.slice(0,2200);
     const approvalStatus = config.autoPublish && !config.approvalRequired ? "approved" : "pending";
     const row = {
       id: "agentcore:" + client.id + ":" + day + ":" + String(time).replace(":", ""),
@@ -620,7 +653,7 @@ async function runCreatorAgent(client, strategy, options = {}) {
       approvalStatus,
       costUsd: 0,
       costCalculated: true,
-      model: "local-rules",
+      model: "instagram-skill-layer",
       mediaId: "",
       imageUrl: "",
       caption,
@@ -628,6 +661,14 @@ async function runCreatorAgent(client, strategy, options = {}) {
       source: "agent-core:creator",
       error: "",
       retryCount: 0,
+      intelligence: {
+        format: format?.format || "reel",
+        skill: format?.skill || "ig-reel",
+        hookFormula: hook.formula || "",
+        hookScore: Number(hook.score || 0),
+        captionScore: Number(captionCheck.score || 0),
+        humanScore: Number(human.score || 0)
+      },
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
@@ -636,17 +677,15 @@ async function runCreatorAgent(client, strategy, options = {}) {
   }
   if (created.length) savePostLedger(ledger);
   recordAgentExecution(client, "CREATOR", {
-    function: "draft-generation",
+    function: "multi-format-draft-generation",
     trigger: options.trigger,
     startedAt,
     status: "success",
-    model: "local-rules",
+    model: "instagram-skill-layer",
     quantity: created.length,
     costUsd: 0,
-    message: created.length
-      ? created.length + " pauta(s) criada(s) e deixada(s) aguardando aprovação."
-      : "Nenhuma pauta duplicada criada; agenda já estava preparada.",
-    metadata: { approvalRequired: config.approvalRequired, autoPublish: config.autoPublish, draftIds: created.map(item => item.id) }
+    message: created.length ? created.length + " pauta(s) criadas com hook scoring, humanização e revisão de legenda." : "Agenda já preparada; nenhuma pauta duplicada criada.",
+    metadata: { approvalRequired: config.approvalRequired, autoPublish: config.autoPublish, skills, draftIds: created.map(item => item.id), intelligence: created.map(item => item.intelligence) }
   });
   return created;
 }
@@ -726,28 +765,37 @@ async function runAuditorAgent(client, options = {}) {
   const startedAt = new Date().toISOString();
   const snapshot = await fetchInstagramMediaSnapshot(client.id);
   const items = snapshot.items || [];
-  const averages = items.length ? {
-    likes: items.reduce((sum,item)=>sum+Number(item.likeCount||0),0)/items.length,
-    comments: items.reduce((sum,item)=>sum+Number(item.commentsCount||0),0)/items.length
-  } : { likes: 0, comments: 0 };
-  const ranked = [...items].sort((a,b)=>(b.likeCount+b.commentsCount*2)-(a.likeCount+a.commentsCount*2));
+  const performance = performanceAudit(items);
   const ledger = loadPostLedger().filter(row => row.clientId === client.id);
   const published = ledger.filter(row => row.status === "published").length;
   const failed = ledger.filter(row => row.status === "failed" || row.status === "skipped").length;
-  const feedback = ranked[0]
-    ? "Reaproveitar padrões de tema e gancho do conteúdo com melhor interação, sem copiar o criativo."
-    : (failed > 0 ? "Priorizar estabilidade da fila e revisar falhas antes de aumentar frequência." : "Manter variedade de ganchos e coletar mais dados antes de alterar a estratégia.");
-  const output = { source: snapshot.source, averages, published, failed, topMedia: ranked[0] || null, feedback };
+  const latestCaptions = ledger.slice(-12).map(row => humanizeText(row.caption || ""));
+  const humanAverage = latestCaptions.length ? latestCaptions.reduce((sum,item)=>sum+item.score,0)/latestCaptions.length : 100;
+  const top = performance.top?.[0] || null;
+  const feedback = top
+    ? "O conteúdo com melhor múltiplo sobre a mediana deve inspirar o próximo mecanismo de gancho, sem copiar texto ou visual."
+    : (failed > 0 ? "Resolver falhas operacionais antes de aumentar frequência." : "Coletar mais dados e continuar testando ganchos e formatos.");
+  const output = {
+    source: snapshot.source,
+    baseline: performance.baseline,
+    topMedia: top,
+    outliers: (performance.top || []).slice(0,5),
+    published,
+    failed,
+    humanScore: Math.round(humanAverage),
+    feedback,
+    skills: skillCoverageForAgent("auditor").map(item => item.id)
+  };
   recordAgentExecution(client, "AUDITOR", {
-    function: "performance-review",
+    function: "performance-human-review",
     trigger: options.trigger,
     startedAt,
     status: snapshot.error && !items.length ? "warning" : "success",
-    model: "local-rules+instagram-api",
+    model: "instagram-skills+instagram-api",
     quantity: items.length || ledger.length,
     costUsd: 0,
-    message: "Métricas pós-publicação revisadas e feedback enviado ao Estrategista.",
-    metadata: { source: snapshot.source, averages, published, failed, apiError: snapshot.error || "" }
+    message: "AUDITOR comparou desempenho com a mediana da conta e revisou linguagem dos conteúdos.",
+    metadata: { source: snapshot.source, published, failed, humanScore: output.humanScore, topOutlier: Number(top?.outlierMultiple || 0), apiError: snapshot.error || "", skills: output.skills }
   });
   patchAgentCoreState(client.id, { auditor: output });
   return output;
@@ -766,22 +814,40 @@ async function runOdinAgent(client, options = {}) {
     leads: [],
     source: "stored"
   }));
-  const hot = (data.leads || []).filter(lead => lead.temperature === "hot" || lead.needsHuman).slice(0, 20);
-  const output = { source: data.source || "stored", summary: data.summary || {}, priority: hot };
+  const enriched = (data.leads || []).map(lead => ({
+    ...lead,
+    conversationClass: classifyInteraction(lead.message || lead.lastMessage || lead.interest || "", client.leadKeyword || "QUERO")
+  }));
+  const hot = enriched.filter(lead => lead.temperature === "hot" || lead.needsHuman || ["KEYWORD","LEAD"].includes(lead.conversationClass)).slice(0, 30);
+  const questions = enriched.filter(lead => lead.conversationClass === "QUESTION").slice(0,10);
+  const output = {
+    source: data.source || "stored",
+    summary: data.summary || {},
+    priority: hot,
+    questionsForContent: questions,
+    buckets: enriched.reduce((acc,lead) => {
+      const key = lead.conversationClass || "NOISE";
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {}),
+    skills: skillCoverageForAgent("odin").map(item => item.id)
+  };
   recordAgentExecution(client, "ODIN", {
-    function: "lead-qualification",
+    function: "lead-comment-dm-triage",
     trigger: options.trigger,
     startedAt,
     status: data.error ? "warning" : "success",
-    model: "local-rules",
-    quantity: Number(data.summary?.total || 0),
+    model: "instagram-skills",
+    quantity: Number(data.summary?.total || enriched.length || 0),
     costUsd: 0,
-    message: hot.length ? hot.length + " lead(s) priorizado(s) para atenção comercial." : "Leads classificados; nenhum lead quente exige ação imediata.",
-    metadata: { source: data.source || "stored", summary: data.summary || {} }
+    message: hot.length ? hot.length + " contato(s) priorizados; comentários e dúvidas classificados para venda e conteúdo." : "Interações classificadas; nenhuma prioridade comercial imediata.",
+    metadata: { source: data.source || "stored", summary: data.summary || {}, buckets: output.buckets, questionCount: questions.length, skills: output.skills }
   });
   patchAgentCoreState(client.id, { odin: output });
   return output;
 }
+
+const agentCoreRunning = new Set();
 
 const agentCoreRunning = new Set();
 
@@ -1043,8 +1109,8 @@ function responseOutputText(payload) {
 
 function videoOpenAIKeyForClient(clientId) {
   // Ragnar is intentionally isolated from the shared NEXUS OpenAI account.
-  // If Ragnar has no key stored directly in NEXUS, video cutting falls back to technical cuts
-  // instead of spending the central account.
+  // Regra NEXUS: sem IA válida o corte inteligente FALHA de forma explícita.
+  // Nunca substituir análise inteligente por "primeiros segundos" ou divisão técnica.
   if (clientId === "ragnar-one") {
     const direct = loadConnections()?.[clientId]?.openai;
     return direct?.apiKey ? decryptSecret(direct.apiKey) : "";
@@ -1167,122 +1233,130 @@ function sentenceLooksFinished(text) {
 }
 
 function refineClipBoundary(clip, segments, silences, duration, targetDuration) {
-  const maxDuration = Math.min(95, Math.max(Number(targetDuration || 30) + 18, Number(targetDuration || 30) * 1.6));
+  const desired = Math.max(8, Number(targetDuration || 30));
   let start = Math.max(0, Number(clip.start || 0));
-  let end = Math.min(Number(duration || 0), Number(clip.end || (start + targetDuration)));
+  let end = Math.min(Number(duration || 0), Number(clip.end || (start + desired)));
+  const minWanted = Math.min(Math.max(3, Number(duration || 0) - start), Math.max(3, desired - 2));
+  const maxWanted = Math.min(95, desired + 10);
 
   if (segments.length) {
-    const startIndex = Math.max(0, segments.findIndex(seg => seg.end >= start));
-    if (segments[startIndex]) start = Math.max(0, segments[startIndex].start - 0.12);
+    let startIndex = segments.findIndex(seg => seg.end >= start);
+    if (startIndex < 0) startIndex = 0;
+    if (segments[startIndex]) start = Math.max(0, Number(segments[startIndex].start || 0) - 0.12);
 
     let endIndex = segments.findIndex(seg => seg.end >= end);
+    if (endIndex < startIndex) endIndex = startIndex;
     if (endIndex < 0) endIndex = segments.length - 1;
+    if (segments[endIndex]) end = Math.min(duration, Number(segments[endIndex].end || end) + 0.22);
 
-    if (segments[endIndex]) {
-      end = Math.min(duration, segments[endIndex].end + 0.28);
-      let current = endIndex;
-      while (current + 1 < segments.length) {
-        const seg = segments[current];
-        const next = segments[current + 1];
-        const gap = Math.max(0, next.start - seg.end);
-        const currentLength = end - start;
-        if (sentenceLooksFinished(seg.text) && gap >= 0.18) break;
-        if (currentLength >= maxDuration) break;
-        if (next.end - start > 95) break;
-        current += 1;
-        end = Math.min(duration, next.end + 0.28);
-        if (sentenceLooksFinished(next.text) && (current + 1 >= segments.length || segments[current + 1].start - next.end >= 0.12)) break;
-      }
+    while (end - start < minWanted && endIndex + 1 < segments.length) {
+      const next = segments[endIndex + 1];
+      if (Number(next.end || 0) - start > maxWanted) break;
+      endIndex += 1;
+      end = Math.min(duration, Number(next.end || end) + 0.22);
+    }
+
+    while (endIndex + 1 < segments.length && end - start < maxWanted) {
+      const current = segments[endIndex];
+      const next = segments[endIndex + 1];
+      const gap = Math.max(0, Number(next.start || 0) - Number(current.end || 0));
+      if (end - start >= minWanted && sentenceLooksFinished(current.text) && gap >= 0.12) break;
+      if (Number(next.end || 0) - start > maxWanted) break;
+      endIndex += 1;
+      end = Math.min(duration, Number(next.end || end) + 0.22);
+      if (end - start >= desired && sentenceLooksFinished(next.text)) break;
     }
   }
 
-  // Prefer cutting at the next actual silence instead of on an active syllable.
   const nextSilence = (silences?.starts || [])
-    .filter(point => point >= end - 0.2 && point <= Math.min(duration, end + 6))
+    .filter(point => point >= end - 0.15 && point <= Math.min(duration, end + 4) && point - start >= minWanted)
     .sort((a, b) => a - b)[0];
-  if (Number.isFinite(nextSilence) && nextSilence - start <= 95) {
-    end = Math.min(duration, nextSilence + 0.08);
-  } else if (!segments.length) {
-    // Technical fallback: give the speaker extra room when no transcription is available.
-    end = Math.min(duration, end + 2.5);
+  if (Number.isFinite(nextSilence) && nextSilence - start <= maxWanted) end = Math.min(duration, nextSilence + 0.08);
+
+  if (end - start < minWanted && Number(duration || 0) - start >= minWanted) {
+    end = Math.min(duration, start + minWanted);
   }
-
-  if (end <= start + 2.5) end = Math.min(duration, start + Math.max(3, targetDuration));
+  if (end <= start + 2.5) end = Math.min(duration, start + Math.max(3, desired));
   if (end - start > 95) end = start + 95;
-
   return { ...clip, start, end };
 }
 
 async function selectSmartClips(transcription, duration, count, targetDuration, goal, clientId) {
   const segments = Array.isArray(transcription?.segments) ? transcription.segments : [];
   if (!segments.length) throw new Error("smart_transcript_required");
-
+  const desiredCount = Math.max(1, Number(count || 3));
+  const desiredDuration = Math.max(8, Number(targetDuration || 30));
   const compact = segments.map(item => "[" + item.start.toFixed(1) + "-" + item.end.toFixed(1) + "] " + item.text).join("\n").slice(0, 120000);
-  const prompt = `Você é o editor de vídeos curtos do NEXUS AI.
-Escolha exatamente ${count} MELHORES trechos independentes do vídeo, ranqueados por potencial para ${goal || "engajamento"}.
-NÃO divida o vídeo em partes iguais e NÃO escolha trechos só para cobrir começo, meio e fim.
-Cada opção precisa funcionar sozinha como um vídeo publicável: gancho forte, ideia completa, valor claro e final natural.
-Cada corte deve ter aproximadamente ${targetDuration} segundos, mas a duração pode passar desse alvo para terminar a fala naturalmente.
-REGRA CRÍTICA: jamais encerre o corte no meio de uma palavra, frase, resposta, CTA ou despedida. Prefira alguns segundos a mais a cortar a fala final.
-Escolha o end no fim de uma frase completa ou em uma pausa natural.
-Não invente falas e não escolha trechos sobrepostos.
-Responda SOMENTE JSON válido neste formato:
-{"clips":[{"start":12.3,"end":42.0,"title":"Título curto","hook":"Primeira ideia forte do trecho","reason":"Por que este trecho funciona sozinho","score":94}]}
-
-Duração total: ${duration.toFixed(1)} segundos.
-Transcrição com timestamps:
-${compact}`;
-
+  const preRanked = repurposeCandidates(segments, desiredDuration, Math.max(12, desiredCount * 4));
+  const hints = preRanked.map((item,index) =>
+    "#" + (index + 1) + " " + item.start.toFixed(1) + "-" + item.end.toFixed(1) + " score=" + item.score + " hook=" + item.hookScore + " :: " + item.text.slice(0,220)
+  ).join("\n");
   const apiKey = videoOpenAIKeyForClient(clientId);
   if (!apiKey) throw new Error(clientId === "ragnar-one" ? "ragnar_openai_not_available" : "openai_not_configured");
-  const response = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: {
-      authorization: "Bearer " + apiKey,
-      "content-type": "application/json"
-    },
-    body: JSON.stringify({
-      model: "gpt-5.6-luna",
-      input: prompt,
-      max_output_tokens: 1600
-    }),
-    signal: AbortSignal.timeout(120000)
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error("clip_selection_failed_" + response.status);
-  const output = responseOutputText(payload);
-  const startJson = output.indexOf("{");
-  const endJson = output.lastIndexOf("}");
-  if (startJson < 0 || endJson <= startJson) throw new Error("clip_selection_invalid_json");
-  const parsed = JSON.parse(output.slice(startJson, endJson + 1));
-  const selected = Array.isArray(parsed.clips) ? parsed.clips : [];
-  const clips = selected.map((item, index) => {
-    let start = Math.max(0, Number(item.start || 0));
-    let end = Math.min(duration, Number(item.end || start + targetDuration));
-    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null;
-    if (end - start > 95) end = start + 95;
-    if (end - start < 3) end = Math.min(duration, start + Math.max(3, targetDuration));
-    return {
-      start,
-      end,
-      title: String(item.title || ("Corte " + (index + 1))).slice(0, 100),
-      reason: String(item.reason || "").slice(0, 300),
-      hook: String(item.hook || "").slice(0, 220),
-      score: Math.max(1, Math.min(100, Number(item.score || 70)))
-    };
-  }).filter(Boolean)
-    .sort((a, b) => Number(b.score || 0) - Number(a.score || 0))
-    .slice(0, Math.max(1, count));
-  const usage = payload.usage || {};
-  const inputTokens = Number(usage.input_tokens || 0);
-  const outputTokens = Number(usage.output_tokens || 0);
-  const costUsd = Math.max(0, inputTokens) * 0.20 / 1_000_000 + Math.max(0, outputTokens) * 1.20 / 1_000_000;
-  return {
-    clips: clips.length ? clips : fallbackClipSelections(duration, count, targetDuration),
-    costUsd,
-    model: "gpt-5.6-luna"
-  };
+
+  let totalCost = 0;
+  let lastError = "clip_selection_incomplete";
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    const prompt = "Você é o editor sênior do NEXUS AI usando a habilidade ig-repurpose.\n"
+      + "Analise o vídeo INTEIRO antes de escolher. Escolha exatamente " + desiredCount + " melhores trechos independentes para " + (goal || "engajamento") + ".\n"
+      + "Não divida o vídeo em partes iguais e não privilegie os primeiros segundos. Escolha os pontos de maior valor, gancho, clareza, emoção, prova ou informação.\n"
+      + "Cada corte deve ficar o mais próximo possível de " + desiredDuration + " segundos. Aceite alguns segundos a mais para concluir a fala, mas nunca entregue 13s quando foram pedidos 30s se houver material suficiente.\n"
+      + "REGRA CRÍTICA: nunca cortar palavra, frase, resposta, CTA ou despedida. O corte começa e termina em ideia natural.\n"
+      + "Não escolha trechos sobrepostos. Não invente falas. Dê score de 1 a 100 e explique o motivo.\n"
+      + "Pré-ranking local (apenas pistas; você deve validar pela transcrição):\n" + hints + "\n\n"
+      + "Transcrição completa com timestamps:\n" + compact + "\n\n"
+      + "Responda SOMENTE JSON válido: {\"clips\":[{\"start\":12.3,\"end\":42.0,\"title\":\"Título curto\",\"hook\":\"Primeira ideia forte\",\"reason\":\"Por que funciona\",\"score\":94}]}";
+
+    const response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: { authorization: "Bearer " + apiKey, "content-type": "application/json" },
+      body: JSON.stringify({ model: "gpt-5.6-luna", input: prompt, max_output_tokens: 2200 }),
+      signal: AbortSignal.timeout(150000)
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error("clip_selection_failed_" + response.status);
+    const usage = payload.usage || {};
+    totalCost += Math.max(0, Number(usage.input_tokens || 0)) * 0.20 / 1_000_000
+      + Math.max(0, Number(usage.output_tokens || 0)) * 1.20 / 1_000_000;
+    const output = responseOutputText(payload);
+    const startJson = output.indexOf("{");
+    const endJson = output.lastIndexOf("}");
+    if (startJson < 0 || endJson <= startJson) {
+      lastError = "clip_selection_invalid_json";
+      continue;
+    }
+    let parsed;
+    try { parsed = JSON.parse(output.slice(startJson, endJson + 1)); }
+    catch { lastError = "clip_selection_invalid_json"; continue; }
+    const selected = Array.isArray(parsed.clips) ? parsed.clips : [];
+    const clips = selected.map((item, index) => {
+      let start = Math.max(0, Number(item.start || 0));
+      let end = Math.min(duration, Number(item.end || start + desiredDuration));
+      if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null;
+      if (end - start > 95) end = start + 95;
+      return {
+        start,
+        end,
+        title: String(item.title || ("Corte " + (index + 1))).slice(0,100),
+        reason: String(item.reason || "").slice(0,300),
+        hook: String(item.hook || "").slice(0,220),
+        score: Math.max(1,Math.min(100,Number(item.score || 70)))
+      };
+    }).filter(Boolean).sort((a,b)=>Number(b.score||0)-Number(a.score||0));
+
+    const unique = [];
+    for (const clip of clips) {
+      if (unique.some(item => Math.max(item.start,clip.start) < Math.min(item.end,clip.end))) continue;
+      unique.push(clip);
+      if (unique.length >= desiredCount) break;
+    }
+    if (unique.length === desiredCount) return { clips: unique, costUsd: totalCost, model: "gpt-5.6-luna+ig-repurpose", preRanked };
+    lastError = "clip_selection_incomplete";
+  }
+  throw new Error(lastError);
 }
+
+function escapeFfmpegDrawtext(value) {
 
 function escapeFfmpegDrawtext(value) {
   return String(value || "")
@@ -1349,90 +1423,74 @@ async function processVideoJob(jobId) {
   try {
     const initial = loadVideoJobs().find(item => item.id === jobId);
     if (!initial || !initial.storedPath || !fs.existsSync(initial.storedPath)) throw new Error("video_file_missing");
+    const client = loadClients().find(item => item.id === initial.clientId);
+    if (!client) throw new Error("client_not_found");
 
-    updateVideoJob(jobId, { status: "transcribing", progress: 12, message: "Preparando áudio e transcrição…" });
+    updateVideoJob(jobId, { status: "transcribing", progress: 10, message: "RADAR analisando o vídeo inteiro e preparando a transcrição…" });
     const duration = await probeVideoDuration(initial.storedPath);
     updateVideoJob(jobId, { duration });
 
     const workDir = path.join(path.dirname(initial.storedPath), initial.id + "-work");
     fs.mkdirSync(workDir, { recursive: true });
     audioPath = path.join(workDir, "audio.mp3");
+    await execMedia("ffmpeg", ["-y","-i",initial.storedPath,"-vn","-ac","1","-ar","16000","-b:a","24k",audioPath]);
 
-    let transcription = { text: "", segments: [], costUsd: 0 };
-    let speechSilences = { starts: [], ends: [] };
+    updateVideoJob(jobId, { status: "transcribing", progress: 24, message: "RADAR transcrevendo e entendendo o conteúdo completo…" });
+    let transcription;
     try {
-      await execMedia("ffmpeg", ["-y", "-i", initial.storedPath, "-vn", "-ac", "1", "-ar", "16000", "-b:a", "24k", audioPath]);
-      updateVideoJob(jobId, { status: "transcribing", progress: 28, message: "Transcrevendo o áudio…" });
       transcription = await transcribeVideoAudio(audioPath, duration, initial.clientId);
-      speechSilences = await detectSpeechSilences(audioPath);
     } catch (error) {
-      console.warn("Video transcription fallback " + jobId + ": " + String(error?.message || error));
-      try { speechSilences = await detectSpeechSilences(audioPath); } catch {}
+      throw new Error("smart_transcript_required:" + String(error?.message || error));
     }
+    if (!transcription.segments?.length) throw new Error("smart_transcript_required:no_segments");
+    const speechSilences = await detectSpeechSilences(audioPath);
+    recordAgentExecution(client, "RADAR", {
+      function: "video-full-transcript-analysis", trigger: "video-upload", status: "success",
+      model: "whisper-1+ig-repurpose", quantity: transcription.segments.length, costUsd: Number(transcription.costUsd || 0),
+      message: "Vídeo inteiro transcrito antes de qualquer corte.", metadata: { jobId, duration }
+    });
 
     updateVideoJob(jobId, job => {
       job.status = "selecting";
-      job.progress = 48;
-      job.message = transcription.segments.length ? "IA escolhendo os melhores momentos…" : "Selecionando cortes técnicos…";
+      job.progress = 42;
+      job.message = "ESTRATEGISTA e CREATOR escolhendo os melhores momentos com IA…";
       job.transcriptText = transcription.text || "";
       job.transcriptSegments = transcription.segments || [];
       job.analysisCostUsd = Number(job.analysisCostUsd || 0) + Number(transcription.costUsd || 0);
     });
 
-    let selection;
-    try {
-      selection = await selectSmartClips(
-        transcription,
-        duration,
-        Number(initial.requestedClips || 3),
-        Number(initial.clipDuration || 30),
-        initial.goal || "viral",
-        initial.clientId
-      );
-    } catch (error) {
-      console.warn("Video smart selection fallback " + jobId + ": " + String(error?.message || error));
-      const heuristic = transcriptHeuristicSelections(
-        transcription.segments || [],
-        duration,
-        Number(initial.requestedClips || 3),
-        Number(initial.clipDuration || 30)
-      );
-      if (!heuristic.length) {
-        throw new Error("smart_clip_analysis_unavailable");
-      }
-      selection = { clips: heuristic, costUsd: 0, model: "transcript-heuristic" };
-    }
+    recordAgentExecution(client, "ESTRATEGISTA", {
+      function: "video-content-strategy", trigger: "video-upload", status: "success",
+      model: "instagram-skills", quantity: Number(initial.requestedClips || 3), costUsd: 0,
+      message: "Objetivo, duração e formato definidos para a seleção dos melhores momentos.",
+      metadata: { jobId, goal: initial.goal, targetDuration: initial.clipDuration, requestedClips: initial.requestedClips }
+    });
 
-    const wantedClips = Math.max(1, Number(initial.requestedClips || 3));
-    if ((selection.clips || []).length < wantedClips) {
-      const extras = transcriptHeuristicSelections(
-        transcription.segments || [],
-        duration,
-        wantedClips,
-        Number(initial.clipDuration || 30)
-      );
-      for (const extra of extras) {
-        if ((selection.clips || []).some(item => Math.max(item.start, extra.start) < Math.min(item.end, extra.end))) continue;
-        selection.clips.push(extra);
-        if (selection.clips.length >= wantedClips) break;
-      }
-    }
-
-    selection.clips = (selection.clips || []).map(clip =>
-      refineClipBoundary(
-        clip,
-        transcription.segments || [],
-        speechSilences,
-        duration,
-        Number(initial.clipDuration || 30)
-      )
+    const selection = await selectSmartClips(
+      transcription,
+      duration,
+      Number(initial.requestedClips || 3),
+      Number(initial.clipDuration || 30),
+      initial.goal || "viral",
+      initial.clientId
     );
+    selection.clips = selection.clips.map(clip => refineClipBoundary(
+      clip, transcription.segments || [], speechSilences, duration, Number(initial.clipDuration || 30)
+    ));
+    if (selection.clips.length !== Math.max(1,Number(initial.requestedClips || 3))) throw new Error("clip_selection_incomplete");
+
+    recordAgentExecution(client, "CREATOR", {
+      function: "video-smart-clip-selection", trigger: "video-upload", status: "success",
+      model: selection.model || "gpt-5.6-luna+ig-repurpose", quantity: selection.clips.length, costUsd: Number(selection.costUsd || 0),
+      message: selection.clips.length + " melhores momentos selecionados pela IA, sem divisão técnica do vídeo.",
+      metadata: { jobId, selections: selection.clips.map(item => ({ start:item.start,end:item.end,score:item.score,title:item.title })) }
+    });
 
     updateVideoJob(jobId, job => {
       job.status = "cutting";
-      job.progress = 58;
-      job.message = "Criando os cortes verticais para revisão…";
-      job.selectionModel = selection.model || "fallback";
+      job.progress = 56;
+      job.message = "CREATOR editando e AUDITOR verificando fala, duração e gancho…";
+      job.selectionModel = selection.model || "gpt-5.6-luna+ig-repurpose";
       job.analysisCostUsd = Number(job.analysisCostUsd || 0) + Number(selection.costUsd || 0);
       job.clips = [];
     });
@@ -1440,29 +1498,22 @@ async function processVideoJob(jobId) {
     const clipDir = path.join(path.dirname(initial.storedPath), initial.id + "-clips");
     fs.mkdirSync(clipDir, { recursive: true });
     const clips = [];
-    for (let index = 0; index < selection.clips.length; index += 1) {
+    for (let index=0; index<selection.clips.length; index+=1) {
       const selected = selection.clips[index];
       const clipId = "clip_" + crypto.randomBytes(7).toString("hex");
       const publicName = initial.id + "-" + clipId + "-" + crypto.randomBytes(6).toString("hex") + ".mp4";
       const outputPath = path.join(clipDir, publicName);
-      await renderVideoClip(
-        initial.storedPath,
-        outputPath,
-        selected.start,
-        selected.end,
-        initial.outputFormat || "reel",
-        initial.endText || "",
-        initial.endContact || ""
-      );
+      await renderVideoClip(initial.storedPath, outputPath, selected.start, selected.end, initial.outputFormat || "reel", initial.endText || "", initial.endContact || "");
       const transcript = transcriptForRange(transcription.segments, selected.start, selected.end);
+      const hookReview = scoreHook(transcript.slice(0,220));
+      const beatReview = estimateBeats(transcript, Number(initial.clipDuration || 30));
+      const combinedScore = Math.round(Math.min(100, Number(selected.score || 0) * .65 + Number(hookReview.score || 0) * .35));
       clips.push({
-        id: clipId,
-        publicName,
-        storedPath: outputPath,
+        id: clipId, publicName, storedPath: outputPath,
         title: selected.title || "Corte " + (index + 1),
         reason: selected.reason || "",
-        hook: selected.hook || "",
-        qualityScore: Number(selected.score || 0),
+        hook: selected.hook || transcript.slice(0,180),
+        qualityScore: combinedScore,
         rank: index + 1,
         selectedForSchedule: false,
         transcript,
@@ -1473,45 +1524,126 @@ async function processVideoJob(jobId) {
         approvalStatus: "pending",
         publishStatus: "",
         scheduledFor: null,
-        caption: selected.title || "",
+        caption: humanizeText(selected.title || "").text,
         previewUrl: "/video-media/" + encodeURIComponent(publicName),
         outputFormat: videoFormatSpec(initial.outputFormat).key,
         endText: initial.endText || "",
         endContact: initial.endContact || "",
+        intelligence: { hookScore: hookReview.score, beatIssues: beatReview.issues, targetDuration: Number(initial.clipDuration || 30), selectionModel: selection.model },
         createdAt: new Date().toISOString()
       });
-      updateVideoJob(jobId, {
-        progress: 58 + Math.round((index + 1) / Math.max(1, selection.clips.length) * 38),
-        message: "Criando corte " + (index + 1) + " de " + selection.clips.length + "…"
-      });
+      updateVideoJob(jobId, { progress: 56 + Math.round((index + 1) / selection.clips.length * 38), message: "Criando e revisando corte " + (index + 1) + " de " + selection.clips.length + "…" });
     }
+
+    const weak = clips.filter(clip => clip.duration < Math.max(5,Number(initial.clipDuration || 30)-3) || clip.qualityScore < 45);
+    recordAgentExecution(client, "AUDITOR", {
+      function: "video-clip-quality-gate", trigger: "video-upload", status: weak.length ? "warning" : "success",
+      model: "ig-human+hookscore+beats", quantity: clips.length, costUsd: 0,
+      message: weak.length ? weak.length + " corte(s) ficaram abaixo do alvo de qualidade/duração e exigem revisão." : "Cortes revisados: fala preservada, duração próxima do alvo e ganchos pontuados.",
+      metadata: { jobId, clips: clips.map(item => ({ id:item.id,duration:item.duration,qualityScore:item.qualityScore,issues:item.intelligence?.beatIssues || [] })) }
+    });
+    recordAgentExecution(client, "ODIN", {
+      function: "video-conversion-path", trigger: "video-upload", status: "success", model: "ig-dm+ig-reply",
+      quantity: clips.length, costUsd: 0,
+      message: "CTA e caminho de conversão preparados para os cortes; publicação continua dependendo da aprovação do cliente.",
+      metadata: { jobId, goal: initial.goal, endText: initial.endText || "", endContact: initial.endContact || "" }
+    });
+    recordAgentExecution(client, "PUBLISHER", {
+      function: "video-package-ready", trigger: "video-upload", status: "success", model: "local-media-pipeline",
+      quantity: clips.length, costUsd: 0,
+      message: "Cortes preparados para revisão. Nenhum vídeo foi publicado ou agendado automaticamente.",
+      metadata: { jobId, approvalRequired: true }
+    });
 
     updateVideoJob(jobId, job => {
       job.status = "ready";
       job.progress = 100;
-      job.message = "Cortes prontos para assistir, aprovar ou rejeitar. Nada foi colocado na agenda.";
+      job.message = "IA concluiu a análise. Cortes prontos para assistir, aprovar, rejeitar ou agendar.";
       job.clips = clips;
       job.completedAt = new Date().toISOString();
     });
   } catch (error) {
     console.error("Video processing failed", jobId, error);
     const code = String(error?.message || error);
-    const smartUnavailable = ["smart_clip_analysis_unavailable","smart_transcript_required","ragnar_openai_not_available","openai_not_configured"].some(item => code.includes(item));
+    const smartUnavailable = ["smart_clip_analysis_unavailable","smart_transcript_required","ragnar_openai_not_available","openai_not_configured","clip_selection_incomplete","clip_selection_failed_"].some(item => code.includes(item));
     updateVideoJob(jobId, {
       status: "failed",
       progress: 100,
       message: smartUnavailable
-        ? "Não consegui analisar as melhores partes com IA. O NEXUS não vai simplesmente dividir o vídeo; corrija a conexão de IA e tente novamente."
+        ? "A análise inteligente não foi concluída. O NEXUS não fará corte técnico ou pegará os primeiros segundos; corrija a IA e tente novamente."
         : "Falha ao processar o vídeo.",
-      error: code.slice(0, 900)
+      error: code.slice(0,900)
     });
   } finally {
-    if (audioPath) {
-      try { fs.unlinkSync(audioPath); } catch {}
-    }
+    if (audioPath) { try { fs.unlinkSync(audioPath); } catch {} }
     videoProcessing.delete(jobId);
   }
 }
+
+async function searchOfficialTrailers(query, type = "movie") {
+  const q = String(query || "").trim().slice(0,120);
+  const kind = type === "series" ? "tv" : "movie";
+  if (!q) return { configured: Boolean(process.env.TMDB_API_TOKEN || process.env.TMDB_API_KEY), results: [] };
+  const token = String(process.env.TMDB_API_TOKEN || "").trim();
+  const apiKey = String(process.env.TMDB_API_KEY || "").trim();
+  const youtubeSearchUrl = "https://www.youtube.com/results?search_query=" + encodeURIComponent(q + " trailer oficial");
+  if (!token && !apiKey) return { configured:false, results:[], youtubeSearchUrl };
+
+  const tmdbGet = async (pathname, params = {}) => {
+    const endpoint = new URL("https://api.themoviedb.org/3/" + pathname.replace(/^\/+/, ""));
+    endpoint.searchParams.set("language","pt-BR");
+    for (const [key,value] of Object.entries(params)) if (value !== undefined && value !== null && value !== "") endpoint.searchParams.set(key,String(value));
+    if (apiKey) endpoint.searchParams.set("api_key",apiKey);
+    const response = await fetch(endpoint, {
+      headers: { accept:"application/json", ...(token ? { authorization:"Bearer " + token } : {}) },
+      signal: AbortSignal.timeout(12000)
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error("tmdb_" + response.status);
+    return payload;
+  };
+
+  const search = await tmdbGet("search/" + kind, { query:q, include_adult:"false" });
+  const base = (Array.isArray(search.results) ? search.results : []).slice(0,8);
+  const results = [];
+  for (const item of base) {
+    let videos = [];
+    try {
+      const v = await tmdbGet(kind + "/" + item.id + "/videos");
+      videos = Array.isArray(v.results) ? v.results : [];
+      if (!videos.length) {
+        const endpoint = new URL("https://api.themoviedb.org/3/" + kind + "/" + item.id + "/videos");
+        endpoint.searchParams.set("language","en-US");
+        if (apiKey) endpoint.searchParams.set("api_key",apiKey);
+        const response = await fetch(endpoint,{headers:{accept:"application/json",...(token?{authorization:"Bearer "+token}:{})},signal:AbortSignal.timeout(12000)});
+        const v2 = await response.json().catch(()=>({}));
+        videos = Array.isArray(v2.results) ? v2.results : [];
+      }
+    } catch {}
+    const youtube = videos.filter(v => v.site === "YouTube");
+    const trailer = youtube.find(v => v.official === true && v.type === "Trailer")
+      || youtube.find(v => v.type === "Trailer")
+      || youtube.find(v => v.official === true)
+      || null;
+    const title = String(kind === "tv" ? item.name : item.title || q);
+    const date = String(kind === "tv" ? item.first_air_date : item.release_date || "");
+    results.push({
+      id: item.id,
+      type: kind === "tv" ? "series" : "movie",
+      title,
+      year: date.slice(0,4),
+      overview: String(item.overview || "").slice(0,600),
+      posterUrl: item.poster_path ? "https://image.tmdb.org/t/p/w342" + item.poster_path : "",
+      trailerUrl: trailer?.key ? "https://www.youtube.com/watch?v=" + encodeURIComponent(trailer.key) : "",
+      trailerName: String(trailer?.name || ""),
+      official: Boolean(trailer?.official),
+      youtubeSearchUrl: "https://www.youtube.com/results?search_query=" + encodeURIComponent(title + " " + date.slice(0,4) + " trailer oficial")
+    });
+  }
+  return { configured:true, results, youtubeSearchUrl };
+}
+
+function startPendingVideoJobs() {
 
 function startPendingVideoJobs() {
   const jobs = loadVideoJobs();
@@ -4114,6 +4246,20 @@ const server = http.createServer(async (req, res) => {
         message: row.error,
         post: portalPostView(row)
       });
+    }
+  }
+
+  if (url.pathname === "/api/portal/trailers/search" && req.method === "GET") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    try {
+      const query = String(url.searchParams.get("q") || "");
+      const type = String(url.searchParams.get("type") || "movie") === "series" ? "series" : "movie";
+      if (!query.trim()) return send(res, 400, { error: "query_required" });
+      const result = await searchOfficialTrailers(query, type);
+      return send(res, 200, result);
+    } catch (error) {
+      return send(res, 502, { error: "trailer_search_failed", message: String(error?.message || error).slice(0,300) });
     }
   }
 
