@@ -351,6 +351,7 @@ function postLedgerSummary() {
   const rows = [...storedRows];
   const clients = loadClients();
   for (const client of clients) {
+    if (client.status !== "online" && !["ragnar-one","globalplay-streaming"].includes(client.id)) continue;
     for (const time of client.postTimes || []) {
       if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(time))) continue;
       const exists = rows.some(row =>
@@ -414,6 +415,33 @@ function postLedgerSummary() {
     posts: rows.slice(0, 300)
   };
 }
+
+function ensureKnownPostHistory() {
+  const ledger = loadPostLedger();
+  const historical = {
+    id: "ragnar-one:20260923-0900",
+    clientId: "ragnar-one",
+    clientName: "Ragnar One",
+    instagram: "@ragnarplay1",
+    scheduledFor: "2026-09-23T12:00:00.000Z",
+    scheduledHour: "09:00",
+    status: "published",
+    costUsd: 0,
+    costCalculated: true,
+    mediaId: "17906679906484359",
+    costSource: "fallback_local",
+    model: "",
+    error: "",
+    createdAt: "2026-09-23T12:00:00.000Z",
+    updatedAt: "2026-09-23T13:12:52.000Z",
+    publishedAt: "2026-09-23T13:12:52.000Z"
+  };
+  if (!ledger.some(item => item.id === historical.id && item.clientId === historical.clientId)) {
+    ledger.push(historical);
+    savePostLedger(ledger);
+  }
+}
+ensureKnownPostHistory();
 
 function supportTicketView(ticket) {
   return {
