@@ -1,4 +1,4 @@
-const state = { clients: [], auth: sessionStorage.getItem("nexus-auth"), portalClientId: null, supportTickets: [], supportFilter: "all" };
+const state = { clients: [], auth: sessionStorage.getItem("nexus-auth"), portalClientId: null, supportTickets: [], supportFilter: "all", postLedger: { posts: [], byClient: [], totalCostUsd: 0, totalPosts: 0, published: 0, failed: 0 }, postClientFilter: "" };
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
 
@@ -52,7 +52,9 @@ function render() {
     const extra = !ragnar ? `<br><small>${Number(client.aiImagesUsed||0)} imagens IA usadas</small>` : "";
     const action = ragnar
       ? `<span class="protected-client">PILOTO PROTEGIDO</span>`
-      : `<button type="button" class="small-danger" data-delete-client="${escapeHtml(client.id)}" data-client-name="${escapeHtml(client.name)}">Excluir</button>`;
+      : client.ownerAccount
+        ? `<span class="protected-client">CONTA PRINCIPAL</span>`
+        : `<button type="button" class="small-danger" data-delete-client="${escapeHtml(client.id)}" data-client-name="${escapeHtml(client.name)}">Excluir</button>`;
     return `<tr><td><strong>${escapeHtml(client.name)}</strong><br><small>${escapeHtml(client.niche || "Outro")}</small></td><td>${badge(client.status === "online" ? "ONLINE" : "SETUP", client.status === "online")}</td><td>${escapeHtml(client.instagram || "Aguardando conexão")}</td><td>${client.odin ? badge("ATIVO") : badge("DESLIGADO", false)}</td><td>${(client.postTimes || []).join(" · ") || "—"}</td><td><strong>${mode}</strong>${extra}</td><td>${action}</td></tr>`;
   }).join("");
   renderAgentProfiles();
@@ -161,20 +163,106 @@ function renderClientPortal(client) {
 
 function escapeHtml(value) { const el = document.createElement("span"); el.textContent = String(value); return el.innerHTML; }
 
+function moneyPost(value) {
+  const amount = Number(value || 0);
+  return "US$ " + (Number.isFinite(amount) ? amount.toFixed(4) : "0.0000");
+}
+
+function postStatusMeta(status) {
+  const map = {
+    published: ["PUBLICADA", "published"],
+    failed: ["FALHOU", "failed"],
+    skipped: ["NÃO FEITA", "failed"],
+    publishing: ["PUBLICANDO", "running"],
+    generating: ["GERANDO", "running"],
+    ready: ["PRONTA", "running"],
+    scheduled: ["AGENDADA", "running"]
+  };
+  return map[status] || [String(status || "AGENDADA").toUpperCase(), "running"];
+}
+
+function formatPostDate(value) {
+  if (!value) return "—";
+  try {
+    return new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" }).format(new Date(value));
+  } catch { return "—"; }
+}
+
+function renderPostLedger() {
+  const data = state.postLedger || {};
+  if ($("#posts-total-cost")) $("#posts-total-cost").textContent = moneyPost(data.totalCostUsd);
+  if ($("#posts-total-count")) $("#posts-total-count").textContent = Number(data.totalPosts || 0);
+  if ($("#posts-published-count")) $("#posts-published-count").textContent = Number(data.published || 0);
+  if ($("#posts-failed-count")) $("#posts-failed-count").textContent = Number(data.failed || 0);
+
+  const ranking = $("#post-cost-ranking");
+  if (ranking) {
+    const rows = data.byClient || [];
+    const max = Math.max(0.000001, ...rows.map(item => Number(item.costUsd || 0)));
+    ranking.innerHTML = rows.length ? rows.map((item, index) => {
+      const pct = Math.max(3, Math.round(Number(item.costUsd || 0) / max * 100));
+      return `<div class="post-rank-row">
+        <div class="post-rank-head"><span><b>#${index + 1}</b> ${escapeHtml(item.clientName || item.clientId)}</span><strong>${moneyPost(item.costUsd)}</strong></div>
+        <small>${escapeHtml(item.instagram || "")} · ${Number(item.published || 0)} publicadas · ${Number(item.failed || 0)} falhas</small>
+        <div class="bar"><i style="width:${pct}%"></i></div>
+      </div>`;
+    }).join("") : '<p class="muted">Os custos aparecerão assim que os agentes registrarem novas postagens.</p>';
+  }
+
+  const filter = $("#post-client-filter");
+  if (filter) {
+    const previous = state.postClientFilter || filter.value || "";
+    const clients = state.clients || [];
+    filter.innerHTML = '<option value="">Todos</option>' + clients.map(client => `<option value="${escapeHtml(client.id)}">${escapeHtml(client.name)} · ${escapeHtml(client.instagram || "sem Instagram")}</option>`).join("");
+    filter.value = clients.some(client => client.id === previous) ? previous : "";
+    state.postClientFilter = filter.value;
+  }
+
+  const body = $("#post-ledger-body");
+  if (!body) return;
+  let posts = Array.isArray(data.posts) ? data.posts : [];
+  if (state.postClientFilter) posts = posts.filter(post => post.clientId === state.postClientFilter);
+  body.innerHTML = posts.length ? posts.map(post => {
+    const [label, cls] = postStatusMeta(post.status);
+    const detail = post.error ? escapeHtml(post.error) : post.mediaId ? "Media ID " + escapeHtml(post.mediaId) : "—";
+    return `<tr>
+      <td><strong>${escapeHtml(post.clientName || post.clientId)}</strong></td>
+      <td>${escapeHtml(post.instagram || "—")}</td>
+      <td><strong>${escapeHtml(post.scheduledHour || "—")}</strong><br><small>${formatPostDate(post.scheduledFor)}</small></td>
+      <td>${formatPostDate(post.publishedAt || post.attemptedAt)}</td>
+      <td><span class="post-status ${cls}">${label}</span></td>
+      <td><strong>${moneyPost(post.costUsd)}</strong><br><small>${escapeHtml(post.costSource || "sem custo registrado")}</small></td>
+      <td>${escapeHtml(post.model || "—")}</td>
+      <td class="post-detail">${detail}</td>
+    </tr>`;
+  }).join("") : '<tr><td colspan="8">Nenhuma postagem registrada para este filtro.</td></tr>';
+}
+
+async function loadPostLedger() {
+  try {
+    state.postLedger = await api("/api/master/posts");
+    renderPostLedger();
+  } catch (error) {
+    console.error(error);
+  }
+}
+
 function showView(id) {
   $$(".view").forEach(view => view.classList.toggle("active", view.id === id));
   $$(".nav-item").forEach(item => item.classList.toggle("active", item.dataset.view === id));
-  const titles = { dashboard: "Visão geral", clients: "Clientes", notifications: "Notificações", portal: "Portal do cliente", odin: "Odin & Leads", onboarding: "Novo cliente", settings: "Integrações" };
+  const titles = { dashboard: "Visão geral", clients: "Clientes", posts: "Postagens & custos", notifications: "Notificações", portal: "Portal do cliente", odin: "Odin & Leads", onboarding: "Novo cliente", settings: "Integrações" };
   $("#page-title").textContent = titles[id] || "NEXUS AI";
 }
 
 async function load() {
   try {
-    const [clients, support] = await Promise.all([api("/api/clients"), api("/api/master/support")]);
+    const [clients, support, posts] = await Promise.all([api("/api/clients"), api("/api/master/support"), api("/api/master/posts")]);
     state.clients = clients;
     state.supportTickets = support.tickets || [];
+    state.postLedger = posts || state.postLedger;
     render();
     renderSupportNotifications(support);
+    renderPostLedger();
   } catch (error) { console.error(error); }
 }
 
@@ -339,6 +427,7 @@ async function loadIntegrations() {
 $$('[data-view]').forEach(button => button.addEventListener("click", async () => {
   showView(button.dataset.view);
   if (button.dataset.view === "settings") loadIntegrations();
+  if (button.dataset.view === "posts") loadPostLedger();
   if (button.dataset.view === "notifications") {
     try {
       const support = await api("/api/master/support");
@@ -350,6 +439,11 @@ $$('[data-view]').forEach(button => button.addEventListener("click", async () =>
 $$('[data-go]').forEach(button => button.addEventListener("click", () => showView(button.dataset.go)));
 $("#refresh").addEventListener("click", load);
 $("#portal-client").addEventListener("change", event => { state.portalClientId = event.target.value; renderPortalSelector(); });
+const postClientFilter = $("#post-client-filter");
+if (postClientFilter) postClientFilter.addEventListener("change", event => {
+  state.postClientFilter = event.target.value || "";
+  renderPostLedger();
+});
 $("#client-form").addEventListener("submit", async event => {
   event.preventDefault();
   const form = event.currentTarget;
