@@ -1,78 +1,56 @@
-# Global Play Agent Central — V1
+# NEXUS AI — Agent Central
 
-Central em modo escuro para organizar implantação e administração de agentes de clientes.
+Central multiagente para implantação e operação de automações de Instagram por cliente.
 
-## O que já existe nesta V1
+## Arquitetura atual
 
-- Dashboard administrativo.
-- Cadastro de clientes.
-- Ragnar incluído como cliente-modelo.
-- Onboarding com GitHub, Railway, OpenAI, Instagram, Facebook Business e Meta.
-- Biblioteca de temas visuais.
-- Escolha de cor/tema pelo cliente.
-- Upload local de banner de referência para pré-visualização.
-- Área Odin / Leads.
-- Gráfico de leads.
-- Área de consumo OpenAI e Railway.
-- Alertas visuais de consumo alto.
-- Persistência simples em JSON.
-- Login administrativo via Basic Auth.
-- Pronto para Railway.
-- Interface responsiva.
+O NEXUS mantém seis agentes operacionais:
 
-## Importante
+- **RADAR** — pesquisa, sinais, outliers e auditoria de perfil.
+- **ESTRATEGISTA** — transforma sinais, nicho, histórico e leads em plano editorial.
+- **CREATOR** — cria pautas, ganchos, legendas, Reels, Stories, carrosséis e reaproveitamento.
+- **PUBLISHER** — agenda, publica, controla retries e registra resultado.
+- **AUDITOR** — revisa qualidade, linguagem e desempenho pós-publicação.
+- **ODIN** — classifica comentários/DMs/leads e alimenta vendas e conteúdo.
 
-Esta é a base funcional da Central. A automação de autorização das contas via OAuth
-(GitHub/Railway) será a próxima fase. O cliente não deve fornecer senha, e-mail ou código 2FA
-para a Global Play. A integração correta é autorização OAuth/API com permissões explícitas.
+Os 13 especialistas de Instagram foram incorporados como habilidades desses seis agentes:
+`ig-viral`, `ig-audit`, `ig-profile`, `ig-plan`, `ig-reel`, `ig-caption`,
+`ig-carousel`, `ig-story`, `ig-repurpose`, `ig-human`, `ig-comment`,
+`ig-reply` e `ig-dm`.
 
-A Meta/Facebook continuará com uma etapa acompanhada pela Global Play, como planejado.
+## Recursos principais
 
-## Como subir no GitHub
+- Painel MASTER e portal separado do cliente.
+- Cadastro de clientes e nichos.
+- Instagram OAuth e publicação via Meta.
+- Agent Core com histórico de execuções.
+- Odin / Leads.
+- Agenda e fila de publicações.
+- Vídeo IA com transcrição completa antes do corte.
+- Seleção dos melhores momentos com IA — sem fallback silencioso para os primeiros segundos.
+- Cortes com duração alvo e preservação do final natural da fala.
+- Biblioteca, aprovação, favoritos e agendamento de cortes.
+- Busca de trailers de filmes e séries, priorizando trailer oficial.
+- Persistência em volume Railway.
+- CI de sintaxe no GitHub antes/depois das mudanças.
 
-1. Crie um repositório novo, por exemplo: `globalplay-agent-central`.
-2. Extraia este ZIP.
-3. Envie TODO o conteúdo da pasta para a raiz do repositório.
-4. Não envie um arquivo `.env` com chaves reais.
-5. Conecte esse repositório a um projeto Railway.
+## Regra do vídeo inteligente
 
-## Variáveis no Railway
+Se transcrição ou seleção por IA falhar, o NEXUS deve informar a falha. Ele não deve entregar um corte técnico ou simplesmente pegar o início do vídeo como se tivesse sido escolhido por IA.
 
-Configure:
+## Identidade e compatibilidade
 
-- `ADMIN_PASSWORD` = senha forte para entrar na Central.
-- `DATA_DIR` = `/data`
+A plataforma é **NEXUS AI**. A marca **Global Play** continua existindo como cliente/negócio dentro da plataforma e não deve ser renomeada para NEXUS.
 
-Depois adicione um Volume no Railway montado em `/data`.
+Por compatibilidade, o repositório e URLs antigos podem continuar com nomes históricos enquanto integrações externas forem migradas com segurança.
 
-As seguintes variáveis ficam vazias por enquanto e serão usadas na fase de integrações:
+## Railway
 
-- `GITHUB_CLIENT_ID`
-- `GITHUB_CLIENT_SECRET`
-- `RAILWAY_API_TOKEN`
-- `OPENAI_ADMIN_KEY`
+- Node.js 20+
+- Volume persistente em `/data`
+- Início: `npm start`
+- Healthcheck: `/api/portal/diagnostic`
 
-## Execução local
+## Licenças de terceiros
 
-Node.js 20+:
-
-```bash
-npm start
-```
-
-Abra:
-
-`http://localhost:3000`
-
-Na primeira chamada da API o navegador pedirá a senha administrativa.
-
-## Próximas fases já previstas
-
-1. OAuth GitHub: cliente autoriza, Central cria/configura repositório.
-2. Railway: criação e administração do projeto sem pedir senha do cliente.
-3. Geração automática do pacote Agent Core por nicho/configuração.
-4. Sincronização real do Odin de cada cliente.
-5. Métricas reais de consumo quando a API do provedor permitir.
-6. Alertas de saldo/limite.
-7. Atualização em massa do Agent Core.
-8. Portal separado do cliente e painel Master Global Play.
+Consulte `THIRD_PARTY_NOTICES.md`.
