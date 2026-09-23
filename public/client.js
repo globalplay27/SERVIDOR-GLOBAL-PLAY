@@ -56,6 +56,8 @@ function renderClient(c){
     igButton.classList.toggle("connected",connected);
   }
   if(igStatus)igStatus.textContent=c.instagram?c.instagram+" autorizado":"";
+  const publishTest=$("#publish-test-now");
+  if(publishTest)publishTest.hidden=c.id!=="testador";
   populatePosting(c);
   renderOnboarding();
 }
@@ -309,7 +311,7 @@ if(publishTestButton)publishTestButton.addEventListener("click",async()=>{
   $("#save-status").textContent="Enviando imagem ao Instagram…";
   $("#save-status").className="save-status";
   const payload={
-    imageUrl:"https://cdn.openart.ai/openart-uploads/production/attachment-transfers/8a520eace102b1b6999ab378b603cd5f68ac27265abbb0e9dca7e4641763150f.jpg",
+    imageUrl:"https://cdn.openart.ai/openart-uploads/production/attachment-transfers/2be36b8d8426d0dc34aeea7466c37256badd4decfc736a8136840c21c81a7fd3.jpg",
     caption:'🚀 Sua empresa precisa aparecer mais?\n\nCriamos imagens profissionais, vídeos promocionais, automação para Instagram e sites modernos para transformar sua presença digital em mais autoridade, oportunidades e vendas.\n\n✅ Imagens profissionais\n✅ Vídeos promocionais\n✅ Automação de Instagram\n✅ Sites profissionais\n\nQuer levar sua empresa para outro nível?\nComente “QUERO” ou chame no direct.\n\n#MarketingDigital #AutomacaoInstagram #CriacaoDeSites #DesignProfissional #VideosPromocionais #ConteudoDigital #PresencaDigital #VendasOnline #Empreendedorismo #SocialMedia'
   };
   try{
