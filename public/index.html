@@ -141,7 +141,8 @@
           <form id="client-form">
             <div class="form-grid">
               <label>Empresa / nome<input name="name" required placeholder="Ex.: Loja Alpha"></label>
-              <label>Nicho<input name="niche" placeholder="Ex.: Restaurante, loja, streaming"></label>
+              <label>Ramo / nicho do cliente<input name="niche" list="nexus-niches" required placeholder="Digite para pesquisar um segmento"></label>
+              <datalist id="nexus-niches"></datalist>
               
               <label>Usuário do aplicativo<input name="username" placeholder="Gerado automaticamente"></label>
               <label>Senha inicial<input name="password" type="text" minlength="8" placeholder="Gerada automaticamente"></label>

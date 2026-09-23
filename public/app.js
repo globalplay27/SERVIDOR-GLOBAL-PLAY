@@ -1,6 +1,16 @@
 const state = { clients: [], auth: sessionStorage.getItem("nexus-auth"), portalClientId: null, supportTickets: [], supportFilter: "all", postLedger: { posts: [], byClient: [], totalCostUsd: 0, totalPosts: 0, published: 0, failed: 0 }, postClientFilter: "", leadData: { summary:{total:0,hot:0,warm:0,cold:0,needsHuman:0}, leads:[], byClient:[] }, leadClientFilter:"" };
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
+let nicheCatalog = [];
+async function loadNiches() {
+  nicheCatalog = (await api("/api/master/niches")).niches || [];
+  const list = $("#nexus-niches");
+  list.replaceChildren(...nicheCatalog.map(name => {
+    const option = document.createElement("option");
+    option.value = name;
+    return option;
+  }));
+}
 
 function api(path, options = {}) {
   const headers = { "content-type": "application/json", ...(options.headers || {}) };
@@ -53,7 +63,8 @@ function render() {
     const remove = (!ragnar && !client.ownerAccount)
       ? `<button type="button" class="small-danger" data-delete-client="${escapeHtml(client.id)}" data-client-name="${escapeHtml(client.name)}">Excluir</button>`
       : "";
-    const action = `<div class="client-action-stack"><button type="button" class="small-primary" data-assume-client="${escapeHtml(client.id)}">Assumir painel</button>${remove}${protect}</div>`;
+    const videoOn = typeof client.modules?.video === "boolean" ? client.modules.video : /^(streaming|iptv)/i.test(client.niche || "");
+    const action = `<div class="client-action-stack"><input class="client-niche-edit" aria-label="Ramo ou nicho de ${escapeHtml(client.name)}" list="nexus-niches" value="${escapeHtml(client.niche || "Outros")}" maxlength="100"><label><input class="client-video-edit" type="checkbox" ${videoOn ? "checked" : ""}> Vídeos</label><button type="button" class="small-primary" data-save-client-config="${escapeHtml(client.id)}">Salvar nicho e ferramentas</button><button type="button" class="small-primary" data-assume-client="${escapeHtml(client.id)}">Assumir painel</button>${remove}${protect}</div>`;
     return `<tr><td><strong>${escapeHtml(client.name)}</strong><br><small>${escapeHtml(client.niche || "Outro")}</small></td><td>${badge(client.status === "online" ? "ONLINE" : "SETUP", client.status === "online")}</td><td>${escapeHtml(client.instagram || "Aguardando conexão")}</td><td>${client.odin ? badge("ATIVO") : badge("DESLIGADO", false)}</td><td>${(client.postTimes || []).join(" · ") || "—"}</td><td><strong>${mode}</strong>${extra}</td><td>${action}</td></tr>`;
   }).join("");
   renderAgentProfiles();
@@ -439,6 +450,7 @@ $("#client-form").addEventListener("submit", async event => {
   event.preventDefault();
   const form = event.currentTarget;
   const data = Object.fromEntries(new FormData(form));
+  if (!nicheCatalog.includes(data.niche)) { $("#form-status").textContent = "Escolha um nicho da lista."; return; }
   $("#form-status").textContent = "Salvando…";
   try {
     const result = await api("/api/clients", { method: "POST", body: JSON.stringify(data) });
@@ -461,7 +473,27 @@ $("select[name=theme]").addEventListener("change", event => {
   $("#theme-preview").style.borderColor = accent;
 });
 
+document.addEventListener("change", event => {
+  if (event.target.matches(".client-niche-edit")) {
+    event.target.closest("tr").querySelector(".client-video-edit").checked = event.target.value === "Streaming / IPTV";
+  }
+});
 document.addEventListener("click", async event => {
+  const saveConfig = event.target.closest("[data-save-client-config]");
+  if (saveConfig) {
+    const row = saveConfig.closest("tr");
+    const niche = row.querySelector(".client-niche-edit").value.trim();
+    if (!nicheCatalog.includes(niche)) { alert("Escolha um nicho da lista."); return; }
+    saveConfig.disabled = true;
+    try {
+      await api("/api/clients/" + encodeURIComponent(saveConfig.dataset.saveClientConfig), {
+        method: "PATCH", body: JSON.stringify({ niche, modules: { video: row.querySelector(".client-video-edit").checked } })
+      });
+      await load();
+    } catch { alert("Não foi possível salvar nicho e ferramentas."); }
+    finally { saveConfig.disabled = false; }
+    return;
+  }
   const assumeButton=event.target.closest("[data-assume-client]");if(assumeButton){assumeClient(assumeButton.dataset.assumeClient);return;}
   const deleteButton = event.target.closest("[data-delete-client]");
   if (deleteButton) {
@@ -561,7 +593,7 @@ if(openaiMasterForm)openaiMasterForm.addEventListener("submit",async event=>{
   }
 });
 
-load();
+loadNiches().then(load).catch(() => { $("#form-status").textContent = "Não foi possível carregar os nichos."; });
 setInterval(async()=>{
   try{
     const support=await api("/api/master/support");
