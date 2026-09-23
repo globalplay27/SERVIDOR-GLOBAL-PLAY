@@ -22,6 +22,7 @@ const connectionsFile = path.join(DATA_DIR, "connections.json");
 const oauthStateFile = path.join(DATA_DIR, "oauth-states.json");
 const portalUsersFile = path.join(DATA_DIR, "portal-users.json");
 const portalSessions = new Map();
+const masterSessions = new Map();
 
 function readJsonFile(file, fallback) {
   try {
@@ -462,6 +463,52 @@ function portalClientForRequest(req) {
   return clientFromCredentials(credentials.username, credentials.password);
 }
 
+function masterSessionAuthorized(req) {
+  const cookies = parseCookies(req);
+  const token = String(cookies.nexus_master || "");
+  if (!token) return false;
+  const expiresAt = masterSessions.get(token);
+  if (!expiresAt || expiresAt < Date.now()) {
+    if (expiresAt) masterSessions.delete(token);
+    return false;
+  }
+  return true;
+}
+
+function masterAuthorized(req) {
+  return masterSessionAuthorized(req) || authorized(req);
+}
+
+function masterLoginPage(error = false) {
+  return `<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#020508">
+<title>NEXUS AI · Master</title>
+<style>
+*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:radial-gradient(circle at 50% 30%,#0a2233,#020508 45%,#010203);font-family:Inter,system-ui,Arial;color:#edfaff}
+.card{width:min(430px,92vw);padding:34px;border:1px solid rgba(93,211,255,.16);border-radius:22px;background:linear-gradient(180deg,rgba(8,20,30,.96),rgba(3,8,13,.98));box-shadow:0 30px 100px #0009,inset 0 1px #ffffff08}
+.brand{display:flex;align-items:center;gap:14px;margin-bottom:28px}.brand img{width:56px;height:56px}.brand strong{display:block;font-size:21px;letter-spacing:.08em}.brand small{color:#68899b;letter-spacing:.14em}
+h1{font-size:30px;margin:0 0 8px}.muted{color:#7893a4;margin:0 0 24px;font-size:14px}
+label{display:grid;gap:7px;margin:13px 0;color:#9bb5c5;font-size:12px;font-weight:700}input{width:100%;padding:14px;border-radius:10px;border:1px solid #163244;background:#03090e;color:#fff;outline:none}input:focus{border-color:#5dd3ff;box-shadow:0 0 0 3px #5dd3ff16}
+button{width:100%;margin-top:12px;padding:14px;border:0;border-radius:10px;background:linear-gradient(135deg,#c8f3ff,#59d0ff 55%,#168ee8);color:#02101a;font-weight:900;cursor:pointer}
+.error{min-height:18px;margin-top:12px;color:#ff8690;font-size:12px}.secure{margin-top:20px;padding-top:15px;border-top:1px solid #5dd3ff12;color:#557182;font-size:11px;text-align:center}
+</style>
+</head>
+<body><main class="card">
+<div class="brand"><img src="/assets/nexus-ai-mark.svg" alt=""><div><strong>NEXUS AI</strong><small>MASTER CONTROL</small></div></div>
+<h1>Acesso administrativo</h1><p class="muted">Área exclusiva do administrador NEXUS.</p>
+<form method="post" action="/master-login">
+<label>Usuário<input name="username" autocomplete="username" required></label>
+<label>Senha<input name="password" type="password" autocomplete="current-password" required></label>
+<button type="submit">Entrar no Master</button>
+<div class="error">${error ? "Usuário ou senha inválidos." : ""}</div>
+</form><div class="secure">Sessão administrativa protegida · NEXUS AI</div>
+</main></body></html>`;
+}
+
 function defaultPostingProfile() {
   return {
     contentStrategy: "Vendas + engajamento",
@@ -514,6 +561,54 @@ function slug(value) {
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+
+  if (url.pathname === "/" && req.method === "GET") {
+    res.writeHead(303, {
+      location: "/login",
+      "cache-control": "no-store",
+      "content-length": "0"
+    });
+    return res.end();
+  }
+
+  if (url.pathname === "/login" && req.method === "GET") {
+    res.writeHead(303, {
+      location: "/portal.html?v=22&login=1",
+      "set-cookie": "nexus_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0",
+      "cache-control": "no-store",
+      "content-length": "0"
+    });
+    return res.end();
+  }
+
+  if ((url.pathname === "/master" || url.pathname === "/master/") && req.method === "GET") {
+    if (!masterSessionAuthorized(req)) {
+      return send(res, 200, masterLoginPage(false), "text/html; charset=utf-8");
+    }
+    const masterFile = path.join(__dirname, "public", "index.html");
+    return send(res, 200, fs.readFileSync(masterFile), "text/html; charset=utf-8");
+  }
+
+  if (url.pathname === "/master-login" && req.method === "POST") {
+    const body = await readFormBody(req);
+    const ok = safeEqualText(String(body.username || ""), ADMIN_USERNAME)
+      && safeEqualText(String(body.password || ""), ADMIN_PASSWORD);
+    if (!ok) return send(res, 401, masterLoginPage(true), "text/html; charset=utf-8");
+    const token = crypto.randomBytes(32).toString("base64url");
+    masterSessions.set(token, Date.now() + 12 * 60 * 60 * 1000);
+    return redirectWithCookie(
+      res,
+      "/master",
+      "nexus_master=" + encodeURIComponent(token) + "; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=43200"
+    );
+  }
+
+  if (url.pathname === "/master-logout" && req.method === "POST") {
+    const token = String(parseCookies(req).nexus_master || "");
+    if (token) masterSessions.delete(token);
+    res.setHeader("set-cookie", "nexus_master=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0");
+    return send(res, 200, { ok: true });
+  }
 
   if (url.pathname === "/health") {
     return send(res, 200, {
@@ -989,37 +1084,12 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  // Public entry always belongs to the client portal.
-  if (url.pathname === "/" && req.method === "GET") {
-    res.writeHead(302, {
-      location: "/portal.html?v=21",
-      "cache-control": "no-store",
-      "content-length": "0"
-    });
+  if (url.pathname === "/index.html" && req.method === "GET") {
+    res.writeHead(303, { location: "/master", "cache-control": "no-store", "content-length": "0" });
     return res.end();
   }
 
-  // Master dashboard is never exposed on a client-branded hostname.
-  const requestHost = String(req.headers.host || "").split(":")[0].toLowerCase();
-  if (
-    requestHost === "painel.ragnarplay.online"
-    && (url.pathname === "/master" || url.pathname === "/master/" || url.pathname === "/index.html")
-  ) {
-    return send(res, 404, "Not found", "text/plain; charset=utf-8");
-  }
-
-  // Master dashboard is never public. Both the friendly route and the
-  // underlying index.html require the administrator credentials.
-  if ((url.pathname === "/master" || url.pathname === "/master/" || url.pathname === "/index.html") && req.method === "GET") {
-    if (!authorized(req)) {
-      res.setHeader("WWW-Authenticate", 'Basic realm="NEXUS AI Master"');
-      return send(res, 401, "Acesso administrativo", "text/plain; charset=utf-8");
-    }
-    const masterFile = path.join(__dirname, "public", "index.html");
-    return send(res, 200, fs.readFileSync(masterFile), "text/html; charset=utf-8");
-  }
-
-  if (url.pathname.startsWith("/api/") && !authorized(req)) {
+  if (url.pathname.startsWith("/api/") && !masterAuthorized(req)) {
     res.setHeader("WWW-Authenticate", 'Basic realm="NEXUS AI Agent Central"');
     return send(res, 401, { error: "unauthorized" });
   }

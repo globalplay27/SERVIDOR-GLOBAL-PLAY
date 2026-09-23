@@ -4,16 +4,10 @@ const $$ = selector => [...document.querySelectorAll(selector)];
 
 function api(path, options = {}) {
   const headers = { "content-type": "application/json", ...(options.headers || {}) };
-  if (state.auth) headers.authorization = state.auth;
-  return fetch(path, { ...options, headers }).then(async response => {
+  return fetch(path, { ...options, headers, credentials: "same-origin" }).then(async response => {
     if (response.status === 401) {
-      const username = prompt("Usuário administrativo da NEXUS AI:");
-      if (username === null) throw new Error("Autenticação cancelada");
-      const password = prompt("Senha administrativa:");
-      if (password === null) throw new Error("Autenticação cancelada");
-      state.auth = `Basic ${btoa(`${username}:${password}`)}`;
-      sessionStorage.setItem("nexus-auth", state.auth);
-      return api(path, options);
+      location.href = "/master";
+      throw new Error("Sessão administrativa expirada");
     }
     if (!response.ok) throw new Error(`Erro ${response.status}`);
     return response.json();
