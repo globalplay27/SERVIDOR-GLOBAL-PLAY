@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#080b0a">
   <title>NEXUS AI · Agent Control Center</title>
-  <link rel="stylesheet" href="/styles.css?v=7">
+  <link rel="stylesheet" href="/styles.css?v=8">
 </head>
 <body>
   <div class="shell">
@@ -86,8 +86,7 @@
               <label>Usuário do aplicativo<input name="username" placeholder="Gerado automaticamente"></label>
               <label>Senha inicial<input name="password" type="text" minlength="8" placeholder="Gerada automaticamente"></label>
               <label>Tema<select name="theme"><option value="green-black">Preto + Verde</option><option value="red-black">Preto + Vermelho</option><option value="blue-white">Azul + Branco</option><option value="gold-black">Preto + Dourado</option></select></label>
-              <label>Modo de IA<select name="aiMode" id="ai-mode"><option value="economy">Econômico · sem imagem IA paga</option><option value="hybrid">Híbrido · franquia de imagens IA</option><option value="own-key">Chave própria do cliente</option></select></label>
-              <label id="ai-limit-wrap" hidden>Imagens IA / mês<input name="aiMonthlyImageLimit" id="ai-limit" type="number" min="1" max="500" value="10"></label>
+              <div class="managed-ai-info"><span>IA</span><strong>IA NEXUS gerenciada</strong><small>Sem conta OpenAI e sem chave para o cliente.</small></div>
             </div>
             <div class="automation-summary">
               <div><span>1</span><strong>Você cria o acesso</strong><small>Usuário e senha saem daqui.</small></div>
@@ -130,9 +129,24 @@
           </form>
           <p class="disclaimer">A API oficial fornece custos e limites, mas não expõe diretamente o saldo pré-pago atual. Por isso o NEXUS calcula o saldo estimado a partir do valor que você informar e desconta o consumo registrado depois disso.</p>
         </div>
+
+        <div class="panel master-instagram-panel">
+          <div class="panel-head">
+            <div><p class="eyebrow">AUTORIZAÇÃO CENTRAL</p><h2>Instagram NEXUS</h2><p class="muted">Configure uma única vez. Depois cada cliente apenas entra no Instagram e autoriza a própria conta.</p></div>
+            <span id="instagram-master-state" class="badge off">NÃO CONFIGURADO</span>
+          </div>
+          <form id="instagram-master-form" class="openai-master-form">
+            <label>Instagram App ID<input name="appId" id="instagram-app-id" autocomplete="off" placeholder="App ID do Instagram"></label>
+            <label>Instagram App Secret<input name="appSecret" type="password" autocomplete="off" placeholder="Deixe vazio para manter o atual"></label>
+            <label>OAuth Redirect URL<input id="instagram-callback-url" readonly value="Carregando..."></label>
+            <button class="primary" type="submit">Salvar Instagram NEXUS</button>
+            <span id="instagram-master-message" class="form-status"></span>
+          </form>
+          <p class="disclaimer">Cadastre exatamente a URL acima em “Valid OAuth Redirect URIs” no aplicativo Meta/Instagram do NEXUS. Esta configuração é única; os clientes não criam aplicativo.</p>
+        </div>
       </section>
     </main>
   </div>
-  <script src="/app.js?v=7" defer></script>
+  <script src="/app.js?v=8" defer></script>
 </body>
 </html>
