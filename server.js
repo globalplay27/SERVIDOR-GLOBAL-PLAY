@@ -482,6 +482,16 @@ async function masterOpenAISummary() {
     Number.isFinite(baselineUsd) && baselineAt > 0 && Number.isFinite(baselineCostUsd)
       ? Math.max(0, baselineUsd - baselineCostUsd)
       : null;
+  const monthlyBudgetUsd = Number(record.monthlyBudgetUsd);
+  const budgetConfigured = Number.isFinite(monthlyBudgetUsd) && monthlyBudgetUsd > 0;
+  const budgetRemainingUsd =
+    budgetConfigured && Number.isFinite(monthCostUsd)
+      ? Math.max(0, monthlyBudgetUsd - monthCostUsd)
+      : null;
+  const budgetPercent =
+    budgetConfigured && Number.isFinite(monthCostUsd)
+      ? Math.min(100, Math.max(0, Math.round((monthCostUsd / monthlyBudgetUsd) * 100)))
+      : null;
 
   return {
     apiConnected: Boolean(apiKey),
@@ -492,6 +502,9 @@ async function masterOpenAISummary() {
     balanceEstimatedUsd,
     balanceBaselineUsd: Number.isFinite(baselineUsd) ? baselineUsd : null,
     balanceBaselineAt: baselineAt || null,
+    monthlyBudgetUsd: budgetConfigured ? monthlyBudgetUsd : null,
+    budgetRemainingUsd,
+    budgetPercent,
     exactPrepaidBalanceAvailable: false,
     ragnarExcluded: true,
     error
@@ -1753,6 +1766,22 @@ const server = http.createServer(async (req, res) => {
     const client = clients.find(c => c.id === clientMatch[1]);
     if (!client) return send(res, 404, { error: "not_found" });
 
+    if (Object.prototype.hasOwnProperty.call(body, "aiMode")) {
+      const mode = String(body.aiMode || "");
+      if (!["hybrid","economy","own-key"].includes(mode)) {
+        return send(res, 400, { error: "invalid_ai_mode" });
+      }
+      if (client.id === "ragnar-one" && mode !== "own-key") {
+        return send(res, 409, { error: "ragnar_openai_is_separate" });
+      }
+    }
+    if (Object.prototype.hasOwnProperty.call(body, "aiMonthlyImageLimit")) {
+      const limit = Number(body.aiMonthlyImageLimit);
+      if (!Number.isInteger(limit) || limit < 1 || limit > 10000) {
+        return send(res, 400, { error: "invalid_ai_monthly_image_limit" });
+      }
+    }
+
     const allowed = [
       "name","niche","instagram","theme","primaryColor","secondaryColor",
       "status","github","railway","openai","meta","odin","postTimes",
@@ -1888,6 +1917,9 @@ const server = http.createServer(async (req, res) => {
         monthCostUsd: null,
         spendLimitUsd: null,
         balanceEstimatedUsd: null,
+        monthlyBudgetUsd: Number(masterOpenAIRecord().monthlyBudgetUsd) || null,
+        budgetRemainingUsd: null,
+        budgetPercent: null,
         exactPrepaidBalanceAvailable: false,
         ragnarExcluded: true,
         error: String(error?.message || "openai_summary_failed")
@@ -1905,7 +1937,15 @@ const server = http.createServer(async (req, res) => {
       const apiKey = suppliedApiKey || masterOpenAIProjectKey();
       const adminKey = suppliedAdminKey || masterOpenAIAdminKey();
 
-      if (!apiKey && !adminKey) return send(res, 400, { error: "openai_key_required" });
+      const hasBalanceSetting =
+        Object.prototype.hasOwnProperty.call(body, "currentBalanceUsd")
+        && String(body.currentBalanceUsd).trim() !== "";
+      const hasBudgetSetting =
+        Object.prototype.hasOwnProperty.call(body, "monthlyBudgetUsd")
+        && String(body.monthlyBudgetUsd).trim() !== "";
+      if (!apiKey && !adminKey && !hasBalanceSetting && !hasBudgetSetting) {
+        return send(res, 400, { error: "openai_key_or_budget_required" });
+      }
       if (suppliedApiKey) await validateOpenAIKey(suppliedApiKey);
       if (suppliedAdminKey) await validateOpenAIAdminKey(suppliedAdminKey);
 
@@ -1920,6 +1960,13 @@ const server = http.createServer(async (req, res) => {
         }
         next.balanceBaselineUsd = balance;
         next.balanceBaselineAt = Math.floor(Date.now() / 1000);
+      }
+      if (Object.prototype.hasOwnProperty.call(body, "monthlyBudgetUsd") && String(body.monthlyBudgetUsd).trim() !== "") {
+        const budget = Number(body.monthlyBudgetUsd);
+        if (!Number.isFinite(budget) || budget <= 0 || budget > 1000000) {
+          return send(res, 400, { error: "invalid_monthly_budget" });
+        }
+        next.monthlyBudgetUsd = budget;
       }
       next.connectedAt = previous.connectedAt || new Date().toISOString();
       next.updatedAt = new Date().toISOString();
