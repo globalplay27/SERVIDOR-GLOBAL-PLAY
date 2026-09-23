@@ -444,3 +444,16 @@ footer span{color:#a8c8d7!important}
 .managed-instagram-button[disabled]{opacity:.72;cursor:default}
 @media(max-width:1120px){.managed-metrics{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:700px){.managed-metrics{grid-template-columns:1fr 1fr}}
+
+.support-client-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.support-form{display:grid;gap:12px}
+.support-form label{display:grid;gap:6px}
+.support-form input,.support-form select,.support-form textarea{width:100%;padding:12px;border-radius:10px;border:1px solid #18332a;background:#050a08;color:#fff}
+.client-support-list{display:grid;gap:10px}
+.client-ticket{padding:14px;border:1px solid #183128;border-radius:12px;background:#07100c;display:flex;justify-content:space-between;gap:12px}
+.client-ticket.new{border-color:var(--accent)}
+.client-ticket.resolved{opacity:.65}
+.client-ticket div{display:grid;gap:5px}
+.client-ticket span,.client-ticket small{font-size:10px;color:#7f998d}
+.support-empty-client{padding:28px;border:1px dashed #183128;border-radius:12px;text-align:center}
+@media(max-width:900px){.support-client-grid{grid-template-columns:1fr}}
