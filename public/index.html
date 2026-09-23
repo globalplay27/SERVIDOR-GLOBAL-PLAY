@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#080b0a">
   <title>NEXUS AI · Agent Control Center</title>
-  <link rel="stylesheet" href="/styles.css?v=8">
+  <link rel="stylesheet" href="/styles.css?v=9">
 </head>
 <body>
   <div class="shell">
@@ -112,22 +112,32 @@
 
         <div class="panel master-openai-panel">
           <div class="panel-head">
-            <div><p class="eyebrow">CONTROLE DE CUSTO</p><h2>OpenAI NEXUS</h2><p class="muted">Conta central para os próximos clientes. A OpenAI do Ragnar permanece separada e não entra neste controle.</p></div>
+            <div><p class="eyebrow">CENTRAL DE CRÉDITOS</p><h2>OpenAI NEXUS</h2><p class="muted">Uma conta central abastece os clientes NEXUS. Ragnar continua separado e não consome estes créditos.</p></div>
             <span id="openai-master-state" class="badge off">NÃO CONECTADA</span>
           </div>
-          <div class="finance-grid">
-            <article><span>Saldo estimado</span><strong id="openai-balance">—</strong><small id="openai-balance-note">Informe o saldo atual uma vez.</small></article>
-            <article><span>Gasto no mês</span><strong id="openai-month-cost">—</strong><small>dados da API administrativa</small></article>
-            <article><span>Limite mensal</span><strong id="openai-spend-limit">—</strong><small>quando configurado na organização</small></article>
+          <div class="finance-grid finance-grid-four">
+            <article><span>Crédito estimado</span><strong id="openai-balance">—</strong><small id="openai-balance-note">Informe seu saldo atual uma vez.</small></article>
+            <article><span>Gasto no mês</span><strong id="openai-month-cost">—</strong><small>valor real da API administrativa</small></article>
+            <article><span>Orçamento NEXUS</span><strong id="openai-month-budget">—</strong><small>teto mensal definido por você</small></article>
+            <article><span>Restante no orçamento</span><strong id="openai-budget-remaining">—</strong><small id="openai-budget-note">aguardando configuração</small></article>
           </div>
-          <form id="openai-master-form" class="openai-master-form">
+          <form id="openai-master-form" class="openai-master-form openai-master-form-five">
             <label>Chave API do projeto NEXUS<input name="apiKey" type="password" autocomplete="off" placeholder="sk-... · deixe vazio para manter a atual"></label>
-            <label>Admin API Key<input name="adminKey" type="password" autocomplete="off" placeholder="Chave administrativa para custos"></label>
-            <label>Saldo atual da conta (US$)<input name="currentBalanceUsd" type="number" min="0" step="0.01" placeholder="Ex.: 25.00"></label>
-            <button class="primary" type="submit">Conectar / atualizar OpenAI</button>
+            <label>Admin API Key<input name="adminKey" type="password" autocomplete="off" placeholder="Chave administrativa para consultar gastos"></label>
+            <label>Crédito / saldo atual (US$)<input name="currentBalanceUsd" type="number" min="0" step="0.01" placeholder="Ex.: 25.00"></label>
+            <label>Orçamento mensal NEXUS (US$)<input name="monthlyBudgetUsd" type="number" min="0.01" step="0.01" placeholder="Ex.: 50.00"></label>
+            <button class="primary" type="submit">Salvar controle OpenAI</button>
             <span id="openai-master-message" class="form-status"></span>
           </form>
-          <p class="disclaimer">A API oficial fornece custos e limites, mas não expõe diretamente o saldo pré-pago atual. Por isso o NEXUS calcula o saldo estimado a partir do valor que você informar e desconta o consumo registrado depois disso.</p>
+
+          <div class="ai-credit-section">
+            <div class="ai-credit-title">
+              <div><p class="eyebrow">CLIENTES</p><h3>Créditos de IA por cliente</h3><p class="muted">Defina quantas imagens pagas cada cliente pode gerar por mês. Ao atingir o limite, novas imagens são bloqueadas automaticamente.</p></div>
+            </div>
+            <div id="openai-client-controls" class="ai-client-controls"></div>
+          </div>
+
+          <p class="disclaimer">O gasto total em dólares vem da OpenAI quando a Admin API Key estiver conectada. Como todos os clientes compartilham o projeto NEXUS, o controle individual abaixo é feito pelo próprio NEXUS em créditos de imagem. O saldo pré-pago é uma estimativa calculada a partir do valor que você informar.</p>
         </div>
 
         <div class="panel master-instagram-panel">
@@ -147,6 +157,6 @@
       </section>
     </main>
   </div>
-  <script src="/app.js?v=8" defer></script>
+  <script src="/app.js?v=9" defer></script>
 </body>
 </html>
