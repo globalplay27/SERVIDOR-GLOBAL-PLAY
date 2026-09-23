@@ -1110,6 +1110,119 @@ function agentBearerAuthorized(req, clientId) {
   return safeEqualText(supplied, expected);
 }
 
+function agentTokenForClient(clientId) {
+  if (clientId === "ragnar-one") return String(process.env.RAGNAR_AGENT_TOKEN || "");
+  if (clientId === "globalplay-streaming") return String(process.env.GLOBALPLAY_AGENT_TOKEN || "");
+  return "";
+}
+
+function normalizeLeadPayload(client, payload) {
+  const leads = Array.isArray(payload?.leads) ? payload.leads.map(item => ({
+    clientId: client.id,
+    clientName: client.name || client.id,
+    instagram: client.instagram || "",
+    instagramUserId: String(item.instagramUserId || ""),
+    instagramUsername: String(item.instagramUsername || ""),
+    temperature: ["hot","warm","cold"].includes(String(item.temperature)) ? String(item.temperature) : "cold",
+    score: Math.max(0, Number(item.score || 0)),
+    stage: String(item.stage || "new"),
+    intent: String(item.intent || ""),
+    needsHuman: Boolean(item.needsHuman),
+    triggerKeyword: String(item.triggerKeyword || ""),
+    lastMessage: String(item.lastMessage || ""),
+    lastContactAt: item.lastContactAt || null,
+    updatedAt: item.updatedAt || null
+  })) : [];
+  const summary = leads.reduce((acc, lead) => {
+    acc.total += 1;
+    acc[lead.temperature] += 1;
+    if (lead.needsHuman) acc.needsHuman += 1;
+    return acc;
+  }, { total: 0, hot: 0, warm: 0, cold: 0, needsHuman: 0 });
+  return { summary, leads };
+}
+
+async function fetchAgentLeads(client) {
+  const base = String(client?.agentApiUrl || "").replace(/\/+$/, "");
+  const token = agentTokenForClient(client?.id);
+  if (!base || !token) {
+    return {
+      summary: {
+        total: Number(client?.leads?.total || 0),
+        hot: Number(client?.leads?.hot || 0),
+        warm: Number(client?.leads?.warm || 0),
+        cold: Number(client?.leads?.cold || 0),
+        needsHuman: 0
+      },
+      leads: [],
+      source: "stored"
+    };
+  }
+  try {
+    const response = await fetch(base + "/nexus/leads", {
+      headers: {
+        authorization: "Bearer " + token,
+        accept: "application/json",
+        "user-agent": "NEXUS-AI/1.0"
+      },
+      signal: AbortSignal.timeout(9000)
+    });
+    if (!response.ok) throw new Error("agent_leads_" + response.status);
+    const payload = await response.json();
+    return { ...normalizeLeadPayload(client, payload), source: "agent" };
+  } catch (error) {
+    console.warn("Lead sync failed for " + client?.id + ": " + String(error?.message || error));
+    return {
+      summary: {
+        total: Number(client?.leads?.total || 0),
+        hot: Number(client?.leads?.hot || 0),
+        warm: Number(client?.leads?.warm || 0),
+        cold: Number(client?.leads?.cold || 0),
+        needsHuman: 0
+      },
+      leads: [],
+      source: "stored",
+      error: "agent_unavailable"
+    };
+  }
+}
+
+async function masterLeadSummary() {
+  const clients = loadClients();
+  const results = await Promise.all(clients.map(async client => {
+    const data = await fetchAgentLeads(client);
+    return {
+      clientId: client.id,
+      clientName: client.name || client.id,
+      instagram: client.instagram || "",
+      source: data.source,
+      summary: data.summary,
+      leads: data.leads
+    };
+  }));
+  const summary = results.reduce((acc, item) => {
+    acc.total += Number(item.summary.total || 0);
+    acc.hot += Number(item.summary.hot || 0);
+    acc.warm += Number(item.summary.warm || 0);
+    acc.cold += Number(item.summary.cold || 0);
+    acc.needsHuman += Number(item.summary.needsHuman || 0);
+    return acc;
+  }, { total: 0, hot: 0, warm: 0, cold: 0, needsHuman: 0 });
+  return {
+    summary,
+    byClient: results.map(item => ({
+      clientId: item.clientId,
+      clientName: item.clientName,
+      instagram: item.instagram,
+      source: item.source,
+      ...item.summary
+    })),
+    leads: results.flatMap(item => item.leads)
+      .sort((a, b) => String(b.updatedAt || b.lastContactAt || "").localeCompare(String(a.updatedAt || a.lastContactAt || "")))
+      .slice(0, 1000)
+  };
+}
+
 function authorized(req) {
   const credentials = parseBasicAuth(req);
   if (!credentials) return false;
@@ -2306,6 +2419,13 @@ const server = http.createServer(async (req, res) => {
     return send(res, 201, supportTicketView(ticket));
   }
 
+  if (url.pathname === "/api/portal/leads" && req.method === "GET") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    const data = await fetchAgentLeads(client);
+    return send(res, 200, data);
+  }
+
   if (url.pathname === "/api/portal/posts" && req.method === "GET") {
     const client = portalClientForRequest(req);
     if (!client) return send(res, 401, { error: "unauthorized" });
@@ -2586,6 +2706,21 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname.startsWith("/api/") && !masterAuthorized(req)) {
     res.setHeader("WWW-Authenticate", 'Basic realm="NEXUS AI Agent Central"');
     return send(res, 401, { error: "unauthorized" });
+  }
+
+  if (url.pathname === "/api/master/leads" && req.method === "GET") {
+    return send(res, 200, await masterLeadSummary());
+  }
+
+  const impersonateMatch = url.pathname.match(/^\/api\/master\/impersonate\/([^/]+)$/);
+  if (impersonateMatch && req.method === "POST") {
+    const clientId = decodeURIComponent(impersonateMatch[1]);
+    const client = loadClients().find(item => item.id === clientId);
+    if (!client) return send(res, 404, { error: "not_found" });
+    const token = crypto.randomBytes(32).toString("base64url");
+    portalSessions.set(token, { clientId, expiresAt: Date.now() + 2 * 60 * 60 * 1000, assumedByMaster: true });
+    res.setHeader("set-cookie", "nexus_session=" + encodeURIComponent(token) + "; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=7200");
+    return send(res, 200, { ok: true, clientId, url: "/portal.html?assumed=1" });
   }
 
   if (url.pathname === "/api/master/posts" && req.method === "GET") {
