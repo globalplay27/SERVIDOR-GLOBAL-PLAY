@@ -24,8 +24,13 @@ const portalUsersFile = path.join(DATA_DIR, "portal-users.json");
 const masterIntegrationsFile = path.join(DATA_DIR, "master-integrations.json");
 const supportTicketsFile = path.join(DATA_DIR, "support-tickets.json");
 const postLedgerFile = path.join(DATA_DIR, "post-ledger.json");
+const videoJobsFile = path.join(DATA_DIR, "video-jobs.json");
 const clientLogoDir = path.join(DATA_DIR, "client-logos");
+const manualPostDir = path.join(DATA_DIR, "manual-posts");
+const clientVideoDir = path.join(DATA_DIR, "client-videos");
 fs.mkdirSync(clientLogoDir, { recursive: true });
+fs.mkdirSync(manualPostDir, { recursive: true });
+fs.mkdirSync(clientVideoDir, { recursive: true });
 const portalSessions = new Map();
 const masterSessions = new Map();
 
@@ -105,6 +110,30 @@ function readBody(req) {
     req.on("data", chunk => {
       size += chunk.length;
       if (size > 1024 * 1024) {
+        reject(new Error("payload_too_large"));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on("end", () => {
+      try {
+        resolve(JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}"));
+      } catch {
+        resolve({});
+      }
+    });
+    req.on("error", reject);
+  });
+}
+
+function readLargeJsonBody(req, maxBytes = 14 * 1024 * 1024) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    req.on("data", chunk => {
+      size += chunk.length;
+      if (size > maxBytes) {
         reject(new Error("payload_too_large"));
         req.destroy();
         return;
@@ -234,9 +263,46 @@ function savePostLedger(value) {
   writeJsonAtomic(postLedgerFile, rows);
 }
 
+function loadVideoJobs() {
+  return readJsonFile(videoJobsFile, []);
+}
+
+function saveVideoJobs(value) {
+  writeJsonAtomic(videoJobsFile, Array.isArray(value) ? value.slice(-1000) : []);
+}
+
+function portalVideoJobView(job) {
+  return {
+    id: job.id,
+    clientId: job.clientId,
+    filename: job.filename,
+    sizeBytes: Number(job.sizeBytes || 0),
+    goal: job.goal || "viral",
+    clipDuration: Number(job.clipDuration || 30),
+    requestedClips: Number(job.requestedClips || 3),
+    status: job.status || "queued",
+    progress: Number(job.progress || 0),
+    message: job.message || "",
+    clips: Array.isArray(job.clips) ? job.clips.map(clip => ({
+      id: clip.id,
+      title: clip.title || "",
+      duration: Number(clip.duration || 0),
+      status: clip.status || "draft",
+      previewUrl: clip.previewUrl || ""
+    })) : [],
+    createdAt: job.createdAt,
+    updatedAt: job.updatedAt || job.createdAt
+  };
+}
+
 function cleanPostStatus(value) {
   const allowed = new Set(["scheduled","generating","ready","publishing","published","failed","skipped"]);
   return allowed.has(String(value || "")) ? String(value) : "scheduled";
+}
+
+function cleanApprovalStatus(value) {
+  const allowed = new Set(["pending","approved","rejected","correction_requested"]);
+  return allowed.has(String(value || "")) ? String(value) : "pending";
 }
 
 function normalizeIso(value) {
@@ -268,6 +334,7 @@ function upsertPostLedger(clientId, body = {}) {
       scheduledFor,
       scheduledHour,
       status: "scheduled",
+      approvalStatus: "pending",
       costUsd: 0,
       costCalculated: true,
       model: "",
@@ -280,6 +347,8 @@ function upsertPostLedger(clientId, body = {}) {
   }
 
   if (body.status) row.status = cleanPostStatus(body.status);
+  if (body.approvalStatus) row.approvalStatus = cleanApprovalStatus(body.approvalStatus);
+  if (row.status === "published") row.approvalStatus = "approved";
   if (scheduledFor) row.scheduledFor = scheduledFor;
   if (scheduledHour) row.scheduledHour = scheduledHour;
   if (body.attemptedAt) row.attemptedAt = normalizeIso(body.attemptedAt) || row.attemptedAt || now;
@@ -289,6 +358,10 @@ function upsertPostLedger(clientId, body = {}) {
   if (body.model != null) row.model = String(body.model || "").slice(0, 100);
   if (body.error != null) row.error = String(body.error || "").slice(0, 900);
   if (body.costSource != null) row.costSource = String(body.costSource || "").slice(0, 80);
+  if (body.caption != null) row.caption = String(body.caption || "").slice(0, 2200);
+  if (body.imageUrl != null) row.imageUrl = String(body.imageUrl || "").slice(0, 1600);
+  if (body.revisionRequest != null) row.revisionRequest = String(body.revisionRequest || "").slice(0, 1600);
+  if (body.source != null) row.source = String(body.source || "").slice(0, 80);
 
   const absoluteCost = Number(body.costUsd);
   if (Number.isFinite(absoluteCost) && absoluteCost >= 0) row.costUsd = absoluteCost;
@@ -442,6 +515,146 @@ function ensureKnownPostHistory() {
   }
 }
 ensureKnownPostHistory();
+
+function portalPostView(row) {
+  const status = cleanPostStatus(row.status);
+  const approvalStatus = row.approvalStatus
+    ? cleanApprovalStatus(row.approvalStatus)
+    : status === "published"
+      ? "approved"
+      : (status === "failed" || status === "skipped" ? "rejected" : "pending");
+  return {
+    id: row.id,
+    scheduledFor: row.scheduledFor || null,
+    scheduledHour: row.scheduledHour || "",
+    status,
+    approvalStatus,
+    attemptedAt: row.attemptedAt || null,
+    publishedAt: row.publishedAt || null,
+    mediaId: row.mediaId || "",
+    error: row.error || "",
+    revisionRequest: row.revisionRequest || "",
+    caption: row.caption || "",
+    imageUrl: row.imageUrl || "",
+    source: row.source || "",
+    updatedAt: row.updatedAt || row.createdAt || null
+  };
+}
+
+function portalPostsForClient(client) {
+  const summary = postLedgerSummary();
+  return summary.posts
+    .filter(row => row.clientId === client.id)
+    .slice(0, 90)
+    .map(portalPostView);
+}
+
+function materializePortalPost(client, postId) {
+  const ledger = loadPostLedger();
+  let row = ledger.find(item => item.clientId === client.id && item.id === postId);
+  if (row) return { row, ledger };
+
+  const prefix = "expected:" + client.id + ":";
+  if (!String(postId || "").startsWith(prefix)) return { row: null, ledger };
+
+  const remainder = String(postId).slice(prefix.length);
+  const match = /^(\d{4}-\d{2}-\d{2}):(\d{2}:\d{2})$/.exec(remainder);
+  if (!match) return { row: null, ledger };
+  const scheduledDate = new Date(match[1] + "T" + match[2] + ":00-03:00");
+  if (!Number.isFinite(scheduledDate.getTime())) return { row: null, ledger };
+
+  row = {
+    id: postId,
+    clientId: client.id,
+    clientName: client.name || client.id,
+    instagram: client.instagram || "",
+    scheduledFor: scheduledDate.toISOString(),
+    scheduledHour: match[2],
+    status: "scheduled",
+    approvalStatus: "pending",
+    costUsd: 0,
+    costCalculated: true,
+    model: "",
+    mediaId: "",
+    error: "",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+  ledger.push(row);
+  return { row, ledger };
+}
+
+async function publishInstagramImageForClient(clientId, imageUrl, caption) {
+  const connection = directConnection(clientId, "meta");
+  const accessToken = decryptSecret(connection?.accessToken || "");
+  const igUserId = String(connection?.igUserId || "").trim();
+  if (!accessToken || !igUserId) {
+    const err = new Error("instagram_not_connected");
+    err.code = "instagram_not_connected";
+    throw err;
+  }
+
+  const graphRequest = async (pathName, method = "GET", form = null) => {
+    const endpoint = "https://graph.instagram.com/" + String(pathName).replace(/^\/+/, "");
+    const options = {
+      method,
+      headers: {
+        authorization: "Bearer " + accessToken,
+        "user-agent": "NEXUS-AI/1.0"
+      }
+    };
+    if (form) {
+      options.headers["content-type"] = "application/x-www-form-urlencoded";
+      options.body = new URLSearchParams(form);
+    }
+    const response = await fetch(endpoint, options);
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const metaError = payload?.error || {};
+      const err = new Error(String(metaError.message || "instagram_api_failed"));
+      err.code = metaError.code || response.status;
+      err.type = metaError.type || "";
+      throw err;
+    }
+    return payload;
+  };
+
+  const created = await graphRequest(igUserId + "/media", "POST", {
+    image_url: imageUrl,
+    caption
+  });
+  const containerId = String(created?.id || "");
+  if (!containerId) throw new Error("instagram_container_missing");
+
+  const deadline = Date.now() + 90000;
+  let lastStatus = "";
+  while (Date.now() < deadline) {
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    const status = await graphRequest(containerId + "?fields=status_code,status");
+    const code = String(status?.status_code || "").toUpperCase();
+    lastStatus = String(status?.status || code || "");
+    if (code === "FINISHED") {
+      const published = await graphRequest(igUserId + "/media_publish", "POST", { creation_id: containerId });
+      const mediaId = String(published?.id || "");
+      let permalink = "";
+      if (mediaId) {
+        try {
+          const media = await graphRequest(mediaId + "?fields=permalink");
+          permalink = String(media?.permalink || "");
+        } catch {}
+      }
+      return { mediaId, containerId, permalink };
+    }
+    if (code === "ERROR" || code === "EXPIRED") {
+      const err = new Error("instagram_media_processing_failed");
+      err.status = lastStatus;
+      throw err;
+    }
+  }
+  const err = new Error("instagram_media_processing_timeout");
+  err.status = lastStatus;
+  throw err;
+}
 
 function supportTicketView(ticket) {
   return {
