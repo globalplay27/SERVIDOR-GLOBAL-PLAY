@@ -176,7 +176,7 @@ function loadClients() {
       postTimes: ["09:00", "12:00", "18:00"],
       leads: { total: 0, hot: 0, warm: 0, cold: 0 },
       usage: { openaiPercent: 0, railwayPercent: 0 },
-      aiMode: "own-key",
+      aiMode: "economy",
       aiMonthlyImageLimit: 0,
       aiImagesUsed: 0,
       aiUsageMonth: new Date().toISOString().slice(0, 7),
@@ -198,6 +198,17 @@ function loadClients() {
     });
     writeJsonAtomic(runtimeFile, items);
   }
+  let changed = false;
+  for (const item of items) {
+    if (item.id === "ragnar-one") continue;
+    if (item.aiMode !== "economy" || Number(item.aiMonthlyImageLimit || 0) !== 0) {
+      item.aiMode = "economy";
+      item.aiMonthlyImageLimit = 0;
+      item.aiImagesUsed = Number(item.aiImagesUsed || 0);
+      changed = true;
+    }
+  }
+  if (changed) writeJsonAtomic(runtimeFile, items);
   return items;
 }
 
@@ -2673,8 +2684,7 @@ const server = http.createServer(async (req, res) => {
     // Ragnar remains isolated and may use only its own OpenAI connection.
     const record = directConnection(clientId, "openai");
     const ownKey = decryptSecret(record?.apiKey || "");
-    const allowOwnImageKey = clientId === "ragnar-one" || client.aiMode === "own-key";
-    if (!allowOwnImageKey) {
+    if (clientId !== "ragnar-one") {
       return send(res, 409, { error: "nexus_paid_image_generation_disabled" });
     }
     if (!ownKey) {
@@ -2873,11 +2883,10 @@ const server = http.createServer(async (req, res) => {
 
     if (Object.prototype.hasOwnProperty.call(body, "aiMode")) {
       const mode = String(body.aiMode || "");
-      if (!["economy","own-key"].includes(mode)) {
-        return send(res, 400, { error: "invalid_ai_mode" });
-      }
-      if (client.id === "ragnar-one" && mode !== "own-key") {
-        return send(res, 409, { error: "ragnar_openai_is_separate" });
+      if (client.id === "ragnar-one") {
+        if (mode !== "own-key") return send(res, 409, { error: "ragnar_openai_is_separate" });
+      } else if (mode !== "economy") {
+        return send(res, 409, { error: "nexus_paid_image_generation_disabled" });
       }
     }
     if (Object.prototype.hasOwnProperty.call(body, "aiMonthlyImageLimit")) {
