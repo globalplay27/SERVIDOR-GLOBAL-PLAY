@@ -506,6 +506,8 @@ async function saveOwnPost(postId,button){
 }
 
 let latestVideoJobs=[];
+let latestVideoFolders=[{id:"default",name:"Meus vídeos"}];
+let videoFolderFilter="";
 const bulkVideoSelection=new Set();
 const bulkVideoTimes=new Map();
 
@@ -649,6 +651,87 @@ async function confirmBulkVideoSchedule(){
   }finally{button.disabled=false;button.textContent="Confirmar agendamento";}
 }
 
+function videoFolderName(id){
+  return latestVideoFolders.find(folder=>folder.id===id)?.name||"Meus vídeos";
+}
+function syncVideoFolderControls(){
+  const filter=$("#video-folder-filter"),upload=$("#video-upload-folder");
+  const options=latestVideoFolders.map(folder=>`<option value="${escapeSupport(folder.id)}">${escapeSupport(folder.name)}</option>`).join("");
+  if(filter){
+    const previous=videoFolderFilter||filter.value||"";
+    filter.innerHTML='<option value="">Todas as pastas</option>'+options;
+    filter.value=latestVideoFolders.some(folder=>folder.id===previous)?previous:"";
+    videoFolderFilter=filter.value;
+  }
+  if(upload){
+    const previous=upload.value||"default";
+    upload.innerHTML=options;
+    upload.value=latestVideoFolders.some(folder=>folder.id===previous)?previous:"default";
+  }
+  const rename=$("#video-rename-folder"),remove=$("#video-delete-folder");
+  const locked=!videoFolderFilter||videoFolderFilter==="default";
+  if(rename)rename.disabled=locked;
+  if(remove)remove.disabled=locked;
+}
+async function createVideoFolder(){
+  const input=$("#video-new-folder-name"),status=$("#video-upload-status");
+  const name=input?.value?.trim()||"";
+  if(!name){if(status)status.textContent="Digite o nome da nova pasta.";return;}
+  try{
+    const r=await fetch("/api/portal/video-folders",{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({name})});
+    const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||"Não foi possível criar a pasta.");
+    latestVideoFolders=d.folders||latestVideoFolders;if(input)input.value="";syncVideoFolderControls();
+    if(status){status.textContent="Pasta criada.";status.className="save-status ok";}
+  }catch(error){if(status){status.textContent=error.message;status.className="save-status error";}}
+}
+async function renameCurrentVideoFolder(){
+  if(!videoFolderFilter||videoFolderFilter==="default")return;
+  const current=videoFolderName(videoFolderFilter);
+  const name=prompt("Novo nome da pasta:",current)?.trim();
+  if(!name)return;
+  const status=$("#video-upload-status");
+  try{
+    const r=await fetch("/api/portal/video-folders/"+encodeURIComponent(videoFolderFilter),{method:"PATCH",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({name})});
+    const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||"Não foi possível renomear a pasta.");
+    latestVideoFolders=d.folders||latestVideoFolders;syncVideoFolderControls();renderVideoJobs({jobs:latestVideoJobs,folders:latestVideoFolders});
+    if(status){status.textContent="Pasta renomeada.";status.className="save-status ok";}
+  }catch(error){if(status){status.textContent=error.message;status.className="save-status error";}}
+}
+async function deleteCurrentVideoFolder(){
+  if(!videoFolderFilter||videoFolderFilter==="default")return;
+  if(!confirm("Excluir esta pasta? Os vídeos serão movidos para Meus vídeos."))return;
+  const status=$("#video-upload-status"),folderId=videoFolderFilter;
+  try{
+    const r=await fetch("/api/portal/video-folders/"+encodeURIComponent(folderId),{method:"DELETE",credentials:"same-origin"});
+    const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||"Não foi possível excluir a pasta.");
+    videoFolderFilter="";latestVideoFolders=d.folders||latestVideoFolders;await loadVideoJobs();
+    if(status){status.textContent="Pasta excluída. Os vídeos foram movidos para Meus vídeos.";status.className="save-status ok";}
+  }catch(error){if(status){status.textContent=error.message;status.className="save-status error";}}
+}
+async function updateVideoMeta(jobId,payload){
+  const r=await fetch("/api/portal/videos/"+encodeURIComponent(jobId),{method:"PATCH",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify(payload)});
+  const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||"Não foi possível atualizar o vídeo.");
+  return d;
+}
+async function renameVideoJob(jobId){
+  const job=latestVideoJobs.find(item=>item.id===jobId);if(!job)return;
+  const name=prompt("Novo nome do vídeo:",job.displayName||job.filename)?.trim();if(!name)return;
+  try{await updateVideoMeta(jobId,{displayName:name});await loadVideoJobs();}catch(error){alert(error.message);}
+}
+async function deleteVideoJob(jobId){
+  const job=latestVideoJobs.find(item=>item.id===jobId);if(!job)return;
+  if(!confirm('Excluir "'+(job.displayName||job.filename)+'" da biblioteca? Isso apaga o arquivo e os cortes do NEXUS, mas não remove algo que já foi publicado no Instagram.'))return;
+  try{
+    const r=await fetch("/api/portal/videos/"+encodeURIComponent(jobId),{method:"DELETE",credentials:"same-origin"});
+    const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.message||d.error||"Não foi possível excluir o vídeo.");
+    for(const key of [...bulkVideoSelection])if(key.startsWith(jobId+"|"))bulkVideoSelection.delete(key);
+    await loadVideoJobs();
+  }catch(error){alert(error.message);}
+}
+async function moveVideoJob(jobId,folderId){
+  try{await updateVideoMeta(jobId,{folderId});await loadVideoJobs();}catch(error){alert(error.message);}
+}
+
 function videoJobStatus(job){
   const labels={queued:"RECEBIDO",uploaded:"RECEBIDO",transcribing:"TRANSCREVENDO",selecting:"ESCOLHENDO CORTES",cutting:"CRIANDO CORTES",ready:"PRONTO PARA REVISÃO",failed:"FALHOU"};
   return labels[job.status]||String(job.status||"RECEBIDO").toUpperCase();
@@ -674,11 +757,24 @@ function renderVideoJobs(data={}){
   const root=$("#client-video-jobs");if(!root)return;
   const jobs=Array.isArray(data.jobs)?data.jobs:[];
   latestVideoJobs=jobs;
-  if(!jobs.length){root.innerHTML='<div class="post-client-empty"><strong>Nenhum vídeo enviado</strong><span>Envie um vídeo. Ele será processado e os cortes aparecerão aqui para sua decisão.</span></div>';return;}
-  root.innerHTML=jobs.map(job=>{
+  if(Array.isArray(data.folders)&&data.folders.length)latestVideoFolders=data.folders;
+  syncVideoFolderControls();
+  const visibleJobs=videoFolderFilter?jobs.filter(job=>(job.folderId||"default")===videoFolderFilter):jobs;
+  if(!visibleJobs.length){root.innerHTML='<div class="post-client-empty"><strong>Nenhum vídeo nesta pasta</strong><span>Envie vídeos ou escolha outra pasta.</span></div>';renderBulkVideoScheduler();return;}
+  root.innerHTML=visibleJobs.map(job=>{
     const clips=Array.isArray(job.clips)?job.clips:[];
+    const folderOptions=latestVideoFolders.map(folder=>`<option value="${escapeSupport(folder.id)}" ${(job.folderId||"default")===folder.id?"selected":""}>${escapeSupport(folder.name)}</option>`).join("");
     const header=`<article class="video-job-card video-job-expanded" data-video-job="${escapeSupport(job.id)}">
-      <div class="video-job-head"><div><strong>${escapeSupport(job.filename||"Vídeo")}</strong><span>${videoJobStatus(job)} · ${Math.round(Number(job.progress||0))}%</span></div><small>${escapeSupport(job.message||"Processando…")}</small></div>
+      <div class="video-job-head">
+        <div><strong>${escapeSupport(job.displayName||job.filename||"Vídeo")}</strong><span>${videoJobStatus(job)} · ${Math.round(Number(job.progress||0))}% · ${escapeSupport(job.outputFormatLabel||"Reels / Stories 9:16")}</span></div>
+        <small>${escapeSupport(job.message||"Processando…")}</small>
+      </div>
+      <div class="video-library-row">
+        <span class="video-folder-badge">${escapeSupport(videoFolderName(job.folderId||"default"))}</span>
+        <select data-video-folder-move="${escapeSupport(job.id)}">${folderOptions}</select>
+        <button type="button" class="ghost-action" data-video-rename-job="${escapeSupport(job.id)}">Renomear</button>
+        <button type="button" class="video-delete-button" data-video-delete-job="${escapeSupport(job.id)}">Excluir vídeo</button>
+      </div>
       <div class="video-job-progress"><i style="width:${Math.max(2,Math.min(100,Number(job.progress||0)))}%"></i></div>`;
     if(!clips.length){
       return header+`<div class="video-wait-card"><strong>${job.status==="failed"?"Não foi possível preparar os cortes.":"O NEXUS está trabalhando neste vídeo."}</strong><span>O vídeo não entra na agenda automática. Quando os cortes ficarem prontos, você decide aprovar, rejeitar ou agendar.</span></div></article>`;
@@ -781,6 +877,8 @@ async function publishVideoNow(button){
 }
 
 document.addEventListener("change",event=>{
+  const folderMove=event.target.closest?.("[data-video-folder-move]");
+  if(folderMove){moveVideoJob(folderMove.dataset.videoFolderMove,folderMove.value);return;}
   const input=event.target.closest?.("[data-video-bulk-select]");
   if(!input)return;
   const key=String(input.dataset.videoBulkSelect||"");
@@ -789,6 +887,8 @@ document.addEventListener("change",event=>{
   renderBulkVideoScheduler();
 });
 document.addEventListener("click",event=>{
+  const renameJob=event.target.closest("[data-video-rename-job]");if(renameJob){renameVideoJob(renameJob.dataset.videoRenameJob);return;}
+  const deleteJob=event.target.closest("[data-video-delete-job]");if(deleteJob){deleteVideoJob(deleteJob.dataset.videoDeleteJob);return;}
   const manual=event.target.closest("[data-post-manual]");
   if(manual){sendPostNow(manual.dataset.postManual,manual);return;}
   const edit=event.target.closest("[data-post-edit]");
@@ -884,44 +984,71 @@ if(supportForm)supportForm.addEventListener("submit",async event=>{
 
 const videoFileInput=$("#video-file");
 if(videoFileInput)videoFileInput.addEventListener("change",()=>{
-  const file=videoFileInput.files?.[0];
-  if($("#video-file-name"))$("#video-file-name").textContent=file?file.name:"MP4, MOV, WEBM ou MKV";
+  const files=[...(videoFileInput.files||[])];
+  if($("#video-file-name"))$("#video-file-name").textContent=files.length>1?files.length+" vídeos selecionados":files[0]?.name||"MP4, MOV, WEBM ou MKV";
 });
+$("#video-folder-filter")?.addEventListener("change",event=>{videoFolderFilter=event.target.value||"";renderVideoJobs({jobs:latestVideoJobs,folders:latestVideoFolders});});
+$("#video-create-folder")?.addEventListener("click",createVideoFolder);
+$("#video-rename-folder")?.addEventListener("click",renameCurrentVideoFolder);
+$("#video-delete-folder")?.addEventListener("click",deleteCurrentVideoFolder);
+
+function uploadSingleVideo(file,index,total,settings,progress){
+  return new Promise((resolve,reject)=>{
+    const xhr=new XMLHttpRequest();
+    xhr.open("POST","/api/portal/videos");
+    xhr.setRequestHeader("Content-Type",file.type||"application/octet-stream");
+    xhr.setRequestHeader("X-File-Name",encodeURIComponent(file.name));
+    xhr.setRequestHeader("X-Video-Goal",settings.goal);
+    xhr.setRequestHeader("X-Clip-Duration",settings.duration);
+    xhr.setRequestHeader("X-Requested-Clips",settings.clips);
+    xhr.setRequestHeader("X-Output-Format",settings.outputFormat);
+    xhr.setRequestHeader("X-Video-Folder",settings.folderId);
+    xhr.upload.onprogress=e=>{
+      if(!e.lengthComputable||!progress)return;
+      const local=e.loaded/e.total;
+      const pct=Math.round(((index+local)/total)*100);
+      progress.querySelector("i").style.width=Math.max(2,pct)+"%";
+      progress.querySelector("span").textContent="Enviando "+(index+1)+" de "+total+" · "+pct+"%";
+    };
+    xhr.onload=()=>{
+      let d={};try{d=JSON.parse(xhr.responseText||"{}");}catch{}
+      if(xhr.status>=200&&xhr.status<300)resolve(d);else reject(new Error(d.error==="video_too_large"?"Vídeo acima do limite de 750 MB.":(d.error||"Não foi possível enviar "+file.name)));
+    };
+    xhr.onerror=()=>reject(new Error("Falha de conexão ao enviar "+file.name));
+    xhr.send(file);
+  });
+}
 const videoUploadForm=$("#video-upload-form");
-if(videoUploadForm)videoUploadForm.addEventListener("submit",event=>{
+if(videoUploadForm)videoUploadForm.addEventListener("submit",async event=>{
   event.preventDefault();
-  const file=videoFileInput?.files?.[0],status=$("#video-upload-status"),button=videoUploadForm.querySelector("button[type=submit]"),progress=$("#video-upload-progress");
-  if(!file){if(status)status.textContent="Selecione um vídeo.";return;}
-  if(file.size>750*1024*1024){if(status)status.textContent="O vídeo deve ter no máximo 750 MB.";return;}
+  const files=[...(videoFileInput?.files||[])],status=$("#video-upload-status"),button=videoUploadForm.querySelector("button[type=submit]"),progress=$("#video-upload-progress");
+  if(!files.length){if(status)status.textContent="Selecione um ou mais vídeos.";return;}
+  const oversized=files.find(file=>file.size>750*1024*1024);
+  if(oversized){if(status)status.textContent=oversized.name+" passa do limite de 750 MB.";return;}
+  const settings={
+    goal:$("#video-goal").value,
+    duration:$("#video-clip-duration").value,
+    clips:$("#video-requested-clips").value,
+    outputFormat:$("#video-output-format")?.value||"reel",
+    folderId:$("#video-upload-folder")?.value||"default"
+  };
   button.disabled=true;
-  if(status){status.textContent="Enviando vídeo…";status.className="save-status";}
-  if(progress){progress.hidden=false;progress.querySelector("i").style.width="2%";progress.querySelector("span").textContent="Enviando 0%";}
-  const xhr=new XMLHttpRequest();
-  xhr.open("POST","/api/portal/videos");
-  xhr.setRequestHeader("Content-Type",file.type||"application/octet-stream");
-  xhr.setRequestHeader("X-File-Name",encodeURIComponent(file.name));
-  xhr.setRequestHeader("X-Video-Goal",$("#video-goal").value);
-  xhr.setRequestHeader("X-Clip-Duration",$("#video-clip-duration").value);
-  xhr.setRequestHeader("X-Requested-Clips",$("#video-requested-clips").value);
-  xhr.upload.onprogress=e=>{
-    if(!e.lengthComputable||!progress)return;
-    const pct=Math.max(2,Math.round(e.loaded/e.total*100));
-    progress.querySelector("i").style.width=pct+"%";
-    progress.querySelector("span").textContent="Enviando "+pct+"%";
-  };
-  xhr.onload=async()=>{
-    button.disabled=false;
-    if(progress)progress.hidden=true;
-    let d={};try{d=JSON.parse(xhr.responseText||"{}");}catch{}
-    if(xhr.status>=200&&xhr.status<300){
-      videoUploadForm.reset();
-      if($("#video-file-name"))$("#video-file-name").textContent="MP4, MOV, WEBM ou MKV";
-      if(status){status.textContent="Upload concluído. O NEXUS começou a preparar os cortes; nada será publicado sem sua aprovação.";status.className="save-status ok";}
-      await loadVideoJobs();
-    }else if(status){status.textContent=d.error==="video_too_large"?"Vídeo acima do limite de 750 MB.":"Não foi possível enviar o vídeo.";status.className="save-status error";}
-  };
-  xhr.onerror=()=>{button.disabled=false;if(progress)progress.hidden=true;if(status){status.textContent="Falha de conexão durante o upload.";status.className="save-status error";}};
-  xhr.send(file);
+  if(status){status.textContent="Enviando "+files.length+" vídeo(s)…";status.className="save-status";}
+  if(progress){progress.hidden=false;progress.querySelector("i").style.width="2%";progress.querySelector("span").textContent="Preparando envio…";}
+  let sent=0,failed=0,lastError="";
+  for(let index=0;index<files.length;index++){
+    try{await uploadSingleVideo(files[index],index,files.length,settings,progress);sent++;}
+    catch(error){failed++;lastError=error.message;}
+  }
+  button.disabled=false;if(progress)progress.hidden=true;
+  videoUploadForm.reset();
+  if($("#video-file-name"))$("#video-file-name").textContent="MP4, MOV, WEBM ou MKV";
+  syncVideoFolderControls();
+  if(status){
+    status.textContent=sent+" vídeo(s) enviado(s) para cortes"+(failed?"; "+failed+" falhou: "+lastError:".");
+    status.className=failed?"save-status error":"save-status ok";
+  }
+  await loadVideoJobs();
 });
 
 const agentProfileForm=$("#agent-profile-form");
