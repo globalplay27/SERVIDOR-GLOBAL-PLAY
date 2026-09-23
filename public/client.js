@@ -39,19 +39,23 @@ function renderClient(c){
   $("#client-meta").textContent=(c.niche||"Outro")+" · ambiente exclusivo";
   $("#next-post").textContent=nextPostTime(c.postTimes);
   $("#instagram-card").textContent=c.instagram||"Aguardando conexão";
-  const aiMode=c.id==="ragnar-one"?"own-key":(c.aiMode||"economy");
-  const aiLabels={economy:"ECONÔMICA",hybrid:"HÍBRIDA","own-key":"CHAVE PRÓPRIA"};
   const aiCard=$("#ai-mode-card"),aiDetail=$("#ai-mode-detail");
-  if(aiCard)aiCard.textContent=aiLabels[aiMode]||"NEXUS";
+  if(aiCard)aiCard.textContent=c.id==="ragnar-one"?"CONTA PRÓPRIA":"NEXUS";
   if(aiDetail)aiDetail.textContent=c.id==="ragnar-one"
     ?"conta OpenAI própria · separada do NEXUS"
-    :aiMode==="hybrid"
-      ?`${Number(c.aiImagesUsed||0)} / ${Number(c.aiMonthlyImageLimit||0)} imagens IA no mês`
-      :aiMode==="own-key"?"custos na conta do cliente":"sem imagem IA paga nas postagens";
+    :"IA gerenciada pelo NEXUS";
   $("#overview-agent-status").textContent=online?"ONLINE":"CONFIGURANDO";
   $("#niche").textContent=c.niche||"Outro";
   $("#agent-status").textContent=online?"Online":"Em configuração";
   $("#post-times").textContent=(c.postTimes||[]).join(" · ")||"—";
+  const igButton=$("#instagram-connect"),igStatus=$("#instagram-connect-status");
+  if(igButton){
+    const connected=Boolean(c.instagram);
+    igButton.disabled=connected;
+    igButton.textContent=connected?"Instagram conectado":"Conectar Instagram";
+    igButton.classList.toggle("connected",connected);
+  }
+  if(igStatus)igStatus.textContent=c.instagram?c.instagram+" autorizado":"";
   populatePosting(c);
   renderOnboarding();
 }
@@ -161,6 +165,69 @@ async function startRailwayConnection(){
     button.disabled=false;button.textContent="Conectar Railway";alert(error.message);
   }
 }
+
+let instagramOauthTimer=null;
+async function refreshPortalClient(){
+  try{
+    const r=await fetch("/api/portal/session",{credentials:"same-origin"});
+    if(!r.ok)return null;
+    const c=await r.json();
+    renderClient(c);
+    return c;
+  }catch{return null;}
+}
+async function startInstagramConnection(){
+  const button=$("#instagram-connect"),status=$("#instagram-connect-status");
+  if(!button||button.disabled)return;
+  button.disabled=true;
+  button.textContent="Abrindo Instagram…";
+  if(status)status.textContent="";
+  try{
+    const r=await fetch("/api/portal/instagram/start",{credentials:"same-origin"});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok||!d.url){
+      if(d.error==="instagram_nexus_not_configured"){
+        throw new Error("O administrador ainda precisa ativar a conexão central do Instagram.");
+      }
+      throw new Error("Não foi possível iniciar a conexão do Instagram.");
+    }
+    const popup=window.open(d.url,"nexus-instagram-oauth","width=620,height=760");
+    if(!popup)throw new Error("Permita a abertura da janela do Instagram.");
+    if(status)status.textContent="Autorize sua conta na janela do Instagram.";
+    let tries=0;
+    clearInterval(instagramOauthTimer);
+    instagramOauthTimer=setInterval(async()=>{
+      tries++;
+      const c=await refreshPortalClient();
+      if(c?.instagram){
+        clearInterval(instagramOauthTimer);
+        instagramOauthTimer=null;
+        if(status)status.textContent=c.instagram+" conectado com sucesso.";
+        try{popup.close();}catch{}
+        return;
+      }
+      if(tries>120||popup.closed){
+        clearInterval(instagramOauthTimer);
+        instagramOauthTimer=null;
+        button.disabled=false;
+        button.textContent="Conectar Instagram";
+      }
+    },1500);
+  }catch(error){
+    button.disabled=false;
+    button.textContent="Conectar Instagram";
+    if(status)status.textContent=error.message;
+  }
+}
+window.addEventListener("message",event=>{
+  if(event.data?.type!=="nexus-instagram-oauth")return;
+  refreshPortalClient().then(c=>{
+    const status=$("#instagram-connect-status");
+    if(c?.instagram&&status)status.textContent=c.instagram+" conectado com sucesso.";
+  });
+});
+const instagramConnectButton=$("#instagram-connect");
+if(instagramConnectButton)instagramConnectButton.addEventListener("click",startInstagramConnection);
 
 async function patchOnboarding(payload){const r=await fetch("/api/portal/onboarding",{method:"PATCH",headers:{"x-nexus-session":sessionAuth,"content-type":"application/json"},body:JSON.stringify(payload)});if(!r.ok)throw new Error("Falha ao salvar etapa");renderClient(await r.json());}
 
