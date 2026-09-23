@@ -2260,6 +2260,278 @@ const server = http.createServer(async (req, res) => {
     return send(res, 201, supportTicketView(ticket));
   }
 
+  if (url.pathname === "/api/portal/posts" && req.method === "GET") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    return send(res, 200, {
+      posts: portalPostsForClient(client),
+      schedule: Array.isArray(client.postTimes) ? client.postTimes : []
+    });
+  }
+
+  const portalPostRevisionMatch = url.pathname.match(/^\/api\/portal\/posts\/([^/]+)\/revision$/);
+  if (portalPostRevisionMatch && req.method === "POST") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    const body = await readBody(req);
+    const instructions = String(body.instructions || "").trim().slice(0, 1600);
+    if (!instructions) return send(res, 400, { error: "revision_instructions_required" });
+
+    const postId = decodeURIComponent(portalPostRevisionMatch[1]);
+    const materialized = materializePortalPost(client, postId);
+    if (!materialized.row) return send(res, 404, { error: "post_not_found" });
+    const row = materialized.row;
+    row.approvalStatus = "correction_requested";
+    row.revisionRequest = instructions;
+    row.error = "";
+    row.updatedAt = new Date().toISOString();
+    savePostLedger(materialized.ledger);
+
+    const now = new Date().toISOString();
+    const tickets = loadSupportTickets();
+    tickets.push({
+      id: "sup_" + crypto.randomBytes(9).toString("hex"),
+      clientId: client.id,
+      clientName: client.name || client.id,
+      category: "Postagens / correção",
+      subject: "Correção solicitada · " + (row.scheduledHour || "postagem"),
+      message: instructions,
+      status: "new",
+      createdAt: now,
+      updatedAt: now,
+      postId: row.id
+    });
+    saveSupportTickets(tickets);
+
+    return send(res, 200, {
+      ok: true,
+      message: "Correção enviada ao NEXUS.",
+      post: portalPostView(row)
+    });
+  }
+
+  const portalPostContentMatch = url.pathname.match(/^\/api\/portal\/posts\/([^/]+)\/content$/);
+  if (portalPostContentMatch && req.method === "POST") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    try {
+      const body = await readLargeJsonBody(req, 14 * 1024 * 1024);
+      const caption = String(body.caption || "").trim().slice(0, 2200);
+      const imageDataUrl = String(body.imageDataUrl || "").trim();
+      if (!caption) return send(res, 400, { error: "caption_required" });
+      if (!imageDataUrl) return send(res, 400, { error: "image_required" });
+
+      const match = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/.exec(imageDataUrl);
+      if (!match) return send(res, 400, { error: "invalid_image" });
+      const bytes = Buffer.from(match[2], "base64");
+      if (!bytes.length || bytes.length > 10 * 1024 * 1024) {
+        return send(res, 400, { error: "image_too_large" });
+      }
+
+      const postId = decodeURIComponent(portalPostContentMatch[1]);
+      const materialized = materializePortalPost(client, postId);
+      if (!materialized.row) return send(res, 404, { error: "post_not_found" });
+      const row = materialized.row;
+
+      const ext = match[1] === "jpeg" ? "jpg" : match[1];
+      const filename = slug(client.id) + "-" + crypto.randomBytes(12).toString("hex") + "." + ext;
+      fs.writeFileSync(path.join(manualPostDir, filename), bytes);
+
+      row.caption = caption;
+      row.imageUrl = publicOrigin(req) + "/manual-post/" + filename;
+      row.source = "client_manual";
+      row.approvalStatus = "approved";
+      row.status = "ready";
+      row.error = "";
+      row.revisionRequest = "";
+      row.updatedAt = new Date().toISOString();
+      savePostLedger(materialized.ledger);
+
+      return send(res, 200, {
+        ok: true,
+        message: "Conteúdo manual aprovado e pronto para envio.",
+        post: portalPostView(row)
+      });
+    } catch (error) {
+      return send(res, 400, { error: String(error?.message || "manual_content_failed") });
+    }
+  }
+
+  const portalPostManualMatch = url.pathname.match(/^\/api\/portal\/posts\/([^/]+)\/manual$/);
+  if (portalPostManualMatch && req.method === "POST") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+
+    const postId = decodeURIComponent(portalPostManualMatch[1]);
+    const materialized = materializePortalPost(client, postId);
+    if (!materialized.row) return send(res, 404, { error: "post_not_found" });
+    const row = materialized.row;
+    const approvalStatus = row.approvalStatus
+      ? cleanApprovalStatus(row.approvalStatus)
+      : row.status === "published" ? "approved" : "pending";
+
+    if (row.status === "published") {
+      return send(res, 409, {
+        error: "already_published",
+        message: "Esta postagem já foi enviada.",
+        post: portalPostView(row)
+      });
+    }
+    if (approvalStatus !== "approved") {
+      return send(res, 409, {
+        error: "post_not_approved",
+        message: "O servidor bloqueou o envio porque esta postagem ainda não foi aprovada. Envie para correção ou use seu próprio conteúdo.",
+        post: portalPostView(row)
+      });
+    }
+    if (!row.imageUrl || !row.caption) {
+      return send(res, 409, {
+        error: "post_content_not_ready",
+        message: "A postagem está aprovada, mas o arquivo final ainda não está disponível no NEXUS.",
+        post: portalPostView(row)
+      });
+    }
+
+    row.status = "publishing";
+    row.attemptedAt = new Date().toISOString();
+    row.error = "";
+    row.updatedAt = row.attemptedAt;
+    savePostLedger(materialized.ledger);
+
+    try {
+      const result = await publishInstagramImageForClient(client.id, row.imageUrl, row.caption);
+      row.status = "published";
+      row.approvalStatus = "approved";
+      row.mediaId = result.mediaId || "";
+      row.permalink = result.permalink || "";
+      row.publishedAt = new Date().toISOString();
+      row.updatedAt = row.publishedAt;
+      savePostLedger(materialized.ledger);
+      return send(res, 200, {
+        ok: true,
+        message: "Postagem enviada manualmente com sucesso.",
+        post: portalPostView(row),
+        permalink: row.permalink
+      });
+    } catch (error) {
+      row.status = "failed";
+      row.error = String(error?.message || "Falha ao publicar").slice(0, 900);
+      row.updatedAt = new Date().toISOString();
+      savePostLedger(materialized.ledger);
+      return send(res, 400, {
+        error: "manual_publish_failed",
+        message: row.error,
+        post: portalPostView(row)
+      });
+    }
+  }
+
+  if (url.pathname === "/api/portal/videos" && req.method === "GET") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    const jobs = loadVideoJobs()
+      .filter(job => job.clientId === client.id)
+      .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
+      .slice(0, 30)
+      .map(portalVideoJobView);
+    return send(res, 200, { jobs });
+  }
+
+  if (url.pathname === "/api/portal/videos" && req.method === "POST") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+
+    const contentType = String(req.headers["content-type"] || "").toLowerCase();
+    if (!contentType.startsWith("video/") && contentType !== "application/octet-stream") {
+      return send(res, 415, { error: "video_required" });
+    }
+
+    const contentLength = Number(req.headers["content-length"] || 0);
+    const maxBytes = 750 * 1024 * 1024;
+    if (contentLength > maxBytes) return send(res, 413, { error: "video_too_large" });
+
+    const original = decodeURIComponent(String(req.headers["x-file-name"] || "video.mp4")).slice(0, 180);
+    const safeBase = path.basename(original).replace(/[^a-zA-Z0-9._-]+/g, "_") || "video.mp4";
+    const ext = path.extname(safeBase).toLowerCase();
+    const allowedExt = new Set([".mp4",".mov",".m4v",".webm",".mkv"]);
+    if (!allowedExt.has(ext)) return send(res, 400, { error: "unsupported_video_format" });
+
+    const jobId = "vid_" + crypto.randomBytes(10).toString("hex");
+    const clientDir = path.join(clientVideoDir, slug(client.id));
+    fs.mkdirSync(clientDir, { recursive: true });
+    const storedName = jobId + ext;
+    const destination = path.join(clientDir, storedName);
+    const stream = fs.createWriteStream(destination);
+    let received = 0;
+    let failed = false;
+
+    req.on("data", chunk => {
+      received += chunk.length;
+      if (received > maxBytes && !failed) {
+        failed = true;
+        stream.destroy();
+        req.destroy();
+      }
+    });
+
+    req.pipe(stream);
+    stream.on("error", () => {
+      if (!res.headersSent) send(res, 500, { error: "video_store_failed" });
+    });
+    stream.on("finish", () => {
+      if (failed || received > maxBytes) {
+        try { fs.unlinkSync(destination); } catch {}
+        if (!res.headersSent) send(res, 413, { error: "video_too_large" });
+        return;
+      }
+
+      const goal = String(req.headers["x-video-goal"] || "viral").slice(0, 40);
+      const clipDuration = Math.min(90, Math.max(10, Number(req.headers["x-clip-duration"] || 30) || 30));
+      const requestedClips = Math.min(12, Math.max(1, Number(req.headers["x-requested-clips"] || 3) || 3));
+      const now = new Date().toISOString();
+      const job = {
+        id: jobId,
+        clientId: client.id,
+        clientName: client.name || client.id,
+        filename: safeBase,
+        storedPath: destination,
+        sizeBytes: received,
+        goal,
+        clipDuration,
+        requestedClips,
+        status: "queued",
+        progress: 5,
+        message: "Upload concluído. Aguardando o processador de cortes do NEXUS.",
+        clips: [],
+        createdAt: now,
+        updatedAt: now
+      };
+      const jobs = loadVideoJobs();
+      jobs.push(job);
+      saveVideoJobs(jobs);
+      send(res, 201, { ok: true, job: portalVideoJobView(job) });
+    });
+    return;
+  }
+
+  if (url.pathname.startsWith("/manual-post/") && req.method === "GET") {
+    const filename = path.basename(url.pathname.slice("/manual-post/".length));
+    const full = path.join(manualPostDir, filename);
+    if (!filename || !full.startsWith(manualPostDir) || !fs.existsSync(full)) {
+      return send(res, 404, "Not found", "text/plain; charset=utf-8");
+    }
+    const ext = path.extname(filename).toLowerCase();
+    const type = ext === ".png" ? "image/png" : ext === ".webp" ? "image/webp" : "image/jpeg";
+    res.writeHead(200, {
+      "content-type": type,
+      "content-length": fs.statSync(full).size,
+      "cache-control": "public, max-age=31536000, immutable",
+      "x-content-type-options": "nosniff"
+    });
+    fs.createReadStream(full).pipe(res);
+    return;
+  }
+
   if (url.pathname === "/index.html" && req.method === "GET") {
     res.writeHead(303, { location: "/master", "cache-control": "no-store", "content-length": "0" });
     return res.end();
