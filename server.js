@@ -620,6 +620,197 @@ function startPendingVideoJobs() {
   }
 }
 
+function videoPublicOrigin() {
+  const domain = String(process.env.RAILWAY_PUBLIC_DOMAIN || "").trim();
+  return domain ? "https://" + domain : "https://servidor-global-play-production.up.railway.app";
+}
+
+function findVideoClip(clientId, jobId, clipId) {
+  const jobs = loadVideoJobs();
+  const job = jobs.find(item => item.id === jobId && item.clientId === clientId);
+  if (!job) return { jobs, job: null, clip: null };
+  const clip = Array.isArray(job.clips) ? job.clips.find(item => item.id === clipId) : null;
+  return { jobs, job, clip: clip || null };
+}
+
+function saveVideoClipState(jobs, job) {
+  job.updatedAt = new Date().toISOString();
+  saveVideoJobs(jobs);
+}
+
+async function publishInstagramVideoForClient(clientId, clip, caption) {
+  const connection = directConnection(clientId, "meta");
+  const accessToken = decryptSecret(connection?.accessToken || "");
+  const igUserId = String(connection?.igUserId || "").trim();
+  if (!accessToken || !igUserId) throw new Error("instagram_not_connected");
+  if (!clip?.publicName) throw new Error("video_media_missing");
+
+  const graphRequest = async (pathName, method = "GET", form = null) => {
+    const endpoint = "https://graph.instagram.com/" + String(pathName).replace(/^\/+/, "");
+    const options = {
+      method,
+      headers: {
+        authorization: "Bearer " + accessToken,
+        "user-agent": "NEXUS-AI/1.0"
+      }
+    };
+    if (form) {
+      options.headers["content-type"] = "application/x-www-form-urlencoded";
+      options.body = new URLSearchParams(form);
+    }
+    const response = await fetch(endpoint, options);
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const metaError = payload?.error || {};
+      const err = new Error(String(metaError.message || "instagram_api_failed"));
+      err.code = metaError.code || response.status;
+      throw err;
+    }
+    return payload;
+  };
+
+  const videoUrl = videoPublicOrigin() + "/video-media/" + encodeURIComponent(clip.publicName);
+  const created = await graphRequest(igUserId + "/media", "POST", {
+    media_type: "REELS",
+    video_url: videoUrl,
+    caption: String(caption || clip.caption || clip.title || "").slice(0, 2200),
+    share_to_feed: "true"
+  });
+  const containerId = String(created?.id || "");
+  if (!containerId) throw new Error("instagram_container_missing");
+
+  const deadline = Date.now() + 8 * 60 * 1000;
+  let lastStatus = "";
+  while (Date.now() < deadline) {
+    await new Promise(resolve => setTimeout(resolve, 5000));
+    const status = await graphRequest(containerId + "?fields=status_code,status");
+    const code = String(status?.status_code || "").toUpperCase();
+    lastStatus = String(status?.status || code || "");
+    if (code === "FINISHED") {
+      const published = await graphRequest(igUserId + "/media_publish", "POST", { creation_id: containerId });
+      return { mediaId: String(published?.id || ""), containerId };
+    }
+    if (code === "ERROR" || code === "EXPIRED") throw new Error("instagram_video_processing_" + (lastStatus || code));
+  }
+  throw new Error("instagram_video_processing_timeout");
+}
+
+async function setVideoClipApproval(clientId, jobId, clipId, status) {
+  const allowed = new Set(["approved","rejected","pending"]);
+  if (!allowed.has(String(status))) throw new Error("invalid_approval");
+  const found = findVideoClip(clientId, jobId, clipId);
+  if (!found.job || !found.clip) throw new Error("clip_not_found");
+  found.clip.approvalStatus = String(status);
+  found.clip.error = "";
+  if (status === "rejected") {
+    found.clip.publishStatus = "";
+    found.clip.scheduledFor = null;
+  }
+  saveVideoClipState(found.jobs, found.job);
+  return found.clip;
+}
+
+async function scheduleVideoClip(clientId, jobId, clipId, scheduledFor, caption) {
+  const found = findVideoClip(clientId, jobId, clipId);
+  if (!found.job || !found.clip) throw new Error("clip_not_found");
+  if (found.clip.approvalStatus !== "approved") throw new Error("clip_not_approved");
+  const date = new Date(scheduledFor);
+  if (!Number.isFinite(date.getTime())) throw new Error("invalid_schedule");
+  if (date.getTime() < Date.now() - 60 * 1000) throw new Error("schedule_in_past");
+  found.clip.caption = String(caption || found.clip.caption || found.clip.title || "").slice(0, 2200);
+  found.clip.scheduledFor = date.toISOString();
+  found.clip.publishStatus = "scheduled";
+  found.clip.error = "";
+  saveVideoClipState(found.jobs, found.job);
+  return found.clip;
+}
+
+async function publishVideoClipNow(clientId, jobId, clipId, caption) {
+  const found = findVideoClip(clientId, jobId, clipId);
+  if (!found.job || !found.clip) throw new Error("clip_not_found");
+  if (found.clip.approvalStatus !== "approved") throw new Error("clip_not_approved");
+  found.clip.publishStatus = "publishing";
+  found.clip.error = "";
+  found.clip.caption = String(caption || found.clip.caption || found.clip.title || "").slice(0, 2200);
+  saveVideoClipState(found.jobs, found.job);
+  try {
+    const result = await publishInstagramVideoForClient(clientId, found.clip, found.clip.caption);
+    const fresh = findVideoClip(clientId, jobId, clipId);
+    if (fresh.clip) {
+      fresh.clip.publishStatus = "published";
+      fresh.clip.mediaId = result.mediaId || "";
+      fresh.clip.publishedAt = new Date().toISOString();
+      fresh.clip.scheduledFor = null;
+      fresh.clip.error = "";
+      saveVideoClipState(fresh.jobs, fresh.job);
+      return fresh.clip;
+    }
+    return found.clip;
+  } catch (error) {
+    const fresh = findVideoClip(clientId, jobId, clipId);
+    if (fresh.clip) {
+      fresh.clip.publishStatus = "failed";
+      fresh.clip.error = String(error?.message || error).slice(0, 900);
+      saveVideoClipState(fresh.jobs, fresh.job);
+    }
+    throw error;
+  }
+}
+
+async function adjustVideoClip(clientId, jobId, clipId, body) {
+  const found = findVideoClip(clientId, jobId, clipId);
+  if (!found.job || !found.clip) throw new Error("clip_not_found");
+  const start = Number(body.start);
+  const end = Number(body.end);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start || end > Number(found.job.duration || 0) + 0.5 || end - start > 95) {
+    throw new Error("invalid_clip_range");
+  }
+  if (!found.clip.storedPath || !fs.existsSync(found.clip.storedPath)) throw new Error("clip_file_missing");
+  found.clip.status = "editing";
+  found.clip.error = "";
+  saveVideoClipState(found.jobs, found.job);
+  await renderVideoClip(found.job.storedPath, found.clip.storedPath, start, end);
+  const fresh = findVideoClip(clientId, jobId, clipId);
+  fresh.clip.start = start;
+  fresh.clip.end = end;
+  fresh.clip.duration = end - start;
+  if (Object.prototype.hasOwnProperty.call(body, "title")) fresh.clip.title = String(body.title || "").slice(0, 100);
+  if (Object.prototype.hasOwnProperty.call(body, "caption")) fresh.clip.caption = String(body.caption || "").slice(0, 2200);
+  fresh.clip.transcript = transcriptForRange(fresh.job.transcriptSegments || [], start, end);
+  fresh.clip.status = "ready";
+  fresh.clip.approvalStatus = "pending";
+  fresh.clip.publishStatus = "";
+  fresh.clip.scheduledFor = null;
+  fresh.clip.error = "";
+  saveVideoClipState(fresh.jobs, fresh.job);
+  return fresh.clip;
+}
+
+let videoScheduleRunning = false;
+async function processDueVideoSchedules() {
+  if (videoScheduleRunning) return;
+  videoScheduleRunning = true;
+  try {
+    const jobs = loadVideoJobs();
+    const due = [];
+    for (const job of jobs) {
+      for (const clip of job.clips || []) {
+        if (clip.approvalStatus !== "approved" || clip.publishStatus !== "scheduled" || !clip.scheduledFor) continue;
+        const when = new Date(clip.scheduledFor).getTime();
+        if (Number.isFinite(when) && when <= Date.now()) due.push({ clientId: job.clientId, jobId: job.id, clipId: clip.id, caption: clip.caption || "" });
+      }
+    }
+    for (const item of due.slice(0, 3)) {
+      await publishVideoClipNow(item.clientId, item.jobId, item.clipId, item.caption).catch(error => {
+        console.warn("Scheduled video publish failed " + item.jobId + "/" + item.clipId + ": " + String(error?.message || error));
+      });
+    }
+  } finally {
+    videoScheduleRunning = false;
+  }
+}
+
+
 
 function cleanPostStatus(value) {
   const allowed = new Set(["scheduled","generating","ready","publishing","published","failed","skipped"]);
