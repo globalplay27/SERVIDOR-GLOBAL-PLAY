@@ -48,8 +48,8 @@ function render() {
 
   $("#clients-table").innerHTML = clients.map(client => {
     const ragnar = client.id === "ragnar-one";
-    const mode = ragnar ? "Conta própria" : aiModeLabel(client.aiMode || "economy");
-    const extra = !ragnar && client.aiMode === "hybrid" ? `<br><small>${Number(client.aiImagesUsed||0)} / ${Number(client.aiMonthlyImageLimit||0)} imagens IA</small>` : "";
+    const mode = ragnar ? "Conta própria" : "NEXUS GERENCIADA";
+    const extra = !ragnar ? `<br><small>${Number(client.aiImagesUsed||0)} imagens IA usadas</small>` : "";
     const action = ragnar
       ? `<span class="protected-client">PILOTO PROTEGIDO</span>`
       : `<button type="button" class="small-danger" data-delete-client="${escapeHtml(client.id)}" data-client-name="${escapeHtml(client.name)}">Excluir</button>`;
@@ -165,9 +165,10 @@ async function updateSupportTicket(ticketId, status) {
 
 async function loadIntegrations() {
   try {
-    const [status, openai] = await Promise.all([
+    const [status, openai, instagram] = await Promise.all([
       api("/api/system/status"),
-      api("/api/master/openai")
+      api("/api/master/openai"),
+      api("/api/master/instagram")
     ]);
 
     const items = [
@@ -185,9 +186,9 @@ async function loadIntegrations() {
       },
       {
         name: "Meta / Instagram",
-        detail: "Uma integração NEXUS; autorização individual de cada cliente",
-        label: "EM PREPARAÇÃO",
-        ready: true
+        detail: instagram.configured ? "OAuth central pronto para os clientes" : "Falta configurar o App do Instagram uma única vez",
+        label: instagram.configured ? "CONECTADO" : "PENDENTE",
+        ready: Boolean(instagram.configured)
       }
     ];
     $("#integration-list").innerHTML = items.map(item => `<div class="integration"><div><strong>${item.name}</strong><small>${item.detail}</small></div>${badge(item.label, item.ready)}</div>`).join("");
@@ -204,6 +205,13 @@ async function loadIntegrations() {
     $("#openai-balance-note").textContent = openai.balanceEstimatedUsd != null
       ? "estimativa automática desde o último saldo informado"
       : "informe o saldo atual uma vez";
+    const igState=$("#instagram-master-state");
+    if(igState){
+      igState.textContent=instagram.configured?"CONFIGURADO":"NÃO CONFIGURADO";
+      igState.classList.toggle("off",!instagram.configured);
+    }
+    if($("#instagram-app-id"))$("#instagram-app-id").value=instagram.appId||"";
+    if($("#instagram-callback-url"))$("#instagram-callback-url").value=instagram.callbackUrl||"";
   } catch (error) {
     console.error(error);
   }
@@ -223,15 +231,6 @@ $$('[data-view]').forEach(button => button.addEventListener("click", async () =>
 $$('[data-go]').forEach(button => button.addEventListener("click", () => showView(button.dataset.go)));
 $("#refresh").addEventListener("click", load);
 $("#portal-client").addEventListener("change", event => { state.portalClientId = event.target.value; renderPortalSelector(); });
-const aiModeSelect=$("#ai-mode"),aiLimitWrap=$("#ai-limit-wrap"),aiLimit=$("#ai-limit");
-function syncAiModeFields(){
-  if(!aiModeSelect)return;
-  const hybrid=aiModeSelect.value==="hybrid";
-  if(aiLimitWrap)aiLimitWrap.hidden=!hybrid;
-  if(aiLimit)aiLimit.required=hybrid;
-}
-if(aiModeSelect){aiModeSelect.addEventListener("change",syncAiModeFields);syncAiModeFields();}
-
 $("#client-form").addEventListener("submit", async event => {
   event.preventDefault();
   const form = event.currentTarget;
@@ -240,7 +239,6 @@ $("#client-form").addEventListener("submit", async event => {
   try {
     const result = await api("/api/clients", { method: "POST", body: JSON.stringify(data) });
     form.reset();
-    syncAiModeFields();
     $("#form-status").textContent = "Cliente criado. Envie somente o acesso abaixo.";
     const access = result.portalCredentials || {};
     $("#new-client-user").textContent = "Usuário: " + (access.username || "—");
@@ -292,6 +290,25 @@ document.addEventListener("click", async event => {
     state.supportFilter = filterButton.dataset.supportFilter || "all";
     $$("[data-support-filter]").forEach(btn => btn.classList.toggle("active", btn === filterButton));
     renderSupportNotifications();
+  }
+});
+
+const instagramMasterForm=$("#instagram-master-form");
+if(instagramMasterForm)instagramMasterForm.addEventListener("submit",async event=>{
+  event.preventDefault();
+  const form=event.currentTarget;
+  const message=$("#instagram-master-message");
+  if(message)message.textContent="Salvando…";
+  const data=Object.fromEntries(new FormData(form));
+  try{
+    const result=await api("/api/master/instagram",{method:"POST",body:JSON.stringify(data)});
+    form.querySelector('input[name="appSecret"]').value="";
+    if(message)message.textContent="Instagram NEXUS configurado.";
+    if($("#instagram-master-state")){$("#instagram-master-state").textContent="CONFIGURADO";$("#instagram-master-state").classList.remove("off");}
+    if($("#instagram-callback-url"))$("#instagram-callback-url").value=result.callbackUrl||"";
+    await loadIntegrations();
+  }catch(error){
+    if(message)message.textContent="Não foi possível salvar a integração.";
   }
 });
 
