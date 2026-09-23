@@ -2,7 +2,7 @@ const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 let sessionAuth=null,currentClient=null;
 
 function nextPostTime(times=[]){if(!Array.isArray(times)||!times.length)return"—";const parts=new Intl.DateTimeFormat("pt-BR",{timeZone:"America/Sao_Paulo",hour:"2-digit",minute:"2-digit",hour12:false}).formatToParts(new Date());const now=Number(parts.find(p=>p.type==="hour")?.value||0)*60+Number(parts.find(p=>p.type==="minute")?.value||0);const sorted=times.map(v=>{const[h,m]=String(v).split(":").map(Number);return{v,m:h*60+m}}).filter(x=>Number.isFinite(x.m)).sort((a,b)=>a.m-b.m);return sorted.find(x=>x.m>now)?.v||sorted[0]?.v||"—";}
-function showView(name){$("[data-view]").forEach(b=>b.classList.toggle("active",b.dataset.view===name));["overview","posts","leads","videos","posting","support","setup"].forEach(v=>{const el=$("#view-"+v);if(el)el.hidden=v!==name;});if(name==="support")loadSupportTickets();if(name==="posts")loadClientPosts();if(name==="leads")loadClientLeads();if(name==="videos")loadVideoJobs();}
+function showView(name){$$("[data-view]").forEach(b=>b.classList.toggle("active",b.dataset.view===name));["overview","posts","leads","videos","posting","support","setup"].forEach(v=>{const el=$("#view-"+v);if(el)el.hidden=v!==name;});if(name==="support")loadSupportTickets();if(name==="posts")loadClientPosts();if(name==="leads")loadClientLeads();if(name==="videos"){ensureBulkVideoScheduler();loadVideoJobs();}}
 function onboardingKeys(){return["github","railway","openai","facebook","instagram","metaApp","creativeProfile","supportRequested"];}
 function setupPercent(){const o=currentClient?.onboarding||{};const keys=onboardingKeys();return Math.round(keys.filter(k=>o[k]).length/keys.length*100);}
 function renderOnboarding(){
@@ -505,6 +505,150 @@ async function saveOwnPost(postId,button){
   finally{button.disabled=false;button.textContent="Aprovar meu conteúdo";}
 }
 
+let latestVideoJobs=[];
+const bulkVideoSelection=new Set();
+const bulkVideoTimes=new Map();
+
+function videoClipKey(jobId,clipId){return String(jobId)+"|"+String(clipId);}
+function findLatestClip(key){
+  const [jobId,clipId]=String(key).split("|");
+  const job=latestVideoJobs.find(item=>item.id===jobId);
+  const clip=job?.clips?.find(item=>item.id===clipId);
+  return job&&clip?{job,clip}:null;
+}
+function ensureBulkVideoScheduler(){
+  const view=$("#view-videos");
+  if(!view||$("#video-bulk-scheduler"))return;
+  const grid=view.querySelector(".video-client-grid");
+  if(!grid)return;
+  const panel=document.createElement("section");
+  panel.id="video-bulk-scheduler";
+  panel.className="panel settings-panel wide-panel";
+  panel.innerHTML=`
+    <div class="panel-heading">
+      <div>
+        <p class="eyebrow">AGENDAMENTO EM LOTE</p>
+        <h2>Agendar vários vídeos</h2>
+        <p class="muted">Selecione quantos cortes quiser. O horário escolhido vai direto para o servidor; não depende de aprovação do Master.</p>
+      </div>
+      <span id="video-bulk-count" class="post-client-help">0 selecionados</span>
+    </div>
+    <div class="video-bulk-tools">
+      <button type="button" class="ghost-action" id="video-bulk-select-ready">Selecionar todos prontos</button>
+      <button type="button" class="ghost-action" id="video-bulk-clear">Limpar seleção</button>
+      <label>Primeira postagem<input id="video-bulk-start" type="datetime-local"></label>
+      <label>Intervalo
+        <select id="video-bulk-interval">
+          <option value="30">30 minutos</option>
+          <option value="60" selected>1 hora</option>
+          <option value="120">2 horas</option>
+          <option value="180">3 horas</option>
+          <option value="360">6 horas</option>
+          <option value="1440">1 dia</option>
+        </select>
+      </label>
+      <button type="button" class="ghost-action" id="video-bulk-distribute">Distribuir horários</button>
+    </div>
+    <div id="video-bulk-list" class="video-bulk-list">
+      <div class="post-client-empty"><strong>Nenhum vídeo selecionado</strong><span>Marque os vídeos prontos abaixo para montar a agenda.</span></div>
+    </div>
+    <div class="video-bulk-confirm">
+      <span id="video-bulk-status" class="save-status"></span>
+      <button type="button" class="connection-submit" id="video-bulk-confirm" disabled>Confirmar agendamento</button>
+    </div>`;
+  grid.parentNode.insertBefore(panel,grid);
+
+  if(!$("#video-bulk-style")){
+    const style=document.createElement("style");style.id="video-bulk-style";style.textContent=`
+      .video-bulk-tools{display:grid;grid-template-columns:auto auto 1fr 170px auto;gap:9px;align-items:end;margin:12px 0}
+      .video-bulk-tools label{display:grid;gap:5px;color:#7893a0;font-size:9px}.video-bulk-tools input,.video-bulk-tools select,.video-bulk-row input{width:100%;border:1px solid rgba(93,211,255,.12);border-radius:9px;background:#02080b;color:#edfaff;padding:9px}
+      .video-bulk-list{display:grid;gap:8px}.video-bulk-row{display:grid;grid-template-columns:minmax(160px,1fr) 210px;gap:12px;align-items:center;padding:10px 12px;border:1px solid rgba(93,211,255,.1);border-radius:10px;background:#041015}.video-bulk-row strong{display:block;font-size:11px}.video-bulk-row small{display:block;margin-top:3px;color:#7893a0;font-size:9px}.video-bulk-confirm{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-top:13px}.video-bulk-check{display:flex!important;align-items:center;gap:7px!important;margin:0 0 8px;color:#9edfff!important;font-size:9px!important}.video-bulk-check input{accent-color:#5dd3ff}.video-bulk-selected{box-shadow:0 0 0 1px rgba(93,211,255,.32) inset}
+      @media(max-width:900px){.video-bulk-tools{grid-template-columns:1fr 1fr}.video-bulk-tools label{grid-column:span 1}.video-bulk-row{grid-template-columns:1fr}.video-bulk-confirm{align-items:stretch;flex-direction:column}}
+    `;document.head.appendChild(style);
+  }
+
+  $("#video-bulk-select-ready")?.addEventListener("click",()=>{
+    for(const job of latestVideoJobs){
+      for(const clip of job.clips||[]){
+        if(clip.status==="ready"&&clip.publishStatus!=="published")bulkVideoSelection.add(videoClipKey(job.id,clip.id));
+      }
+    }
+    renderVideoJobs({jobs:latestVideoJobs});
+  });
+  $("#video-bulk-clear")?.addEventListener("click",()=>{
+    bulkVideoSelection.clear();bulkVideoTimes.clear();renderVideoJobs({jobs:latestVideoJobs});
+  });
+  $("#video-bulk-distribute")?.addEventListener("click",()=>distributeBulkVideoTimes());
+  $("#video-bulk-confirm")?.addEventListener("click",confirmBulkVideoSchedule);
+
+  const start=$("#video-bulk-start");
+  if(start&&!start.value){
+    const d=new Date(Date.now()+60*60*1000);d.setSeconds(0,0);start.value=localInputValue(d.toISOString());
+  }
+}
+function renderBulkVideoScheduler(){
+  ensureBulkVideoScheduler();
+  const list=$("#video-bulk-list"),count=$("#video-bulk-count"),confirm=$("#video-bulk-confirm");
+  if(!list)return;
+  for(const key of [...bulkVideoSelection]){
+    const found=findLatestClip(key);
+    if(!found||found.clip.publishStatus==="published")bulkVideoSelection.delete(key);
+  }
+  const keys=[...bulkVideoSelection];
+  if(count)count.textContent=keys.length+" selecionado"+(keys.length===1?"":"s");
+  if(confirm)confirm.disabled=!keys.length;
+  if(!keys.length){
+    list.innerHTML='<div class="post-client-empty"><strong>Nenhum vídeo selecionado</strong><span>Marque os vídeos prontos abaixo para montar a agenda.</span></div>';
+    return;
+  }
+  list.innerHTML=keys.map((key,index)=>{
+    const found=findLatestClip(key);if(!found)return"";
+    const when=bulkVideoTimes.get(key)||found.clip.scheduledFor||"";
+    return `<div class="video-bulk-row" data-bulk-key="${escapeSupport(key)}"><div><strong>${escapeSupport(found.clip.title||("Vídeo "+(index+1)))}</strong><small>${escapeSupport(found.job.filename||"")} · ${Math.round(Number(found.clip.duration||0))}s</small></div><input type="datetime-local" data-bulk-time value="${escapeSupport(localInputValue(when))}"></div>`;
+  }).join("");
+  $("[data-bulk-time]").forEach(input=>input.addEventListener("change",()=>{
+    const row=input.closest("[data-bulk-key]");if(!row)return;
+    const date=new Date(input.value);bulkVideoTimes.set(row.dataset.bulkKey,Number.isFinite(date.getTime())?date.toISOString():"");
+  }));
+}
+function distributeBulkVideoTimes(){
+  const startInput=$("#video-bulk-start"),intervalInput=$("#video-bulk-interval"),status=$("#video-bulk-status");
+  const base=new Date(startInput?.value||"");
+  if(!Number.isFinite(base.getTime())){if(status)status.textContent="Escolha a data e hora da primeira postagem.";return;}
+  const interval=Math.max(1,Number(intervalInput?.value||60));
+  [...bulkVideoSelection].forEach((key,index)=>bulkVideoTimes.set(key,new Date(base.getTime()+index*interval*60000).toISOString()));
+  renderBulkVideoScheduler();
+  if(status)status.textContent="Horários distribuídos. Você pode alterar cada um antes de confirmar.";
+}
+async function confirmBulkVideoSchedule(){
+  const button=$("#video-bulk-confirm"),status=$("#video-bulk-status");
+  const items=[];
+  for(const key of bulkVideoSelection){
+    const found=findLatestClip(key);if(!found)continue;
+    const row=$('[data-bulk-key="'+CSS.escape(key)+'"]');
+    const local=row?.querySelector("[data-bulk-time]")?.value||"";
+    const date=new Date(local);
+    if(!Number.isFinite(date.getTime())){
+      if(status){status.textContent="Preencha a data e hora de todos os vídeos.";status.className="save-status error";}
+      return;
+    }
+    items.push({jobId:found.job.id,clipId:found.clip.id,scheduledFor:date.toISOString(),caption:found.clip.caption||found.clip.title||""});
+  }
+  if(!items.length)return;
+  button.disabled=true;button.textContent="Agendando…";
+  if(status){status.textContent="Enviando agenda ao servidor…";status.className="save-status";}
+  try{
+    const r=await fetch("/api/portal/videos/bulk-schedule",{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({items})});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(d.error||"Falha ao agendar os vídeos.");
+    bulkVideoSelection.clear();bulkVideoTimes.clear();
+    if(status){status.textContent=(d.scheduled||0)+" vídeo(s) agendado(s) direto no servidor"+(d.failed?"; "+d.failed+" com erro.":".");status.className=d.failed?"save-status error":"save-status ok";}
+    await loadVideoJobs();
+  }catch(error){
+    if(status){status.textContent=error.message;status.className="save-status error";}
+  }finally{button.disabled=false;button.textContent="Confirmar agendamento";}
+}
+
 function videoJobStatus(job){
   const labels={queued:"RECEBIDO",uploaded:"RECEBIDO",transcribing:"TRANSCREVENDO",selecting:"ESCOLHENDO CORTES",cutting:"CRIANDO CORTES",ready:"PRONTO PARA REVISÃO",failed:"FALHOU"};
   return labels[job.status]||String(job.status||"RECEBIDO").toUpperCase();
@@ -526,8 +670,10 @@ function localInputValue(iso){
   return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate())+"T"+pad(d.getHours())+":"+pad(d.getMinutes());
 }
 function renderVideoJobs(data={}){
+  ensureBulkVideoScheduler();
   const root=$("#client-video-jobs");if(!root)return;
   const jobs=Array.isArray(data.jobs)?data.jobs:[];
+  latestVideoJobs=jobs;
   if(!jobs.length){root.innerHTML='<div class="post-client-empty"><strong>Nenhum vídeo enviado</strong><span>Envie um vídeo. Ele será processado e os cortes aparecerão aqui para sua decisão.</span></div>';return;}
   root.innerHTML=jobs.map(job=>{
     const clips=Array.isArray(job.clips)?job.clips:[];
@@ -538,9 +684,10 @@ function renderVideoJobs(data={}){
       return header+`<div class="video-wait-card"><strong>${job.status==="failed"?"Não foi possível preparar os cortes.":"O NEXUS está trabalhando neste vídeo."}</strong><span>O vídeo não entra na agenda automática. Quando os cortes ficarem prontos, você decide aprovar, rejeitar ou agendar.</span></div></article>`;
     }
     return header+`<div class="video-clip-grid">${clips.map(clip=>`
-      <article class="video-clip-card" data-video-clip="${escapeSupport(clip.id)}">
+      <article class="video-clip-card ${bulkVideoSelection.has(videoClipKey(job.id,clip.id))?"video-bulk-selected":""}" data-video-clip="${escapeSupport(clip.id)}" data-video-job-id="${escapeSupport(job.id)}">
         <video controls preload="metadata" src="${escapeSupport(clip.previewUrl)}"></video>
         <div class="video-clip-body">
+          ${clip.status==="ready"&&clip.publishStatus!=="published"?`<label class="video-bulk-check"><input type="checkbox" data-video-bulk-select="${escapeSupport(job.id)}|${escapeSupport(clip.id)}" ${bulkVideoSelection.has(videoClipKey(job.id,clip.id))?"checked":""}> Agendar este vídeo em lote</label>`:""}
           <div class="video-clip-top"><strong>${escapeSupport(clip.title||"Corte")}</strong><span class="video-approval ${escapeSupport(clip.approvalStatus||"pending")}">${videoApprovalLabel(clip.approvalStatus)}</span></div>
           <small>${escapeSupport(clip.reason||"Trecho selecionado pelo NEXUS")}</small>
           ${clip.transcript?`<p class="video-transcript">${escapeSupport(clip.transcript)}</p>`:""}
@@ -569,6 +716,7 @@ function renderVideoJobs(data={}){
         </div>
       </article>`).join("")}</div></article>`;
   }).join("");
+  renderBulkVideoScheduler();
 }
 async function loadVideoJobs(){
   try{
@@ -632,6 +780,14 @@ async function publishVideoNow(button){
   }catch(error){setVideoResponse(card,error.message,"error");}finally{button.disabled=false;button.textContent="Publicar agora";}
 }
 
+document.addEventListener("change",event=>{
+  const input=event.target.closest?.("[data-video-bulk-select]");
+  if(!input)return;
+  const key=String(input.dataset.videoBulkSelect||"");
+  if(input.checked)bulkVideoSelection.add(key);else{bulkVideoSelection.delete(key);bulkVideoTimes.delete(key);}
+  const card=input.closest("[data-video-clip]");if(card)card.classList.toggle("video-bulk-selected",input.checked);
+  renderBulkVideoScheduler();
+});
 document.addEventListener("click",event=>{
   const manual=event.target.closest("[data-post-manual]");
   if(manual){sendPostNow(manual.dataset.postManual,manual);return;}
@@ -864,7 +1020,14 @@ async function resumeCookieSession(){
   }catch{}
 }
 resumeCookieSession();
-setInterval(()=>{const view=$("#view-videos");if(view&&!view.hidden)loadVideoJobs();},5000);
+setInterval(()=>{
+  const view=$("#view-videos");if(!view||view.hidden)return;
+  const active=document.activeElement;
+  const editing=view.querySelector(".video-edit-panel:not([hidden])");
+  const scheduling=bulkVideoSelection.size>0;
+  const typing=active&&view.contains(active)&&["INPUT","TEXTAREA","SELECT"].includes(active.tagName);
+  if(!editing&&!scheduling&&!typing)loadVideoJobs();
+},12000);
 
 
 /* ===== NEXUS installable app ===== */
