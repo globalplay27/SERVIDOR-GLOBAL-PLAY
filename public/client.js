@@ -757,6 +757,13 @@ function renderVideoJobs(data={}){
   const root=$("#client-video-jobs");if(!root)return;
   const jobs=Array.isArray(data.jobs)?data.jobs:[];
   latestVideoJobs=jobs;
+  for(const job of jobs){
+    for(const clip of job.clips||[]){
+      const key=videoClipKey(job.id,clip.id);
+      if(clip.selectedForSchedule)bulkVideoSelection.add(key);
+      if(clip.publishStatus==="scheduled"||clip.publishStatus==="published")bulkVideoSelection.delete(key);
+    }
+  }
   if(Array.isArray(data.folders)&&data.folders.length)latestVideoFolders=data.folders;
   syncVideoFolderControls();
   const visibleJobs=videoFolderFilter?jobs.filter(job=>(job.folderId||"default")===videoFolderFilter):jobs;
