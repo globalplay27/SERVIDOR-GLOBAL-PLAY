@@ -760,7 +760,7 @@ if(videoUploadForm)videoUploadForm.addEventListener("submit",event=>{
     if(xhr.status>=200&&xhr.status<300){
       videoUploadForm.reset();
       if($("#video-file-name"))$("#video-file-name").textContent="MP4, MOV, WEBM ou MKV";
-      if(status){status.textContent="Upload concluído. O vídeo entrou na fila do NEXUS.";status.className="save-status ok";}
+      if(status){status.textContent="Upload concluído. O NEXUS começou a preparar os cortes; nada será publicado sem sua aprovação.";status.className="save-status ok";}
       await loadVideoJobs();
     }else if(status){status.textContent=d.error==="video_too_large"?"Vídeo acima do limite de 750 MB.":"Não foi possível enviar o vídeo.";status.className="save-status error";}
   };
