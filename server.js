@@ -23,6 +23,7 @@ const oauthStateFile = path.join(DATA_DIR, "oauth-states.json");
 const portalUsersFile = path.join(DATA_DIR, "portal-users.json");
 const masterIntegrationsFile = path.join(DATA_DIR, "master-integrations.json");
 const supportTicketsFile = path.join(DATA_DIR, "support-tickets.json");
+const postLedgerFile = path.join(DATA_DIR, "post-ledger.json");
 const clientLogoDir = path.join(DATA_DIR, "client-logos");
 fs.mkdirSync(clientLogoDir, { recursive: true });
 const portalSessions = new Map();
@@ -122,7 +123,49 @@ function readBody(req) {
 }
 
 function loadClients() {
-  return readJsonFile(runtimeFile, EMPTY_SEED);
+  const items = readJsonFile(runtimeFile, EMPTY_SEED);
+  if (!items.some(item => item.id === "globalplay-streaming")) {
+    items.push({
+      id: "globalplay-streaming",
+      name: "Global Play",
+      niche: "Streaming",
+      instagram: "@globalplay_streaming",
+      theme: "green-black",
+      primaryColor: "#22c55e",
+      secondaryColor: "#050807",
+      status: "online",
+      github: "connected",
+      railway: "connected",
+      openai: "configured",
+      meta: "configured",
+      odin: true,
+      ownerAccount: true,
+      postTimes: ["09:00", "12:00", "18:00"],
+      leads: { total: 0, hot: 0, warm: 0, cold: 0 },
+      usage: { openaiPercent: 0, railwayPercent: 0 },
+      aiMode: "own-key",
+      aiMonthlyImageLimit: 0,
+      aiImagesUsed: 0,
+      aiUsageMonth: new Date().toISOString().slice(0, 7),
+      managedInfrastructure: false,
+      onboarding: {
+        github: true, railway: true, openai: true,
+        instagram: true, facebook: true, metaApp: true,
+        creativeProfile: true, supportRequested: false
+      },
+      postingProfile: defaultPostingProfile(),
+      agentProfile: {
+        agentName: "Claire",
+        brandName: "Global Play",
+        niche: "Streaming",
+        status: "configured"
+      },
+      setupMode: "ready",
+      agentApiUrl: "https://claire-production-e1db.up.railway.app"
+    });
+    writeJsonAtomic(runtimeFile, items);
+  }
+  return items;
 }
 
 function saveClients(items) {
@@ -180,6 +223,139 @@ function loadSupportTickets() {
 
 function saveSupportTickets(value) {
   writeJsonAtomic(supportTicketsFile, Array.isArray(value) ? value : []);
+}
+
+function loadPostLedger() {
+  return readJsonFile(postLedgerFile, []);
+}
+
+function savePostLedger(value) {
+  const rows = Array.isArray(value) ? value.slice(-5000) : [];
+  writeJsonAtomic(postLedgerFile, rows);
+}
+
+function cleanPostStatus(value) {
+  const allowed = new Set(["scheduled","generating","ready","publishing","published","failed","skipped"]);
+  return allowed.has(String(value || "")) ? String(value) : "scheduled";
+}
+
+function normalizeIso(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : null;
+}
+
+function upsertPostLedger(clientId, body = {}) {
+  const clients = loadClients();
+  const client = clients.find(item => item.id === clientId);
+  if (!client) return null;
+
+  const now = new Date().toISOString();
+  const scheduledFor = normalizeIso(body.scheduledFor);
+  const scheduledHour = String(body.scheduledHour || "").trim().slice(0, 5)
+    || (scheduledFor ? new Date(scheduledFor).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false }) : "");
+  const postId = String(body.postId || "").trim().slice(0, 160)
+    || [clientId, scheduledFor || now].join(":");
+
+  const ledger = loadPostLedger();
+  let row = ledger.find(item => item.id === postId && item.clientId === clientId);
+  if (!row) {
+    row = {
+      id: postId,
+      clientId,
+      clientName: client.name || clientId,
+      instagram: client.instagram || "",
+      scheduledFor,
+      scheduledHour,
+      status: "scheduled",
+      costUsd: 0,
+      costCalculated: true,
+      model: "",
+      mediaId: "",
+      error: "",
+      createdAt: now,
+      updatedAt: now
+    };
+    ledger.push(row);
+  }
+
+  if (body.status) row.status = cleanPostStatus(body.status);
+  if (scheduledFor) row.scheduledFor = scheduledFor;
+  if (scheduledHour) row.scheduledHour = scheduledHour;
+  if (body.attemptedAt) row.attemptedAt = normalizeIso(body.attemptedAt) || row.attemptedAt || now;
+  if (row.status === "generating" || row.status === "publishing") row.attemptedAt = row.attemptedAt || now;
+  if (row.status === "published") row.publishedAt = normalizeIso(body.publishedAt) || row.publishedAt || now;
+  if (body.mediaId != null) row.mediaId = String(body.mediaId || "").slice(0, 160);
+  if (body.model != null) row.model = String(body.model || "").slice(0, 100);
+  if (body.error != null) row.error = String(body.error || "").slice(0, 900);
+  if (body.costSource != null) row.costSource = String(body.costSource || "").slice(0, 80);
+
+  const absoluteCost = Number(body.costUsd);
+  if (Number.isFinite(absoluteCost) && absoluteCost >= 0) row.costUsd = absoluteCost;
+  const deltaCost = Number(body.costDeltaUsd);
+  if (Number.isFinite(deltaCost) && deltaCost > 0) row.costUsd = Number(row.costUsd || 0) + deltaCost;
+  row.costUsd = Math.max(0, Number(row.costUsd || 0));
+  row.updatedAt = now;
+
+  savePostLedger(ledger);
+  return row;
+}
+
+function imageUsageCostUsd(usage, model) {
+  if (!usage || typeof usage !== "object") return null;
+  const name = String(model || "");
+  const rates = name.startsWith("gpt-image-2.5")
+    ? { textIn: 5, imageIn: 8, cachedImageIn: 2, imageOut: 30 }
+    : name === "gpt-image-2"
+      ? { textIn: 2.5, imageIn: 4, cachedImageIn: 1, imageOut: 15 }
+      : null;
+  if (!rates) return null;
+
+  const details = usage.input_tokens_details || usage.input_details || {};
+  const textInput = Number(details.text_tokens ?? usage.input_text_tokens ?? usage.input_tokens ?? 0);
+  const imageInput = Number(details.image_tokens ?? usage.input_image_tokens ?? 0);
+  const cachedImageInput = Number(details.cached_image_tokens ?? 0);
+  const output = Number(usage.output_tokens ?? usage.output_image_tokens ?? 0);
+  const value =
+    (Math.max(0, textInput) * rates.textIn
+    + Math.max(0, imageInput - cachedImageInput) * rates.imageIn
+    + Math.max(0, cachedImageInput) * rates.cachedImageIn
+    + Math.max(0, output) * rates.imageOut) / 1_000_000;
+  return Number.isFinite(value) ? value : null;
+}
+
+function postLedgerSummary() {
+  const rows = loadPostLedger().sort((a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt)));
+  const monthKey = new Date().toISOString().slice(0, 7);
+  const monthRows = rows.filter(row => String(row.scheduledFor || row.createdAt || "").slice(0, 7) === monthKey);
+  const byClientMap = new Map();
+  for (const row of monthRows) {
+    const key = row.clientId;
+    const item = byClientMap.get(key) || {
+      clientId: key,
+      clientName: row.clientName || key,
+      instagram: row.instagram || "",
+      posts: 0,
+      published: 0,
+      failed: 0,
+      costUsd: 0
+    };
+    item.posts += 1;
+    if (row.status === "published") item.published += 1;
+    if (row.status === "failed") item.failed += 1;
+    item.costUsd += Number(row.costUsd || 0);
+    byClientMap.set(key, item);
+  }
+  const byClient = [...byClientMap.values()].sort((a, b) => b.costUsd - a.costUsd);
+  return {
+    month: monthKey,
+    totalCostUsd: monthRows.reduce((sum, row) => sum + Number(row.costUsd || 0), 0),
+    totalPosts: monthRows.length,
+    published: monthRows.filter(row => row.status === "published").length,
+    failed: monthRows.filter(row => row.status === "failed").length,
+    byClient,
+    posts: rows.slice(0, 300)
+  };
 }
 
 function supportTicketView(ticket) {
@@ -583,7 +759,9 @@ function agentBearerAuthorized(req, clientId) {
   const supplied = auth.slice(7);
   const expected = clientId === "ragnar-one"
     ? String(process.env.RAGNAR_AGENT_TOKEN || "")
-    : "";
+    : clientId === "globalplay-streaming"
+      ? String(process.env.GLOBALPLAY_AGENT_TOKEN || "")
+      : "";
   if (!expected) return false;
   return safeEqualText(supplied, expected);
 }
@@ -1229,6 +1407,19 @@ const server = http.createServer(async (req, res) => {
       const encoded = payload?.data?.[0]?.b64_json;
       if (!encoded) return send(res, 502, { error: "image_data_missing" });
 
+      const imageCostUsd = imageUsageCostUsd(payload?.usage, model);
+      if (body.postId && Number.isFinite(imageCostUsd) && imageCostUsd > 0) {
+        upsertPostLedger(clientId, {
+          postId: body.postId,
+          scheduledFor: body.scheduledFor,
+          scheduledHour: body.scheduledHour,
+          status: "generating",
+          costDeltaUsd: imageCostUsd,
+          costSource: "openai_usage",
+          model
+        });
+      }
+
       if (clientId !== "ragnar-one" && aiMode === "hybrid") {
         const allClients = loadClients();
         const stored = allClients.find(item => item.id === clientId);
@@ -1247,6 +1438,16 @@ const server = http.createServer(async (req, res) => {
     } catch {
       return send(res, 502, { error: "openai_unavailable" });
     }
+  }
+
+  const agentPostEventMatch = url.pathname.match(/^\/api\/agent\/([^/]+)\/posts\/event$/);
+  if (agentPostEventMatch && req.method === "POST") {
+    const clientId = agentPostEventMatch[1];
+    if (!agentBearerAuthorized(req, clientId)) return send(res, 401, { error: "unauthorized" });
+    const body = await readBody(req);
+    const row = upsertPostLedger(clientId, body);
+    if (!row) return send(res, 404, { error: "not_found" });
+    return send(res, 200, { ok: true, post: row });
   }
 
   const agentConfigMatch = url.pathname.match(/^\/api\/agent-config\/([^/]+)$/);
@@ -1769,6 +1970,10 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname.startsWith("/api/") && !masterAuthorized(req)) {
     res.setHeader("WWW-Authenticate", 'Basic realm="NEXUS AI Agent Central"');
     return send(res, 401, { error: "unauthorized" });
+  }
+
+  if (url.pathname === "/api/master/posts" && req.method === "GET") {
+    return send(res, 200, postLedgerSummary());
   }
 
   const masterAgentConfigMatch = url.pathname.match(/^\/api\/master\/agent-config\/([^/]+)$/);
