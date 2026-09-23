@@ -1576,67 +1576,115 @@ async function processVideoJob(jobId) {
   }
 }
 
-async function searchOfficialTrailers(query, type = "movie") {
+async function searchOfficialTrailers(query, type = "movie", clientId = "") {
   const q = String(query || "").trim().slice(0,120);
   const kind = type === "series" ? "tv" : "movie";
-  if (!q) return { configured: Boolean(process.env.TMDB_API_TOKEN || process.env.TMDB_API_KEY), results: [] };
+  if (!q) return { configured: false, source: "none", results: [] };
   const token = String(process.env.TMDB_API_TOKEN || "").trim();
   const apiKey = String(process.env.TMDB_API_KEY || "").trim();
   const youtubeSearchUrl = "https://www.youtube.com/results?search_query=" + encodeURIComponent(q + " trailer oficial");
-  if (!token && !apiKey) return { configured:false, results:[], youtubeSearchUrl };
 
-  const tmdbGet = async (pathname, params = {}) => {
-    const endpoint = new URL("https://api.themoviedb.org/3/" + pathname.replace(/^\/+/, ""));
-    endpoint.searchParams.set("language","pt-BR");
-    for (const [key,value] of Object.entries(params)) if (value !== undefined && value !== null && value !== "") endpoint.searchParams.set(key,String(value));
-    if (apiKey) endpoint.searchParams.set("api_key",apiKey);
-    const response = await fetch(endpoint, {
-      headers: { accept:"application/json", ...(token ? { authorization:"Bearer " + token } : {}) },
-      signal: AbortSignal.timeout(12000)
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error("tmdb_" + response.status);
-    return payload;
-  };
+  const normalizeResult = item => ({
+    id: item.id || "",
+    type: item.type === "series" || kind === "tv" ? "series" : "movie",
+    title: String(item.title || item.name || q).slice(0,160),
+    year: String(item.year || item.release_date || item.first_air_date || "").slice(0,4),
+    overview: String(item.overview || item.synopsis || "").slice(0,600),
+    posterUrl: String(item.posterUrl || ""),
+    trailerUrl: /^https:\/\/www\.youtube\.com\/watch\?v=|^https:\/\/youtu\.be\//i.test(String(item.trailerUrl || "")) ? String(item.trailerUrl) : "",
+    trailerName: String(item.trailerName || item.channel || "").slice(0,180),
+    official: item.official === true,
+    youtubeSearchUrl: String(item.youtubeSearchUrl || youtubeSearchUrl)
+  });
 
-  const search = await tmdbGet("search/" + kind, { query:q, include_adult:"false" });
-  const base = (Array.isArray(search.results) ? search.results : []).slice(0,8);
-  const results = [];
-  for (const item of base) {
-    let videos = [];
-    try {
-      const v = await tmdbGet(kind + "/" + item.id + "/videos");
-      videos = Array.isArray(v.results) ? v.results : [];
-      if (!videos.length) {
-        const endpoint = new URL("https://api.themoviedb.org/3/" + kind + "/" + item.id + "/videos");
-        endpoint.searchParams.set("language","en-US");
-        if (apiKey) endpoint.searchParams.set("api_key",apiKey);
-        const response = await fetch(endpoint,{headers:{accept:"application/json",...(token?{authorization:"Bearer "+token}:{})},signal:AbortSignal.timeout(12000)});
-        const v2 = await response.json().catch(()=>({}));
-        videos = Array.isArray(v2.results) ? v2.results : [];
-      }
-    } catch {}
-    const youtube = videos.filter(v => v.site === "YouTube");
-    const trailer = youtube.find(v => v.official === true && v.type === "Trailer")
-      || youtube.find(v => v.type === "Trailer")
-      || youtube.find(v => v.official === true)
-      || null;
-    const title = String(kind === "tv" ? item.name : item.title || q);
-    const date = String(kind === "tv" ? item.first_air_date : item.release_date || "");
-    results.push({
-      id: item.id,
-      type: kind === "tv" ? "series" : "movie",
-      title,
-      year: date.slice(0,4),
-      overview: String(item.overview || "").slice(0,600),
-      posterUrl: item.poster_path ? "https://image.tmdb.org/t/p/w342" + item.poster_path : "",
-      trailerUrl: trailer?.key ? "https://www.youtube.com/watch?v=" + encodeURIComponent(trailer.key) : "",
-      trailerName: String(trailer?.name || ""),
-      official: Boolean(trailer?.official),
-      youtubeSearchUrl: "https://www.youtube.com/results?search_query=" + encodeURIComponent(title + " " + date.slice(0,4) + " trailer oficial")
-    });
+  if (token || apiKey) {
+    const tmdbGet = async (pathname, params = {}, language = "pt-BR") => {
+      const endpoint = new URL("https://api.themoviedb.org/3/" + pathname.replace(/^\/+/, ""));
+      endpoint.searchParams.set("language", language);
+      for (const [key,value] of Object.entries(params)) if (value !== undefined && value !== null && value !== "") endpoint.searchParams.set(key,String(value));
+      if (apiKey) endpoint.searchParams.set("api_key",apiKey);
+      const response = await fetch(endpoint, {
+        headers: { accept:"application/json", ...(token ? { authorization:"Bearer " + token } : {}) },
+        signal: AbortSignal.timeout(12000)
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error("tmdb_" + response.status);
+      return payload;
+    };
+
+    const search = await tmdbGet("search/" + kind, { query:q, include_adult:"false" });
+    const base = (Array.isArray(search.results) ? search.results : []).slice(0,8);
+    const results = [];
+    for (const item of base) {
+      let videos = [];
+      try {
+        let v = await tmdbGet(kind + "/" + item.id + "/videos");
+        videos = Array.isArray(v.results) ? v.results : [];
+        if (!videos.length) {
+          v = await tmdbGet(kind + "/" + item.id + "/videos", {}, "en-US");
+          videos = Array.isArray(v.results) ? v.results : [];
+        }
+      } catch {}
+      const youtube = videos.filter(v => v.site === "YouTube");
+      const trailer = youtube.find(v => v.official === true && v.type === "Trailer")
+        || youtube.find(v => v.type === "Trailer")
+        || youtube.find(v => v.official === true)
+        || null;
+      const title = String(kind === "tv" ? item.name : item.title || q);
+      const date = String(kind === "tv" ? item.first_air_date : item.release_date || "");
+      results.push(normalizeResult({
+        id: item.id,
+        type: kind === "tv" ? "series" : "movie",
+        title,
+        year: date.slice(0,4),
+        overview: item.overview || "",
+        posterUrl: item.poster_path ? "https://image.tmdb.org/t/p/w342" + item.poster_path : "",
+        trailerUrl: trailer?.key ? "https://www.youtube.com/watch?v=" + encodeURIComponent(trailer.key) : "",
+        trailerName: trailer?.name || "",
+        official: Boolean(trailer?.official),
+        youtubeSearchUrl: "https://www.youtube.com/results?search_query=" + encodeURIComponent(title + " " + date.slice(0,4) + " trailer oficial")
+      }));
+    }
+    return { configured:true, source:"tmdb", results, youtubeSearchUrl };
   }
-  return { configured:true, results, youtubeSearchUrl };
+
+  // Sem TMDB, o NEXUS usa a própria camada de IA com pesquisa web.
+  // Para Ragnar, respeita a separação da conta OpenAI; para os demais usa a conta NEXUS.
+  const aiKey = videoOpenAIKeyForClient(clientId);
+  if (aiKey) {
+    try {
+      const response = await fetch("https://api.openai.com/v1/responses", {
+        method:"POST",
+        headers:{ authorization:"Bearer " + aiKey, "content-type":"application/json" },
+        body:JSON.stringify({
+          model:"gpt-5.6-luna",
+          tools:[{ type:"web_search" }],
+          instructions:"Você localiza trailers oficiais de filmes e séries. Priorize links do YouTube publicados pelo estúdio, distribuidora, streaming oficial ou canal oficial da obra. Nunca invente URL. Se não puder confirmar um trailer oficial, deixe trailerUrl vazio e official=false. Retorne somente JSON válido.",
+          input:"Pesquise " + (kind === "tv" ? "a série" : "o filme") + " chamado \"" + q + "\". Retorne até 6 resultados compatíveis em JSON no formato {\"results\":[{\"title\":\"...\",\"year\":\"2026\",\"overview\":\"sinopse curta\",\"trailerUrl\":\"https://www.youtube.com/watch?v=...\",\"channel\":\"canal\",\"official\":true}]}.",
+          max_output_tokens:1800
+        }),
+        signal:AbortSignal.timeout(90000)
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (response.ok) {
+        const output = responseOutputText(payload);
+        const a = output.indexOf("{"), b = output.lastIndexOf("}");
+        if (a >= 0 && b > a) {
+          const parsed = JSON.parse(output.slice(a,b+1));
+          const results = (Array.isArray(parsed.results) ? parsed.results : []).slice(0,6).map(item => normalizeResult({
+            ...item,
+            type: kind === "tv" ? "series" : "movie",
+            youtubeSearchUrl:"https://www.youtube.com/results?search_query=" + encodeURIComponent(String(item.title || q) + " " + String(item.year || "") + " trailer oficial")
+          }));
+          return { configured:true, source:"openai-web-search", results, youtubeSearchUrl };
+        }
+      }
+    } catch (error) {
+      console.warn("Trailer AI search unavailable:", String(error?.message || error));
+    }
+  }
+
+  return { configured:false, source:"youtube-search", results:[], youtubeSearchUrl };
 }
 
 function startPendingVideoJobs() {
@@ -4250,7 +4298,7 @@ const server = http.createServer(async (req, res) => {
       const query = String(url.searchParams.get("q") || "");
       const type = String(url.searchParams.get("type") || "movie") === "series" ? "series" : "movie";
       if (!query.trim()) return send(res, 400, { error: "query_required" });
-      const result = await searchOfficialTrailers(query, type);
+      const result = await searchOfficialTrailers(query, type, client.id);
       return send(res, 200, result);
     } catch (error) {
       return send(res, 502, { error: "trailer_search_failed", message: String(error?.message || error).slice(0,300) });
