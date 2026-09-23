@@ -10,7 +10,7 @@
   <title>NEXUS AI · Portal do Cliente</title>
   <link rel="icon" href="/assets/nexus-ai-mark.svg" type="image/svg+xml">
   <link rel="manifest" href="/manifest.webmanifest?v=1">
-  <link rel="stylesheet" href="/client.css?v=22">
+  <link rel="stylesheet" href="/client.css?v=23">
 </head>
 <body>
   <div id="nexus-boot" class="nexus-boot" hidden>
@@ -62,6 +62,7 @@
       <nav class="client-nav">
         <button type="button" class="active" data-view="overview">Visão geral</button>
         <button type="button" data-view="posting">Postagens</button>
+        <button type="button" data-view="support">Suporte</button>
         <button type="button" class="setup-nav-main" data-view="setup" hidden>Conexões</button>
       </nav>
 
@@ -168,6 +169,28 @@
         </form>
       </div>
 
+      <div id="view-support" class="client-view" hidden>
+        <section class="settings-heading">
+          <div><p class="eyebrow">SUPORTE NEXUS</p><h1>Como podemos ajudar?</h1><p class="muted">Abra um chamado aqui. A equipe responsável recebe a notificação diretamente no Painel Master.</p></div>
+          <span id="support-send-status" class="save-status"></span>
+        </section>
+        <section class="support-client-grid">
+          <article class="panel settings-panel">
+            <p class="eyebrow">NOVO CHAMADO</p><h2>Falar com o suporte</h2>
+            <form id="support-form" class="support-form">
+              <label><span>Assunto</span><input id="support-subject" maxlength="140" required placeholder="Ex.: Instagram não conectou"></label>
+              <label><span>Categoria</span><select id="support-category"><option>Instagram / Meta</option><option>Postagens</option><option>Agente / automação</option><option>Acesso ao NEXUS</option><option>Cobrança / plano</option><option>Outro</option></select></label>
+              <label><span>Explique o problema</span><textarea id="support-message" rows="7" maxlength="3000" required placeholder="Conte o que aconteceu e o que você precisa."></textarea></label>
+              <button class="connection-submit" type="submit">Abrir chamado</button>
+            </form>
+          </article>
+          <article class="panel settings-panel">
+            <p class="eyebrow">ACOMPANHAMENTO</p><h2>Meus chamados</h2>
+            <div id="client-support-list" class="client-support-list"><p class="muted">Nenhum chamado aberto.</p></div>
+          </article>
+        </section>
+      </div>
+
       <div id="view-setup" class="client-view" hidden>
         <section class="settings-heading"><div><p class="eyebrow">CENTRAL DE CONEXÕES</p><h1>Serviços do agente</h1><p class="muted">Confira e conecte os serviços usados pela automação.</p></div><div class="progress-pill"><strong id="setup-progress">0%</strong><span>concluído</span></div></section>
 
@@ -211,6 +234,6 @@
       <footer><span>NEXUS AI</span><small>Client Portal · ambiente exclusivo</small></footer>
     </section>
   </main>
-  <script src="/client.js?v=22" defer></script>
+  <script src="/client.js?v=23" defer></script>
 </body>
 </html>
