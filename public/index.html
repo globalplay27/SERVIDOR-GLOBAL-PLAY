@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#080b0a">
   <title>NEXUS AI · Agent Control Center</title>
-  <link rel="stylesheet" href="/styles.css?v=4">
+  <link rel="stylesheet" href="/styles.css?v=5">
 </head>
 <body>
   <div class="shell">
@@ -14,6 +14,7 @@
       <nav>
         <button class="nav-item active" data-view="dashboard">▦ <span>Visão geral</span></button>
         <button class="nav-item" data-view="clients">◉ <span>Clientes</span></button>
+        <button class="nav-item nav-notifications" data-view="notifications">✦ <span>Notificações</span><b id="notification-count" class="notification-count" hidden>0</b></button>
         <button class="nav-item" data-view="portal">⌁ <span>Portal do cliente</span></button>
         <button class="nav-item" data-view="odin">◆ <span>Odin & Leads</span></button>
         <button class="nav-item" data-view="onboarding">＋ <span>Novo cliente</span></button>
@@ -41,7 +42,23 @@
         </div>
       </section>
 
-      <section id="clients" class="view"><div class="panel"><div class="panel-head"><div><p class="eyebrow">GESTÃO</p><h2>Todos os clientes</h2></div><button class="primary" data-go="onboarding">＋ Adicionar cliente</button></div><div class="table-wrap"><table><thead><tr><th>Cliente</th><th>Status</th><th>Instagram</th><th>Odin</th><th>Horários</th><th>IA do cliente</th></tr></thead><tbody id="clients-table"></tbody></table></div></div></section>
+      <section id="clients" class="view"><div class="panel"><div class="panel-head"><div><p class="eyebrow">GESTÃO</p><h2>Todos os clientes</h2></div><button class="primary" data-go="onboarding">＋ Adicionar cliente</button></div><div class="table-wrap"><table><thead><tr><th>Cliente</th><th>Status</th><th>Instagram</th><th>Odin</th><th>Horários</th><th>IA do cliente</th><th>Ações</th></tr></thead><tbody id="clients-table"></tbody></table></div></div></section>
+
+      <section id="notifications" class="view">
+        <div class="panel">
+          <div class="panel-head">
+            <div><p class="eyebrow">CENTRAL DE SUPORTE</p><h2>Notificações dos clientes</h2><p class="muted">Chamados abertos diretamente pelo aplicativo NEXUS.</p></div>
+            <div class="support-summary"><span><strong id="support-new-count">0</strong> novos</span><span><strong id="support-open-count">0</strong> abertos</span></div>
+          </div>
+          <div class="support-filters">
+            <button type="button" class="active" data-support-filter="all">Todos</button>
+            <button type="button" data-support-filter="new">Novos</button>
+            <button type="button" data-support-filter="read">Lidos</button>
+            <button type="button" data-support-filter="resolved">Resolvidos</button>
+          </div>
+          <div id="support-notifications" class="support-notifications"><p class="muted">Nenhum chamado recebido.</p></div>
+        </div>
+      </section>
 
       <section id="portal" class="view">
         <div class="portal-toolbar"><div><p class="eyebrow">VISÃO DO CLIENTE</p><h2>Portal personalizado</h2></div><label>Visualizar como<select id="portal-client"></select></label></div>
@@ -65,7 +82,7 @@
             <div class="form-grid">
               <label>Empresa / nome<input name="name" required placeholder="Ex.: Loja Alpha"></label>
               <label>Nicho<input name="niche" placeholder="Ex.: Restaurante, loja, streaming"></label>
-              <label>Instagram<input name="instagram" placeholder="@usuario (pode conectar depois)"></label>
+              
               <label>Usuário do aplicativo<input name="username" placeholder="Gerado automaticamente"></label>
               <label>Senha inicial<input name="password" type="text" minlength="8" placeholder="Gerada automaticamente"></label>
               <label>Tema<select name="theme"><option value="green-black">Preto + Verde</option><option value="red-black">Preto + Vermelho</option><option value="blue-white">Azul + Branco</option><option value="gold-black">Preto + Dourado</option></select></label>
@@ -116,6 +133,6 @@
       </section>
     </main>
   </div>
-  <script src="/app.js?v=4" defer></script>
+  <script src="/app.js?v=5" defer></script>
 </body>
 </html>
