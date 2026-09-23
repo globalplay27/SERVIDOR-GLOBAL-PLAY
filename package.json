@@ -1,8 +1,8 @@
 {
-  "name": "globalplay-agent-central",
+  "name": "nexus-ai-agent-central",
   "version": "1.0.0",
   "private": true,
-  "description": "Central Global Play para implantação e gestão de agentes de clientes.",
+  "description": "NEXUS AI — central multiagente para inteligência, automação, conteúdo, leads e operação de Instagram.",
   "type": "module",
   "engines": {
     "node": ">=20"
