@@ -316,9 +316,9 @@ async function loadSupportTickets(){
   }catch{if(list)list.innerHTML='<p class="muted">Não foi possível carregar os chamados agora.</p>';}
 }
 $$("[data-view]").forEach(b=>b.addEventListener("click",()=>showView(b.dataset.view)));$$("[data-open-setup]").forEach(b=>b.addEventListener("click",()=>showView("setup")));$$("[data-open-posting]").forEach(b=>b.addEventListener("click",()=>showView("posting")));
-$("[data-profile-tab]").forEach(button=>button.addEventListener("click",()=>{
-  $("[data-profile-tab]").forEach(item=>item.classList.toggle("active",item===button));
-  $("[data-profile-panel]").forEach(panel=>panel.classList.toggle("active",panel.dataset.profilePanel===button.dataset.profileTab));
+$$("[data-profile-tab]").forEach(button=>button.addEventListener("click",()=>{
+  $$("[data-profile-tab]").forEach(item=>item.classList.toggle("active",item===button));
+  $$("[data-profile-panel]").forEach(panel=>panel.classList.toggle("active",panel.dataset.profilePanel===button.dataset.profileTab));
 }));
 ["#profile-primary","#profile-secondary","#profile-agent-name","#profile-brand-name","#profile-niche","#profile-cta"].forEach(selector=>{
   const el=$(selector);if(el)el.addEventListener("input",updateAgentProfilePreview);
