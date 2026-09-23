@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#080b0a">
   <title>NEXUS AI · Agent Control Center</title>
-  <link rel="stylesheet" href="/styles.css?v=11">
+  <link rel="stylesheet" href="/styles.css?v=12">
 </head>
 <body>
   <div class="shell">
@@ -15,6 +15,7 @@
         <button class="nav-item active" data-view="dashboard">▦ <span>Visão geral</span></button>
         <button class="nav-item" data-view="clients">◉ <span>Clientes</span></button>
         <button class="nav-item" data-view="posts">▤ <span>Postagens & custos</span></button>
+        <button class="nav-item" data-view="videos">▶ <span>Vídeos</span></button>
         <button class="nav-item nav-notifications" data-view="notifications">✦ <span>Notificações</span><b id="notification-count" class="notification-count" hidden>0</b></button>
         <button class="nav-item" data-view="portal">⌁ <span>Portal do cliente</span></button>
         <button class="nav-item" data-view="odin">◆ <span>Odin & Leads</span></button>
@@ -84,6 +85,16 @@
         </section>
       </section>
 
+      <section id="videos" class="view">
+        <div class="panel">
+          <div class="panel-head">
+            <div><p class="eyebrow">NEXUS VIDEO CONTROL</p><h2>Vídeos de todos os clientes</h2><p class="muted">Veja os cortes processados, aprove ou reprove, ajuste o trecho e agende fora da agenda automática do cliente.</p></div>
+            <label class="post-client-filter">Cliente<select id="master-video-client-filter"><option value="">Todos</option></select></label>
+          </div>
+          <div id="master-video-jobs" class="master-video-jobs"><p class="muted">Carregando vídeos…</p></div>
+        </div>
+      </section>
+
       <section id="notifications" class="view">
         <div class="panel">
           <div class="panel-head">
@@ -101,7 +112,7 @@
       </section>
 
       <section id="portal" class="view">
-        <div class="portal-toolbar"><div><p class="eyebrow">VISÃO DO CLIENTE</p><h2>Portal personalizado</h2></div><label>Visualizar como<select id="portal-client"></select></label></div>
+        <div class="portal-toolbar"><div><p class="eyebrow">VISÃO DO CLIENTE</p><h2>Portal personalizado</h2></div><div class="portal-toolbar-actions"><label>Visualizar como<select id="portal-client"></select></label><button type="button" id="assume-selected-client" class="primary">Assumir painel do cliente</button></div></div>
         <div id="portal-empty" class="panel empty-state"><strong>Nenhum cliente disponível</strong><span>Cadastre o primeiro cliente para gerar o portal.</span></div>
         <div id="client-portal" class="client-portal" hidden>
           <section class="portal-hero"><div class="portal-identity"><div id="portal-avatar" class="portal-avatar">NX</div><div><span class="portal-label">AGENTE AUTÔNOMO</span><h2 id="portal-name">Cliente</h2><p id="portal-meta">Configuração do agente</p></div></div><div class="agent-orbit"><span></span><i></i><b></b><em></em><div class="robot-core">AI</div></div><div class="portal-status"><i></i><span id="portal-status">Online</span></div></section>
@@ -110,7 +121,27 @@
         </div>
       </section>
 
-      <section id="odin" class="view"><div class="grid-main"><div class="panel"><p class="eyebrow">MÓDULO COMERCIAL</p><h2>Odin</h2><p class="muted">Captação, qualificação e encaminhamento de leads quentes para atendimento humano.</p><div class="funnel"><div><strong id="funnel-total">0</strong><span>Total</span></div><div><strong id="funnel-warm">0</strong><span>Mornos</span></div><div><strong id="funnel-hot">0</strong><span>Quentes</span></div></div></div><div class="panel"><p class="eyebrow">AUTOMAÇÃO</p><h2>Recursos preparados</h2><ul class="checklist"><li>Comentários “QUERO”</li><li>Classificação frio, morno e quente</li><li>Score e intenção de compra</li><li>Assinatura, revenda e suporte</li><li>Encaminhamento para WhatsApp</li></ul></div></div></section>
+      <section id="odin" class="view">
+        <div class="odin-master-metrics">
+          <article><span>Total</span><strong id="funnel-total">0</strong><small>leads captados</small></article>
+          <article><span>Quentes</span><strong id="funnel-hot">0</strong><small>alta intenção</small></article>
+          <article><span>Mornos</span><strong id="funnel-warm">0</strong><small>em qualificação</small></article>
+          <article><span>Frios</span><strong id="funnel-cold">0</strong><small>baixo sinal comercial</small></article>
+          <article><span>Humano</span><strong id="funnel-human">0</strong><small>precisam de atendimento</small></article>
+        </div>
+        <div class="panel">
+          <div class="panel-head">
+            <div><p class="eyebrow">ODIN EM TEMPO REAL</p><h2>Leads de todos os clientes</h2><p class="muted">O comentário já entra no Odin como lead. Palavras de intenção aumentam o score e podem iniciar a qualificação automática.</p></div>
+            <label class="post-client-filter">Cliente<select id="master-lead-client-filter"><option value="">Todos</option></select></label>
+          </div>
+          <div class="table-wrap">
+            <table class="odin-lead-table">
+              <thead><tr><th>Cliente</th><th>Instagram</th><th>Classificação</th><th>Score</th><th>Interesse</th><th>Etapa</th><th>Humano</th><th>Atualizado</th></tr></thead>
+              <tbody id="master-leads-body"><tr><td colspan="8">Sincronizando agentes…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
 
       <section id="onboarding" class="view">
         <div class="panel form-panel compact-create">
@@ -197,6 +228,6 @@
       </section>
     </main>
   </div>
-  <script src="/app.js?v=11" defer></script>
+  <script src="/app.js?v=12" defer></script>
 </body>
 </html>
