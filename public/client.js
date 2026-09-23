@@ -506,18 +506,69 @@ async function saveOwnPost(postId,button){
 }
 
 function videoJobStatus(job){
-  const labels={queued:"NA FILA",uploaded:"ENVIADO",transcribing:"TRANSCREVENDO",selecting:"ESCOLHENDO CORTES",cutting:"CRIANDO CORTES",ready:"PRONTO",failed:"FALHOU"};
-  return labels[job.status]||String(job.status||"NA FILA").toUpperCase();
+  const labels={queued:"RECEBIDO",uploaded:"RECEBIDO",transcribing:"TRANSCREVENDO",selecting:"ESCOLHENDO CORTES",cutting:"CRIANDO CORTES",ready:"PRONTO PARA REVISÃO",failed:"FALHOU"};
+  return labels[job.status]||String(job.status||"RECEBIDO").toUpperCase();
+}
+function videoApprovalLabel(status){
+  return status==="approved"?"APROVADO":status==="rejected"?"REPROVADO":"AGUARDANDO APROVAÇÃO";
+}
+function videoPublishLabel(clip){
+  if(clip.publishStatus==="published")return"PUBLICADO";
+  if(clip.publishStatus==="publishing")return"PUBLICANDO";
+  if(clip.publishStatus==="scheduled")return"AGENDADO";
+  if(clip.publishStatus==="failed")return"FALHA NO ENVIO";
+  return"FORA DA AGENDA";
+}
+function localInputValue(iso){
+  if(!iso)return"";
+  const d=new Date(iso);if(!Number.isFinite(d.getTime()))return"";
+  const pad=n=>String(n).padStart(2,"0");
+  return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate())+"T"+pad(d.getHours())+":"+pad(d.getMinutes());
 }
 function renderVideoJobs(data={}){
   const root=$("#client-video-jobs");if(!root)return;
   const jobs=Array.isArray(data.jobs)?data.jobs:[];
-  if(!jobs.length){root.innerHTML='<div class="post-client-empty"><strong>Nenhum vídeo enviado</strong><span>Seus trabalhos aparecerão aqui com o andamento.</span></div>';return;}
-  root.innerHTML=jobs.map(job=>`<article class="video-job-card">
-    <div><strong>${escapeSupport(job.filename||"Vídeo")}</strong><span>${videoJobStatus(job)} · ${Math.round(Number(job.progress||0))}%</span></div>
-    <div class="video-job-progress"><i style="width:${Math.max(2,Math.min(100,Number(job.progress||0)))}%"></i></div>
-    <small>${escapeSupport(job.message||"Aguardando processamento.")}</small>
-  </article>`).join("");
+  if(!jobs.length){root.innerHTML='<div class="post-client-empty"><strong>Nenhum vídeo enviado</strong><span>Envie um vídeo. Ele será processado e os cortes aparecerão aqui para sua decisão.</span></div>';return;}
+  root.innerHTML=jobs.map(job=>{
+    const clips=Array.isArray(job.clips)?job.clips:[];
+    const header=`<article class="video-job-card video-job-expanded" data-video-job="${escapeSupport(job.id)}">
+      <div class="video-job-head"><div><strong>${escapeSupport(job.filename||"Vídeo")}</strong><span>${videoJobStatus(job)} · ${Math.round(Number(job.progress||0))}%</span></div><small>${escapeSupport(job.message||"Processando…")}</small></div>
+      <div class="video-job-progress"><i style="width:${Math.max(2,Math.min(100,Number(job.progress||0)))}%"></i></div>`;
+    if(!clips.length){
+      return header+`<div class="video-wait-card"><strong>${job.status==="failed"?"Não foi possível preparar os cortes.":"O NEXUS está trabalhando neste vídeo."}</strong><span>O vídeo não entra na agenda automática. Quando os cortes ficarem prontos, você decide aprovar, rejeitar ou agendar.</span></div></article>`;
+    }
+    return header+`<div class="video-clip-grid">${clips.map(clip=>`
+      <article class="video-clip-card" data-video-clip="${escapeSupport(clip.id)}">
+        <video controls preload="metadata" src="${escapeSupport(clip.previewUrl)}"></video>
+        <div class="video-clip-body">
+          <div class="video-clip-top"><strong>${escapeSupport(clip.title||"Corte")}</strong><span class="video-approval ${escapeSupport(clip.approvalStatus||"pending")}">${videoApprovalLabel(clip.approvalStatus)}</span></div>
+          <small>${escapeSupport(clip.reason||"Trecho selecionado pelo NEXUS")}</small>
+          ${clip.transcript?`<p class="video-transcript">${escapeSupport(clip.transcript)}</p>`:""}
+          <div class="video-clip-state"><span>${videoPublishLabel(clip)}</span>${clip.scheduledFor?`<b>${formatClientPostDate(clip.scheduledFor)}</b>`:""}</div>
+          ${clip.error?`<p class="video-error">${escapeSupport(clip.error)}</p>`:""}
+          <div class="video-review-actions">
+            <button type="button" data-video-approve="${escapeSupport(job.id)}|${escapeSupport(clip.id)}">Aprovar</button>
+            <button type="button" class="danger" data-video-reject="${escapeSupport(job.id)}|${escapeSupport(clip.id)}">Reprovar</button>
+            <button type="button" class="ghost-action" data-video-toggle-edit>Editar corte</button>
+          </div>
+          <div class="video-edit-panel" hidden>
+            <div class="video-cut-range">
+              <label>Início (s)<input type="number" step="0.1" min="0" data-video-start value="${Number(clip.start||0).toFixed(1)}"></label>
+              <label>Fim (s)<input type="number" step="0.1" min="0" data-video-end value="${Number(clip.end||0).toFixed(1)}"></label>
+            </div>
+            <label>Título<input data-video-title maxlength="100" value="${escapeSupport(clip.title||"")}"></label>
+            <label>Legenda<textarea data-video-caption rows="3" maxlength="2200">${escapeSupport(clip.caption||clip.title||"")}</textarea></label>
+            <button type="button" data-video-adjust="${escapeSupport(job.id)}|${escapeSupport(clip.id)}">Salvar novo corte</button>
+          </div>
+          ${clip.approvalStatus==="approved"?`<div class="video-schedule-panel">
+            <label>Agendar este vídeo<input type="datetime-local" data-video-schedule-time value="${localInputValue(clip.scheduledFor)}"></label>
+            <label>Legenda<input data-video-schedule-caption maxlength="2200" value="${escapeSupport(clip.caption||clip.title||"")}"></label>
+            <div><button type="button" data-video-schedule="${escapeSupport(job.id)}|${escapeSupport(clip.id)}">Agendar fora da agenda</button><button type="button" class="post-send-now" data-video-publish="${escapeSupport(job.id)}|${escapeSupport(clip.id)}">Publicar agora</button></div>
+          </div>`:""}
+          <div class="client-post-response" data-video-response></div>
+        </div>
+      </article>`).join("")}</div></article>`;
+  }).join("");
 }
 async function loadVideoJobs(){
   try{
@@ -527,6 +578,58 @@ async function loadVideoJobs(){
   }catch{
     const root=$("#client-video-jobs");if(root)root.innerHTML='<p class="muted">Não foi possível carregar seus vídeos agora.</p>';
   }
+}
+function videoActionParts(button){
+  const raw=String(button.dataset.videoApprove||button.dataset.videoReject||button.dataset.videoAdjust||button.dataset.videoSchedule||button.dataset.videoPublish||"");
+  const [jobId,clipId]=raw.split("|");
+  return{jobId,clipId,card:button.closest("[data-video-clip]")};
+}
+function setVideoResponse(card,message,type=""){
+  const el=card?.querySelector("[data-video-response]");if(!el)return;
+  el.textContent=message||"";el.className="client-post-response "+type;
+}
+async function setVideoApproval(button,status){
+  const {jobId,clipId,card}=videoActionParts(button);button.disabled=true;
+  try{
+    const r=await fetch(`/api/portal/videos/${encodeURIComponent(jobId)}/clips/${encodeURIComponent(clipId)}/approval`,{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({status})});
+    const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||"Falha ao atualizar aprovação.");
+    setVideoResponse(card,status==="approved"?"Corte aprovado. Agora você pode agendar ou publicar.":"Corte reprovado. Ele não será publicado.","ok");
+    await loadVideoJobs();
+  }catch(error){setVideoResponse(card,error.message,"error");}finally{button.disabled=false;}
+}
+async function adjustVideo(button){
+  const {jobId,clipId,card}=videoActionParts(button);
+  const start=Number(card.querySelector("[data-video-start]").value),end=Number(card.querySelector("[data-video-end]").value);
+  const title=card.querySelector("[data-video-title]").value,caption=card.querySelector("[data-video-caption]").value;
+  button.disabled=true;button.textContent="Recortando…";
+  try{
+    const r=await fetch(`/api/portal/videos/${encodeURIComponent(jobId)}/clips/${encodeURIComponent(clipId)}/adjust`,{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({start,end,title,caption})});
+    const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||"Falha ao ajustar o corte.");
+    setVideoResponse(card,"Novo corte criado. Revise e aprove novamente.","ok");await loadVideoJobs();
+  }catch(error){setVideoResponse(card,error.message,"error");}finally{button.disabled=false;button.textContent="Salvar novo corte";}
+}
+async function scheduleVideo(button){
+  const {jobId,clipId,card}=videoActionParts(button);
+  const local=card.querySelector("[data-video-schedule-time]")?.value||"";
+  const caption=card.querySelector("[data-video-schedule-caption]")?.value||"";
+  if(!local){setVideoResponse(card,"Escolha a data e o horário.","error");return;}
+  const date=new Date(local);if(!Number.isFinite(date.getTime())){setVideoResponse(card,"Data ou horário inválido.","error");return;}
+  button.disabled=true;
+  try{
+    const r=await fetch(`/api/portal/videos/${encodeURIComponent(jobId)}/clips/${encodeURIComponent(clipId)}/schedule`,{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({scheduledFor:date.toISOString(),caption})});
+    const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||"Falha ao agendar.");
+    setVideoResponse(card,"Vídeo agendado separadamente das postagens automáticas.","ok");await loadVideoJobs();
+  }catch(error){setVideoResponse(card,error.message,"error");}finally{button.disabled=false;}
+}
+async function publishVideoNow(button){
+  const {jobId,clipId,card}=videoActionParts(button);
+  const caption=card.querySelector("[data-video-schedule-caption]")?.value||"";
+  button.disabled=true;button.textContent="Publicando…";setVideoResponse(card,"Enviando o Reel ao Instagram…");
+  try{
+    const r=await fetch(`/api/portal/videos/${encodeURIComponent(jobId)}/clips/${encodeURIComponent(clipId)}/publish`,{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({caption})});
+    const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||"Falha ao publicar.");
+    setVideoResponse(card,"Vídeo publicado com sucesso.","ok");await loadVideoJobs();
+  }catch(error){setVideoResponse(card,error.message,"error");}finally{button.disabled=false;button.textContent="Publicar agora";}
 }
 
 document.addEventListener("click",event=>{
@@ -542,6 +645,12 @@ document.addEventListener("click",event=>{
   if(revision){sendRevision(revision.dataset.postRevisionSend,revision);return;}
   const own=event.target.closest("[data-post-own-save]");
   if(own){saveOwnPost(own.dataset.postOwnSave,own);return;}
+  const approve=event.target.closest("[data-video-approve]");if(approve){setVideoApproval(approve,"approved");return;}
+  const reject=event.target.closest("[data-video-reject]");if(reject){setVideoApproval(reject,"rejected");return;}
+  const toggleEdit=event.target.closest("[data-video-toggle-edit]");if(toggleEdit){const panel=toggleEdit.closest("[data-video-clip]")?.querySelector(".video-edit-panel");if(panel)panel.hidden=!panel.hidden;return;}
+  const adjust=event.target.closest("[data-video-adjust]");if(adjust){adjustVideo(adjust);return;}
+  const schedule=event.target.closest("[data-video-schedule]");if(schedule){scheduleVideo(schedule);return;}
+  const publish=event.target.closest("[data-video-publish]");if(publish){publishVideoNow(publish);return;}
 });
 $("[data-view]").forEach(b=>b.addEventListener("click",()=>showView(b.dataset.view)));
 const refreshClientPosts=$("#refresh-client-posts");if(refreshClientPosts)refreshClientPosts.addEventListener("click",loadClientPosts);
@@ -755,6 +864,7 @@ async function resumeCookieSession(){
   }catch{}
 }
 resumeCookieSession();
+setInterval(()=>{const view=$("#view-videos");if(view&&!view.hidden)loadVideoJobs();},5000);
 
 
 /* ===== NEXUS installable app ===== */
