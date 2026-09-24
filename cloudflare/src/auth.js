@@ -1,5 +1,36 @@
 const encoder = new TextEncoder();
 
+async function railwayAuthCheck(env, kind, username, password) {
+  const base = String(env.RAILWAY_VIDEO_BRIDGE_URL || "").trim().replace(/\/+$/, "");
+  const secret = String(env.NEXUS_RAILWAY_BRIDGE_SECRET || "").trim();
+  if (!base || !secret) return { ok: false, clientId: "" };
+
+  try {
+    const response = await fetch(base + "/api/nexus/bridge/auth-check", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-nexus-bridge-secret": secret,
+        "x-nexus-bridge-source": "cloudflare-auth"
+      },
+      body: JSON.stringify({
+        kind: String(kind || ""),
+        username: String(username || ""),
+        password: String(password || "")
+      })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.ok !== true) return { ok: false, clientId: "" };
+    return {
+      ok: true,
+      clientId: String(payload?.clientId || "")
+    };
+  } catch {
+    return { ok: false, clientId: "" };
+  }
+}
+
+
 export const PORTAL_SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
 export const MASTER_SESSION_TTL_SECONDS = 12 * 60 * 60;
 
@@ -158,6 +189,9 @@ export async function authenticatePortalUser(env, username, password) {
     return fallbackClientId;
   }
 
+  const railway = await railwayAuthCheck(env, "portal", cleanUsername, password);
+  if (railway.ok && railway.clientId) return railway.clientId;
+
   return "";
 }
 
@@ -214,9 +248,17 @@ export async function deletePortalSession(env, request) {
 export async function masterCredentialsValid(env, username, password) {
   const expectedUser = String(env.NEXUS_ADMIN_USERNAME || "").trim();
   const expectedPassword = String(env.NEXUS_ADMIN_PASSWORD || "");
-  if (!expectedUser || !expectedPassword) return false;
-  return await safeEqualText(String(username || "").trim(), expectedUser)
-    && await safeEqualText(String(password || ""), expectedPassword);
+  if (
+    expectedUser
+    && expectedPassword
+    && await safeEqualText(String(username || "").trim(), expectedUser)
+    && await safeEqualText(String(password || ""), expectedPassword)
+  ) {
+    return true;
+  }
+
+  const railway = await railwayAuthCheck(env, "master", username, password);
+  return railway.ok === true;
 }
 
 export async function createMasterSession(env) {
