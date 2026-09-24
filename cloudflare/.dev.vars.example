@@ -1,0 +1,5 @@
+# Copie para .dev.vars somente no computador local.
+# Nunca versione valores reais.
+OPENAI_API_KEY_SHARED=
+OPENAI_API_KEY_RAGNAR=
+NEXUS_SECRET_KEY=
