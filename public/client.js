@@ -1896,5 +1896,5 @@ if(window.matchMedia("(display-mode: standalone)").matches){
   setInstallButtonsVisible(false);
 }
 if("serviceWorker" in navigator){
-  window.addEventListener("load",()=>navigator.serviceWorker.register("/sw.js").catch(()=>{}));
+  window.addEventListener("load",()=>navigator.serviceWorker.register("/sw.js?v=67").catch(()=>{}));
 }
