@@ -359,6 +359,41 @@ export async function handleMaster(request, env, url) {
     return json({ ok: true, tickets: await allSupportTickets(env) });
   }
 
+  const agentConfigMatch = url.pathname.match(/^\/api\/master\/agent-config\/([^/]+)$/);
+  if (agentConfigMatch && request.method === "PATCH") {
+    const clientId = decodeURIComponent(agentConfigMatch[1]);
+    const client = await getClient(env, clientId);
+    if (!client) return json({ error: "not_found" }, 404);
+
+    const body = await request.json().catch(() => ({}));
+    const currentConfig = client.config && typeof client.config === "object" ? client.config : {};
+    const currentProfile = currentConfig.postingProfile && typeof currentConfig.postingProfile === "object"
+      ? currentConfig.postingProfile
+      : {};
+
+    const postTimes = Array.isArray(body.postTimes)
+      ? body.postTimes
+          .map(value => String(value || "").trim())
+          .filter(value => /^([01]\d|2[0-3]):[0-5]\d$/.test(value))
+          .slice(0, 8)
+      : (Array.isArray(currentConfig.postTimes) ? currentConfig.postTimes : ["09:00", "12:00", "18:00"]);
+
+    const postingProfile = body.postingProfile && typeof body.postingProfile === "object"
+      ? { ...currentProfile, ...body.postingProfile }
+      : currentProfile;
+
+    const updated = await upsertClient(env, {
+      ...client,
+      config: {
+        ...currentConfig,
+        postTimes: postTimes.length ? postTimes : ["09:00", "12:00", "18:00"],
+        postingProfile
+      }
+    });
+
+    return json({ ok: true, client: masterClientView(updated) });
+  }
+
   if (url.pathname === "/api/master/posts" && request.method === "GET") {
     return json({ ok: true, posts: await allPosts(env) });
   }
