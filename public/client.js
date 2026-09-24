@@ -1314,7 +1314,7 @@ async function searchTrailers(event){
       const badge=item.trailerUrl?(item.official?"TRAILER OFICIAL":"TRAILER ENCONTRADO"):"BUSCAR NO YOUTUBE";
       const cutterAction=item.downloadable&&item.downloadUrl
         ?'<button type="button" class="trailer-import trailer-primary-action" data-import-video="'+escapeSupport(item.downloadUrl)+'" data-import-title="'+escapeSupport(item.title||"")+'">Fazer cortes</button>'
-        :'<button type="button" class="trailer-import unavailable" disabled title="A fonte encontrada não fornece um arquivo direto que o NEXUS possa importar no servidor">Sem fonte direta</button>';
+        :'<div class="trailer-manual-actions"><button type="button" class="trailer-use-title trailer-primary-action" data-use-trailer-title="'+escapeSupport(item.title||"")+'">Enviar vídeo</button><span class="trailer-direct-note">Sem fonte direta</span></div>';
       return '<article class="trailer-card">'
         +(item.posterUrl?'<img class="trailer-poster" data-trailer-poster="1" data-fallback="'+escapeSupport(item.posterFallbackUrl||"")+'" data-title="'+escapeSupport(item.title||"")+'" loading="lazy" referrerpolicy="no-referrer" src="'+escapeSupport(item.posterUrl)+'" alt="Imagem de '+escapeSupport(item.title)+'">':'<div class="trailer-poster-empty">'+escapeSupport((item.title||"NEXUS").slice(0,18))+'</div>')
         +'<div class="trailer-card-copy"><span>'+escapeSupport(item.type==="series"?"SÉRIE":"FILME")+' · '+escapeSupport(item.year||"—")+'</span>'
@@ -1337,6 +1337,21 @@ async function searchTrailers(event){
         img.replaceWith(empty);
       });
     });
+    root.querySelectorAll("[data-use-trailer-title]").forEach(button=>button.addEventListener("click",()=>{
+      const title=String(button.dataset.useTrailerTitle||"").trim();
+      const input=$("#video-content-title");
+      if(input)input.value=title;
+      videoFolderFilter="default";
+      showView("videos");
+      const folderFilter=$("#video-folder-filter");if(folderFilter)folderFilter.value="default";
+      const status=$("#video-upload-status");
+      if(status){
+        status.textContent=title
+          ?"Título preparado. Use “Selecionar vídeo” quando quiser enviar um arquivo do computador; o NEXUS não abriu nenhuma pasta automaticamente."
+          :"";
+        status.className="save-status";
+      }
+    }));
     root.querySelectorAll("[data-import-video]").forEach(button=>button.addEventListener("click",()=>importAuthorizedVideo(button)));
 
   }catch(error){
