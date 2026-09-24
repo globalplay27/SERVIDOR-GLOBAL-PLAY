@@ -1437,14 +1437,47 @@ async function selectSmartClips(transcription, duration, count, targetDuration, 
   const desiredCount = Math.max(1, Number(count || 3));
   const desiredDuration = Math.max(8, Number(targetDuration || 30));
   const compact = segments.map(item => "[" + item.start.toFixed(1) + "-" + item.end.toFixed(1) + "] " + item.text).join("\n").slice(0, 120000);
-  const preRanked = repurposeCandidates(segments, desiredDuration, Math.max(12, desiredCount * 4));
+  const preRanked = repurposeCandidates(segments, desiredDuration, Math.max(16, desiredCount * 6));
+  const heuristic = transcriptHeuristicSelections(segments, duration, Math.max(12, desiredCount * 5), desiredDuration);
   const hints = preRanked.map((item,index) =>
     "#" + (index + 1) + " " + item.start.toFixed(1) + "-" + item.end.toFixed(1) + " score=" + item.score + " hook=" + item.hookScore + " :: " + item.text.slice(0,220)
   ).join("\n");
   const apiKey = videoOpenAIKeyForClient(clientId);
   if (!apiKey) throw new Error(clientId === "ragnar-one" ? "ragnar_openai_not_available" : "openai_not_configured");
 
+  const normalizeCandidate = (item, index, source = "ai") => {
+    let start = Math.max(0, Number(item.start || 0));
+    let end = Math.min(duration, Number(item.end || start + desiredDuration));
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null;
+    const fitted = fitClipToRequestedDuration({ start, end }, duration, desiredDuration);
+    start = fitted.start;
+    end = fitted.end;
+    const text = String(item.text || item.hook || "").trim();
+    return {
+      start,
+      end,
+      title: String(item.title || ("Corte " + (index + 1))).slice(0,100),
+      reason: String(item.reason || (source === "ai"
+        ? "Trecho escolhido pela IA."
+        : "Trecho selecionado pelo ranking inteligente da transcrição completa.")).slice(0,300),
+      hook: String(item.hook || text.slice(0,220)).slice(0,220),
+      score: Math.max(1,Math.min(100,Number(item.score || item.hookScore || (source === "ai" ? 70 : 60)))),
+      selectionSource: source
+    };
+  };
+
+  const pickNonOverlapping = candidates => {
+    const unique = [];
+    for (const clip of candidates.filter(Boolean).sort((a,b)=>Number(b.score||0)-Number(a.score||0))) {
+      if (unique.some(item => Math.max(item.start,clip.start) < Math.min(item.end,clip.end))) continue;
+      unique.push(clip);
+      if (unique.length >= desiredCount) break;
+    }
+    return unique;
+  };
+
   let totalCost = 0;
+  let bestAi = [];
   let lastError = "clip_selection_incomplete";
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     const prompt = "Você é o editor sênior do NEXUS AI usando a habilidade ig-repurpose.\n"
@@ -1453,6 +1486,7 @@ async function selectSmartClips(transcription, duration, count, targetDuration, 
       + "Cada corte deve ficar o mais próximo possível de " + desiredDuration + " segundos. Aceite alguns segundos a mais para concluir a fala, mas nunca entregue 13s quando foram pedidos 30s se houver material suficiente.\n"
       + "REGRA CRÍTICA: nunca cortar palavra, frase, resposta, CTA ou despedida. O corte começa e termina em ideia natural.\n"
       + "Não escolha trechos sobrepostos. Não invente falas. Dê score de 1 a 100 e explique o motivo.\n"
+      + (attempt > 1 ? "Na tentativa anterior faltaram trechos válidos; desta vez distribua melhor as escolhas ao longo do vídeo e evite intervalos sobrepostos.\n" : "")
       + "Pré-ranking local (apenas pistas; você deve validar pela transcrição):\n" + hints + "\n\n"
       + "Transcrição completa com timestamps:\n" + compact + "\n\n"
       + "Responda SOMENTE JSON válido: {\"clips\":[{\"start\":12.3,\"end\":42.0,\"title\":\"Título curto\",\"hook\":\"Primeira ideia forte\",\"reason\":\"Por que funciona\",\"score\":94}]}";
@@ -1478,33 +1512,43 @@ async function selectSmartClips(transcription, duration, count, targetDuration, 
     let parsed;
     try { parsed = JSON.parse(output.slice(startJson, endJson + 1)); }
     catch { lastError = "clip_selection_invalid_json"; continue; }
-    const selected = Array.isArray(parsed.clips) ? parsed.clips : [];
-    const clips = selected.map((item, index) => {
-      let start = Math.max(0, Number(item.start || 0));
-      let end = Math.min(duration, Number(item.end || start + desiredDuration));
-      if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null;
-      const fitted = fitClipToRequestedDuration({ start, end }, duration, desiredDuration);
-      start = fitted.start;
-      end = fitted.end;
-      return {
-        start,
-        end,
-        title: String(item.title || ("Corte " + (index + 1))).slice(0,100),
-        reason: String(item.reason || "").slice(0,300),
-        hook: String(item.hook || "").slice(0,220),
-        score: Math.max(1,Math.min(100,Number(item.score || 70)))
-      };
-    }).filter(Boolean).sort((a,b)=>Number(b.score||0)-Number(a.score||0));
 
-    const unique = [];
-    for (const clip of clips) {
-      if (unique.some(item => Math.max(item.start,clip.start) < Math.min(item.end,clip.end))) continue;
-      unique.push(clip);
-      if (unique.length >= desiredCount) break;
+    const selected = Array.isArray(parsed.clips) ? parsed.clips : [];
+    const normalized = selected.map((item,index)=>normalizeCandidate(item,index,"ai")).filter(Boolean);
+    const unique = pickNonOverlapping(normalized);
+    if (unique.length > bestAi.length) bestAi = unique;
+    if (unique.length === desiredCount) {
+      return { clips: unique, costUsd: totalCost, model: "gpt-5.6-luna+ig-repurpose", preRanked };
     }
-    if (unique.length === desiredCount) return { clips: unique, costUsd: totalCost, model: "gpt-5.6-luna+ig-repurpose", preRanked };
     lastError = "clip_selection_incomplete";
   }
+
+  // Segunda camada inteligente: completa as escolhas da IA usando a análise da transcrição inteira.
+  // Não é divisão técnica do vídeo e não privilegia os primeiros segundos.
+  const localPool = [
+    ...preRanked.map((item,index)=>normalizeCandidate({
+      ...item,
+      title:"Momento forte " + (index + 1),
+      reason:"Selecionado pelo ig-repurpose local após analisar toda a transcrição."
+    },index,"ig-repurpose-local")),
+    ...heuristic.map((item,index)=>normalizeCandidate({
+      ...item,
+      title:item.title || ("Momento relevante " + (index + 1)),
+      reason:item.reason || "Selecionado pelo ranking semântico e de gancho da transcrição."
+    },index,"transcript-ranking"))
+  ].filter(Boolean);
+
+  const combined = pickNonOverlapping([...bestAi, ...localPool]);
+  if (combined.length === desiredCount) {
+    return {
+      clips: combined,
+      costUsd: totalCost,
+      model: bestAi.length ? "gpt-5.6-luna+ig-repurpose+local-ranking" : "ig-repurpose+local-ranking",
+      preRanked,
+      completedByLocalRanking: true
+    };
+  }
+
   throw new Error(lastError);
 }
 
