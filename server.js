@@ -65,7 +65,7 @@ function setPortalSession(token, record) {
 }
 
 function deletePortalSession(token) {
-  if (token) deletePortalSession(token);
+  if (token) portalSessions.delete(token);
   persistPortalSessions();
 }
 
@@ -2521,7 +2521,7 @@ async function processVideoJob(jobId) {
     validateRequestedClipSet(
       selection.clips,
       duration,
-      Number(initial.requestedClips || 3),
+      effectiveRequestedCount,
       Number(initial.clipDuration || 30)
     );
 
