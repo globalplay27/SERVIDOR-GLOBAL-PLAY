@@ -8,6 +8,7 @@ import {
   upsertPortalUser
 } from "./auth.js";
 import { listClients, getClient, upsertClient } from "./clients.js";
+import { getMasterInstagramSummary, saveMasterInstagramConfig } from "./instagram.js";
 
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
@@ -362,6 +363,19 @@ export async function handleMaster(request, env, url) {
 
   if (url.pathname === "/api/master/agent-core" && request.method === "GET") {
     return json({ ok: true, executions: await allExecutions(env) });
+  }
+
+  if (url.pathname === "/api/master/instagram" && request.method === "GET") {
+    return json(await getMasterInstagramSummary(env, request));
+  }
+
+  if (url.pathname === "/api/master/instagram" && request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    try {
+      return json(await saveMasterInstagramConfig(env, request, body));
+    } catch (error) {
+      return json({ error: error instanceof Error ? error.message : String(error) }, 400);
+    }
   }
 
   if (url.pathname === "/api/master/openai" && request.method === "GET") {
