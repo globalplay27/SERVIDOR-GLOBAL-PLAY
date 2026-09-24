@@ -1078,13 +1078,27 @@ async function searchTrailers(event){
       const link=item.trailerUrl||item.youtubeSearchUrl||"#";
       const badge=item.trailerUrl?(item.official?"TRAILER OFICIAL":"TRAILER ENCONTRADO"):"BUSCAR NO YOUTUBE";
       return '<article class="trailer-card">'
-        +(item.posterUrl?'<img src="'+escapeSupport(item.posterUrl)+'" alt="Capa de '+escapeSupport(item.title)+'">':'<div class="trailer-poster-empty">NEXUS</div>')
+        +(item.posterUrl?'<img class="trailer-poster" data-trailer-poster="1" data-fallback="'+escapeSupport(item.posterFallbackUrl||"")+'" data-title="'+escapeSupport(item.title||"")+'" loading="lazy" referrerpolicy="no-referrer" src="'+escapeSupport(item.posterUrl)+'" alt="Imagem de '+escapeSupport(item.title)+'">':'<div class="trailer-poster-empty">'+escapeSupport((item.title||"NEXUS").slice(0,18))+'</div>')
         +'<div class="trailer-card-copy"><span>'+escapeSupport(item.type==="series"?"SÉRIE":"FILME")+' · '+escapeSupport(item.year||"—")+'</span>'
         +'<strong>'+escapeSupport(item.title||"")+'</strong>'
         +'<p>'+escapeSupport(item.overview||"Sinopse não disponível.")+'</p>'
         +'<a class="trailer-open" target="_blank" rel="noopener" href="'+escapeSupport(link)+'">'+badge+'</a></div>'
         +'</article>';
     }).join("");
+    root.querySelectorAll("[data-trailer-poster]").forEach(img=>{
+      img.addEventListener("error",()=>{
+        const fallback=String(img.dataset.fallback||"");
+        if(fallback&&img.src!==fallback){
+          img.dataset.fallback="";
+          img.src=fallback;
+          return;
+        }
+        const empty=document.createElement("div");
+        empty.className="trailer-poster-empty";
+        empty.textContent=String(img.dataset.title||"NEXUS").slice(0,18);
+        img.replaceWith(empty);
+      });
+    });
   }catch(error){
     if(status){status.textContent=error.message;status.className="save-status error";}
     if(root)root.innerHTML='<div class="post-client-empty"><strong>Não foi possível pesquisar</strong><span>'+escapeSupport(error.message)+'</span></div>';
