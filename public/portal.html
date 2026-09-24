@@ -10,7 +10,7 @@
   <title>NEXUS AI · Portal do Cliente</title>
   <link rel="icon" href="/assets/nexus-ai-mark.svg" type="image/svg+xml">
   <link rel="manifest" href="/manifest.webmanifest?v=1">
-  <link rel="stylesheet" href="/client.css?v=45">
+  <link rel="stylesheet" href="/client.css?v=47">
 </head>
 <body>
   <div id="nexus-boot" class="nexus-boot" hidden>
@@ -212,7 +212,8 @@
                 <label><span>Formato de saída</span><select id="video-output-format"><option value="reel" selected>Reels / Stories 9:16</option><option value="feed">Feed do Instagram 4:5</option><option value="square">Quadrado 1:1</option></select></label>
                 <label class="video-subtitle-option"><input id="video-auto-subtitles" type="checkbox" checked><span><strong>Legenda automática em PT-BR</strong><small>Se o áudio estiver em outro idioma, o NEXUS traduz e grava a legenda no vídeo.</small></span></label>
                 <label><span>Tamanho da legenda</span><select id="video-subtitle-size"><option value="auto" selected>Automático (proporcional)</option><option value="small">Pequeno</option><option value="medium">Médio</option><option value="large">Grande</option></select></label>
-                <label><span>Cor da legenda</span><select id="video-subtitle-color"><option value="white" selected>Branca</option><option value="yellow">Amarela</option><option value="cyan">Ciano</option><option value="green">Verde</option><option value="red">Vermelha</option></select></label>
+                <label><span>Cor da legenda</span><select id="video-subtitle-color"><option value="white" selected>Branca</option><option value="yellow">Amarela</option><option value="gold">Dourada</option><option value="orange">Laranja</option><option value="cyan">Ciano</option><option value="blue">Azul</option><option value="green">Verde</option><option value="lime">Verde-limão</option><option value="pink">Rosa</option><option value="purple">Roxa</option><option value="red">Vermelha</option></select></label>
+                <label><span>Espessura da letra</span><select id="video-subtitle-weight"><option value="normal">Normal</option><option value="semibold">Seminegrito</option><option value="bold" selected>Negrito</option><option value="extrabold">Extra negrito</option></select></label>
                 <label><span>Fundo da legenda</span><select id="video-subtitle-bg"><option value="black" selected>Preto</option><option value="navy">Azul escuro</option><option value="transparent">Sem fundo</option></select></label>
                 <label><span>Pasta</span><select id="video-upload-folder"><option value="default">Meus vídeos</option></select></label>
                 <label><span>Frase final (opcional)</span><input id="video-end-text" maxlength="90" placeholder="Ex.: Continua..."></label>
@@ -251,10 +252,20 @@
           <span id="trailer-search-status" class="save-status"></span>
         </section>
         <section class="panel settings-panel wide-panel trailer-search-panel">
-          <form id="trailer-search-form" class="trailer-search-form">
-            <label><span>Tipo</span><select id="trailer-type"><option value="movie">Filme</option><option value="series">Série</option></select></label>
-            <label class="trailer-query"><span>Nome</span><input id="trailer-query" maxlength="120" placeholder="Ex.: Avatar, The Last of Us, Stranger Things" required></label>
-            <button type="submit" class="connection-submit">Pesquisar trailer oficial</button>
+          <form id="trailer-search-form" class="trailer-search-form trailer-search-premium">
+            <div class="trailer-kind-block">
+              <span class="trailer-field-label">O que você procura?</span>
+              <div class="trailer-kind-toggle" role="group" aria-label="Tipo de conteúdo">
+                <button type="button" class="active" data-trailer-kind="movie" aria-pressed="true"><span>FILME</span></button>
+                <button type="button" data-trailer-kind="series" aria-pressed="false"><span>SÉRIE</span></button>
+              </div>
+              <select id="trailer-type" aria-hidden="true" tabindex="-1"><option value="movie">Filme</option><option value="series">Série</option></select>
+            </div>
+            <label class="trailer-query">
+              <span class="trailer-field-label">Título</span>
+              <span class="trailer-query-shell"><span class="trailer-search-icon" aria-hidden="true">⌕</span><input id="trailer-query" maxlength="120" placeholder="Digite o nome do filme ou série..." autocomplete="off" required></span>
+            </label>
+            <button type="submit" class="trailer-search-submit"><span>Pesquisar</span><small>trailer oficial</small></button>
           </form>
           <div id="trailer-results" class="trailer-results">
             <div class="post-client-empty"><strong>Pesquise um título</strong><span>Os resultados aparecem aqui com capa, ano, sinopse e link do trailer.</span></div>
@@ -423,6 +434,6 @@
       <footer><span>NEXUS AI</span><small>Client Portal · ambiente exclusivo</small></footer>
     </section>
   </main>
-  <script src="/client.js?v=46" defer></script>
+  <script src="/client.js?v=47" defer></script>
 </body>
 </html>
