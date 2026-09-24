@@ -51,7 +51,6 @@
       "hashtags": "#RagnarOne #Streaming #FutebolAoVivo #FilmesESeries #Entretenimento",
       "avoidTopics": "Promessas irreais, informações não confirmadas e poluição visual"
     },
-    "agentApiUrl": "https://ragnar-agent-production.up.railway.app",
     "setupMode": "ready"
   }
 ]
