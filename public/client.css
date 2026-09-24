@@ -589,3 +589,11 @@ footer span{color:#a8c8d7!important}
 #login-form .remember-access span{display:grid;gap:2px}
 #login-form .remember-access strong{font-size:13px;color:#e8f8f0}
 #login-form .remember-access small{font-size:11px;color:#7f96a3;font-weight:500}
+
+
+/* ===== Vídeo: legendas automáticas ===== */
+.video-subtitle-option{display:flex!important;align-items:flex-start!important;gap:10px!important;padding:12px 13px;border:1px solid rgba(93,211,255,.16);border-radius:12px;background:rgba(5,12,18,.48)}
+.video-subtitle-option input{width:18px!important;height:18px!important;min-width:18px;margin-top:2px;accent-color:#39d98a}
+.video-subtitle-option>span{display:grid;gap:3px}
+.video-subtitle-option strong{font-size:13px;color:#e9f9ff}
+.video-subtitle-option small{font-size:11px;color:#8197a5;line-height:1.35}
