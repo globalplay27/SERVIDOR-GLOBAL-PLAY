@@ -10,7 +10,7 @@
   <title>NEXUS AI · Portal do Cliente</title>
   <link rel="icon" href="/assets/nexus-ai-mark.svg" type="image/svg+xml">
   <link rel="manifest" href="/manifest.webmanifest?v=1">
-  <link rel="stylesheet" href="/client.css?v=67">
+  <link rel="stylesheet" href="/client.css?v=68">
 </head>
 <body>
   <div id="nexus-boot" class="nexus-boot" hidden>
@@ -487,22 +487,59 @@
       </div>
 
       <div id="view-setup" class="client-view" hidden>
-        <section class="settings-heading"><div><p class="eyebrow">CENTRAL DE CONEXÕES</p><h1>Serviços do agente</h1><p class="muted">Confira e conecte os serviços usados pela automação.</p></div><div class="progress-pill"><strong id="setup-progress">0%</strong><span>concluído</span></div></section>
-
-        <section class="setup-choice setup-choice-secondary">
-          <button type="button" id="mode-new"><strong>Estou começando do zero</strong><span>Quero seguir o passo a passo completo.</span></button>
-          <button type="button" id="mode-ready"><strong>Já tenho minhas contas</strong><span>Quero conferir conexões e ir para a instalação.</span></button>
+        <section class="settings-heading">
+          <div>
+            <p class="eyebrow">CONFIGURAÇÃO NEXUS</p>
+            <h1>Seu agente</h1>
+            <p class="muted">A infraestrutura técnica é gerenciada pelo NEXUS. Você só precisa autorizar o Instagram e definir o perfil do agente.</p>
+          </div>
+          <div class="progress-pill"><strong id="setup-progress">0%</strong><span>concluído</span></div>
         </section>
 
         <section class="wizard-list">
-          <article class="wizard-step" data-step="github"><div class="step-number">1</div><div class="step-body"><strong>GitHub</strong><span>Crie sua conta e depois conecte ao NEXUS AI. Nunca informe sua senha do GitHub aqui.</span><div class="step-actions"><a target="_blank" rel="noopener" href="https://github.com/signup">Criar conta</a><button type="button" data-connect="github">Conectar GitHub</button></div><small class="provider-line" id="github-connection">Não conectado diretamente</small></div><span class="step-state">Pendente</span></article>
-          <article class="wizard-step" data-step="railway"><div class="step-number">2</div><div class="step-body"><strong>Railway</strong><span>Crie sua conta e autorize o NEXUS AI. A conexão usa a tela oficial de autorização do Railway.</span><div class="step-actions"><a target="_blank" rel="noopener" href="https://railway.com/">Criar / acessar conta</a><button type="button" data-connect="railway">Conectar Railway</button></div><small class="provider-line" id="railway-connection">Não conectado diretamente</small></div><span class="step-state">Pendente</span></article>
-          <article class="wizard-step" data-step="openai"><div class="step-number">3</div><div class="step-body"><strong>OpenAI API</strong><span>Conecte uma chave do projeto. Para custo no dashboard, você pode adicionar também uma chave administrativa com permissão adequada.</span><div class="step-actions"><a target="_blank" rel="noopener" href="https://platform.openai.com/">Abrir OpenAI</a><button type="button" data-connect="openai">Conectar OpenAI</button></div><small class="provider-line" id="openai-connection">Não conectado diretamente</small></div><span class="step-state">Pendente</span></article>
-          <article class="wizard-step" data-step="facebook"><div class="step-number">4</div><div class="step-body"><strong>Facebook / Meta</strong><span>Prepare a conta profissional ligada ao Instagram.</span><div class="step-actions"><a target="_blank" rel="noopener" href="https://www.facebook.com/">Abrir Facebook</a><button type="button" data-complete="facebook">Já concluí</button></div></div><span class="step-state">Pendente</span></article>
-          <article class="wizard-step" data-step="instagram"><div class="step-number">5</div><div class="step-body"><strong>Instagram profissional</strong><span>Conta que o agente vai atender e publicar.</span><div class="step-actions"><a target="_blank" rel="noopener" href="https://www.instagram.com/">Abrir Instagram</a><button type="button" data-complete="instagram">Já concluí</button></div></div><span class="step-state">Pendente</span></article>
-          <article class="wizard-step" data-step="metaApp"><div class="step-number">6</div><div class="step-body"><strong>Aplicativo Meta</strong><span>Crie o aplicativo que autoriza mensagens, comentários e publicação.</span><div class="step-actions"><a target="_blank" rel="noopener" href="https://developers.facebook.com/apps/">Abrir Meta for Developers</a><button type="button" data-complete="metaApp">Já concluí</button></div></div><span class="step-state">Pendente</span></article>
-          <article class="wizard-step" data-step="creativeProfile"><div class="step-number">7</div><div class="step-body"><strong>Configurar estilo das postagens</strong><span>Escolha nicho, público, cores, horários, CTA e temas.</span><div class="step-actions"><button type="button" data-open-posting>Configurar agora</button><button type="button" data-complete="creativeProfile">Já concluí</button></div></div><span class="step-state">Pendente</span></article>
-          <article class="wizard-step support-step" data-step="supportRequested"><div class="step-number">8</div><div class="step-body"><strong>Solicitar instalação final</strong><span>Quando as contas estiverem prontas, o suporte conclui tokens, permissões e teste final.</span><div class="step-actions"><button type="button" id="request-support">Solicitar instalação</button></div></div><span class="step-state">Pendente</span></article>
+          <article class="wizard-step done">
+            <div class="step-number">1</div>
+            <div class="step-body">
+              <strong>Infraestrutura NEXUS</strong>
+              <span>Cloudflare, banco de dados, automação e IA são administrados centralmente. Nenhuma senha, token do GitHub, Railway ou chave OpenAI é exigida do cliente.</span>
+              <small class="provider-line connected">Gerenciada pelo NEXUS</small>
+            </div>
+            <span class="step-state">Concluído</span>
+          </article>
+
+          <article class="wizard-step" data-step="instagram">
+            <div class="step-number">2</div>
+            <div class="step-body">
+              <strong>Instagram profissional</strong>
+              <span>Autorize a conta profissional que o agente vai analisar, atender e publicar.</span>
+              <div class="step-actions"><button type="button" id="setup-instagram-connect">Conectar Instagram</button></div>
+              <small class="provider-line" id="setup-instagram-status">Aguardando autorização</small>
+            </div>
+            <span class="step-state">Pendente</span>
+          </article>
+
+          <article class="wizard-step" data-step="creativeProfile">
+            <div class="step-number">3</div>
+            <div class="step-body">
+              <strong>Perfil do agente</strong>
+              <span>Defina nicho, público, identidade visual, horários, CTA, tom e temas das postagens.</span>
+              <div class="step-actions">
+                <button type="button" data-open-posting>Configurar perfil</button>
+                <button type="button" data-complete="creativeProfile">Marcar como concluído</button>
+              </div>
+            </div>
+            <span class="step-state">Pendente</span>
+          </article>
+
+          <article class="wizard-step support-step">
+            <div class="step-number">4</div>
+            <div class="step-body">
+              <strong>Precisa de ajuda?</strong>
+              <span>Abra um chamado pelo próprio NEXUS. O cliente não precisa configurar a infraestrutura manualmente.</span>
+              <div class="step-actions"><button type="button" id="request-support">Abrir suporte</button></div>
+            </div>
+            <span class="step-state">NEXUS</span>
+          </article>
         </section>
       </div>
 
@@ -529,6 +566,6 @@
       <footer><span>NEXUS AI</span><small>Client Portal · ambiente exclusivo</small></footer>
     </section>
   </main>
-  <script src="/client.js?v=67" defer></script>
+  <script src="/client.js?v=68" defer></script>
 </body>
 </html>
