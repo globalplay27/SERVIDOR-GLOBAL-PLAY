@@ -533,7 +533,7 @@ async function saveLeadHunterConfig(event){
     nicheTerms:splitTerms($("#lead-hunter-niche-terms")?.value)
   };
   try{
-    const r=await fetch("/api/portal/lead-hunter/config",{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify(payload)});
+    const r=await fetch("/api/portal/lead-hunter/config",{method:"POST",headers:{"content-type":"application/json",...(sessionAuth?{"x-nexus-session":sessionAuth}:{})},credentials:"same-origin",body:JSON.stringify(payload)});
     const d=await r.json().catch(()=>({}));
     if(!r.ok)throw new Error(d.error||"Não foi possível salvar.");
     leadHunterData.config=d.config||leadHunterData.config;
@@ -679,7 +679,7 @@ async function decidePost(postId,decision,button){
   button.textContent=decision==="approved"?"Aprovando…":"Reprovando…";
   setPostResponse(card,"");
   try{
-    const r=await fetch("/api/portal/posts/"+encodeURIComponent(postId)+"/decision",{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({decision})});
+    const r=await fetch("/api/portal/posts/"+encodeURIComponent(postId)+"/decision",{method:"POST",headers:{"content-type":"application/json",...(sessionAuth?{"x-nexus-session":sessionAuth}:{})},credentials:"same-origin",body:JSON.stringify({decision})});
     const d=await r.json().catch(()=>({}));
     if(!r.ok)throw new Error(d.message||d.error||"Não foi possível registrar a decisão.");
     setPostResponse(card,d.message||"Decisão salva.","ok");
@@ -713,7 +713,7 @@ async function sendRevision(postId,button){
   if(!text){setPostResponse(card,"Explique o que precisa ser corrigido.","error");return;}
   button.disabled=true;button.textContent="Enviando…";
   try{
-    const r=await fetch("/api/portal/posts/"+encodeURIComponent(postId)+"/revision",{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({instructions:text})});
+    const r=await fetch("/api/portal/posts/"+encodeURIComponent(postId)+"/revision",{method:"POST",headers:{"content-type":"application/json",...(sessionAuth?{"x-nexus-session":sessionAuth}:{})},credentials:"same-origin",body:JSON.stringify({instructions:text})});
     const d=await r.json().catch(()=>({}));
     if(!r.ok)throw new Error(d.message||"Não foi possível pedir a correção.");
     setPostResponse(card,d.message||"Correção solicitada.","ok");
@@ -739,7 +739,7 @@ async function saveOwnPost(postId,button){
   button.disabled=true;button.textContent="Preparando…";
   try{
     const imageDataUrl=await fileAsDataUrl(file);
-    const r=await fetch("/api/portal/posts/"+encodeURIComponent(postId)+"/content",{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({imageDataUrl,caption})});
+    const r=await fetch("/api/portal/posts/"+encodeURIComponent(postId)+"/content",{method:"POST",headers:{"content-type":"application/json",...(sessionAuth?{"x-nexus-session":sessionAuth}:{})},credentials:"same-origin",body:JSON.stringify({imageDataUrl,caption})});
     const d=await r.json().catch(()=>({}));
     if(!r.ok)throw new Error(d.message||d.error||"Não foi possível salvar seu conteúdo.");
     setPostResponse(card,d.message||"Conteúdo pronto para envio.","ok");
@@ -883,7 +883,7 @@ async function confirmBulkVideoSchedule(){
   button.disabled=true;button.textContent="Agendando…";
   if(status){status.textContent="Enviando agenda ao servidor…";status.className="save-status";}
   try{
-    const r=await fetch("/api/portal/videos/bulk-schedule",{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({items})});
+    const r=await fetch("/api/portal/videos/bulk-schedule",{method:"POST",headers:{"content-type":"application/json",...(sessionAuth?{"x-nexus-session":sessionAuth}:{})},credentials:"same-origin",body:JSON.stringify({items})});
     const d=await r.json().catch(()=>({}));
     if(!r.ok)throw new Error(d.error||"Falha ao agendar os vídeos.");
     bulkVideoSelection.clear();bulkVideoTimes.clear();
@@ -921,7 +921,7 @@ async function createVideoFolder(){
   const name=input?.value?.trim()||"";
   if(!name){if(status)status.textContent="Digite o nome da nova pasta.";return;}
   try{
-    const r=await fetch("/api/portal/video-folders",{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({name})});
+    const r=await fetch("/api/portal/video-folders",{method:"POST",headers:{"content-type":"application/json",...(sessionAuth?{"x-nexus-session":sessionAuth}:{})},credentials:"same-origin",body:JSON.stringify({name})});
     const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||"Não foi possível criar a pasta.");
     latestVideoFolders=d.folders||latestVideoFolders;if(input)input.value="";syncVideoFolderControls();
     if(status){status.textContent="Pasta criada.";status.className="save-status ok";}
@@ -934,7 +934,7 @@ async function renameCurrentVideoFolder(){
   if(!name)return;
   const status=$("#video-upload-status");
   try{
-    const r=await fetch("/api/portal/video-folders/"+encodeURIComponent(videoFolderFilter),{method:"PATCH",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({name})});
+    const r=await fetch("/api/portal/video-folders/"+encodeURIComponent(videoFolderFilter),{method:"PATCH",headers:{"content-type":"application/json",...(sessionAuth?{"x-nexus-session":sessionAuth}:{})},credentials:"same-origin",body:JSON.stringify({name})});
     const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||"Não foi possível renomear a pasta.");
     latestVideoFolders=d.folders||latestVideoFolders;syncVideoFolderControls();renderVideoJobs({jobs:latestVideoJobs,folders:latestVideoFolders});
     if(status){status.textContent="Pasta renomeada.";status.className="save-status ok";}
@@ -945,14 +945,14 @@ async function deleteCurrentVideoFolder(){
   if(!confirm("Excluir esta pasta? Os vídeos serão movidos para Meus vídeos."))return;
   const status=$("#video-upload-status"),folderId=videoFolderFilter;
   try{
-    const r=await fetch("/api/portal/video-folders/"+encodeURIComponent(folderId),{method:"DELETE",credentials:"same-origin"});
+    const r=await fetch("/api/portal/video-folders/"+encodeURIComponent(folderId),{method:"DELETE",credentials:"same-origin",headers:sessionAuth?{"x-nexus-session":sessionAuth}:{}});
     const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||"Não foi possível excluir a pasta.");
     videoFolderFilter="";latestVideoFolders=d.folders||latestVideoFolders;await loadVideoJobs();
     if(status){status.textContent="Pasta excluída. Os vídeos foram movidos para Meus vídeos.";status.className="save-status ok";}
   }catch(error){if(status){status.textContent=error.message;status.className="save-status error";}}
 }
 async function updateVideoMeta(jobId,payload){
-  const r=await fetch("/api/portal/videos/"+encodeURIComponent(jobId),{method:"PATCH",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify(payload)});
+  const r=await fetch("/api/portal/videos/"+encodeURIComponent(jobId),{method:"PATCH",headers:{"content-type":"application/json",...(sessionAuth?{"x-nexus-session":sessionAuth}:{})},credentials:"same-origin",body:JSON.stringify(payload)});
   const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||"Não foi possível atualizar o vídeo.");
   return d;
 }
@@ -965,7 +965,7 @@ async function deleteVideoJob(jobId){
   const job=latestVideoJobs.find(item=>item.id===jobId);if(!job)return;
   if(!confirm('Excluir "'+(job.displayName||job.filename)+'" da biblioteca? Isso apaga o arquivo e os cortes do NEXUS, mas não remove algo que já foi publicado no Instagram.'))return;
   try{
-    const r=await fetch("/api/portal/videos/"+encodeURIComponent(jobId),{method:"DELETE",credentials:"same-origin"});
+    const r=await fetch("/api/portal/videos/"+encodeURIComponent(jobId),{method:"DELETE",credentials:"same-origin",headers:sessionAuth?{"x-nexus-session":sessionAuth}:{}});
     const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.message||d.error||"Não foi possível excluir o vídeo.");
     for(const key of [...bulkVideoSelection])if(key.startsWith(jobId+"|"))bulkVideoSelection.delete(key);
     await loadVideoJobs();
@@ -1076,7 +1076,7 @@ function renderVideoJobs(data={}){
 }
 async function loadVideoJobs(){
   try{
-    const r=await fetch("/api/portal/videos",{credentials:"same-origin"});
+    const r=await fetch("/api/portal/videos",{credentials:"same-origin",headers:sessionAuth?{"x-nexus-session":sessionAuth}:{}});
     if(!r.ok)throw new Error();
     renderVideoJobs(await r.json());
   }catch{
@@ -1095,7 +1095,7 @@ function setVideoResponse(card,message,type=""){
 async function setVideoApproval(button,status){
   const {jobId,clipId,card}=videoActionParts(button);button.disabled=true;
   try{
-    const r=await fetch(`/api/portal/videos/${encodeURIComponent(jobId)}/clips/${encodeURIComponent(clipId)}/approval`,{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({status})});
+    const r=await fetch(`/api/portal/videos/${encodeURIComponent(jobId)}/clips/${encodeURIComponent(clipId)}/approval`,{method:"POST",headers:{"content-type":"application/json",...(sessionAuth?{"x-nexus-session":sessionAuth}:{})},credentials:"same-origin",body:JSON.stringify({status})});
     const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||"Falha ao atualizar aprovação.");
     setVideoResponse(card,status==="approved"?"Corte aprovado. Agora você pode agendar ou publicar.":"Corte reprovado. Ele não será publicado.","ok");
     await loadVideoJobs();
@@ -1108,7 +1108,7 @@ async function adjustVideo(button){
   const endText=card.querySelector("[data-video-end-text]")?.value||"",endContact=card.querySelector("[data-video-end-contact]")?.value||"";
   button.disabled=true;button.textContent="Recortando…";
   try{
-    const r=await fetch(`/api/portal/videos/${encodeURIComponent(jobId)}/clips/${encodeURIComponent(clipId)}/adjust`,{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({start,end,title,caption,endText,endContact})});
+    const r=await fetch(`/api/portal/videos/${encodeURIComponent(jobId)}/clips/${encodeURIComponent(clipId)}/adjust`,{method:"POST",headers:{"content-type":"application/json",...(sessionAuth?{"x-nexus-session":sessionAuth}:{})},credentials:"same-origin",body:JSON.stringify({start,end,title,caption,endText,endContact})});
     const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||"Falha ao ajustar o corte.");
     setVideoResponse(card,"Novo corte criado. Revise e aprove novamente.","ok");await loadVideoJobs();
   }catch(error){setVideoResponse(card,error.message,"error");}finally{button.disabled=false;button.textContent="Salvar novo corte";}
@@ -1121,7 +1121,7 @@ async function scheduleVideo(button){
   const date=new Date(local);if(!Number.isFinite(date.getTime())){setVideoResponse(card,"Data ou horário inválido.","error");return;}
   button.disabled=true;
   try{
-    const r=await fetch(`/api/portal/videos/${encodeURIComponent(jobId)}/clips/${encodeURIComponent(clipId)}/schedule`,{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({scheduledFor:date.toISOString(),caption})});
+    const r=await fetch(`/api/portal/videos/${encodeURIComponent(jobId)}/clips/${encodeURIComponent(clipId)}/schedule`,{method:"POST",headers:{"content-type":"application/json",...(sessionAuth?{"x-nexus-session":sessionAuth}:{})},credentials:"same-origin",body:JSON.stringify({scheduledFor:date.toISOString(),caption})});
     const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||"Falha ao agendar.");
     setVideoResponse(card,"Vídeo agendado separadamente das postagens automáticas.","ok");await loadVideoJobs();
   }catch(error){setVideoResponse(card,error.message,"error");}finally{button.disabled=false;}
@@ -1131,7 +1131,7 @@ async function publishVideoNow(button){
   const caption=card.querySelector("[data-video-schedule-caption]")?.value||"";
   button.disabled=true;button.textContent="Publicando…";setVideoResponse(card,"Enviando o Reel ao Instagram…");
   try{
-    const r=await fetch(`/api/portal/videos/${encodeURIComponent(jobId)}/clips/${encodeURIComponent(clipId)}/publish`,{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({caption})});
+    const r=await fetch(`/api/portal/videos/${encodeURIComponent(jobId)}/clips/${encodeURIComponent(clipId)}/publish`,{method:"POST",headers:{"content-type":"application/json",...(sessionAuth?{"x-nexus-session":sessionAuth}:{})},credentials:"same-origin",body:JSON.stringify({caption})});
     const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||"Falha ao publicar.");
     setVideoResponse(card,"Vídeo publicado com sucesso.","ok");await loadVideoJobs();
   }catch(error){setVideoResponse(card,error.message,"error");}finally{button.disabled=false;button.textContent="Publicar agora";}
@@ -1147,7 +1147,7 @@ document.addEventListener("change",async event=>{
   const selected=input.checked;
   input.disabled=true;
   try{
-    const r=await fetch(`/api/portal/videos/${encodeURIComponent(jobId)}/clips/${encodeURIComponent(clipId)}/select`,{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({selected})});
+    const r=await fetch(`/api/portal/videos/${encodeURIComponent(jobId)}/clips/${encodeURIComponent(clipId)}/select`,{method:"POST",headers:{"content-type":"application/json",...(sessionAuth?{"x-nexus-session":sessionAuth}:{})},credentials:"same-origin",body:JSON.stringify({selected})});
     const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||"Não foi possível salvar a seleção.");
     if(selected)bulkVideoSelection.add(key);else{bulkVideoSelection.delete(key);bulkVideoTimes.delete(key);}
     const card=input.closest("[data-video-clip]");if(card)card.classList.toggle("video-bulk-selected",selected);
@@ -1423,6 +1423,7 @@ function uploadSingleVideo(file,index,total,settings,progress){
     const xhr=new XMLHttpRequest();
     xhr.open("POST","/api/portal/videos");
     xhr.withCredentials=true;
+    if(sessionAuth)xhr.setRequestHeader("X-Nexus-Session",sessionAuth);
     xhr.setRequestHeader("Content-Type",file.type||"application/octet-stream");
     xhr.setRequestHeader("X-File-Name",encodeURIComponent(file.name));
     xhr.setRequestHeader("X-Video-Goal",settings.goal);
@@ -1482,8 +1483,19 @@ if(videoUploadForm)videoUploadForm.addEventListener("submit",async event=>{
   if(progress){progress.hidden=false;progress.querySelector("i").style.width="2%";progress.querySelector("span").textContent="Preparando envio…";}
   let sent=0,failed=0,lastError="";
   for(let index=0;index<files.length;index++){
-    try{await uploadSingleVideo(files[index],index,files.length,settings,progress);sent++;}
-    catch(error){failed++;lastError=error.message;}
+    try{
+      const result=await uploadSingleVideo(files[index],index,files.length,settings,progress);
+      sent++;
+      if(result?.job){
+        videoFolderFilter=String(result.job.folderId||settings.folderId||"default");
+        latestVideoJobs=[result.job,...latestVideoJobs.filter(job=>job.id!==result.job.id)];
+        renderVideoJobs({jobs:latestVideoJobs,folders:latestVideoFolders});
+        if(status){
+          status.textContent="Vídeo recebido pelo servidor. Preparando análise e cortes…";
+          status.className="save-status ok";
+        }
+      }
+    }catch(error){failed++;lastError=error.message;}
   }
   button.disabled=false;if(progress)progress.hidden=true;
   if(sent>0){
