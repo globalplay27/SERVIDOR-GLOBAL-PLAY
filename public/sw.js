@@ -1,9 +1,9 @@
-const CACHE="nexus-ai-v66";
+const CACHE="nexus-ai-v67";
 const SHELL=[
   "/",
-  "/portal.html?v=66",
-  "/client.css?v=66",
-  "/client.js?v=66",
+  "/portal.html?v=67",
+  "/client.css?v=67",
+  "/client.js?v=67",
   "/manifest.webmanifest?v=1",
   "/assets/nexus-ai-logo.png?v=3",
   "/assets/nexus-ai-mark.svg"
@@ -22,8 +22,20 @@ self.addEventListener("fetch",event=>{
   const url=new URL(request.url);
   if(url.origin!==location.origin)return;
   if(url.pathname.startsWith("/api/"))return;
+
+  // The client PWA must never control the Master surface. Keeping these
+  // requests network-only prevents a stale portal fallback from replacing
+  // /master with the client panel on the same workers.dev origin.
+  const masterPath=url.pathname==="/master"
+    || url.pathname.startsWith("/master/")
+    || url.pathname==="/master-login"
+    || url.pathname==="/index.html"
+    || url.pathname==="/app.js"
+    || url.pathname==="/styles.css";
+  if(masterPath)return;
+
   if(request.mode==="navigate"){
-    event.respondWith(fetch(request).catch(()=>caches.match("/portal.html?v=66")));
+    event.respondWith(fetch(request).catch(()=>caches.match("/portal.html?v=67")));
     return;
   }
   const liveAsset=["/client.js","/client.css","/portal.html"].includes(url.pathname);
