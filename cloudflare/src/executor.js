@@ -1,4 +1,5 @@
 import { publishInstagramImage } from "./publisher.js";
+import { runLeadHunter } from "./lead-hunter.js";
 
 function parseJson(raw, fallback = {}) {
   try {
@@ -118,10 +119,14 @@ export async function processDueJobs(env, scheduledAt = new Date()) {
   const now = scheduledAt instanceof Date ? scheduledAt : new Date(scheduledAt || Date.now());
 
   if (!active) {
+    const shadowed = await env.DB.prepare(
+      "UPDATE scheduled_jobs SET status = 'shadow', updated_at = CURRENT_TIMESTAMP WHERE status = 'scheduled' AND due_at <= ?1"
+    ).bind(now.toISOString()).run();
     return {
       active: false,
       mode: "shadow",
-      message: "Cloudflare automation is staged but live execution is disabled during Railway migration."
+      shadowed: Number(shadowed?.meta?.changes || 0),
+      message: "Cloudflare automation is staged; due jobs are shadowed and cannot run after cutover."
     };
   }
 
@@ -141,6 +146,10 @@ export async function processDueJobs(env, scheduledAt = new Date()) {
     try {
       if (job.kind === "publisher-sweep") {
         await runPublisherSweep(env, job.client_id, now);
+        await updateJob(env, job.id, "completed", attempts);
+        summary.completed += 1;
+      } else if (job.kind === "lead-hunter") {
+        await runLeadHunter(env, job.client_id, { trigger: "scheduler", automatic: true });
         await updateJob(env, job.id, "completed", attempts);
         summary.completed += 1;
       } else if (job.kind === "agent-core-cycle") {
