@@ -287,12 +287,12 @@ function savePostLedger(value) {
 
 
 const AGENT_CORE_MODULES = Object.freeze([
-  { id: "radar", name: "RADAR", skills: ["ig-viral","ig-audit","ig-profile"] },
+  { id: "radar", name: "RADAR", skills: ["ig-viral","ig-audit","ig-profile","lead-hunter"] },
   { id: "estrategista", name: "ESTRATEGISTA", skills: ["ig-plan"] },
   { id: "creator", name: "CREATOR", skills: ["ig-reel","ig-caption","ig-carousel","ig-story","ig-repurpose"] },
   { id: "publisher", name: "PUBLISHER", skills: ["delivery","schedule","meta-publish"] },
   { id: "auditor", name: "AUDITOR", skills: ["ig-human","ig-audit"] },
-  { id: "odin", name: "ODIN", skills: ["ig-comment","ig-reply","ig-dm"] }
+  { id: "odin", name: "ODIN", skills: ["ig-comment","ig-reply","ig-dm","lead-scoring"] }
 ]);
 
 function loadAgentExecutions() {
@@ -936,9 +936,13 @@ function mergeLeadHunterCandidates(client, candidates, config) {
   let newLeads = 0, updatedLeads = 0, ignored = 0;
 
   for (const candidate of candidates) {
-    if (Number(candidate.score || 0) < Number(config.minScore || 35)) { ignored += 1; continue; }
     const fingerprint = candidate.fingerprint || leadCandidateFingerprint(client.id,candidate);
     if (seen[fingerprint]) { ignored += 1; continue; }
+    if (Number(candidate.score || 0) < Number(config.minScore || 35)) {
+      seen[fingerprint] = Date.now();
+      ignored += 1;
+      continue;
+    }
 
     const identity = String(candidate.instagramUsername || candidate.instagramUserId || "").toLowerCase();
     if (!identity) { ignored += 1; continue; }
@@ -965,6 +969,7 @@ function mergeLeadHunterCandidates(client, candidates, config) {
       row.stage = candidate.stage || row.stage;
       row.needsHuman = Boolean(row.needsHuman || candidate.needsHuman || row.score >= 85);
       row.lastMessage = candidate.message || row.lastMessage;
+      row.sourceUrl = candidate.sourceUrl || row.sourceUrl || "";
       row.lastContactAt = candidate.createdAt || row.lastContactAt || now;
       row.updatedAt = now;
       row.source = row.source === candidate.source ? row.source : "multi-source";
@@ -1054,9 +1059,10 @@ async function runLeadHunter(client, options = {}) {
     }
 
     const candidateSeen = new Set();
+    const previouslySeen = loadLeadHunterSeen();
     raw = raw.filter(item => {
       const fingerprint = leadCandidateFingerprint(client.id,item);
-      if (candidateSeen.has(fingerprint)) return false;
+      if (candidateSeen.has(fingerprint) || previouslySeen[fingerprint]) return false;
       candidateSeen.add(fingerprint);
       item.fingerprint = fingerprint;
       item.candidateId = fingerprint.slice(-24);
