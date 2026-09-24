@@ -982,10 +982,10 @@ const refreshClientLeads=$("#refresh-client-leads");if(refreshClientLeads)refres
 const refreshAgentTeam=$("#refresh-agent-team");if(refreshAgentTeam)refreshAgentTeam.addEventListener("click",loadAgentTeam);
 const trailerSearchForm=$("#trailer-search-form");
 if(trailerSearchForm)trailerSearchForm.addEventListener("submit",searchTrailers);
-$("[data-trailer-kind]").forEach(button=>button.addEventListener("click",()=>{
+$$("[data-trailer-kind]").forEach(button=>button.addEventListener("click",()=>{
   const type=button.dataset.trailerKind==="series"?"series":"movie";
   const select=$("#trailer-type");if(select)select.value=type;
-  $("[data-trailer-kind]").forEach(item=>{
+  $$("[data-trailer-kind]").forEach(item=>{
     const active=item===button;
     item.classList.toggle("active",active);
     item.setAttribute("aria-pressed",active?"true":"false");
