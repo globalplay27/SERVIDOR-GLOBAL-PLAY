@@ -2065,27 +2065,17 @@ async function inferVideoContentTitle(transcription, explicitTitle, filename, cl
   if (explicit) return { title:explicit, source:"user", confidence:1 };
 
   const filenameCandidate = filenameContentTitleCandidate(filename);
-  const apiKey = videoOpenAIKeyForClient(clientId);
-  if (!apiKey) return { title:filenameCandidate, source:filenameCandidate ? "filename" : "", confidence:filenameCandidate ? 0.68 : 0 };
-
   const transcriptText = String(transcription?.text || "").replace(/\s+/g," ").trim().slice(0,7000);
   if (!filenameCandidate && !transcriptText) return { title:"", source:"", confidence:0 };
 
   try {
-    const response = await fetch("https://api.openai.com/v1/responses", {
-      method:"POST",
-      headers:{ authorization:"Bearer " + apiKey, "content-type":"application/json" },
-      body:JSON.stringify({
-        model:"gpt-5.6-luna",
-        instructions:"Identifique o nome exato do filme, série, programa ou conteúdo somente quando houver evidência clara no nome do arquivo ou na transcrição. Não adivinhe. Não use conhecimento externo. Se não houver segurança, retorne título vazio. Retorne somente JSON válido.",
-        input:"Nome do arquivo: " + JSON.stringify(filenameCandidate || filename || "") + "\\nTranscrição: " + transcriptText
-          + '\\nRetorne {"title":"", "confidence":0.0, "type":"movie|series|program|other|unknown"}.',
-        max_output_tokens:300
-      }),
-      signal:AbortSignal.timeout(45000)
-    });
-    const payload = await response.json().catch(()=>({}));
-    if (!response.ok) throw new Error("content_title_" + response.status);
+    const payload = await openAIResponsesForClient(clientId, {
+      model:"gpt-5.6-luna",
+      instructions:"Identifique o nome exato do filme, série, programa ou conteúdo somente quando houver evidência clara no nome do arquivo ou na transcrição. Não adivinhe. Não use conhecimento externo. Se não houver segurança, retorne título vazio. Retorne somente JSON válido.",
+      input:"Nome do arquivo: " + JSON.stringify(filenameCandidate || filename || "") + "\\nTranscrição: " + transcriptText
+        + '\\nRetorne {"title":"", "confidence":0.0, "type":"movie|series|program|other|unknown"}.',
+      max_output_tokens:300
+    }, 45000);
     const raw = responseOutputText(payload);
     const a=raw.indexOf("{"), b=raw.lastIndexOf("}");
     if (a<0 || b<=a) throw new Error("content_title_invalid");
@@ -2109,22 +2099,13 @@ function isPortugueseLanguage(value) {
 async function translateClipSegmentsToPtBr(segments, clientId) {
   const rows = (Array.isArray(segments) ? segments : []).filter(item => item?.text).slice(0, 80);
   if (!rows.length) return [];
-  const apiKey = videoOpenAIKeyForClient(clientId);
-  if (!apiKey) throw new Error(clientId === "ragnar-one" ? "ragnar_openai_not_available" : "openai_not_configured");
   const compact = rows.map((item, index) => ({ i: index, text: String(item.text || "").trim() }));
-  const response = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: { authorization: "Bearer " + apiKey, "content-type": "application/json" },
-    body: JSON.stringify({
-      model: "gpt-5.6-luna",
-      instructions: "Traduza legendas para português brasileiro natural e curto. Preserve sentido, nomes, números e tom. Não resuma, não acrescente informação e não junte itens. Retorne somente JSON válido.",
-      input: "Traduza cada item para PT-BR. Entrada: " + JSON.stringify(compact) + "\nRetorne: {\"translations\":[{\"i\":0,\"text\":\"...\"}]}",
-      max_output_tokens: 2400
-    }),
-    signal: AbortSignal.timeout(120000)
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error("subtitle_translation_failed_" + response.status);
+  const payload = await openAIResponsesForClient(clientId, {
+    model: "gpt-5.6-luna",
+    instructions: "Traduza legendas para português brasileiro natural e curto. Preserve sentido, nomes, números e tom. Não resuma, não acrescente informação e não junte itens. Retorne somente JSON válido.",
+    input: "Traduza cada item para PT-BR. Entrada: " + JSON.stringify(compact) + "\nRetorne: {\"translations\":[{\"i\":0,\"text\":\"...\"}]}",
+    max_output_tokens: 2400
+  }, 120000);
   const output = responseOutputText(payload);
   const a = output.indexOf("{"), b = output.lastIndexOf("}");
   if (a < 0 || b <= a) throw new Error("subtitle_translation_invalid_json");
@@ -2399,9 +2380,6 @@ async function selectSmartClips(transcription, duration, count, targetDuration, 
   const hints = preRanked.map((item,index) =>
     "#" + (index + 1) + " " + item.start.toFixed(1) + "-" + item.end.toFixed(1) + " score=" + item.score + " hook=" + item.hookScore + " :: " + item.text.slice(0,220)
   ).join("\n");
-  const apiKey = videoOpenAIKeyForClient(clientId);
-  if (!apiKey) throw new Error(clientId === "ragnar-one" ? "ragnar_openai_not_available" : "openai_not_configured");
-
   const normalizeCandidate = (item, index, source = "ai") => {
     let start = Math.max(0, Number(item.start || 0));
     let end = Math.min(duration, Number(item.end || start + desiredDuration));
@@ -2458,14 +2436,11 @@ async function selectSmartClips(transcription, duration, count, targetDuration, 
       + "Transcrição completa com timestamps:\n" + compact + "\n\n"
       + "Responda SOMENTE JSON válido: {\"clips\":[{\"start\":12.3,\"end\":42.0,\"title\":\"Título curto\",\"introText\":\"Contexto curto para abrir o corte\",\"closingText\":\"Ideia de fechamento\",\"hook\":\"Primeira ideia forte\",\"reason\":\"Por que funciona\",\"score\":94}]}";
 
-    const response = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: { authorization: "Bearer " + apiKey, "content-type": "application/json" },
-      body: JSON.stringify({ model: "gpt-5.6-luna", input: prompt, max_output_tokens: 2200 }),
-      signal: AbortSignal.timeout(150000)
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error("clip_selection_failed_" + response.status);
+    const payload = await openAIResponsesForClient(clientId, {
+      model: "gpt-5.6-luna",
+      input: prompt,
+      max_output_tokens: 2200
+    }, 150000);
     const usage = payload.usage || {};
     totalCost += Math.max(0, Number(usage.input_tokens || 0)) * 0.20 / 1_000_000
       + Math.max(0, Number(usage.output_tokens || 0)) * 1.20 / 1_000_000;
