@@ -818,7 +818,7 @@ function renderVideoJobs(data={}){
     const folderOptions=latestVideoFolders.map(folder=>`<option value="${escapeSupport(folder.id)}" ${(job.folderId||"default")===folder.id?"selected":""}>${escapeSupport(folder.name)}</option>`).join("");
     const header=`<article class="video-job-card video-job-expanded" data-video-job="${escapeSupport(job.id)}">
       <div class="video-job-head">
-        <div><strong>${escapeSupport(job.displayName||job.filename||"Vídeo")}</strong><span>${videoJobStatus(job)} · ${Math.round(Number(job.progress||0))}% · ${escapeSupport(job.outputFormatLabel||"Reels / Stories 9:16")}</span></div>
+        <div><strong>${escapeSupport(job.displayName||job.filename||"Vídeo")}</strong><span>${videoJobStatus(job)} · ${Math.round(Number(job.progress||0))}% · ${escapeSupport(job.outputFormatLabel||"Reels / Stories 9:16")}${job.detectedLanguage?` · idioma: ${escapeSupport(job.detectedLanguage)}`:""}${job.autoSubtitles?` · legenda PT-BR automática`:""}</span></div>
         <small>${escapeSupport(job.message||"Processando…")}</small>
       </div>
       <div class="video-library-row">
@@ -837,7 +837,7 @@ function renderVideoJobs(data={}){
         <div class="video-clip-body">
           ${clip.status==="ready"&&clip.publishStatus!=="published"?`<label class="video-bulk-check"><input type="checkbox" data-video-bulk-select="${escapeSupport(job.id)}|${escapeSupport(clip.id)}" ${bulkVideoSelection.has(videoClipKey(job.id,clip.id))?"checked":""}> Selecionar para a agenda do mês</label>`:""}
           <div class="video-clip-top"><strong>Opção ${Number(clip.rank||1)} · ${escapeSupport(clip.title||"Melhor corte")}</strong><span class="video-approval ${escapeSupport(clip.approvalStatus||"pending")}">${videoApprovalLabel(clip.approvalStatus)}</span></div>
-          <div class="video-smart-meta">${clip.qualityScore?`<span>IA ${Number(clip.qualityScore)}/100</span>`:""}${clip.hook?`<b>${escapeSupport(clip.hook)}</b>`:""}</div>
+          <div class="video-smart-meta">${clip.qualityScore?`<span>IA ${Number(clip.qualityScore)}/100</span>`:""}${clip.subtitlesApplied?`<span>LEGENDAS PT-BR</span>`:""}${clip.hook?`<b>${escapeSupport(clip.hook)}</b>`:""}</div>
           <small>${escapeSupport(clip.reason||"Trecho selecionado por potencial de postagem")}</small>
           ${clip.transcript?`<p class="video-transcript">${escapeSupport(clip.transcript)}</p>`:""}
           <div class="video-clip-state"><span>${videoPublishLabel(clip)}</span>${clip.scheduledFor?`<b>${formatClientPostDate(clip.scheduledFor)}</b>`:""}</div>
@@ -1111,6 +1111,7 @@ function uploadSingleVideo(file,index,total,settings,progress){
     xhr.setRequestHeader("X-Clip-Duration",settings.duration);
     xhr.setRequestHeader("X-Requested-Clips",settings.clips);
     xhr.setRequestHeader("X-Output-Format",settings.outputFormat);
+    xhr.setRequestHeader("X-Auto-Subtitles",settings.autoSubtitles?"1":"0");
     xhr.setRequestHeader("X-Video-Folder",settings.folderId);
     xhr.setRequestHeader("X-Video-End-Text",encodeURIComponent(settings.endText||""));
     xhr.setRequestHeader("X-Video-End-Contact",encodeURIComponent(settings.endContact||""));
@@ -1141,6 +1142,7 @@ if(videoUploadForm)videoUploadForm.addEventListener("submit",async event=>{
     duration:$("#video-clip-duration").value,
     clips:$("#video-requested-clips").value,
     outputFormat:$("#video-output-format")?.value||"reel",
+    autoSubtitles:Boolean($("#video-auto-subtitles")?.checked),
     folderId:$("#video-upload-folder")?.value||"default",
     endText:$("#video-end-text")?.value?.trim()||"",
     endContact:$("#video-end-contact")?.value?.trim()||""
