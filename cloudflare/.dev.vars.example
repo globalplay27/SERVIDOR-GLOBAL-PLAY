@@ -1,5 +1,17 @@
 # Copie para .dev.vars somente no computador local.
 # Nunca versione valores reais.
+
+# OpenAI
 OPENAI_API_KEY_SHARED=
 OPENAI_API_KEY_RAGNAR=
+
+# Segurança interna / Master
 NEXUS_SECRET_KEY=
+NEXUS_ADMIN_USERNAME=
+NEXUS_ADMIN_PASSWORD=
+
+# Fallback temporário do primeiro portal durante a migração.
+# Depois que portal_users estiver populada no D1, pode ser removido.
+CLIENT_PORTAL_CLIENT_ID=ragnar-one
+CLIENT_PORTAL_USERNAME=
+CLIENT_PORTAL_PASSWORD=
