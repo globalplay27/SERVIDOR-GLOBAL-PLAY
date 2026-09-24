@@ -1486,7 +1486,8 @@ async function runRadarAgent(client, options = {}) {
   const growthBaselineFollowers = Math.max(1, Number(previousGrowthGoal.baselineFollowers || followersCount || 1));
   const growthBaselineAt = String(previousGrowthGoal.baselineAt || startedAt);
   const growthTargetDays = 28;
-  const growthTargetFollowers = growthBaselineFollowers * 2;
+  const growthTargetMultiplier = 10;
+  const growthTargetFollowers = growthBaselineFollowers * growthTargetMultiplier;
   const elapsedGrowthDays = Math.max(0, (Date.now() - new Date(growthBaselineAt).getTime()) / 86400000);
   const remainingGrowthDays = Math.max(0.01, growthTargetDays - elapsedGrowthDays);
   const expectedFollowersByNow = Math.round(growthBaselineFollowers + (growthTargetFollowers - growthBaselineFollowers) * Math.min(1, elapsedGrowthDays / growthTargetDays));
@@ -1496,6 +1497,7 @@ async function runRadarAgent(client, options = {}) {
     baselineFollowers: growthBaselineFollowers,
     baselineAt: growthBaselineAt,
     targetFollowers: growthTargetFollowers,
+    targetMultiplier: growthTargetMultiplier,
     targetDays: growthTargetDays,
     targetAt: new Date(new Date(growthBaselineAt).getTime() + growthTargetDays * 86400000).toISOString(),
     currentFollowers: followersCount,
@@ -1593,7 +1595,7 @@ async function runRadarAgent(client, options = {}) {
       followersDelta !== null
         ? "Variação de seguidores desde o último ciclo: " + (followersDelta >= 0 ? "+" : "") + followersDelta + "."
         : "KPI principal: crescimento de seguidores; iniciando linha de base para medir variação entre ciclos.",
-      "Meta agressiva: dobrar a base em 28 dias. Estado atual: " + growthGoal.status + "; alvo " + growthGoal.targetFollowers + "; ritmo necessário " + growthGoal.neededFollowersPerDay + " seguidores/dia.",
+      "Meta agressiva: atingir 10x a base em 28 dias. Estado atual: " + growthGoal.status + "; alvo " + growthGoal.targetFollowers + "; ritmo necessário " + growthGoal.neededFollowersPerDay + " seguidores/dia.",
       "KPI principal: crescimento de seguidores. Priorizar compartilhamentos, salvamentos, visitas ao perfil e conteúdo recorrente em série.",
       "Comparar desempenho com a mediana da própria conta, não apenas com views brutas."
     ]
@@ -1671,8 +1673,8 @@ async function runStrategistAgent(client, context = {}, options = {}) {
     secondaryKpis: ["profile_visits","shares","saves","reach"],
     growthGoal: radar.growthGoal || {},
     growthMode: radar?.growthGoal?.status === "behind_pace" ? "recovery" : "growth",
-    contentMix: { reels: 70, carousel: 20, static: 10 },
-    growthRule: "Meta: dobrar seguidores em 28 dias. Priorizar conteúdo que dê motivo para seguir o perfil; venda direta é secundária. Se estiver abaixo do ritmo, concentrar testes em Reels, séries, compartilhamentos e salvamentos sem aumentar frequência de forma cega.",
+    contentMix: { reels: 85, carousel: 10, static: 5 },
+    growthRule: "Meta aspiracional: atingir 10x a base de seguidores em 28 dias. Priorizar conteúdo original que dê motivo para seguir o perfil; venda direta é secundária. Se estiver abaixo do ritmo, concentrar testes em Reels originais, séries recorrentes, compartilhamentos, salvamentos e visitas ao perfil. Não comprar seguidores, não usar follow/unfollow e não aumentar frequência de forma cega.",
     niche: client.niche || "Outro",
     audience: profile.targetAudience,
     objective: profile.contentStrategy,
