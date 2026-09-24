@@ -1,14 +1,27 @@
 import { openAIKeyStatus } from "./openai-routing.js";
 import { openAIResponses, tokenUsageToday } from "./openai.js";
 import { getState, putState, deleteState } from "./storage.js";
-import { listClients, getClient, upsertClient } from "./clients.js";
+import { handlePortalApi } from "./portal.js";
+import { handleMaster } from "./master.js";
 
-function json(data, status = 200) {
+function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
       "content-type": "application/json; charset=utf-8",
-      "cache-control": "no-store"
+      "cache-control": "no-store",
+      ...headers
+    }
+  });
+}
+
+function redirect(location, headers = {}) {
+  return new Response(null, {
+    status: 303,
+    headers: {
+      location,
+      "cache-control": "no-store",
+      ...headers
     }
   });
 }
@@ -23,6 +36,14 @@ function requireAuth(request, env) {
   return authorized(request, env) ? null : json({ error: "unauthorized" }, 401);
 }
 
+async function asset(env, request, pathname) {
+  if (!env.ASSETS) return json({ error: "assets_binding_unavailable" }, 503);
+  const target = new URL(request.url);
+  target.pathname = pathname;
+  target.search = "";
+  return env.ASSETS.fetch(new Request(target.toString(), request));
+}
+
 async function health(env) {
   let d1 = false;
   try {
@@ -35,8 +56,10 @@ async function health(env) {
     ok: d1,
     service: "Servidor Nexus",
     runtime: "cloudflare-workers",
+    migrationMode: true,
     database: d1 ? "d1-ready" : "d1-unavailable",
     media: env.MEDIA ? "r2-bound" : "r2-unavailable",
+    assets: env.ASSETS ? "bound" : "unavailable",
     openai: {
       shared: openAIKeyStatus(env, "shared-client").configured,
       ragnar: openAIKeyStatus(env, env.RAGNAR_CLIENT_ID || "ragnar-one").configured
@@ -72,39 +95,6 @@ async function handleState(request, env, url) {
   return json({ error: "method_not_allowed" }, 405);
 }
 
-async function handleClients(request, env, url) {
-  const denied = requireAuth(request, env);
-  if (denied) return denied;
-
-  const prefix = "/api/clients/";
-  const clientId = url.pathname.startsWith(prefix)
-    ? decodeURIComponent(url.pathname.slice(prefix.length))
-    : "";
-
-  if (request.method === "GET" && !clientId) {
-    return json({ ok: true, clients: await listClients(env) });
-  }
-
-  if (request.method === "GET" && clientId) {
-    const client = await getClient(env, clientId);
-    return client ? json({ ok: true, client }) : json({ error: "client_not_found" }, 404);
-  }
-
-  if (request.method === "PUT" || request.method === "POST") {
-    const body = await request.json().catch(() => ({}));
-    const input = { ...(body || {}) };
-    if (clientId) input.id = clientId;
-    try {
-      const client = await upsertClient(env, input);
-      return json({ ok: true, client });
-    } catch (error) {
-      return json({ error: error instanceof Error ? error.message : String(error) }, 400);
-    }
-  }
-
-  return json({ error: "method_not_allowed" }, 405);
-}
-
 async function handleOpenAIResponses(request, env) {
   const denied = requireAuth(request, env);
   if (denied) return denied;
@@ -114,8 +104,8 @@ async function handleOpenAIResponses(request, env) {
   const clientId = String(body?.clientId || "").trim();
   if (!clientId) return json({ error: "client_id_required" }, 400);
 
-  const client = await getClient(env, clientId);
-  if (!client) return json({ error: "client_not_found" }, 404);
+  const exists = await env.DB.prepare("SELECT id FROM clients WHERE id = ?1 LIMIT 1").bind(clientId).first();
+  if (!exists) return json({ error: "client_not_found" }, 404);
 
   try {
     const result = await openAIResponses(env, clientId, body);
@@ -131,6 +121,20 @@ async function handleOpenAIResponses(request, env) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+
+    if (url.pathname === "/" && request.method === "GET") {
+      return redirect("/login");
+    }
+
+    if (url.pathname === "/login" && request.method === "GET") {
+      return asset(env, request, "/portal.html");
+    }
+
+    const masterResponse = await handleMaster(request, env, url);
+    if (masterResponse) return masterResponse;
+
+    const portalResponse = await handlePortalApi(request, env, url);
+    if (portalResponse) return portalResponse;
 
     if (url.pathname === "/health" || url.pathname === "/api/health") {
       return health(env);
@@ -159,9 +163,16 @@ export default {
       return handleState(request, env, url);
     }
 
-    if (url.pathname === "/api/clients" || url.pathname.startsWith("/api/clients/")) {
-      return handleClients(request, env, url);
+    if (url.pathname.startsWith("/api/")) {
+      return json({
+        error: "not_migrated_yet",
+        service: "Servidor Nexus",
+        runtime: "cloudflare-workers",
+        path: url.pathname
+      }, 501);
     }
+
+    if (env.ASSETS) return env.ASSETS.fetch(request);
 
     return json({
       ok: true,

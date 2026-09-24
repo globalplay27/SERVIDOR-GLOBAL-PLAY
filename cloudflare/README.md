@@ -10,6 +10,8 @@ Esta pasta contém a nova infraestrutura do NEXUS para Cloudflare. Ela é prepar
 - **OpenAI compartilhada**: `OPENAI_API_KEY_SHARED` para todos os clientes, exceto Ragnar.
 - **OpenAI exclusiva Ragnar**: `OPENAI_API_KEY_RAGNAR` somente para `ragnar-one`.
 - **Segredo interno**: `NEXUS_SECRET_KEY` protege APIs administrativas.
+- **Master**: `NEXUS_ADMIN_USERNAME` e `NEXUS_ADMIN_PASSWORD` ficam somente em Secrets.
+- **Assets**: o Worker serve os painéis atuais diretamente da pasta `public/`, mantendo a interface existente durante a migração.
 
 Nenhuma chave real deve ser salva no GitHub.
 
@@ -40,6 +42,8 @@ Configure os Secrets interativamente:
 npx wrangler secret put OPENAI_API_KEY_SHARED
 npx wrangler secret put OPENAI_API_KEY_RAGNAR
 npx wrangler secret put NEXUS_SECRET_KEY
+npx wrangler secret put NEXUS_ADMIN_USERNAME
+npx wrangler secret put NEXUS_ADMIN_PASSWORD
 ```
 
 Aplique o banco:
@@ -69,3 +73,23 @@ Railway não é desligado durante preparação ou testes. A virada só acontece 
 ## Vídeo
 
 O Worker não deve executar `ffmpeg` nem depender de filesystem persistente. Arquivos ficam no R2; processamento pesado é desacoplado do Worker. Isso evita portar para Cloudflare código que depende de processos do sistema e volume local.
+
+
+## Estado atual da migração
+
+Já estão preparados no branch `cloudflare-migration`:
+
+- Worker central **Servidor Nexus**;
+- D1 para clientes, estado, sessões, consumo, tickets, postagens, vídeos e jobs;
+- R2 para mídia;
+- roteamento OpenAI por cliente;
+- Ragnar integrado ao mesmo núcleo por `clientId=ragnar-one`;
+- autenticação Master persistida em D1;
+- autenticação de cliente persistida em D1;
+- compatibilidade inicial das APIs usadas pelos painéis atuais;
+- Static Assets para reutilizar os painéis Master/Cliente existentes sem reconstruí-los;
+- Railway continua intocado até o cutover final.
+
+### Limitação importante do plano grátis
+
+O painel, D1, autenticação, APIs leves, R2 e orquestração podem operar no modelo Workers. O processamento pesado de vídeo não deve rodar dentro de um Worker Free: o limite de CPU por invocação é baixo e não existe o mesmo ambiente de processo do Railway para `ffmpeg`/`yt-dlp`. Por isso a migração mantém o fluxo de vídeo desacoplado até a etapa específica de substituição do processador, sem remover o Railway antecipadamente.
