@@ -10,7 +10,7 @@
   <title>NEXUS AI · Portal do Cliente</title>
   <link rel="icon" href="/assets/nexus-ai-mark.svg" type="image/svg+xml">
   <link rel="manifest" href="/manifest.webmanifest?v=1">
-  <link rel="stylesheet" href="/client.css?v=44">
+  <link rel="stylesheet" href="/client.css?v=45">
 </head>
 <body>
   <div id="nexus-boot" class="nexus-boot" hidden>
@@ -211,6 +211,9 @@
                 <label><span>Opções de melhores cortes</span><input id="video-requested-clips" type="number" min="1" max="12" value="3"></label>
                 <label><span>Formato de saída</span><select id="video-output-format"><option value="reel" selected>Reels / Stories 9:16</option><option value="feed">Feed do Instagram 4:5</option><option value="square">Quadrado 1:1</option></select></label>
                 <label class="video-subtitle-option"><input id="video-auto-subtitles" type="checkbox" checked><span><strong>Legenda automática em PT-BR</strong><small>Se o áudio estiver em outro idioma, o NEXUS traduz e grava a legenda no vídeo.</small></span></label>
+                <label><span>Tamanho da legenda</span><select id="video-subtitle-size"><option value="auto" selected>Automático (proporcional)</option><option value="small">Pequeno</option><option value="medium">Médio</option><option value="large">Grande</option></select></label>
+                <label><span>Cor da legenda</span><select id="video-subtitle-color"><option value="white" selected>Branca</option><option value="yellow">Amarela</option><option value="cyan">Ciano</option><option value="green">Verde</option><option value="red">Vermelha</option></select></label>
+                <label><span>Fundo da legenda</span><select id="video-subtitle-bg"><option value="black" selected>Preto</option><option value="navy">Azul escuro</option><option value="transparent">Sem fundo</option></select></label>
                 <label><span>Pasta</span><select id="video-upload-folder"><option value="default">Meus vídeos</option></select></label>
                 <label><span>Frase final (opcional)</span><input id="video-end-text" maxlength="90" placeholder="Ex.: Continua..."></label>
                 <label><span>Contato / CTA final (opcional)</span><input id="video-end-contact" maxlength="90" placeholder="Ex.: WhatsApp 34 99999-9999"></label>
@@ -420,6 +423,6 @@
       <footer><span>NEXUS AI</span><small>Client Portal · ambiente exclusivo</small></footer>
     </section>
   </main>
-  <script src="/client.js?v=44" defer></script>
+  <script src="/client.js?v=45" defer></script>
 </body>
 </html>
