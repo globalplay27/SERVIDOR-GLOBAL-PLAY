@@ -980,7 +980,18 @@ $$("[data-view]").forEach(b=>b.addEventListener("click",()=>showView(b.dataset.v
 const refreshClientPosts=$("#refresh-client-posts");if(refreshClientPosts)refreshClientPosts.addEventListener("click",loadClientPosts);
 const refreshClientLeads=$("#refresh-client-leads");if(refreshClientLeads)refreshClientLeads.addEventListener("click",loadClientLeads);
 const refreshAgentTeam=$("#refresh-agent-team");if(refreshAgentTeam)refreshAgentTeam.addEventListener("click",loadAgentTeam);
-const trailerSearchForm=$("#trailer-search-form");if(trailerSearchForm)trailerSearchForm.addEventListener("submit",searchTrailers);$$("[data-open-setup]").forEach(b=>b.addEventListener("click",()=>showView("setup")));$$("[data-open-posting]").forEach(b=>b.addEventListener("click",()=>showView("posting")));
+const trailerSearchForm=$("#trailer-search-form");
+if(trailerSearchForm)trailerSearchForm.addEventListener("submit",searchTrailers);
+$("[data-trailer-kind]").forEach(button=>button.addEventListener("click",()=>{
+  const type=button.dataset.trailerKind==="series"?"series":"movie";
+  const select=$("#trailer-type");if(select)select.value=type;
+  $("[data-trailer-kind]").forEach(item=>{
+    const active=item===button;
+    item.classList.toggle("active",active);
+    item.setAttribute("aria-pressed",active?"true":"false");
+  });
+  $("#trailer-query")?.focus();
+}));$$("[data-open-setup]").forEach(b=>b.addEventListener("click",()=>showView("setup")));$$("[data-open-posting]").forEach(b=>b.addEventListener("click",()=>showView("posting")));
 $$("[data-profile-tab]").forEach(button=>button.addEventListener("click",()=>{
   $$("[data-profile-tab]").forEach(item=>item.classList.toggle("active",item===button));
   $$("[data-profile-panel]").forEach(panel=>panel.classList.toggle("active",panel.dataset.profilePanel===button.dataset.profileTab));
@@ -1128,6 +1139,7 @@ function uploadSingleVideo(file,index,total,settings,progress){
     xhr.setRequestHeader("X-Auto-Subtitles",settings.autoSubtitles?"1":"0");
     xhr.setRequestHeader("X-Subtitle-Size",settings.subtitleSize);
     xhr.setRequestHeader("X-Subtitle-Color",settings.subtitleColor);
+    xhr.setRequestHeader("X-Subtitle-Weight",settings.subtitleWeight);
     xhr.setRequestHeader("X-Subtitle-Bg",settings.subtitleBg);
     xhr.setRequestHeader("X-Video-Folder",settings.folderId);
     xhr.setRequestHeader("X-Video-End-Text",encodeURIComponent(settings.endText||""));
@@ -1162,6 +1174,7 @@ if(videoUploadForm)videoUploadForm.addEventListener("submit",async event=>{
     autoSubtitles:Boolean($("#video-auto-subtitles")?.checked),
     subtitleSize:$("#video-subtitle-size")?.value||"auto",
     subtitleColor:$("#video-subtitle-color")?.value||"white",
+    subtitleWeight:$("#video-subtitle-weight")?.value||"bold",
     subtitleBg:$("#video-subtitle-bg")?.value||"black",
     folderId:$("#video-upload-folder")?.value||"default",
     endText:$("#video-end-text")?.value?.trim()||"",
