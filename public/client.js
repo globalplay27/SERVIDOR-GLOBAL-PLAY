@@ -274,46 +274,6 @@ async function loadConnections(){
   }catch{return null;}
 }
 
-let connectionProvider="";
-function openConnectionModal(provider){
-  connectionProvider=provider;
-  $("#connection-error").textContent="";
-  $("#github-fields").hidden=provider!=="github";
-  $("#openai-fields").hidden=provider!=="openai";
-  $("#connection-title").textContent=provider==="github"?"Conectar GitHub":"Conectar OpenAI";
-  $("#connection-help").textContent=provider==="github"
-    ?"Cole um token de acesso do GitHub. Não use sua senha."
-    :"Cole a chave da API do projeto. A chave administrativa para custos é opcional.";
-  $("#connection-modal").hidden=false;
-}
-function closeConnectionModal(){
-  $("#connection-modal").hidden=true;connectionProvider="";
-  $("#github-token").value="";$("#openai-key").value="";$("#openai-admin-key").value="";
-  $("#connection-error").textContent="";
-}
-async function startRailwayConnection(){
-  const button=$('[data-connect="railway"]');
-  button.disabled=true;button.textContent="Abrindo autorização…";
-  try{
-    const r=await fetch("/api/oauth/railway/start",{headers:{"x-nexus-session":sessionAuth}});
-    const d=await r.json();
-    if(!r.ok||!d.url)throw new Error("Não foi possível iniciar a conexão Railway.");
-    const popup=window.open(d.url,"nexus-railway-oauth","width=720,height=760");
-    let tries=0;
-    const timer=setInterval(async()=>{
-      tries++;
-      const status=await loadConnections();
-      if(status?.connections?.railway?.direct||tries>90||popup?.closed){
-        clearInterval(timer);
-        button.disabled=false;button.textContent="Conectar Railway";
-        if(status?.connections?.railway?.direct){await providerUsage();}
-      }
-    },1500);
-  }catch(error){
-    button.disabled=false;button.textContent="Conectar Railway";alert(error.message);
-  }
-}
-
 let instagramOauthTimer=null;
 async function refreshPortalClient(){
   try{
@@ -1327,27 +1287,6 @@ if(profileLogoRemove)profileLogoRemove.addEventListener("click",()=>{
   pendingProfileLogo=null;removeProfileLogo=true;showStoredProfileLogo("");$("#profile-logo-file").value="";
 });
 $$("[data-complete]").forEach(b=>b.addEventListener("click",async()=>{b.disabled=true;try{await patchOnboarding({[b.dataset.complete]:true});}finally{b.disabled=false;}}));
-$$("[data-connect]").forEach(b=>b.addEventListener("click",()=>{const provider=b.dataset.connect;if(provider==="railway")startRailwayConnection();else openConnectionModal(provider);}));
-$("#connection-close").addEventListener("click",closeConnectionModal);
-$("#connection-modal").addEventListener("click",event=>{if(event.target===$("#connection-modal"))closeConnectionModal();});
-$("#connection-form").addEventListener("submit",async event=>{
-  event.preventDefault();
-  const error=$("#connection-error"),submit=event.currentTarget.querySelector(".connection-submit");
-  error.textContent="";submit.disabled=true;submit.textContent="Validando…";
-  try{
-    let endpoint,payload;
-    if(connectionProvider==="github"){
-      endpoint="/api/portal/connect/github";payload={token:$("#github-token").value};
-    }else if(connectionProvider==="openai"){
-      endpoint="/api/portal/connect/openai";payload={apiKey:$("#openai-key").value,adminKey:$("#openai-admin-key").value};
-    }else throw new Error("Conexão inválida.");
-    const r=await fetch(endpoint,{method:"POST",headers:{"x-nexus-session":sessionAuth,"content-type":"application/json"},body:JSON.stringify(payload)});
-    const d=await r.json();
-    if(!r.ok)throw new Error(d.error==="github_auth_failed"?"Token do GitHub não foi aceito.":d.error==="openai_auth_failed"?"A chave da OpenAI não foi aceita.":d.error==="openai_admin_auth_failed"?"A chave administrativa da OpenAI não foi aceita.":"Não foi possível conectar.");
-    renderClient(d);closeConnectionModal();await providerUsage();
-  }catch(err){error.textContent=err.message;}
-  finally{submit.disabled=false;submit.textContent="Validar e conectar";}
-});
 const modeNewButton=$("#mode-new"),modeReadyButton=$("#mode-ready");if(modeNewButton)modeNewButton.addEventListener("click",()=>patchOnboarding({setupMode:"new"}));if(modeReadyButton)modeReadyButton.addEventListener("click",()=>patchOnboarding({setupMode:"ready"}));
 const legacySupportButton=$("#request-support");
 if(legacySupportButton)legacySupportButton.addEventListener("click",()=>showView("support"));
@@ -1920,5 +1859,5 @@ if(window.matchMedia("(display-mode: standalone)").matches){
   setInstallButtonsVisible(false);
 }
 if("serviceWorker" in navigator){
-  window.addEventListener("load",()=>navigator.serviceWorker.register("/sw.js?v=69").catch(()=>{}));
+  window.addEventListener("load",()=>navigator.serviceWorker.register("/sw.js?v=70").catch(()=>{}));
 }
