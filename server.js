@@ -5400,6 +5400,24 @@ const server = http.createServer(async (req, res) => {
     return res.end();
   }
 
+  if (url.pathname === "/acesso-cliente" && req.method === "GET") {
+    res.writeHead(303, {
+      location: "/login",
+      "cache-control": "no-store",
+      "content-length": "0"
+    });
+    return res.end();
+  }
+
+  if (url.pathname === "/acesso-master" && req.method === "GET") {
+    res.writeHead(303, {
+      location: "/master",
+      "cache-control": "no-store",
+      "content-length": "0"
+    });
+    return res.end();
+  }
+
   if (url.pathname === "/login" && req.method === "GET") {
     res.writeHead(303, {
       location: "/portal.html?v=25&login=1",
