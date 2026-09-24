@@ -5390,7 +5390,7 @@ const server = http.createServer(async (req, res) => {
     return res.end();
   }
 
-  if (signedVideoUpload && videoUploadTicketClientForRequest({ ...req, method: "POST" })) {
+  if (signedVideoUpload && req.method === "POST") {
     res.setHeader("access-control-allow-origin", "*");
     res.setHeader("access-control-expose-headers", "content-type");
   }
