@@ -1466,6 +1466,52 @@ async function runRadarAgent(client, options = {}) {
     };
   }).sort((a,b) => (b.medianReachVelocity || b.medianReach || b.medianViews) - (a.medianReachVelocity || a.medianReach || a.medianViews));
 
+  const timingHourMap = new Map();
+  const saoPauloHour = timestamp => {
+    if (!timestamp) return null;
+    const date = new Date(timestamp);
+    if (!Number.isFinite(date.getTime())) return null;
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Sao_Paulo",
+      hour: "2-digit",
+      hourCycle: "h23"
+    }).formatToParts(date);
+    const hour = Number(parts.find(part => part.type === "hour")?.value);
+    return Number.isInteger(hour) ? hour : null;
+  };
+  for (const item of measured) {
+    const hour = saoPauloHour(item.timestamp);
+    if (hour === null || hour < 6 || hour > 23) continue;
+    const velocity = reachVelocity(item);
+    const distribution = Number.isFinite(velocity)
+      ? Number(velocity)
+      : Number(item.reach || item.views || 0) / 72;
+    const timingScore =
+      distribution
+      + Number(item.shares || 0) * 1.6
+      + Number(item.saved || 0) * 1.2
+      + Number(item.commentsCount || 0) * 0.35
+      + Number(item.likeCount || 0) * 0.08;
+    if (!timingHourMap.has(hour)) timingHourMap.set(hour, []);
+    timingHourMap.get(hour).push(timingScore);
+  }
+  const timingHourStats = [...timingHourMap.entries()]
+    .map(([hour, values]) => ({ hour, score: numericMedian(values), posts: values.length }))
+    .sort((a,b) => b.score - a.score || b.posts - a.posts || a.hour - b.hour);
+  const selectedTimingHours = [];
+  const canUseTimingHour = hour => selectedTimingHours.every(current => Math.abs(current - hour) >= 4);
+  for (const row of timingHourStats) {
+    if (selectedTimingHours.length >= 3) break;
+    if (canUseTimingHour(row.hour)) selectedTimingHours.push(row.hour);
+  }
+  for (const hour of [9,14,20,8,13,18,22]) {
+    if (selectedTimingHours.length >= 3) break;
+    if (canUseTimingHour(hour)) selectedTimingHours.push(hour);
+  }
+  const recommendedPostTimes = (selectedTimingHours.length === 3 ? selectedTimingHours : [9,14,20])
+    .sort((a,b) => a-b)
+    .map(hour => String(hour).padStart(2,"0") + ":00");
+
   const trendEligible = sortedMeasured.filter(item => Number.isFinite(reachVelocity(item)));
   const half = Math.min(8, Math.floor(trendEligible.length / 2));
   const recentReachVelocity = half ? numericMedian(trendEligible.slice(0, half).map(reachVelocity).filter(value => Number.isFinite(value))) : 0;
@@ -1584,6 +1630,8 @@ async function runRadarAgent(client, options = {}) {
       reachTrendRatio: reachTrendRatio === null ? null : Math.round(reachTrendRatio * 100) / 100
     },
     formatStats,
+    timingHourStats: timingHourStats.slice(0, 10),
+    recommendedPostTimes,
     diagnosis,
     profileAudit: profileScore,
     skills: skillCoverageForAgent("radar").map(item => item.id),
@@ -1612,6 +1660,8 @@ async function runRadarAgent(client, options = {}) {
     metrics: output.metrics,
     bestFormat: formatStats[0]?.mediaType || "",
     formatStats: formatStats.slice(0, 4),
+    recommendedPostTimes,
+    timingHourStats: timingHourStats.slice(0, 6),
     topOutlier: output.outliers?.[0] || null,
     diagnosis
   }));
@@ -1673,6 +1723,9 @@ async function runStrategistAgent(client, context = {}, options = {}) {
     secondaryKpis: ["profile_visits","shares","saves","reach"],
     growthGoal: radar.growthGoal || {},
     growthMode: radar?.growthGoal?.status === "behind_pace" ? "recovery" : "growth",
+    recommendedPostTimes: Array.isArray(radar.recommendedPostTimes) && radar.recommendedPostTimes.length === 3
+      ? radar.recommendedPostTimes
+      : ["09:00","14:00","20:00"],
     contentMix: { reels: 90, carousel: 8, static: 2 },
     experimentMode: "moonshot",
     experimentCadence: ["3h","6h","24h"],
@@ -1714,7 +1767,10 @@ async function runStrategistAgent(client, context = {}, options = {}) {
 async function runCreatorAgent(client, strategy, options = {}) {
   const startedAt = new Date().toISOString();
   const config = agentCoreConfig(client);
-  const times = (Array.isArray(client.postTimes) && client.postTimes.length ? client.postTimes : ["09:00","12:00","18:00"]).slice(0, 6);
+  const times = (Array.isArray(strategy?.recommendedPostTimes) && strategy.recommendedPostTimes.length === 3
+    ? strategy.recommendedPostTimes
+    : (Array.isArray(client.postTimes) && client.postTimes.length ? client.postTimes : ["09:00","14:00","20:00"]))
+    .slice(0, 3);
   const ledger = loadPostLedger();
   const created = [];
   const themes = Array.isArray(strategy?.themes) && strategy.themes.length ? strategy.themes : ["Descoberta","Benefício","Conversão"];
