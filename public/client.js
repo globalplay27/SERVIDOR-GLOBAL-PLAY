@@ -12,12 +12,21 @@ function showPortalLogin(message="Sua sessão precisa ser renovada. Entre novame
 
 function nextPostTime(times=[]){if(!Array.isArray(times)||!times.length)return"—";const parts=new Intl.DateTimeFormat("pt-BR",{timeZone:"America/Sao_Paulo",hour:"2-digit",minute:"2-digit",hour12:false}).formatToParts(new Date());const now=Number(parts.find(p=>p.type==="hour")?.value||0)*60+Number(parts.find(p=>p.type==="minute")?.value||0);const sorted=times.map(v=>{const[h,m]=String(v).split(":").map(Number);return{v,m:h*60+m}}).filter(x=>Number.isFinite(x.m)).sort((a,b)=>a.m-b.m);return sorted.find(x=>x.m>now)?.v||sorted[0]?.v||"—";}
 function showView(name){$$("[data-view]").forEach(b=>b.classList.toggle("active",b.dataset.view===name));["overview","posts","capture","leads","videos","trailers","posting","support","setup"].forEach(v=>{const el=$("#view-"+v);if(el)el.hidden=v!==name;});if(name==="support")loadSupportTickets();if(name==="posts")loadClientPosts();if(name==="capture")loadLeadHunter();if(name==="leads")loadClientLeads();if(name==="videos"){ensureBulkVideoScheduler();loadVideoJobs();}if(name==="overview"){loadAgentTeam();loadTokenUsage();}}
-function onboardingKeys(){return["github","railway","openai","facebook","instagram","metaApp","creativeProfile","supportRequested"];}
+function onboardingKeys(){return["instagram","creativeProfile"];}
 function setupPercent(){const o=currentClient?.onboarding||{};const keys=onboardingKeys();return Math.round(keys.filter(k=>o[k]).length/keys.length*100);}
 function renderOnboarding(){
-  const o=currentClient?.onboarding||{},pct=setupPercent();$("#setup-progress").textContent=pct+"%";$("#setup-banner").hidden=true;const hero=document.querySelector(".setup-hero-card");if(hero)hero.hidden=true;
-  $$(".wizard-step").forEach(card=>{const key=card.dataset.step,done=Boolean(o[key]);card.classList.toggle("done",done);const state=card.querySelector(".step-state");if(state)state.textContent=done?"Concluído":"Pendente";});
-  $("#mode-new").classList.toggle("selected",(currentClient?.setupMode||"ready")==="new");$("#mode-ready").classList.toggle("selected",(currentClient?.setupMode||"ready")==="ready");
+  const o=currentClient?.onboarding||{},pct=setupPercent();
+  const progress=$("#setup-progress");if(progress)progress.textContent=pct+"%";
+  const banner=$("#setup-banner");if(banner)banner.hidden=true;
+  const hero=document.querySelector(".setup-hero-card");if(hero)hero.hidden=true;
+  $(".wizard-step[data-step]").forEach(card=>{const key=card.dataset.step,done=Boolean(o[key]);card.classList.toggle("done",done);const state=card.querySelector(".step-state");if(state)state.textContent=done?"Concluído":"Pendente";});
+  const modeNew=$("#mode-new"),modeReady=$("#mode-ready");
+  if(modeNew)modeNew.classList.toggle("selected",(currentClient?.setupMode||"ready")==="new");
+  if(modeReady)modeReady.classList.toggle("selected",(currentClient?.setupMode||"ready")==="ready");
+  const setupIg=$("#setup-instagram-connect"),setupStatus=$("#setup-instagram-status");
+  const connected=Boolean(currentClient?.instagram);
+  if(setupIg){setupIg.disabled=connected;setupIg.textContent=connected?"Instagram conectado":"Conectar Instagram";setupIg.classList.toggle("connected",connected);}
+  if(setupStatus){setupStatus.textContent=connected?(currentClient.instagram+" autorizado"):"Aguardando autorização";setupStatus.className="provider-line"+(connected?" connected":"");}
 }
 function renderConnections(connections={}){
   const labels={github:"github-connection",railway:"railway-connection",openai:"openai-connection"};
@@ -367,6 +376,8 @@ window.addEventListener("message",event=>{
 });
 const instagramConnectButton=$("#instagram-connect");
 if(instagramConnectButton)instagramConnectButton.addEventListener("click",startInstagramConnection);
+const setupInstagramConnectButton=$("#setup-instagram-connect");
+if(setupInstagramConnectButton)setupInstagramConnectButton.addEventListener("click",startInstagramConnection);
 
 async function patchOnboarding(payload){const r=await fetch("/api/portal/onboarding",{method:"PATCH",headers:{"x-nexus-session":sessionAuth,"content-type":"application/json"},body:JSON.stringify(payload)});if(!r.ok)throw new Error("Falha ao salvar etapa");renderClient(await r.json());}
 
@@ -1337,7 +1348,7 @@ $("#connection-form").addEventListener("submit",async event=>{
   }catch(err){error.textContent=err.message;}
   finally{submit.disabled=false;submit.textContent="Validar e conectar";}
 });
-$("#mode-new").addEventListener("click",()=>patchOnboarding({setupMode:"new"}));$("#mode-ready").addEventListener("click",()=>patchOnboarding({setupMode:"ready"}));
+const modeNewButton=$("#mode-new"),modeReadyButton=$("#mode-ready");if(modeNewButton)modeNewButton.addEventListener("click",()=>patchOnboarding({setupMode:"new"}));if(modeReadyButton)modeReadyButton.addEventListener("click",()=>patchOnboarding({setupMode:"ready"}));
 const legacySupportButton=$("#request-support");
 if(legacySupportButton)legacySupportButton.addEventListener("click",()=>showView("support"));
 
@@ -1896,5 +1907,5 @@ if(window.matchMedia("(display-mode: standalone)").matches){
   setInstallButtonsVisible(false);
 }
 if("serviceWorker" in navigator){
-  window.addEventListener("load",()=>navigator.serviceWorker.register("/sw.js?v=67").catch(()=>{}));
+  window.addEventListener("load",()=>navigator.serviceWorker.register("/sw.js?v=68").catch(()=>{}));
 }
