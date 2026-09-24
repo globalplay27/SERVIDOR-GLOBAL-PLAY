@@ -231,6 +231,26 @@ function loadClients() {
   }
   let changed = false;
   for (const item of items) {
+    if (["ragnar-one","globalplay-streaming"].includes(item.id)) {
+      const currentPosting = item.postingProfile && typeof item.postingProfile === "object" ? item.postingProfile : {};
+      const followerPosting = {
+        ...defaultPostingProfile(),
+        ...currentPosting,
+        contentStrategy: "Crescimento de seguidores + engajamento qualificado",
+        contentFocus: "Aumentar seguidores com conteúdo que gere compartilhamentos, salvamentos, visitas ao perfil e recorrência",
+        morningTheme: "Descoberta, curiosidade e gancho compartilhável",
+        afternoonTheme: "Conteúdo útil, entretenimento e valor para salvar",
+        eveningTheme: "Comunidade, opinião e motivo para acompanhar o perfil",
+        cta: item.id === "ragnar-one"
+          ? "Siga @ragnarplay1 para acompanhar os próximos conteúdos e envie para alguém que vai gostar"
+          : "Siga @globalplay_streaming para acompanhar os próximos conteúdos e envie para alguém que vai gostar",
+        avoidTopics: "Excesso de preço, venda agressiva, promessas irreais, informações não confirmadas e poluição visual"
+      };
+      if (JSON.stringify(currentPosting) !== JSON.stringify(followerPosting)) {
+        item.postingProfile = followerPosting;
+        changed = true;
+      }
+    }
     if (item.id === "ragnar-one") continue;
     if (item.aiMode !== "economy" || Number(item.aiMonthlyImageLimit || 0) !== 0) {
       item.aiMode = "economy";
@@ -1536,7 +1556,8 @@ async function runRadarAgent(client, options = {}) {
       ...diagnosis,
       bestRecent?.caption ? "Reaproveitar o mecanismo do melhor conteúdo, sem copiar o criativo." : "Testar ganchos diferentes e medir a resposta da própria conta.",
       topTerms[0]?.term ? "Explorar novas abordagens para o tema " + topTerms[0].term + "." : "Usar o nicho e as dúvidas reais dos leads como matéria-prima.",
-      profileScore.score < 70 ? "O perfil ainda perde pontos de conversão; priorizar " + (profileScore.priorities[0] || "clareza da oferta") + "." : "Perfil com boa base; focar em conteúdo e conversão.",
+      profileScore.score < 70 ? "O perfil ainda perde pontos de conversão; priorizar " + (profileScore.priorities[0] || "clareza da oferta") + "." : "Perfil com boa base; focar em conteúdo que gere visitas ao perfil e seguidores.",
+      "KPI principal: crescimento de seguidores. Priorizar compartilhamentos, salvamentos, visitas ao perfil e conteúdo recorrente em série.",
       "Comparar desempenho com a mediana da própria conta, não apenas com views brutas."
     ]
   };
@@ -1607,6 +1628,9 @@ async function runStrategistAgent(client, context = {}, options = {}) {
         hasLongVideo: false
       });
   const plan = {
+    primaryKpi: "followers",
+    secondaryKpis: ["profile_visits","shares","saves","reach"],
+    growthRule: "Priorizar conteúdo que dê motivo para seguir o perfil; venda direta é secundária.",
     niche: client.niche || "Outro",
     audience: profile.targetAudience,
     objective: profile.contentStrategy,
@@ -4733,17 +4757,17 @@ button{width:100%;margin-top:12px;padding:14px;border:0;border-radius:10px;backg
 
 function defaultPostingProfile() {
   return {
-    contentStrategy: "Vendas + engajamento",
+    contentStrategy: "Crescimento de seguidores + engajamento qualificado",
     targetAudience: "Misto",
     visualStyle: "Tecnológico premium",
-    contentFocus: "Benefícios reais do negócio, autoridade, produto e conversão",
-    morningTheme: "Dor do cliente e solução",
-    afternoonTheme: "Produto, benefício e prova",
-    eveningTheme: "Conversão e chamada para ação",
+    contentFocus: "Conteúdo que gere compartilhamentos, salvamentos, visitas ao perfil e motivo claro para seguir",
+    morningTheme: "Descoberta, curiosidade e gancho compartilhável",
+    afternoonTheme: "Conteúdo útil, entretenimento e valor para salvar",
+    eveningTheme: "Comunidade, opinião e motivo para acompanhar o perfil",
     tone: "Firme, direto e profissional",
-    cta: 'Comente "QUERO" e saiba mais',
-    hashtags: "#ConteudoDigital #Vendas #Automacao",
-    avoidTopics: "Promessas irreais, informações não confirmadas e poluição visual"
+    cta: "Siga o perfil para acompanhar os próximos conteúdos e envie para alguém que vai gostar",
+    hashtags: "#Entretenimento #Streaming #FilmesESeries #Futebol #Dicas",
+    avoidTopics: "Excesso de preço, venda agressiva, promessas irreais, informações não confirmadas e poluição visual"
   };
 }
 
