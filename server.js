@@ -1884,18 +1884,47 @@ async function searchOfficialTrailers(query, type = "movie", clientId = "") {
   const apiKey = String(process.env.TMDB_API_KEY || "").trim();
   const youtubeSearchUrl = "https://www.youtube.com/results?search_query=" + encodeURIComponent(q + " trailer oficial");
 
-  const normalizeResult = item => ({
-    id: item.id || "",
-    type: item.type === "series" || kind === "tv" ? "series" : "movie",
-    title: String(item.title || item.name || q).slice(0,160),
-    year: String(item.year || item.release_date || item.first_air_date || "").slice(0,4),
-    overview: String(item.overview || item.synopsis || "").slice(0,600),
-    posterUrl: String(item.posterUrl || ""),
-    trailerUrl: /^https:\/\/www\.youtube\.com\/watch\?v=|^https:\/\/youtu\.be\//i.test(String(item.trailerUrl || "")) ? String(item.trailerUrl) : "",
-    trailerName: String(item.trailerName || item.channel || "").slice(0,180),
-    official: item.official === true,
-    youtubeSearchUrl: String(item.youtubeSearchUrl || youtubeSearchUrl)
-  });
+  const youtubeVideoId = value => {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    try {
+      const parsed = new URL(raw);
+      if (/youtu\.be$/i.test(parsed.hostname)) return parsed.pathname.split("/").filter(Boolean)[0] || "";
+      if (/youtube\.com$/i.test(parsed.hostname) || /www\.youtube\.com$/i.test(parsed.hostname)) {
+        if (parsed.pathname === "/watch") return parsed.searchParams.get("v") || "";
+        const parts = parsed.pathname.split("/").filter(Boolean);
+        if (["shorts","embed","live"].includes(parts[0])) return parts[1] || "";
+      }
+    } catch {}
+    return "";
+  };
+
+  const youtubeThumbnail = value => {
+    const id = youtubeVideoId(value);
+    return id ? "https://i.ytimg.com/vi/" + encodeURIComponent(id) + "/hqdefault.jpg" : "";
+  };
+
+  const normalizeResult = item => {
+    const rawTrailerUrl = String(item.trailerUrl || "").trim();
+    const trailerUrl = /^https:\/\/(?:www\.)?youtube\.com\/watch\?v=|^https:\/\/youtu\.be\/|^https:\/\/(?:www\.)?youtube\.com\/(?:shorts|embed|live)\//i.test(rawTrailerUrl)
+      ? rawTrailerUrl : "";
+    const trailerThumb = youtubeThumbnail(trailerUrl);
+    const explicitPoster = String(item.posterUrl || "").trim();
+    return {
+      id: item.id || "",
+      type: item.type === "series" || kind === "tv" ? "series" : "movie",
+      title: String(item.title || item.name || q).slice(0,160),
+      year: String(item.year || item.release_date || item.first_air_date || "").slice(0,4),
+      overview: String(item.overview || item.synopsis || "").slice(0,600),
+      posterUrl: explicitPoster || trailerThumb,
+      posterFallbackUrl: trailerThumb,
+      imageSource: explicitPoster ? "poster" : (trailerThumb ? "youtube-trailer" : "none"),
+      trailerUrl,
+      trailerName: String(item.trailerName || item.channel || "").slice(0,180),
+      official: item.official === true,
+      youtubeSearchUrl: String(item.youtubeSearchUrl || youtubeSearchUrl)
+    };
+  };
 
   if (token || apiKey) {
     const tmdbGet = async (pathname, params = {}, language = "pt-BR") => {
