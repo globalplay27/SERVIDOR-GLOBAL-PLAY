@@ -1604,12 +1604,25 @@ $("#video-create-folder")?.addEventListener("click",createVideoFolder);
 $("#video-rename-folder")?.addEventListener("click",renameCurrentVideoFolder);
 $("#video-delete-folder")?.addEventListener("click",deleteCurrentVideoFolder);
 
-function uploadSingleVideo(file,index,total,settings,progress){
+async function uploadSingleVideo(file,index,total,settings,progress){
+  const ticketResponse=await fetch("/api/portal/video-upload-ticket",{
+    method:"POST",
+    credentials:"same-origin",
+    headers:sessionAuth?{"x-nexus-session":sessionAuth}:{}
+  });
+  const ticket=await ticketResponse.json().catch(()=>({}));
+  if(!ticketResponse.ok||!ticket.url){
+    const error=new Error(ticket.error==="railway_video_bridge_not_configured"
+      ?"O processador de vídeo ainda precisa ser autorizado pelo administrador NEXUS."
+      :(ticket.error||"Não foi possível preparar o envio do vídeo."));
+    if(ticketResponse.status===401)error.code="session_expired";
+    throw error;
+  }
+
   return new Promise((resolve,reject)=>{
     const xhr=new XMLHttpRequest();
-    xhr.open("POST","/api/portal/videos");
-    xhr.withCredentials=true;
-    if(sessionAuth)xhr.setRequestHeader("X-Nexus-Session",sessionAuth);
+    xhr.open("POST",ticket.url);
+    xhr.withCredentials=false;
     xhr.setRequestHeader("Content-Type",file.type||"application/octet-stream");
     xhr.setRequestHeader("X-File-Name",encodeURIComponent(file.name));
     xhr.setRequestHeader("X-Video-Goal",settings.goal);
@@ -1635,7 +1648,7 @@ function uploadSingleVideo(file,index,total,settings,progress){
     xhr.onload=()=>{
       let d={};try{d=JSON.parse(xhr.responseText||"{}");}catch{}
       if(xhr.status>=200&&xhr.status<300){resolve(d);return;}
-      if(xhr.status===401){const err=new Error("Sua sessão expirou. Entre novamente no portal e o vídeo continuará selecionado.");err.code="session_expired";reject(err);return;}
+      if(xhr.status===401){const err=new Error("A autorização temporária do envio expirou. Tente enviar novamente.");err.code="upload_ticket_expired";reject(err);return;}
       reject(new Error(d.error==="video_too_large"?"Vídeo acima do limite de 750 MB.":(d.error||"Não foi possível enviar "+file.name)));
     };
     xhr.onerror=()=>reject(new Error("Falha de conexão ao enviar "+file.name));
@@ -1907,5 +1920,5 @@ if(window.matchMedia("(display-mode: standalone)").matches){
   setInstallButtonsVisible(false);
 }
 if("serviceWorker" in navigator){
-  window.addEventListener("load",()=>navigator.serviceWorker.register("/sw.js?v=68").catch(()=>{}));
+  window.addEventListener("load",()=>navigator.serviceWorker.register("/sw.js?v=69").catch(()=>{}));
 }
