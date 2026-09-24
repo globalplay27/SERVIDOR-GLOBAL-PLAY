@@ -3677,6 +3677,79 @@ async function fetchAuthorizedVideoSource(value) {
   throw new Error("video_source_too_many_redirects");
 }
 
+function normalizePublicTrailerUrl(value) {
+  let parsed;
+  try { parsed = new URL(String(value || "").trim()); }
+  catch { throw new Error("invalid_trailer_url"); }
+  if (parsed.protocol !== "https:") throw new Error("trailer_url_https_required");
+  const host = parsed.hostname.toLowerCase();
+  if (!(host === "youtu.be" || host === "youtube.com" || host.endsWith(".youtube.com"))) {
+    throw new Error("trailer_source_not_supported");
+  }
+  if (parsed.username || parsed.password) throw new Error("trailer_url_credentials_not_allowed");
+  return parsed.toString();
+}
+
+async function importPublicTrailerVideo(client, sourceUrl, settings = {}) {
+  const normalizedUrl = normalizePublicTrailerUrl(sourceUrl);
+  const jobId = "vid_" + crypto.randomBytes(10).toString("hex");
+  const clientDir = path.join(clientVideoDir, slug(client.id));
+  fs.mkdirSync(clientDir, { recursive: true });
+  const outputTemplate = path.join(clientDir, jobId + ".%(ext)s");
+  const maxBytes = 750 * 1024 * 1024;
+
+  try {
+    await execFileAsync("yt-dlp", [
+      "--no-playlist",
+      "--no-warnings",
+      "--socket-timeout", "30",
+      "--retries", "3",
+      "--fragment-retries", "3",
+      "--concurrent-fragments", "4",
+      "--max-filesize", "750M",
+      "--merge-output-format", "mp4",
+      "-f", "bv*[height<=1080]+ba/b[height<=1080]/b",
+      "-o", outputTemplate,
+      normalizedUrl
+    ], { timeout: 8 * 60 * 1000, maxBuffer: 16 * 1024 * 1024 });
+  } catch (error) {
+    for (const name of fs.readdirSync(clientDir)) {
+      if (name.startsWith(jobId + ".")) {
+        try { fs.unlinkSync(path.join(clientDir, name)); } catch {}
+      }
+    }
+    const detail = String(error?.stderr || error?.message || error).replace(/\s+/g, " ").slice(0, 500);
+    throw new Error("trailer_download_failed:" + detail);
+  }
+
+  const allowedExt = new Set([".mp4",".mov",".m4v",".webm",".mkv"]);
+  const candidates = fs.readdirSync(clientDir)
+    .filter(name => name.startsWith(jobId + ".") && allowedExt.has(path.extname(name).toLowerCase()))
+    .map(name => {
+      const full = path.join(clientDir, name);
+      let size = 0;
+      try { size = fs.statSync(full).size; } catch {}
+      return { name, full, size };
+    })
+    .filter(item => item.size > 0)
+    .sort((a,b) => b.size - a.size);
+
+  const downloaded = candidates[0];
+  if (!downloaded) throw new Error("trailer_download_empty");
+  if (downloaded.size > maxBytes) {
+    try { fs.unlinkSync(downloaded.full); } catch {}
+    throw new Error("video_too_large");
+  }
+
+  const title = String(settings.contentTitle || "").trim().slice(0, 100);
+  const safeStem = slug(title || "trailer") || "trailer";
+  const safeBase = safeStem.slice(0, 140) + path.extname(downloaded.name).toLowerCase();
+  return createImportedVideoJob(client, downloaded.full, safeBase, downloaded.size, {
+    ...settings,
+    sourceType: "public-trailer"
+  }, normalizedUrl);
+}
+
 function createImportedVideoJob(client, destination, safeBase, sizeBytes, settings = {}, sourceUrl = "") {
   const jobId = path.basename(destination, path.extname(destination));
   const subtitleStyle = normalizeSubtitleStyle({
@@ -3709,11 +3782,13 @@ function createImportedVideoJob(client, destination, safeBase, sizeBytes, settin
     goal: String(settings.goal || "viral").slice(0, 40),
     clipDuration: Math.min(90, Math.max(10, Number(settings.duration || settings.clipDuration || 30) || 30)),
     requestedClips: Math.min(12, Math.max(1, Number(settings.clips || settings.requestedClips || 3) || 3)),
-    sourceType: "authorized-direct-url",
+    sourceType: String(settings.sourceType || "authorized-direct-url").slice(0, 60),
     sourceUrl: String(sourceUrl || "").slice(0, 1200),
     status: "queued",
     progress: 5,
-    message: "Vídeo importado da fonte autorizada. Preparando os melhores cortes; nada será publicado automaticamente.",
+    message: settings.sourceType === "public-trailer"
+      ? "Trailer recebido pelo servidor. Preparando os melhores cortes; nada será publicado automaticamente."
+      : "Vídeo importado da fonte autorizada. Preparando os melhores cortes; nada será publicado automaticamente.",
     clips: [],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
@@ -6663,6 +6738,27 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { ok: true, ...result });
     } catch (error) {
       return send(res, 400, { error: String(error?.message || "video_bulk_schedule_failed") });
+    }
+  }
+
+  if (url.pathname === "/api/portal/videos/import-trailer" && req.method === "POST") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    try {
+      const body = await readBody(req);
+      const sourceUrl = String(body.url || body.trailerUrl || "").trim();
+      if (!sourceUrl) return send(res, 400, { error: "trailer_url_required" });
+      const job = await importPublicTrailerVideo(client, sourceUrl, body);
+      send(res, 201, { ok: true, job: portalVideoJobView(job) });
+      setTimeout(() => processVideoJob(job.id).catch(() => {}), 300);
+      return;
+    } catch (error) {
+      const code = String(error?.message || "trailer_import_failed");
+      console.error("Trailer import failed", client.id, code);
+      const status = code.includes("too_large") ? 413
+        : code.includes("not_supported") || code.includes("invalid_trailer") || code.includes("https_required") ? 400
+        : 502;
+      return send(res, status, { error: code });
     }
   }
 
