@@ -1395,9 +1395,9 @@ async function searchTrailers(event){
     if(!r.ok)throw new Error(d.message||d.error||"Falha na pesquisa.");
     const rows=Array.isArray(d.results)?d.results:[];
     if(status){
-      const directCount=rows.filter(item=>item.downloadable&&item.downloadUrl).length;
+      const directCount=rows.filter(item=>(item.downloadable&&item.downloadUrl)||item.trailerUrl).length;
       status.textContent=d.configured
-        ?(directCount?"Resultados encontrados · "+directCount+" com envio direto para a biblioteca.":"Resultados encontrados. Quando não houver arquivo direto, use o Cutter para enviar o vídeo por upload ou link direto.")
+        ?(directCount?"Resultados encontrados · "+directCount+" pronto(s) para enviar direto para a biblioteca.":"Resultados encontrados, mas sem vídeo disponível para importação.")
         :"A pesquisa interna não respondeu. Tente novamente.";
       status.className=directCount?"save-status ok":"save-status";
     }
@@ -1411,7 +1411,9 @@ async function searchTrailers(event){
       const badge=item.trailerUrl?(item.official?"TRAILER OFICIAL":"TRAILER ENCONTRADO"):"TRAILER INDISPONÍVEL";
       const cutterAction=item.downloadable&&item.downloadUrl
         ?'<button type="button" class="trailer-import trailer-primary-action" data-import-video="'+escapeSupport(item.downloadUrl)+'" data-import-title="'+escapeSupport(item.title||"")+'">Enviar para biblioteca</button>'
-        :'<div class="trailer-manual-actions"><button type="button" class="trailer-use-title trailer-primary-action" data-use-trailer-title="'+escapeSupport(item.title||"")+'">Usar no Cutter</button><span class="trailer-direct-note">Sem arquivo direto</span></div>';
+        :(item.trailerUrl
+          ?'<button type="button" class="trailer-import trailer-primary-action" data-import-trailer="'+escapeSupport(item.trailerUrl)+'" data-import-title="'+escapeSupport(item.title||"")+'">Enviar para biblioteca</button>'
+          :'<span class="trailer-open unavailable">VÍDEO INDISPONÍVEL</span>');
       return '<article class="trailer-card">'
         +(item.posterUrl?'<img class="trailer-poster" data-trailer-poster="1" data-fallback="'+escapeSupport(item.posterFallbackUrl||"")+'" data-title="'+escapeSupport(item.title||"")+'" loading="lazy" referrerpolicy="no-referrer" src="'+escapeSupport(item.posterUrl)+'" alt="Imagem de '+escapeSupport(item.title)+'">':'<div class="trailer-poster-empty">'+escapeSupport((item.title||"NEXUS").slice(0,18))+'</div>')
         +'<div class="trailer-card-copy"><span>'+escapeSupport(item.type==="series"?"SÉRIE":"FILME")+' · '+escapeSupport(item.year||"—")+'</span>'
@@ -1434,24 +1436,8 @@ async function searchTrailers(event){
         img.replaceWith(empty);
       });
     });
-    root.querySelectorAll("[data-use-trailer-title]").forEach(button=>button.addEventListener("click",()=>{
-      const title=String(button.dataset.useTrailerTitle||"").trim();
-      const input=$("#video-content-title");
-      if(input)input.value=title;
-      videoFolderFilter="default";
-      showView("videos");
-      const folderFilter=$("#video-folder-filter");if(folderFilter)folderFilter.value="default";
-      const status=$("#video-upload-status");
-      if(status){
-        status.textContent=title
-          ?"Título preparado. Para enviar sem baixar no PC, cole abaixo um link HTTPS direto do arquivo de vídeo. O NEXUS baixa no servidor e coloca na biblioteca."
-          :"";
-        status.className="save-status";
-      }
-      setTimeout(()=>$("#video-remote-url")?.focus(),80);
-    }));
     root.querySelectorAll("[data-import-video]").forEach(button=>button.addEventListener("click",()=>importAuthorizedVideo(button)));
-    // Trailer pages are not downloaded server-side. Direct media keeps using the proven /videos/import flow.
+    root.querySelectorAll("[data-import-trailer]").forEach(button=>button.addEventListener("click",()=>importTrailerVideo(button)));
 
   }catch(error){
     if(status){status.textContent=error.message;status.className="save-status error";}
@@ -1529,7 +1515,7 @@ async function importTrailerVideo(button){
   const original=button.textContent;
   const status=$("#trailer-search-status");
   button.disabled=true;button.textContent="Enviando…";
-  if(status){status.textContent="O servidor está recebendo o vídeo. Não feche esta tela…";status.className="save-status";}
+  if(status){status.textContent="Enviando o vídeo selecionado para a biblioteca…";status.className="save-status";}
   const payload={
     url,
     contentTitle:title,
@@ -1558,7 +1544,7 @@ async function importTrailerVideo(button){
       const code=String(d.error||"");
       if(r.status===401)throw new Error("Sua sessão precisa ser renovada. Entre novamente e tente uma vez.");
       if(code.includes("too_large"))throw new Error("O vídeo ultrapassa o limite de 750 MB.");
-      if(code.includes("trailer_download_failed"))throw new Error("A origem recusou o download deste trailer. Tente outro resultado.");
+      if(code.includes("trailer_download_failed"))throw new Error("Não foi possível resolver este trailer agora. Tente outro resultado.");
       throw new Error("Não foi possível trazer este vídeo para o servidor.");
     }
     const importedJob=d.job||null;
@@ -1577,22 +1563,6 @@ async function importTrailerVideo(button){
     button.disabled=false;button.textContent=original;
   }
 }
-
-const videoRemoteImportButton=$("#video-remote-import");
-if(videoRemoteImportButton)videoRemoteImportButton.addEventListener("click",async()=>{
-  const input=$("#video-remote-url");
-  const status=$("#video-upload-status");
-  const url=String(input?.value||"").trim();
-  if(!url){
-    if(status){status.textContent="Cole um link HTTPS direto do arquivo de vídeo.";status.className="save-status error";}
-    input?.focus();
-    return;
-  }
-  videoRemoteImportButton.dataset.importVideo=url;
-  videoRemoteImportButton.dataset.importTitle=$("#video-content-title")?.value?.trim()||"";
-  await importAuthorizedVideo(videoRemoteImportButton,status);
-});
-
 
 $("#video-folder-filter")?.addEventListener("change",event=>{videoFolderFilter=event.target.value||"";renderVideoJobs({jobs:latestVideoJobs,folders:latestVideoFolders});});
 $("#video-create-folder")?.addEventListener("click",createVideoFolder);
