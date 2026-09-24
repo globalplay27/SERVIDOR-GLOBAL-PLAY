@@ -1341,9 +1341,9 @@ async function searchTrailers(event){
       videoFolderFilter="default";
       showView("videos");
       const folderFilter=$("#video-folder-filter");if(folderFilter)folderFilter.value="default";
-      input?.focus();
       const status=$("#video-upload-status");
-      if(status){status.textContent=title?"Título preparado. Agora selecione o arquivo de vídeo acima para o NEXUS criar os cortes. Nenhum vídeo foi importado apenas pelo título.":"";status.className="save-status";}
+      if(status){status.textContent=title?"Título preparado. Escolha o arquivo de vídeo para enviar ao NEXUS e criar os cortes.":"";status.className="save-status";}
+      setTimeout(()=>$("#video-file")?.click(),120);
     }));
     root.querySelectorAll("[data-import-video]").forEach(button=>button.addEventListener("click",()=>importAuthorizedVideo(button)));
 
