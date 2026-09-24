@@ -635,3 +635,52 @@ footer span{color:#a8c8d7!important}
 
 /* ===== Subtitle controls refinement ===== */
 #video-subtitle-color,#video-subtitle-weight,#video-subtitle-size,#video-subtitle-bg{min-height:42px;color:#eaf9ff;background:#061017;border-color:rgba(93,211,255,.18)}
+
+
+/* ===== NEXUS Lead Hunter ===== */
+.lead-hunter-heading{align-items:flex-end}
+.lead-hunter-heading-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:flex-end}
+.lead-hunter-run{min-height:46px;padding:0 20px;border:1px solid rgba(110,224,255,.36);border-radius:12px;background:linear-gradient(135deg,#9ceaff,#48baf1 52%,#2384d1);color:#031018;font-weight:950;letter-spacing:.015em;cursor:pointer;box-shadow:0 10px 28px rgba(35,143,214,.18),inset 0 1px rgba(255,255,255,.5);transition:.18s ease}
+.lead-hunter-run:hover{transform:translateY(-1px);filter:brightness(1.05)}
+.lead-hunter-run:disabled{opacity:.6;cursor:wait;transform:none}
+.lead-hunter-summary{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:11px;margin-bottom:16px}
+.lead-hunter-summary article{position:relative;overflow:hidden;padding:16px;border:1px solid rgba(93,211,255,.11);border-radius:15px;background:linear-gradient(145deg,rgba(8,18,25,.96),rgba(3,9,13,.98))}
+.lead-hunter-summary article:after{content:"";position:absolute;width:80px;height:80px;right:-28px;top:-35px;border-radius:50%;background:rgba(93,211,255,.055);filter:blur(2px)}
+.lead-hunter-summary span,.lead-hunter-summary small{display:block;color:#7894a2;font-size:10px}
+.lead-hunter-summary strong{display:block;margin:7px 0 3px;font-size:22px;color:#f1fbff}
+.lead-hunter-grid{display:grid;grid-template-columns:minmax(360px,.92fr) minmax(480px,1.45fr);gap:16px}
+.lead-hunter-config-card,.lead-hunter-live-card{min-width:0}
+.lead-hunter-chip{display:inline-flex;padding:6px 9px;border-radius:999px;border:1px solid rgba(93,211,255,.22);background:rgba(93,211,255,.07);color:#9de8ff;font-size:8px;font-weight:950;letter-spacing:.09em}
+.lead-hunter-form{display:grid;gap:14px;margin-top:14px}
+.lead-hunter-switches{display:grid;grid-template-columns:1fr;gap:8px}
+.lead-hunter-switches label{display:flex!important;align-items:flex-start!important;gap:10px!important;margin:0!important;padding:11px 12px;border:1px solid rgba(93,211,255,.1);border-radius:11px;background:rgba(5,12,18,.52);cursor:pointer}
+.lead-hunter-switches input{width:17px!important;height:17px!important;min-width:17px;margin-top:1px;accent-color:#5dd3ff}
+.lead-hunter-switches label>span{display:grid;gap:2px}
+.lead-hunter-switches strong{font-size:11px;color:#e9f9ff}
+.lead-hunter-switches small{font-size:9px;color:#7893a0;line-height:1.35}
+.lead-hunter-controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.lead-hunter-controls label,.lead-hunter-wide{display:grid!important;gap:6px!important;margin:0!important}
+.lead-hunter-controls label>span,.lead-hunter-wide>span{font-size:9px;font-weight:850;color:#829ba9;letter-spacing:.04em}
+.lead-hunter-controls select,.lead-hunter-controls input,.lead-hunter-wide textarea{width:100%;border:1px solid rgba(93,211,255,.14);border-radius:10px;background:#041017;color:#eafaff;outline:0;padding:10px 11px;font:inherit;transition:.18s ease}
+.lead-hunter-controls select:focus,.lead-hunter-controls input:focus,.lead-hunter-wide textarea:focus{border-color:rgba(93,211,255,.5);box-shadow:0 0 0 3px rgba(93,211,255,.055)}
+.lead-hunter-wide textarea{resize:vertical;min-height:74px;line-height:1.45}
+.lead-hunter-wide small{font-size:8px;line-height:1.45;color:#657d8a}
+.lead-hunter-form-actions{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.lead-hunter-form-actions .ghost-action{min-width:160px}
+.lead-hunter-leads{display:grid;gap:9px;margin-top:13px}
+.lead-hunter-row{display:grid;grid-template-columns:minmax(180px,1.45fr) 60px 110px minmax(115px,.85fr) auto;gap:11px;align-items:center;padding:12px;border:1px solid rgba(93,211,255,.09);border-radius:12px;background:linear-gradient(145deg,rgba(5,14,19,.94),rgba(2,8,12,.98));transition:.18s ease}
+.lead-hunter-row:hover{border-color:rgba(93,211,255,.2);background:linear-gradient(145deg,rgba(7,20,28,.97),rgba(3,10,14,.99))}
+.lead-hunter-person{min-width:0}
+.lead-hunter-person strong{display:block;font-size:11px;color:#effbff}
+.lead-hunter-person span{display:block;margin-top:4px;color:#829ba9;font-size:9px;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lead-hunter-score{display:flex;align-items:baseline;gap:2px}
+.lead-hunter-score b{font-size:18px;color:#9ceaff}.lead-hunter-score span{font-size:8px;color:#637b89}
+.lead-hunter-row>div:nth-child(3){display:grid;gap:5px;justify-items:start}
+.lead-hunter-row>div:nth-child(3) small,.lead-hunter-origin small{display:block;color:#718994;font-size:8px}
+.lead-hunter-origin strong{display:block;color:#c9dde6;font-size:9px}
+.lead-hunter-actions{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}
+.lead-hunter-actions a,.lead-hunter-actions button{min-height:30px;padding:6px 8px;border-radius:8px;border:1px solid rgba(93,211,255,.15);background:rgba(93,211,255,.05);color:#bfeeff;text-decoration:none;font-size:8px;font-weight:850;cursor:pointer}
+.lead-hunter-actions button{border-color:rgba(255,90,105,.2);background:rgba(255,90,105,.055);color:#ffabb3}
+@media(max-width:1100px){.lead-hunter-grid{grid-template-columns:1fr}.lead-hunter-summary{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:760px){.lead-hunter-heading{align-items:flex-start}.lead-hunter-heading-actions{justify-content:flex-start}.lead-hunter-summary{grid-template-columns:repeat(2,1fr)}.lead-hunter-controls{grid-template-columns:1fr}.lead-hunter-row{grid-template-columns:1fr 62px 100px}.lead-hunter-origin{grid-column:1/3}.lead-hunter-actions{grid-column:3;grid-row:2;align-self:end}.lead-hunter-form-actions{align-items:stretch;flex-direction:column}.lead-hunter-form-actions .ghost-action{width:100%}}
+@media(max-width:520px){.lead-hunter-summary{grid-template-columns:1fr 1fr}.lead-hunter-row{grid-template-columns:1fr 58px}.lead-hunter-row>div:nth-child(3),.lead-hunter-origin,.lead-hunter-actions{grid-column:1/-1}.lead-hunter-actions{justify-content:flex-start}}
