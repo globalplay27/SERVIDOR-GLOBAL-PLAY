@@ -4,6 +4,7 @@ import { getState, putState, deleteState } from "./storage.js";
 import { handlePortalApi } from "./portal.js";
 import { handleMaster } from "./master.js";
 import { runSchedulerTick } from "./scheduler.js";
+import { processDueJobs } from "./executor.js";
 
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
@@ -121,7 +122,11 @@ async function handleOpenAIResponses(request, env) {
 
 export default {
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(runSchedulerTick(env, new Date(event.scheduledTime || Date.now())));
+    const at = new Date(event.scheduledTime || Date.now());
+    ctx.waitUntil((async () => {
+      await runSchedulerTick(env, at);
+      await processDueJobs(env, at);
+    })());
   },
 
   async fetch(request, env) {
