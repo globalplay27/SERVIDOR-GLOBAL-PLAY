@@ -2,7 +2,7 @@ const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 let sessionAuth=null,currentClient=null;
 
 function nextPostTime(times=[]){if(!Array.isArray(times)||!times.length)return"—";const parts=new Intl.DateTimeFormat("pt-BR",{timeZone:"America/Sao_Paulo",hour:"2-digit",minute:"2-digit",hour12:false}).formatToParts(new Date());const now=Number(parts.find(p=>p.type==="hour")?.value||0)*60+Number(parts.find(p=>p.type==="minute")?.value||0);const sorted=times.map(v=>{const[h,m]=String(v).split(":").map(Number);return{v,m:h*60+m}}).filter(x=>Number.isFinite(x.m)).sort((a,b)=>a.m-b.m);return sorted.find(x=>x.m>now)?.v||sorted[0]?.v||"—";}
-function showView(name){$$("[data-view]").forEach(b=>b.classList.toggle("active",b.dataset.view===name));["overview","posts","leads","videos","trailers","posting","support","setup"].forEach(v=>{const el=$("#view-"+v);if(el)el.hidden=v!==name;});if(name==="support")loadSupportTickets();if(name==="posts")loadClientPosts();if(name==="leads")loadClientLeads();if(name==="videos"){ensureBulkVideoScheduler();loadVideoJobs();}if(name==="overview")loadAgentTeam();}
+function showView(name){$$("[data-view]").forEach(b=>b.classList.toggle("active",b.dataset.view===name));["overview","posts","capture","leads","videos","trailers","posting","support","setup"].forEach(v=>{const el=$("#view-"+v);if(el)el.hidden=v!==name;});if(name==="support")loadSupportTickets();if(name==="posts")loadClientPosts();if(name==="capture")loadLeadHunter();if(name==="leads")loadClientLeads();if(name==="videos"){ensureBulkVideoScheduler();loadVideoJobs();}if(name==="overview")loadAgentTeam();}
 function onboardingKeys(){return["github","railway","openai","facebook","instagram","metaApp","creativeProfile","supportRequested"];}
 function setupPercent(){const o=currentClient?.onboarding||{};const keys=onboardingKeys();return Math.round(keys.filter(k=>o[k]).length/keys.length*100);}
 function renderOnboarding(){
@@ -354,7 +354,10 @@ function renderClientLeads(data={}){
   clientLeadData=data||clientLeadData;
   const summary=clientLeadData.summary||{};
   [["#client-leads-total","total"],["#client-leads-hot","hot"],["#client-leads-warm","warm"],["#client-leads-cold","cold"],["#client-leads-human","needsHuman"]].forEach(([selector,key])=>{const el=$(selector);if(el)el.textContent=Number(summary[key]||0);});
-  const source=$("#client-leads-source");if(source)source.textContent=clientLeadData.source==="agent"?"ODIN sincronizado em tempo real":"Aguardando sincronização do agente";
+  const source=$("#client-leads-source");if(source){
+    const src=String(clientLeadData.source||"");
+    source.textContent=src.includes("nexus-hunter")&&src.includes("agent")?"NEXUS Lead Hunter + ODIN sincronizados":src.includes("nexus-hunter")?"NEXUS Lead Hunter + ODIN":src==="agent"?"ODIN sincronizado em tempo real":"Aguardando sincronização do agente";
+  }
   const body=$("#client-leads-body");if(!body)return;
   const leads=Array.isArray(clientLeadData.leads)?clientLeadData.leads:[];
   body.innerHTML=leads.length?leads.map(lead=>{
@@ -380,6 +383,166 @@ async function loadClientLeads(){
     const body=$("#client-leads-body");if(body)body.innerHTML='<tr><td colspan="6">O Odin não respondeu agora. Tente atualizar.</td></tr>';
   }
 }
+
+
+let leadHunterData={config:{},summary:{},leads:[]};
+
+function leadHunterTempMeta(value){
+  const map={hot:["QUENTE","hot"],warm:["MORNO","warm"],cold:["FRIO","cold"]};
+  return map[String(value||"cold")]||map.cold;
+}
+
+function leadHunterSourceLabel(value){
+  const src=String(value||"");
+  if(src==="meta-comment")return"Comentário da conta";
+  if(src==="public-target")return"Alvo público";
+  if(src==="multi-source")return"Múltiplas fontes";
+  return src||"NEXUS";
+}
+
+function renderLeadHunter(data={}){
+  leadHunterData=data&&typeof data==="object"?data:leadHunterData;
+  const config=leadHunterData.config||{},summary=leadHunterData.summary||{},leads=Array.isArray(leadHunterData.leads)?leadHunterData.leads:[];
+
+  const set=(id,value)=>{const el=$(id);if(el)el.textContent=value;};
+  set("#lead-hunter-total",Number(summary.total||0));
+  set("#lead-hunter-hot",Number(summary.hot||0));
+  set("#lead-hunter-analyzed",Number(summary.lastAnalyzed||0));
+  set("#lead-hunter-new",Number(summary.lastNew||0));
+  set("#lead-hunter-last-run",summary.lastRunAt?formatLeadDate(summary.lastRunAt):"—");
+
+  const sourceStatus=$("#lead-hunter-source-status");
+  if(sourceStatus){
+    const parts=[];
+    if(Number(summary.lastSources?.metaComments||0))parts.push(Number(summary.lastSources.metaComments)+" comentários");
+    if(Number(summary.lastSources?.publicTargets||0))parts.push(Number(summary.lastSources.publicTargets)+" alvos públicos");
+    sourceStatus.textContent=parts.length?parts.join(" · "):(summary.lastRunStatus==="failed"?"Última varredura falhou":"Aguardando sinais");
+  }
+
+  const status=$("#lead-hunter-status");
+  if(status){
+    status.textContent=config.enabled?(config.autoRun?"AUTOMAÇÃO ATIVA":"MODO MANUAL"):"DESATIVADO";
+    status.className="save-status "+(config.enabled?"ok":"");
+  }
+
+  const assignCheck=(selector,value)=>{const el=$(selector);if(el)el.checked=Boolean(value);};
+  assignCheck("#lead-hunter-enabled",config.enabled);
+  assignCheck("#lead-hunter-auto",config.autoRun);
+  assignCheck("#lead-hunter-meta",config.metaComments);
+  assignCheck("#lead-hunter-public",config.publicTargets);
+  assignCheck("#lead-hunter-ai",config.aiQualification);
+
+  const assignValue=(selector,value)=>{const el=$(selector);if(el&&document.activeElement!==el)el.value=String(value??"");};
+  assignValue("#lead-hunter-interval",config.scanIntervalMinutes||60);
+  assignValue("#lead-hunter-lookback",config.lookbackDays||7);
+  assignValue("#lead-hunter-limit",config.maxResultsPerRun||100);
+  assignValue("#lead-hunter-min-score",config.minScore||35);
+  assignValue("#lead-hunter-targets",(config.targets||[]).join("\n"));
+  assignValue("#lead-hunter-intents",(config.intentTerms||[]).join(", "));
+  assignValue("#lead-hunter-niche-terms",(config.nicheTerms||[]).join(", "));
+
+  const root=$("#lead-hunter-leads");
+  if(!root)return;
+  if(!leads.length){
+    root.innerHTML='<div class="post-client-empty"><strong>Nenhuma oportunidade ainda</strong><span>O RADAR ainda não encontrou uma interação acima do score mínimo.</span></div>';
+    return;
+  }
+  root.innerHTML=leads.slice(0,30).map(lead=>{
+    const [label,cls]=leadHunterTempMeta(lead.temperature);
+    const username=String(lead.instagramUsername||"").replace(/^@/,"");
+    const profileUrl=username?"https://www.instagram.com/"+encodeURIComponent(username)+"/":"";
+    const sourceUrl=lead.sourceUrl||profileUrl;
+    return '<article class="lead-hunter-row">'
+      +'<div class="lead-hunter-person"><strong>'+(username?"@"+escapeSupport(username):"Perfil sem @")+'</strong><span>'+escapeSupport(lead.lastMessage||lead.intent||"Sinal comercial detectado")+'</span></div>'
+      +'<div class="lead-hunter-score"><b>'+Number(lead.score||0)+'</b><span>/100</span></div>'
+      +'<div><span class="lead-temp '+cls+'">'+label+'</span><small>'+escapeSupport(lead.intent||"interação")+'</small></div>'
+      +'<div class="lead-hunter-origin"><strong>'+escapeSupport(leadHunterSourceLabel(lead.source))+'</strong><small>'+Number(lead.evidenceCount||1)+' evidência(s)</small></div>'
+      +'<div class="lead-hunter-actions">'+(sourceUrl?'<a target="_blank" rel="noopener" href="'+escapeSupport(sourceUrl)+'">Abrir Instagram</a>':"")+'<button type="button" data-lead-hunter-discard="'+escapeSupport(lead.id)+'">Descartar</button></div>'
+      +'</article>';
+  }).join("");
+}
+
+async function loadLeadHunter(){
+  const status=$("#lead-hunter-status");
+  try{
+    if(status){status.textContent="Sincronizando RADAR…";status.className="save-status";}
+    const r=await fetch("/api/portal/lead-hunter",{credentials:"same-origin"});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(d.error||"Não foi possível carregar a captação.");
+    renderLeadHunter(d);
+  }catch(error){
+    if(status){status.textContent=error.message;status.className="save-status error";}
+    const root=$("#lead-hunter-leads");if(root)root.innerHTML='<div class="post-client-empty"><strong>Captação indisponível</strong><span>'+escapeSupport(error.message)+'</span></div>';
+  }
+}
+
+async function saveLeadHunterConfig(event){
+  event?.preventDefault?.();
+  const status=$("#lead-hunter-save-status");
+  const button=$("#lead-hunter-form")?.querySelector('button[type="submit"]');
+  if(button)button.disabled=true;
+  if(status){status.textContent="Salvando…";status.className="save-status";}
+  const splitTerms=value=>String(value||"").split(/\r?\n|,/).map(x=>x.trim()).filter(Boolean);
+  const payload={
+    enabled:Boolean($("#lead-hunter-enabled")?.checked),
+    autoRun:Boolean($("#lead-hunter-auto")?.checked),
+    metaComments:Boolean($("#lead-hunter-meta")?.checked),
+    publicTargets:Boolean($("#lead-hunter-public")?.checked),
+    aiQualification:Boolean($("#lead-hunter-ai")?.checked),
+    scanIntervalMinutes:Number($("#lead-hunter-interval")?.value||60),
+    lookbackDays:Number($("#lead-hunter-lookback")?.value||7),
+    maxResultsPerRun:Number($("#lead-hunter-limit")?.value||100),
+    minScore:Number($("#lead-hunter-min-score")?.value||35),
+    targets:String($("#lead-hunter-targets")?.value||"").split(/\r?\n/).map(x=>x.trim()).filter(Boolean),
+    intentTerms:splitTerms($("#lead-hunter-intents")?.value),
+    nicheTerms:splitTerms($("#lead-hunter-niche-terms")?.value)
+  };
+  try{
+    const r=await fetch("/api/portal/lead-hunter/config",{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify(payload)});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(d.error||"Não foi possível salvar.");
+    leadHunterData.config=d.config||leadHunterData.config;
+    leadHunterData.summary=d.summary||leadHunterData.summary;
+    renderLeadHunter(leadHunterData);
+    if(status){status.textContent="Configuração salva.";status.className="save-status ok";}
+  }catch(error){
+    if(status){status.textContent=error.message;status.className="save-status error";}
+  }finally{if(button)button.disabled=false;}
+}
+
+async function runLeadHunterNow(){
+  const button=$("#lead-hunter-run"),status=$("#lead-hunter-status");
+  if(button){button.disabled=true;button.textContent="RADAR captando…";}
+  if(status){status.textContent="RADAR coletando · ODIN qualificando…";status.className="save-status";}
+  try{
+    const r=await fetch("/api/portal/lead-hunter/run",{method:"POST",credentials:"same-origin"});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(d.message||d.error||"Falha na captação.");
+    renderLeadHunter(d.view||d);
+    await loadClientLeads();
+    await loadAgentTeam();
+    const run=d.run||d.view?.run;
+    if(status){status.textContent=run?"Concluído · "+Number(run.newLeads||0)+" novo(s) lead(s)":"Varredura concluída.";status.className="save-status ok";}
+  }catch(error){
+    if(status){status.textContent=error.message;status.className="save-status error";}
+  }finally{
+    if(button){button.disabled=false;button.textContent="Captar agora";}
+  }
+}
+
+async function discardLeadHunterLead(id,button){
+  if(!id)return;
+  button.disabled=true;
+  try{
+    const r=await fetch("/api/portal/lead-hunter/leads/"+encodeURIComponent(id)+"/discard",{method:"POST",credentials:"same-origin"});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(d.error||"Não foi possível descartar.");
+    renderLeadHunter(d.view||leadHunterData);
+    await loadClientLeads();
+  }catch(error){alert(error.message);}
+  finally{button.disabled=false;}
+}
+
 
 let clientPosts=[];
 function saoPauloDay(value=new Date()){
@@ -953,6 +1116,7 @@ document.addEventListener("change",async event=>{
   }finally{input.disabled=false;}
 });
 document.addEventListener("click",event=>{
+  const hunterDiscard=event.target.closest("[data-lead-hunter-discard]");if(hunterDiscard){discardLeadHunterLead(hunterDiscard.dataset.leadHunterDiscard,hunterDiscard);return;}
   const renameJob=event.target.closest("[data-video-rename-job]");if(renameJob){renameVideoJob(renameJob.dataset.videoRenameJob);return;}
   const deleteJob=event.target.closest("[data-video-delete-job]");if(deleteJob){deleteVideoJob(deleteJob.dataset.videoDeleteJob);return;}
   const decision=event.target.closest("[data-post-decision]");
@@ -979,6 +1143,8 @@ document.addEventListener("click",event=>{
 $$("[data-view]").forEach(b=>b.addEventListener("click",()=>showView(b.dataset.view)));
 const refreshClientPosts=$("#refresh-client-posts");if(refreshClientPosts)refreshClientPosts.addEventListener("click",loadClientPosts);
 const refreshClientLeads=$("#refresh-client-leads");if(refreshClientLeads)refreshClientLeads.addEventListener("click",loadClientLeads);
+const leadHunterForm=$("#lead-hunter-form");if(leadHunterForm)leadHunterForm.addEventListener("submit",saveLeadHunterConfig);
+const leadHunterRun=$("#lead-hunter-run");if(leadHunterRun)leadHunterRun.addEventListener("click",runLeadHunterNow);
 const refreshAgentTeam=$("#refresh-agent-team");if(refreshAgentTeam)refreshAgentTeam.addEventListener("click",loadAgentTeam);
 const trailerSearchForm=$("#trailer-search-form");
 if(trailerSearchForm)trailerSearchForm.addEventListener("submit",searchTrailers);
