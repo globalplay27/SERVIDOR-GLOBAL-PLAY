@@ -3770,6 +3770,106 @@ function normalizePublicTrailerUrl(value) {
   return parsed.toString();
 }
 
+function youtubeVideoIdFromUrl(value) {
+  try {
+    const parsed = new URL(String(value || "").trim());
+    const host = parsed.hostname.toLowerCase();
+    if (host === "youtu.be") return parsed.pathname.split("/").filter(Boolean)[0] || "";
+    if (host === "youtube.com" || host.endsWith(".youtube.com")) {
+      if (parsed.pathname === "/watch") return parsed.searchParams.get("v") || "";
+      const parts = parsed.pathname.split("/").filter(Boolean);
+      if (["shorts","embed","live"].includes(parts[0])) return parts[1] || "";
+    }
+  } catch {}
+  return "";
+}
+
+async function importTrailerViaInvidious(sourceUrl, clientDir, jobId, maxBytes) {
+  const videoId = youtubeVideoIdFromUrl(sourceUrl);
+  if (!videoId) throw new Error("trailer_video_id_missing");
+
+  // Public instances listed by the official Invidious project. We request
+  // local=1 so the media is proxied by the instance instead of asking the
+  // NEXUS server to negotiate directly with YouTube.
+  const instances = [
+    "inv.nadeko.net",
+    "invidious.nerdvpn.de",
+    "yt.chocolatemoo53.com",
+    "invidious.tiekoetter.com"
+  ];
+
+  let lastError = "";
+  for (const host of instances) {
+    const base = "https://" + host;
+    try {
+      const api = await fetch(base + "/api/v1/videos/" + encodeURIComponent(videoId) + "?local=1&region=BR", {
+        headers: { accept: "application/json", "user-agent": "NEXUS-AI-Trailer-Resolver/1.0" },
+        signal: AbortSignal.timeout(8000)
+      });
+      if (!api.ok) {
+        lastError = "invidious_api_" + api.status;
+        continue;
+      }
+
+      const payload = await api.json().catch(() => ({}));
+      const streams = (Array.isArray(payload?.formatStreams) ? payload.formatStreams : [])
+        .filter(item => item?.url)
+        .map(item => ({
+          ...item,
+          score: Number(String(item.qualityLabel || item.quality || "").match(/\d+/)?.[0] || 0)
+        }))
+        .sort((a,b) => {
+          const aMp4 = String(a.container || "").toLowerCase() === "mp4" ? 1 : 0;
+          const bMp4 = String(b.container || "").toLowerCase() === "mp4" ? 1 : 0;
+          return (bMp4 - aMp4) || (Math.min(b.score,1080) - Math.min(a.score,1080));
+        });
+
+      for (const stream of streams.slice(0,4)) {
+        try {
+          const mediaUrl = new URL(String(stream.url), base);
+          // local=1 should keep playback on the selected public Invidious
+          // instance. Reject unexpected third-party hosts.
+          if (mediaUrl.hostname.toLowerCase() !== host) continue;
+
+          const response = await fetch(mediaUrl, {
+            headers: {
+              accept: "video/*,*/*;q=0.8",
+              referer: base + "/watch?v=" + encodeURIComponent(videoId),
+              "user-agent": "Mozilla/5.0 NEXUS-AI/1.0"
+            },
+            signal: AbortSignal.timeout(120000)
+          });
+          if (!response.ok || !response.body) continue;
+
+          const declaredLength = Number(response.headers.get("content-length") || 0);
+          if (declaredLength > maxBytes) throw new Error("video_too_large");
+
+          const ext = String(stream.container || "").toLowerCase() === "webm" ? ".webm" : ".mp4";
+          const destination = path.join(clientDir, jobId + ext);
+          const readable = Readable.fromWeb(response.body);
+          let received = 0;
+          readable.on("data", chunk => {
+            received += chunk.length;
+            if (received > maxBytes) readable.destroy(new Error("video_too_large"));
+          });
+          await pipeline(readable, fs.createWriteStream(destination));
+          if (!received) {
+            try { fs.unlinkSync(destination); } catch {}
+            continue;
+          }
+          return { destination, size: received, source: base };
+        } catch (error) {
+          lastError = String(error?.message || error);
+        }
+      }
+    } catch (error) {
+      lastError = String(error?.message || error);
+    }
+  }
+
+  throw new Error("invidious_resolve_failed:" + lastError);
+}
+
 async function importPublicTrailerVideo(client, sourceUrl, settings = {}) {
   const normalizedUrl = normalizePublicTrailerUrl(sourceUrl);
   const jobId = "vid_" + crypto.randomBytes(10).toString("hex");
@@ -3786,12 +3886,30 @@ async function importPublicTrailerVideo(client, sourceUrl, settings = {}) {
     }
   };
 
+  // First try a proxied public-video route so the selected search result is
+  // carried internally all the way into the NEXUS library. No copy/paste UI.
+  try {
+    const proxied = await importTrailerViaInvidious(normalizedUrl, clientDir, jobId, maxBytes);
+    const title = String(settings.contentTitle || "").trim().slice(0, 100);
+    const ext = path.extname(proxied.destination).toLowerCase() || ".mp4";
+    const safeStem = slug(title || "trailer") || "trailer";
+    const safeBase = safeStem.slice(0, 140) + ext;
+    return createImportedVideoJob(client, proxied.destination, safeBase, proxied.size, {
+      ...settings,
+      sourceType: "public-trailer"
+    }, normalizedUrl);
+  } catch (error) {
+    clearAttemptFiles();
+    console.warn("Trailer proxy resolver failed", client.id, String(error?.message || error).slice(0,420));
+  }
+
+  // Keep the native downloader as a secondary fallback.
   const commonArgs = [
     "--no-playlist",
     "--no-warnings",
     "--socket-timeout", "30",
-    "--retries", "3",
-    "--fragment-retries", "3",
+    "--retries", "2",
+    "--fragment-retries", "2",
     "--concurrent-fragments", "4",
     "--max-filesize", "750M",
     "--merge-output-format", "mp4",
@@ -3799,14 +3917,6 @@ async function importPublicTrailerVideo(client, sourceUrl, settings = {}) {
   ];
 
   const attempts = [
-    {
-      name: "default",
-      args: [
-        ...commonArgs,
-        "-f", "bv*[height<=1080]+ba/b[height<=1080]/b",
-        normalizedUrl
-      ]
-    },
     {
       name: "web-embedded",
       args: [
@@ -3818,20 +3928,9 @@ async function importPublicTrailerVideo(client, sourceUrl, settings = {}) {
       ]
     },
     {
-      name: "web-safari-hls",
+      name: "default",
       args: [
         ...commonArgs,
-        "--extractor-args", "youtube:player_client=web_safari",
-        "--referer", "https://www.youtube.com/",
-        "-f", "b[protocol*=m3u8][height<=1080]/bv*[height<=1080]+ba/b[height<=1080]/b",
-        normalizedUrl
-      ]
-    },
-    {
-      name: "android-vr",
-      args: [
-        ...commonArgs,
-        "--extractor-args", "youtube:player_client=android_vr",
         "-f", "bv*[height<=1080]+ba/b[height<=1080]/b",
         normalizedUrl
       ]
