@@ -1422,19 +1422,35 @@ async function runRadarAgent(client, options = {}) {
     if (!formatMap.has(key)) formatMap.set(key, []);
     formatMap.get(key).push(item);
   }
-  const formatStats = [...formatMap.entries()].map(([mediaType, items]) => ({
-    mediaType,
-    posts: items.length,
-    medianReach: numericMedian(items.map(item => Number(item.reach || 0)).filter(Boolean)),
-    medianViews: numericMedian(items.map(item => Number(item.views || 0)).filter(Boolean)),
-    medianShares: numericMedian(items.map(item => Number(item.shares || 0))),
-    medianSaved: numericMedian(items.map(item => Number(item.saved || 0)))
-  })).sort((a,b) => (b.medianReach || b.medianViews) - (a.medianReach || a.medianViews));
+  const reachVelocity = item => {
+    const reach = Number(item?.reach || 0);
+    const timestamp = item?.timestamp ? new Date(item.timestamp).getTime() : NaN;
+    if (!(reach > 0) || !Number.isFinite(timestamp)) return null;
+    const ageHours = Math.max(0, (Date.now() - timestamp) / 3600000);
+    if (ageHours < 3) return null;
+    const comparisonHours = Math.max(3, Math.min(ageHours, 72));
+    return reach / comparisonHours;
+  };
 
-  const half = Math.min(8, Math.floor(sortedMeasured.length / 2));
-  const recentReach = half ? numericMedian(sortedMeasured.slice(0, half).map(item => Number(item.reach || 0)).filter(Boolean)) : 0;
-  const priorReach = half ? numericMedian(sortedMeasured.slice(half, half * 2).map(item => Number(item.reach || 0)).filter(Boolean)) : 0;
-  const reachTrendRatio = priorReach > 0 ? recentReach / priorReach : null;
+  const formatStats = [...formatMap.entries()].map(([mediaType, items]) => {
+    const velocities = items.map(reachVelocity).filter(value => Number.isFinite(value));
+    return {
+      mediaType,
+      posts: items.length,
+      measuredVelocityPosts: velocities.length,
+      medianReach: numericMedian(items.map(item => Number(item.reach || 0)).filter(Boolean)),
+      medianViews: numericMedian(items.map(item => Number(item.views || 0)).filter(Boolean)),
+      medianReachVelocity: numericMedian(velocities),
+      medianShares: numericMedian(items.map(item => Number(item.shares || 0))),
+      medianSaved: numericMedian(items.map(item => Number(item.saved || 0)))
+    };
+  }).sort((a,b) => (b.medianReachVelocity || b.medianReach || b.medianViews) - (a.medianReachVelocity || a.medianReach || a.medianViews));
+
+  const trendEligible = sortedMeasured.filter(item => Number.isFinite(reachVelocity(item)));
+  const half = Math.min(8, Math.floor(trendEligible.length / 2));
+  const recentReachVelocity = half ? numericMedian(trendEligible.slice(0, half).map(reachVelocity).filter(value => Number.isFinite(value))) : 0;
+  const priorReachVelocity = half ? numericMedian(trendEligible.slice(half, half * 2).map(reachVelocity).filter(value => Number.isFinite(value))) : 0;
+  const reachTrendRatio = half >= 3 && priorReachVelocity > 0 ? recentReachVelocity / priorReachVelocity : null;
   const medianReachValue = numericMedian(reachValues);
   const medianViewsValue = numericMedian(viewValues);
   const medianEngagementRate = numericMedian(engagementRates);
@@ -1451,11 +1467,15 @@ async function runRadarAgent(client, options = {}) {
       ? "A conta está conectada, mas o acesso a Insights não retornou métricas completas. Verificar permissão instagram_business_manage_insights/instagram_manage_insights na próxima reconexão."
       : "Ainda há poucos dados mensuráveis de alcance/views; continuar coletando antes de concluir a causa da baixa entrega.");
   } else {
-    if (reachTrendRatio !== null && reachTrendRatio < 0.8) {
-      diagnosis.push("O alcance mediano das publicações mais recentes caiu em relação ao bloco anterior; o problema está concentrado no conteúdo recente, não apenas no tamanho da conta.");
+    if (reachTrendRatio !== null && reachTrendRatio < 0.7) {
+      diagnosis.push("Mesmo ajustando pelo tempo de vida de cada post, a velocidade de alcance recente está abaixo do bloco anterior; testar novos ganchos e reduzir repetição visual é prioridade.");
     }
-    if (formatStats.length >= 2 && Number(formatStats[0].medianReach || 0) > Number(formatStats[1].medianReach || 0) * 1.3) {
-      diagnosis.push("O formato " + formatStats[0].mediaType + " está alcançando mais pessoas que " + formatStats[1].mediaType + "; priorizar o mecanismo do formato vencedor nos próximos testes.");
+    if (
+      formatStats.length >= 2
+      && Number(formatStats[0].medianReachVelocity || 0) > 0
+      && Number(formatStats[0].medianReachVelocity || 0) > Number(formatStats[1].medianReachVelocity || 0) * 1.3
+    ) {
+      diagnosis.push("Ajustado pela idade dos posts, o formato " + formatStats[0].mediaType + " está distribuindo mais rápido que " + formatStats[1].mediaType + "; priorizar o mecanismo do formato vencedor nos próximos testes.");
     }
     if (Number(bestRecent?.outlierMultiple || 0) >= 2) {
       diagnosis.push("Existe um conteúdo claramente acima da mediana; o próximo ciclo deve reaproveitar o gancho/tema/formato desse outlier sem copiar o criativo.");
@@ -1495,6 +1515,8 @@ async function runRadarAgent(client, options = {}) {
       medianReachRate: medianReachRate === null ? null : Math.round(medianReachRate * 10000) / 100,
       medianEngagementRate: Math.round(medianEngagementRate * 10000) / 100,
       medianAmplificationRate: Math.round(medianAmplificationRate * 10000) / 100,
+      recentMedianReachVelocity: Math.round(recentReachVelocity * 100) / 100,
+      priorMedianReachVelocity: Math.round(priorReachVelocity * 100) / 100,
       reachTrendRatio: reachTrendRatio === null ? null : Math.round(reachTrendRatio * 100) / 100
     },
     formatStats,
@@ -1518,6 +1540,8 @@ async function runRadarAgent(client, options = {}) {
     followersCount,
     metrics: output.metrics,
     bestFormat: formatStats[0]?.mediaType || "",
+    formatStats: formatStats.slice(0, 4),
+    topOutlier: output.outliers?.[0] || null,
     diagnosis
   }));
 
@@ -1564,12 +1588,15 @@ async function runStrategistAgent(client, context = {}, options = {}) {
     profile.eveningTheme || "Conversão e chamada para ação"
   ];
   const questionLead = (leadData.leads || []).find(lead => classifyInteraction(lead.message || lead.lastMessage || lead.interest || "") === "QUESTION");
-  const format = suggestFormat({
-    goal: profile.contentStrategy,
-    topic: themes[0],
-    leadQuestion: questionLead?.message || questionLead?.lastMessage || "",
-    hasLongVideo: false
-  });
+  const observedBestFormat = String(radar?.formatStats?.[0]?.mediaType || "").toUpperCase();
+  const format = observedBestFormat === "VIDEO"
+    ? { format: "reel", skill: "ig-reel", reason: "RADAR: vídeo com maior velocidade de alcance ajustada pela idade do post." }
+    : suggestFormat({
+        goal: profile.contentStrategy,
+        topic: themes[0],
+        leadQuestion: questionLead?.message || questionLead?.lastMessage || "",
+        hasLongVideo: false
+      });
   const plan = {
     niche: client.niche || "Outro",
     audience: profile.targetAudience,
@@ -1581,6 +1608,9 @@ async function runStrategistAgent(client, context = {}, options = {}) {
     hashtags: profile.hashtags,
     avoidTopics: profile.avoidTopics,
     radarTerms: Array.isArray(radar.topTerms) ? radar.topTerms.slice(0, 5) : [],
+    radarDiagnosis: Array.isArray(radar.diagnosis) ? radar.diagnosis.slice(0, 5) : [],
+    radarMetrics: radar.metrics || {},
+    bestObservedFormat: observedBestFormat || "",
     feedback: auditor.feedback || "",
     recommendedFormat: format,
     leadQuestion: questionLead?.message || questionLead?.lastMessage || "",
