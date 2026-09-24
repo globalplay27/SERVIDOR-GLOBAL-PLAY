@@ -30,11 +30,5 @@
       "database_id": "3d440c4a-8925-4526-8d29-03f9eb227d60",
       "migrations_dir": "migrations"
     }
-  ],
-  "r2_buckets": [
-    {
-      "binding": "MEDIA",
-      "bucket_name": "servidor-nexus-media"
-    }
   ]
 }
