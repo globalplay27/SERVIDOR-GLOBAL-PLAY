@@ -1298,8 +1298,11 @@ async function searchTrailers(event){
     if(!r.ok)throw new Error(d.message||d.error||"Falha na pesquisa.");
     const rows=Array.isArray(d.results)?d.results:[];
     if(status){
-      status.textContent=d.configured?"Resultados encontrados.":"Busca de catálogo avançada ainda precisa do TMDB_API_TOKEN; abrindo busca oficial no YouTube continua disponível.";
-      status.className=d.configured?"save-status ok":"save-status";
+      const directCount=rows.filter(item=>item.downloadable&&item.downloadUrl).length;
+      status.textContent=d.configured
+        ?(directCount?"Resultados encontrados · "+directCount+" com envio direto ao NEXUS.":"Resultados encontrados. As fontes exibidas não oferecem arquivo direto para importação no servidor.")
+        :"Busca limitada: nenhuma fonte direta configurada.";
+      status.className=directCount?"save-status ok":"save-status";
     }
     if(!rows.length){
       const fallback=d.youtubeSearchUrl||("https://www.youtube.com/results?search_query="+encodeURIComponent(query+" trailer oficial"));
@@ -1311,7 +1314,7 @@ async function searchTrailers(event){
       const badge=item.trailerUrl?(item.official?"TRAILER OFICIAL":"TRAILER ENCONTRADO"):"BUSCAR NO YOUTUBE";
       const cutterAction=item.downloadable&&item.downloadUrl
         ?'<button type="button" class="trailer-import trailer-primary-action" data-import-video="'+escapeSupport(item.downloadUrl)+'" data-import-title="'+escapeSupport(item.title||"")+'">Fazer cortes</button>'
-        :'<button type="button" class="trailer-use-title trailer-primary-action" data-use-trailer-title="'+escapeSupport(item.title||"")+'">Enviar vídeo</button>';
+        :'<button type="button" class="trailer-import unavailable" disabled title="A fonte encontrada não fornece um arquivo direto que o NEXUS possa importar no servidor">Sem fonte direta</button>';
       return '<article class="trailer-card">'
         +(item.posterUrl?'<img class="trailer-poster" data-trailer-poster="1" data-fallback="'+escapeSupport(item.posterFallbackUrl||"")+'" data-title="'+escapeSupport(item.title||"")+'" loading="lazy" referrerpolicy="no-referrer" src="'+escapeSupport(item.posterUrl)+'" alt="Imagem de '+escapeSupport(item.title)+'">':'<div class="trailer-poster-empty">'+escapeSupport((item.title||"NEXUS").slice(0,18))+'</div>')
         +'<div class="trailer-card-copy"><span>'+escapeSupport(item.type==="series"?"SÉRIE":"FILME")+' · '+escapeSupport(item.year||"—")+'</span>'
@@ -1334,17 +1337,6 @@ async function searchTrailers(event){
         img.replaceWith(empty);
       });
     });
-    root.querySelectorAll("[data-use-trailer-title]").forEach(button=>button.addEventListener("click",()=>{
-      const title=String(button.dataset.useTrailerTitle||"").trim();
-      const input=$("#video-content-title");
-      if(input)input.value=title;
-      videoFolderFilter="default";
-      showView("videos");
-      const folderFilter=$("#video-folder-filter");if(folderFilter)folderFilter.value="default";
-      const status=$("#video-upload-status");
-      if(status){status.textContent=title?"Título preparado. Escolha o arquivo de vídeo para enviar ao NEXUS e criar os cortes.":"";status.className="save-status";}
-      setTimeout(()=>$("#video-file")?.click(),120);
-    }));
     root.querySelectorAll("[data-import-video]").forEach(button=>button.addEventListener("click",()=>importAuthorizedVideo(button)));
 
   }catch(error){
