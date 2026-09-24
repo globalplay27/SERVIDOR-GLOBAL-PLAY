@@ -1320,7 +1320,12 @@ async function runRadarAgent(client, options = {}) {
   const profileScore = profileAudit({ ...(client.agentProfile || {}), niche: client.niche || client.agentProfile?.niche || "" });
   const bestRecent = performance.top?.[0] || null;
 
-  const numericMedian = values => median(values.map(Number).filter(Number.isFinite).filter(value => value >= 0));
+  const numericMedian = values => {
+    const nums = values.map(Number).filter(Number.isFinite).filter(value => value >= 0).sort((a,b) => a-b);
+    if (!nums.length) return 0;
+    const middle = Math.floor(nums.length / 2);
+    return nums.length % 2 ? nums[middle] : (nums[middle - 1] + nums[middle]) / 2;
+  };
   const measured = (snapshot.items || []).filter(item => Number(item.reach || 0) > 0 || Number(item.views || 0) > 0);
   const sortedMeasured = [...measured].sort((a,b) => String(b.timestamp || "").localeCompare(String(a.timestamp || "")));
   const reachValues = measured.map(item => Number(item.reach || 0)).filter(value => value > 0);
