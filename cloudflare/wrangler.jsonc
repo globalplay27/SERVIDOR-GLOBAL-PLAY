@@ -13,7 +13,8 @@
   "vars": {
     "APP_NAME": "Servidor Nexus",
     "RAGNAR_CLIENT_ID": "ragnar-one",
-    "CLOUDFLARE_AUTOMATION_ACTIVE": "false"
+    "CLOUDFLARE_AUTOMATION_ACTIVE": "false",
+    "RAILWAY_VIDEO_BRIDGE_URL": "https://servidor-global-play-production.up.railway.app"
   },
   "assets": {
     "directory": "../public",
