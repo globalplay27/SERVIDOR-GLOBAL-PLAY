@@ -293,8 +293,8 @@ function dailyTokenLimitForClient(clientOrId) {
     : clientOrId;
   const clientLimit = Number(client?.aiDailyTokenLimit || 0);
   if (Number.isFinite(clientLimit) && clientLimit > 0) return Math.round(clientLimit);
-  const envLimit = Number(process.env.NEXUS_DEFAULT_DAILY_TOKEN_LIMIT || 100000);
-  return Number.isFinite(envLimit) && envLimit > 0 ? Math.round(envLimit) : 100000;
+  const envLimit = Number(process.env.NEXUS_DEFAULT_DAILY_TOKEN_LIMIT || 1000000);
+  return Number.isFinite(envLimit) && envLimit > 0 ? Math.round(envLimit) : 1000000;
 }
 
 function clientTokenUsageSummary(clientOrId) {
@@ -2514,15 +2514,25 @@ function videoOpenAIKeyForClient(clientId) {
 }
 
 function clientVideoBridge(clientId) {
-  if (!["ragnar-one","globalplay-streaming"].includes(clientId)) return null;
-  const client = loadClients().find(item => item.id === clientId);
-  const base = String(client?.agentApiUrl || "").replace(/\/+$/, "");
-  const token = agentTokenForClient(clientId);
-  return base && token ? { base, token } : null;
+  const clients = loadClients();
+  if (clientId === "ragnar-one") {
+    const ragnar = clients.find(item => item.id === "ragnar-one");
+    const base = String(ragnar?.agentApiUrl || "").replace(/\/+$/, "");
+    const token = agentTokenForClient("ragnar-one");
+    return base && token ? { base, token, providerClientId: "ragnar-one" } : null;
+  }
+
+  // Global Play and managed customer portals share Claire's OpenAI bridge.
+  // This keeps customer search/cutting functional without requiring a
+  // separate OpenAI key per managed client.
+  const claire = clients.find(item => item.id === "globalplay-streaming");
+  const base = String(claire?.agentApiUrl || "").replace(/\/+$/, "");
+  const token = agentTokenForClient("globalplay-streaming");
+  return base && token ? { base, token, providerClientId: "globalplay-streaming" } : null;
 }
 
-async function openAIResponsesForClient(clientId, body, timeoutMs = 120000) {
-  assertClientTokenBudget(clientId);
+async function openAIResponsesForClient(clientId, body, timeoutMs = 120000, options = {}) {
+  if (options.enforceBudget !== false) assertClientTokenBudget(clientId);
   const apiKey = videoOpenAIKeyForClient(clientId);
   if (apiKey) {
     const response = await fetch("https://api.openai.com/v1/responses", {
@@ -3451,7 +3461,7 @@ async function searchOfficialTrailers(query, type = "movie", clientId = "") {
   if (!q) return { configured: false, source: "none", results: [] };
   const token = String(process.env.TMDB_API_TOKEN || "").trim();
   const apiKey = String(process.env.TMDB_API_KEY || "").trim();
-  const youtubeSearchUrl = "https://www.youtube.com/results?search_query=" + encodeURIComponent(q + " trailer oficial");
+  const youtubeSearchUrl = "";
 
   const youtubeVideoId = value => {
     const raw = String(value || "").trim();
@@ -3574,7 +3584,7 @@ async function searchOfficialTrailers(query, type = "movie", clientId = "") {
       instructions:"Você localiza trailers oficiais de filmes e séries. Priorize links do YouTube publicados pelo estúdio, distribuidora, streaming oficial ou canal oficial da obra. Nunca invente URL. Se houver uma fonte oficial que ofereça explicitamente um ARQUIVO DIRETO de vídeo para download/reutilização, você pode retornar downloadUrl e downloadAllowed=true; nunca use isso para YouTube, Netflix, Prime Video, Disney+, Globoplay ou qualquer conteúdo protegido/DRM. Se não puder confirmar, deixe downloadUrl vazio e downloadAllowed=false. Retorne somente JSON válido.",
       input:"Pesquise " + (kind === "tv" ? "a série" : "o filme") + " chamado \"" + q + "\". Retorne até 6 resultados compatíveis em JSON no formato {\"results\":[{\"title\":\"...\",\"year\":\"2026\",\"overview\":\"sinopse curta\",\"trailerUrl\":\"https://www.youtube.com/watch?v=...\",\"channel\":\"canal\",\"official\":true,\"downloadUrl\":\"\",\"downloadAllowed\":false}]}.",
       max_output_tokens:1800
-    }, 90000);
+    }, 90000, { enforceBudget: false });
     const output = responseOutputText(payload);
     const a = output.indexOf("{"), b = output.lastIndexOf("}");
     if (a >= 0 && b > a) {
@@ -3582,7 +3592,7 @@ async function searchOfficialTrailers(query, type = "movie", clientId = "") {
       const results = (Array.isArray(parsed.results) ? parsed.results : []).slice(0,6).map(item => normalizeResult({
         ...item,
         type: kind === "tv" ? "series" : "movie",
-        youtubeSearchUrl:"https://www.youtube.com/results?search_query=" + encodeURIComponent(String(item.title || q) + " " + String(item.year || "") + " trailer oficial")
+        youtubeSearchUrl:""
       }));
       return { configured:true, source:"agent-openai-web-search", results, youtubeSearchUrl };
     }
@@ -3590,7 +3600,7 @@ async function searchOfficialTrailers(query, type = "movie", clientId = "") {
     console.warn("Trailer AI search unavailable for " + clientId + ":", String(error?.message || error));
   }
 
-  return { configured:false, source:"youtube-search", results:[], youtubeSearchUrl };
+  return { configured:false, source:"catalog-unavailable", results:[], youtubeSearchUrl:"" };
 }
 
 function startPendingVideoJobs() {
