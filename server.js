@@ -1185,21 +1185,77 @@ async function fetchInstagramMediaSnapshot(clientId) {
   const connection = directConnection(clientId, "meta");
   const accessToken = decryptSecret(connection?.accessToken || "");
   const igUserId = String(connection?.igUserId || "").trim();
-  if (!accessToken || !igUserId) return { source: "local", items: [], error: "instagram_not_connected" };
+  if (!accessToken || !igUserId) return { source: "local", items: [], error: "instagram_not_connected", followersCount: 0, insightErrors: [] };
+
+  const authHeaders = {
+    authorization: "Bearer " + accessToken,
+    accept: "application/json",
+    "user-agent": "NEXUS-AI-AgentCore/2.0"
+  };
+
+  const metricValue = (payload, metric) => {
+    const row = Array.isArray(payload?.data) ? payload.data.find(item => String(item?.name || "") === metric) : null;
+    const raw = row?.values?.[0]?.value ?? row?.total_value?.value;
+    const number = Number(raw);
+    return Number.isFinite(number) ? number : null;
+  };
+
+  async function fetchInsightsForMedia(item) {
+    const attempts = [
+      "reach,views,shares,total_interactions,saved",
+      "reach,views,shares,total_interactions",
+      "reach,views",
+      "reach"
+    ];
+    let lastError = "";
+    for (const metrics of attempts) {
+      try {
+        const endpoint = "https://graph.instagram.com/" + encodeURIComponent(String(item.id))
+          + "/insights?metric=" + encodeURIComponent(metrics);
+        const response = await fetch(endpoint, {
+          headers: authHeaders,
+          signal: AbortSignal.timeout(9000)
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          lastError = String(payload?.error?.message || "instagram_insights_" + response.status);
+          continue;
+        }
+        return {
+          reach: metricValue(payload, "reach"),
+          views: metricValue(payload, "views"),
+          saved: metricValue(payload, "saved"),
+          shares: metricValue(payload, "shares"),
+          totalInteractions: metricValue(payload, "total_interactions"),
+          insightMetrics: metrics.split(","),
+          insightError: ""
+        };
+      } catch (error) {
+        lastError = String(error?.message || error);
+      }
+    }
+    return {
+      reach: null,
+      views: null,
+      saved: null,
+      shares: null,
+      totalInteractions: null,
+      insightMetrics: [],
+      insightError: lastError.slice(0, 240)
+    };
+  }
+
   try {
     const fields = "id,caption,timestamp,media_type,like_count,comments_count,permalink";
     const endpoint = "https://graph.instagram.com/" + encodeURIComponent(igUserId) + "/media?fields=" + encodeURIComponent(fields) + "&limit=25";
     const response = await fetch(endpoint, {
-      headers: {
-        authorization: "Bearer " + accessToken,
-        accept: "application/json",
-        "user-agent": "NEXUS-AI-AgentCore/1.0"
-      },
+      headers: authHeaders,
       signal: AbortSignal.timeout(9000)
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(String(payload?.error?.message || "instagram_media_" + response.status));
-    const items = Array.isArray(payload?.data) ? payload.data.map(item => ({
+
+    const baseItems = Array.isArray(payload?.data) ? payload.data.map(item => ({
       id: String(item.id || ""),
       caption: String(item.caption || "").slice(0, 2200),
       timestamp: item.timestamp || null,
@@ -1208,9 +1264,46 @@ async function fetchInstagramMediaSnapshot(clientId) {
       commentsCount: Math.max(0, Number(item.comments_count || 0)),
       permalink: String(item.permalink || "")
     })) : [];
-    return { source: "instagram-api", items };
+
+    const [profileResult, insightItems] = await Promise.all([
+      (async () => {
+        try {
+          const profileEndpoint = "https://graph.instagram.com/" + encodeURIComponent(igUserId)
+            + "?fields=" + encodeURIComponent("username,followers_count,media_count");
+          const profileResponse = await fetch(profileEndpoint, {
+            headers: authHeaders,
+            signal: AbortSignal.timeout(9000)
+          });
+          const profilePayload = await profileResponse.json().catch(() => ({}));
+          if (!profileResponse.ok) return { followersCount: 0, mediaCount: 0, profileError: String(profilePayload?.error?.message || "instagram_profile_" + profileResponse.status) };
+          return {
+            followersCount: Math.max(0, Number(profilePayload?.followers_count || 0)),
+            mediaCount: Math.max(0, Number(profilePayload?.media_count || 0)),
+            username: String(profilePayload?.username || "")
+          };
+        } catch (error) {
+          return { followersCount: 0, mediaCount: 0, profileError: String(error?.message || error).slice(0, 240) };
+        }
+      })(),
+      Promise.all(baseItems.map(async item => ({ ...item, ...(await fetchInsightsForMedia(item)) })))
+    ]);
+
+    const insightErrors = insightItems
+      .filter(item => item.insightError)
+      .map(item => ({ id: item.id, error: item.insightError }))
+      .slice(0, 10);
+
+    return {
+      source: "instagram-api",
+      items: insightItems,
+      followersCount: Number(profileResult?.followersCount || 0),
+      mediaCount: Number(profileResult?.mediaCount || 0),
+      username: String(profileResult?.username || connection?.meta?.username || ""),
+      insightErrors,
+      profileError: String(profileResult?.profileError || "")
+    };
   } catch (error) {
-    return { source: "local", items: [], error: String(error?.message || error).slice(0, 300) };
+    return { source: "local", items: [], error: String(error?.message || error).slice(0, 300), followersCount: 0, insightErrors: [] };
   }
 }
 
@@ -1226,36 +1319,155 @@ async function runRadarAgent(client, options = {}) {
   const performance = performanceAudit(snapshot.items || []);
   const profileScore = profileAudit({ ...(client.agentProfile || {}), niche: client.niche || client.agentProfile?.niche || "" });
   const bestRecent = performance.top?.[0] || null;
+
+  const numericMedian = values => median(values.map(Number).filter(Number.isFinite).filter(value => value >= 0));
+  const measured = (snapshot.items || []).filter(item => Number(item.reach || 0) > 0 || Number(item.views || 0) > 0);
+  const sortedMeasured = [...measured].sort((a,b) => String(b.timestamp || "").localeCompare(String(a.timestamp || "")));
+  const reachValues = measured.map(item => Number(item.reach || 0)).filter(value => value > 0);
+  const viewValues = measured.map(item => Number(item.views || 0)).filter(value => value > 0);
+  const engagementRates = measured
+    .map(item => {
+      const reach = Number(item.reach || 0);
+      if (!reach) return null;
+      const weighted = Number(item.likeCount || 0) + Number(item.commentsCount || 0) * 2 + Number(item.saved || 0) * 3 + Number(item.shares || 0) * 4;
+      return weighted / reach;
+    })
+    .filter(value => Number.isFinite(value));
+  const amplificationRates = measured
+    .map(item => {
+      const reach = Number(item.reach || 0);
+      if (!reach) return null;
+      return (Number(item.saved || 0) + Number(item.shares || 0)) / reach;
+    })
+    .filter(value => Number.isFinite(value));
+
+  const formatMap = new Map();
+  for (const item of measured) {
+    const key = String(item.mediaType || "UNKNOWN").toUpperCase();
+    if (!formatMap.has(key)) formatMap.set(key, []);
+    formatMap.get(key).push(item);
+  }
+  const formatStats = [...formatMap.entries()].map(([mediaType, items]) => ({
+    mediaType,
+    posts: items.length,
+    medianReach: numericMedian(items.map(item => Number(item.reach || 0)).filter(Boolean)),
+    medianViews: numericMedian(items.map(item => Number(item.views || 0)).filter(Boolean)),
+    medianShares: numericMedian(items.map(item => Number(item.shares || 0))),
+    medianSaved: numericMedian(items.map(item => Number(item.saved || 0)))
+  })).sort((a,b) => (b.medianReach || b.medianViews) - (a.medianReach || a.medianViews));
+
+  const half = Math.min(8, Math.floor(sortedMeasured.length / 2));
+  const recentReach = half ? numericMedian(sortedMeasured.slice(0, half).map(item => Number(item.reach || 0)).filter(Boolean)) : 0;
+  const priorReach = half ? numericMedian(sortedMeasured.slice(half, half * 2).map(item => Number(item.reach || 0)).filter(Boolean)) : 0;
+  const reachTrendRatio = priorReach > 0 ? recentReach / priorReach : null;
+  const medianReachValue = numericMedian(reachValues);
+  const medianViewsValue = numericMedian(viewValues);
+  const medianEngagementRate = numericMedian(engagementRates);
+  const medianAmplificationRate = numericMedian(amplificationRates);
+  const followersCount = Math.max(0, Number(snapshot.followersCount || 0));
+  const medianReachRate = followersCount > 0 && medianReachValue > 0 ? medianReachValue / followersCount : null;
+
+  const diagnosis = [];
+  if (snapshot.error === "instagram_not_connected") {
+    diagnosis.push("Instagram ainda não está conectado ao RADAR; sem dados reais não há diagnóstico confiável de entrega.");
+  } else if (!measured.length) {
+    const insightError = snapshot.insightErrors?.[0]?.error || snapshot.profileError || "";
+    diagnosis.push(insightError
+      ? "A conta está conectada, mas o acesso a Insights não retornou métricas completas. Verificar permissão instagram_business_manage_insights/instagram_manage_insights na próxima reconexão."
+      : "Ainda há poucos dados mensuráveis de alcance/views; continuar coletando antes de concluir a causa da baixa entrega.");
+  } else {
+    if (reachTrendRatio !== null && reachTrendRatio < 0.8) {
+      diagnosis.push("O alcance mediano das publicações mais recentes caiu em relação ao bloco anterior; o problema está concentrado no conteúdo recente, não apenas no tamanho da conta.");
+    }
+    if (formatStats.length >= 2 && Number(formatStats[0].medianReach || 0) > Number(formatStats[1].medianReach || 0) * 1.3) {
+      diagnosis.push("O formato " + formatStats[0].mediaType + " está alcançando mais pessoas que " + formatStats[1].mediaType + "; priorizar o mecanismo do formato vencedor nos próximos testes.");
+    }
+    if (Number(bestRecent?.outlierMultiple || 0) >= 2) {
+      diagnosis.push("Existe um conteúdo claramente acima da mediana; o próximo ciclo deve reaproveitar o gancho/tema/formato desse outlier sem copiar o criativo.");
+    }
+    const topAmplification = measured
+      .map(item => ({ item, rate: Number(item.reach || 0) > 0 ? (Number(item.saved || 0) + Number(item.shares || 0)) / Number(item.reach || 1) : 0 }))
+      .sort((a,b) => b.rate - a.rate)[0];
+    if (topAmplification && medianAmplificationRate >= 0 && topAmplification.rate > Math.max(0.002, medianAmplificationRate * 1.8)) {
+      diagnosis.push("Os posts mais distribuídos também apresentam mais salvamentos/compartilhamentos; criar conteúdo mais útil e compartilhável deve ser o próximo teste prioritário.");
+    }
+    if (!diagnosis.length) {
+      diagnosis.push("Não há um único gargalo dominante nos dados atuais; manter testes controlados de gancho, formato e tema e comparar cada novo post com a mediana da própria conta.");
+    }
+  }
+
   const output = {
     source: snapshot.source,
     scannedMedia: snapshot.items.length,
+    measuredMedia: measured.length,
+    followersCount,
     topTerms,
     bestRecent,
     outliers: (performance.top || []).slice(0,5).map(item => ({
       id: item.id || "",
       caption: String(item.caption || "").slice(0,220),
+      mediaType: String(item.mediaType || ""),
+      views: Number(item.views || 0),
+      reach: Number(item.reach || 0),
+      saved: Number(item.saved || 0),
+      shares: Number(item.shares || 0),
       outlierMultiple: Number(item.outlierMultiple || 0),
       engagement: Number(item.engagement || 0)
     })),
+    metrics: {
+      medianViews: medianViewsValue,
+      medianReach: medianReachValue,
+      medianReachRate: medianReachRate === null ? null : Math.round(medianReachRate * 10000) / 100,
+      medianEngagementRate: Math.round(medianEngagementRate * 10000) / 100,
+      medianAmplificationRate: Math.round(medianAmplificationRate * 10000) / 100,
+      reachTrendRatio: reachTrendRatio === null ? null : Math.round(reachTrendRatio * 100) / 100
+    },
+    formatStats,
+    diagnosis,
     profileAudit: profileScore,
     skills: skillCoverageForAgent("radar").map(item => item.id),
     signals: [
+      ...diagnosis,
       bestRecent?.caption ? "Reaproveitar o mecanismo do melhor conteúdo, sem copiar o criativo." : "Testar ganchos diferentes e medir a resposta da própria conta.",
       topTerms[0]?.term ? "Explorar novas abordagens para o tema " + topTerms[0].term + "." : "Usar o nicho e as dúvidas reais dos leads como matéria-prima.",
       profileScore.score < 70 ? "O perfil ainda perde pontos de conversão; priorizar " + (profileScore.priorities[0] || "clareza da oferta") + "." : "Perfil com boa base; focar em conteúdo e conversão.",
       "Comparar desempenho com a mediana da própria conta, não apenas com views brutas."
     ]
   };
+
+  console.info("RADAR_ENGAGEMENT_DIAG", JSON.stringify({
+    clientId: client.id,
+    source: snapshot.source,
+    scannedMedia: output.scannedMedia,
+    measuredMedia: output.measuredMedia,
+    followersCount,
+    metrics: output.metrics,
+    bestFormat: formatStats[0]?.mediaType || "",
+    diagnosis
+  }));
+
   recordAgentExecution(client, "RADAR", {
-    function: "trend-outlier-profile-scan",
+    function: "trend-outlier-profile-insights-scan",
     trigger: options.trigger,
     startedAt,
     status: snapshot.error && !snapshot.items.length ? "warning" : "success",
-    model: "instagram-skills+instagram-api",
+    model: "instagram-skills+instagram-insights-api",
     quantity: snapshot.items.length + ledger.length,
     costUsd: 0,
-    message: snapshot.items.length ? "RADAR analisou histórico, outliers e perfil usando ig-viral/ig-audit/ig-profile." : "RADAR analisou histórico local e perfil; leitura de mídia do Instagram indisponível.",
-    metadata: { source: snapshot.source, topTerms, profileScore: profileScore.score, apiError: snapshot.error || "", skills: output.skills }
+    message: measured.length
+      ? "RADAR analisou alcance, views, compartilhamentos, salvamentos, outliers e formatos usando dados reais da conta."
+      : "RADAR analisou histórico local e perfil; Insights do Instagram ainda não retornaram métricas suficientes.",
+    metadata: {
+      source: snapshot.source,
+      topTerms,
+      profileScore: profileScore.score,
+      apiError: snapshot.error || "",
+      insightErrors: snapshot.insightErrors || [],
+      metrics: output.metrics,
+      formatStats,
+      diagnosis,
+      skills: output.skills
+    }
   });
   patchAgentCoreState(client.id, { radar: output });
   return output;
@@ -6564,7 +6776,17 @@ server.listen(PORT, "0.0.0.0", () => {
   startPendingVideoJobs();
   const videoTimer = setInterval(() => processDueVideoSchedules().catch(() => {}), 30000);
   const agentCoreTimer = setInterval(() => processAgentCoreScheduler().catch(() => {}), 60000);
-  setTimeout(() => processAgentCoreScheduler().catch(() => {}), 15000);
+  setTimeout(() => {
+    (async () => {
+      const clients = loadClients().filter(client => client.status === "online");
+      for (const client of clients) {
+        await runAgentCoreCycle(client.id, { trigger: "startup-engagement-audit", agent: "all" }).catch(error => {
+          console.warn("Startup engagement audit failed for " + client.id + ": " + String(error?.message || error));
+        });
+      }
+      await processAgentCoreScheduler().catch(() => {});
+    })().catch(() => {});
+  }, 15000);
   if (typeof agentCoreTimer.unref === "function") agentCoreTimer.unref();
   videoTimer.unref?.();
 });
