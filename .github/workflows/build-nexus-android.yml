@@ -36,6 +36,10 @@ jobs:
         working-directory: apps/nexus_app
         run: flutter pub get
 
+      - name: Remove generated sample test
+        working-directory: apps/nexus_app
+        run: rm -f test/widget_test.dart
+
       - name: Analyze
         working-directory: apps/nexus_app
         run: flutter analyze
