@@ -11,11 +11,16 @@
     "APP_NAME": "Servidor Nexus",
     "RAGNAR_CLIENT_ID": "ragnar-one"
   },
-  "secrets": {
-    "required": [
-      "OPENAI_API_KEY_SHARED",
-      "OPENAI_API_KEY_RAGNAR",
-      "NEXUS_SECRET_KEY"
+  "assets": {
+    "directory": "../public",
+    "binding": "ASSETS",
+    "run_worker_first": [
+      "/",
+      "/login",
+      "/master*",
+      "/portal-login",
+      "/api/*",
+      "/index.html"
     ]
   },
   "d1_databases": [
