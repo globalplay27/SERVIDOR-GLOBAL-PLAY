@@ -3778,27 +3778,86 @@ async function importPublicTrailerVideo(client, sourceUrl, settings = {}) {
   const outputTemplate = path.join(clientDir, jobId + ".%(ext)s");
   const maxBytes = 750 * 1024 * 1024;
 
-  try {
-    await execFileAsync("yt-dlp", [
-      "--no-playlist",
-      "--no-warnings",
-      "--socket-timeout", "30",
-      "--retries", "3",
-      "--fragment-retries", "3",
-      "--concurrent-fragments", "4",
-      "--max-filesize", "750M",
-      "--merge-output-format", "mp4",
-      "-f", "bv*[height<=1080]+ba/b[height<=1080]/b",
-      "-o", outputTemplate,
-      normalizedUrl
-    ], { timeout: 8 * 60 * 1000, maxBuffer: 16 * 1024 * 1024 });
-  } catch (error) {
+  const clearAttemptFiles = () => {
     for (const name of fs.readdirSync(clientDir)) {
       if (name.startsWith(jobId + ".")) {
         try { fs.unlinkSync(path.join(clientDir, name)); } catch {}
       }
     }
-    const detail = String(error?.stderr || error?.message || error).replace(/\s+/g, " ").slice(0, 500);
+  };
+
+  const commonArgs = [
+    "--no-playlist",
+    "--no-warnings",
+    "--socket-timeout", "30",
+    "--retries", "3",
+    "--fragment-retries", "3",
+    "--concurrent-fragments", "4",
+    "--max-filesize", "750M",
+    "--merge-output-format", "mp4",
+    "-o", outputTemplate
+  ];
+
+  const attempts = [
+    {
+      name: "default",
+      args: [
+        ...commonArgs,
+        "-f", "bv*[height<=1080]+ba/b[height<=1080]/b",
+        normalizedUrl
+      ]
+    },
+    {
+      name: "web-embedded",
+      args: [
+        ...commonArgs,
+        "--extractor-args", "youtube:player_client=web_embedded",
+        "--referer", "https://www.youtube.com/",
+        "-f", "bv*[height<=1080]+ba/b[height<=1080]/b",
+        normalizedUrl
+      ]
+    },
+    {
+      name: "web-safari-hls",
+      args: [
+        ...commonArgs,
+        "--extractor-args", "youtube:player_client=web_safari",
+        "--referer", "https://www.youtube.com/",
+        "-f", "b[protocol*=m3u8][height<=1080]/bv*[height<=1080]+ba/b[height<=1080]/b",
+        normalizedUrl
+      ]
+    },
+    {
+      name: "android-vr",
+      args: [
+        ...commonArgs,
+        "--extractor-args", "youtube:player_client=android_vr",
+        "-f", "bv*[height<=1080]+ba/b[height<=1080]/b",
+        normalizedUrl
+      ]
+    }
+  ];
+
+  let lastError = null;
+  for (const attempt of attempts) {
+    clearAttemptFiles();
+    try {
+      await execFileAsync("yt-dlp", attempt.args, {
+        timeout: 8 * 60 * 1000,
+        maxBuffer: 16 * 1024 * 1024
+      });
+      lastError = null;
+      break;
+    } catch (error) {
+      lastError = error;
+      const detail = String(error?.stderr || error?.message || error).replace(/\s+/g, " ").slice(0, 420);
+      console.warn("Trailer download attempt failed", client.id, attempt.name, detail);
+    }
+  }
+
+  if (lastError) {
+    clearAttemptFiles();
+    const detail = String(lastError?.stderr || lastError?.message || lastError).replace(/\s+/g, " ").slice(0, 500);
     throw new Error("trailer_download_failed:" + detail);
   }
 
