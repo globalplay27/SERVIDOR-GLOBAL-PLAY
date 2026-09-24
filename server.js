@@ -1388,7 +1388,7 @@ async function runRadarAgent(client, options = {}) {
   const topTerms = agentCoreTopTerms(captions, 10);
   const performance = performanceAudit(snapshot.items || []);
   const profileScore = profileAudit({ ...(client.agentProfile || {}), niche: client.niche || client.agentProfile?.niche || "" });
-  const bestRecent = performance.top?.[0] || null;
+  let bestRecent = performance.top?.[0] || null;
 
   const numericMedian = values => {
     const nums = values.map(Number).filter(Number.isFinite).filter(value => value >= 0).sort((a,b) => a-b);
@@ -1452,6 +1452,9 @@ async function runRadarAgent(client, options = {}) {
   const priorReachVelocity = half ? numericMedian(trendEligible.slice(half, half * 2).map(reachVelocity).filter(value => Number.isFinite(value))) : 0;
   const reachTrendRatio = half >= 3 && priorReachVelocity > 0 ? recentReachVelocity / priorReachVelocity : null;
   const medianReachValue = numericMedian(reachValues);
+  const reliableReachFloor = Math.max(20, medianReachValue * 0.75);
+  const reliableOutliers = (performance.top || []).filter(item => Number(item.reach || 0) >= reliableReachFloor);
+  bestRecent = reliableOutliers[0] || null;
   const medianViewsValue = numericMedian(viewValues);
   const medianEngagementRate = numericMedian(engagementRates);
   const medianAmplificationRate = numericMedian(amplificationRates);
@@ -1481,10 +1484,16 @@ async function runRadarAgent(client, options = {}) {
       diagnosis.push("Existe um conteúdo claramente acima da mediana; o próximo ciclo deve reaproveitar o gancho/tema/formato desse outlier sem copiar o criativo.");
     }
     const topAmplification = measured
-      .map(item => ({ item, rate: Number(item.reach || 0) > 0 ? (Number(item.saved || 0) + Number(item.shares || 0)) / Number(item.reach || 1) : 0 }))
+      .filter(item => Number(item.reach || 0) >= reliableReachFloor)
+      .map(item => ({
+        item,
+        actions: Number(item.saved || 0) + Number(item.shares || 0),
+        rate: Number(item.reach || 0) > 0 ? (Number(item.saved || 0) + Number(item.shares || 0)) / Number(item.reach || 1) : 0
+      }))
+      .filter(item => item.actions > 0)
       .sort((a,b) => b.rate - a.rate)[0];
     if (topAmplification && medianAmplificationRate >= 0 && topAmplification.rate > Math.max(0.002, medianAmplificationRate * 1.8)) {
-      diagnosis.push("Os posts mais distribuídos também apresentam mais salvamentos/compartilhamentos; criar conteúdo mais útil e compartilhável deve ser o próximo teste prioritário.");
+      diagnosis.push("Em amostras com alcance suficiente, salvamentos/compartilhamentos aparecem como sinal positivo; testar conteúdo mais útil e compartilhável é prioridade.");
     }
     if (!diagnosis.length) {
       diagnosis.push("Não há um único gargalo dominante nos dados atuais; manter testes controlados de gancho, formato e tema e comparar cada novo post com a mediana da própria conta.");
@@ -1498,7 +1507,7 @@ async function runRadarAgent(client, options = {}) {
     followersCount,
     topTerms,
     bestRecent,
-    outliers: (performance.top || []).slice(0,5).map(item => ({
+    outliers: reliableOutliers.slice(0,5).map(item => ({
       id: item.id || "",
       caption: String(item.caption || "").slice(0,220),
       mediaType: String(item.mediaType || ""),
