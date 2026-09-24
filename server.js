@@ -989,6 +989,24 @@ function videoFormatSpec(value) {
   return { key: "reel", label: "Reels / Stories 9:16", width: 1080, height: 1920 };
 }
 
+function normalizeSubtitleStyle(options = {}) {
+  const size = ["auto","small","medium","large"].includes(String(options.size || "").toLowerCase())
+    ? String(options.size).toLowerCase() : "auto";
+  const colorKey = ["white","yellow","cyan","green","red"].includes(String(options.color || "").toLowerCase())
+    ? String(options.color).toLowerCase() : "white";
+  const bgKey = ["black","navy","transparent"].includes(String(options.bg || "").toLowerCase())
+    ? String(options.bg).toLowerCase() : "black";
+  const colors = { white:"white", yellow:"yellow", cyan:"cyan", green:"lime", red:"red" };
+  const backgrounds = { black:"black@0.68", navy:"0x061b2b@0.72", transparent:"black@0.0" };
+  return { size, color:colorKey, bg:bgKey, ffmpegColor:colors[colorKey], ffmpegBg:backgrounds[bgKey], box:bgKey !== "transparent" };
+}
+
+function subtitleFontSizeForFormat(spec, sizeKey = "auto") {
+  const auto = Math.round(Math.min(spec.width * 0.042, spec.height * 0.035));
+  const multiplier = sizeKey === "small" ? 0.82 : sizeKey === "medium" ? 1 : sizeKey === "large" ? 1.28 : 1;
+  return Math.max(28, Math.min(72, Math.round(auto * multiplier)));
+}
+
 function deleteVideoJobFiles(job) {
   const targets = new Set();
   if (job?.storedPath) {
@@ -1023,6 +1041,9 @@ function portalVideoJobView(job) {
     endText: job.endText || "",
     endContact: job.endContact || "",
     autoSubtitles: Boolean(job.autoSubtitles),
+    subtitleSize: job.subtitleSize || "auto",
+    subtitleColor: job.subtitleColor || "white",
+    subtitleBg: job.subtitleBg || "black",
     detectedLanguage: job.detectedLanguage || "",
     sizeBytes: Number(job.sizeBytes || 0),
     goal: job.goal || "viral",
@@ -1041,6 +1062,9 @@ function portalVideoJobView(job) {
       hook: clip.hook || "",
       qualityScore: Number(clip.qualityScore || 0),
       subtitlesApplied: Boolean(clip.subtitlesApplied),
+      subtitleSize: clip.subtitleSize || job.subtitleSize || "auto",
+      subtitleColor: clip.subtitleColor || job.subtitleColor || "white",
+      subtitleBg: clip.subtitleBg || job.subtitleBg || "black",
       sourceLanguage: clip.sourceLanguage || job.detectedLanguage || "",
       rank: Number(clip.rank || 0),
       selectedForSchedule: Boolean(clip.selectedForSchedule),
@@ -1561,13 +1585,17 @@ function escapeFfmpegDrawtext(value) {
     .replace(/\n/g, "\\n");
 }
 
-async function renderVideoClip(inputPath, outputPath, start, end, outputFormat = "reel", endText = "", endContact = "", subtitleSegments = []) {
+async function renderVideoClip(inputPath, outputPath, start, end, outputFormat = "reel", endText = "", endContact = "", subtitleSegments = [], subtitleOptions = {}) {
   const duration = Math.max(3, Number(end) - Number(start));
   const spec = videoFormatSpec(outputFormat);
   const finalText = String(endText || "").trim().slice(0, 90);
   const finalContact = String(endContact || "").trim().slice(0, 90);
   const outroStart = Math.max(0, duration - 3);
   const fontFile = "/usr/share/fonts/ttf-dejavu/DejaVuSans-Bold.ttf";
+  const subtitleStyle = normalizeSubtitleStyle(subtitleOptions);
+  const subtitleFontSize = subtitleFontSizeForFormat(spec, subtitleStyle.size);
+  const subtitleLineSpacing = Math.max(5, Math.round(subtitleFontSize * 0.18));
+  const subtitleBoxBorder = Math.max(8, Math.round(subtitleFontSize * 0.32));
 
   const filters = [
     "[0:v]split=2[bg][fg]",
@@ -1588,10 +1616,10 @@ async function renderVideoClip(inputPath, outputPath, start, end, outputFormat =
     const nextLabel = "subtitle" + index;
     filters.push("[" + videoLabel + "]drawtext=fontfile=" + fontFile
       + ":text='" + escapeFfmpegDrawtext(text) + "'"
-      + ":fontcolor=white:fontsize=" + Math.round(spec.width * 0.042)
-      + ":line_spacing=" + Math.round(spec.width * 0.008)
-      + ":box=1:boxcolor=black@0.68:boxborderw=" + Math.round(spec.width * 0.014)
-      + ":borderw=1:bordercolor=black@0.9"
+      + ":fontcolor=" + subtitleStyle.ffmpegColor + ":fontsize=" + subtitleFontSize
+      + ":line_spacing=" + subtitleLineSpacing
+      + ":box=" + (subtitleStyle.box ? "1" : "0") + ":boxcolor=" + subtitleStyle.ffmpegBg + ":boxborderw=" + subtitleBoxBorder
+      + ":borderw=2:bordercolor=black@0.9"
       + ":x=(w-text_w)/2:y=h*0.78-text_h/2"
       + ":enable='between(t," + from.toFixed(3) + "," + to.toFixed(3) + ")'[" + nextLabel + "]");
     videoLabel = nextLabel;
@@ -1737,7 +1765,12 @@ async function processVideoJob(jobId) {
       const sourceSegments = subtitleSegmentsForRange(transcription.segments, selected.start, selected.end);
       const shouldSubtitle = Boolean(initial.autoSubtitles) && !isPortugueseLanguage(transcription.language);
       const translatedSubtitles = shouldSubtitle ? await translateClipSegmentsToPtBr(sourceSegments, initial.clientId) : [];
-      await renderVideoClip(initial.storedPath, outputPath, selected.start, selected.end, initial.outputFormat || "reel", initial.endText || "", initial.endContact || "", translatedSubtitles);
+      await renderVideoClip(
+        initial.storedPath, outputPath, selected.start, selected.end,
+        initial.outputFormat || "reel", initial.endText || "", initial.endContact || "",
+        translatedSubtitles,
+        { size: initial.subtitleSize, color: initial.subtitleColor, bg: initial.subtitleBg }
+      );
       const transcript = transcriptForRange(transcription.segments, selected.start, selected.end);
       const reviewText = translatedSubtitles.length ? translatedSubtitles.map(item => item.text).join(" ") : transcript;
       const hookReview = scoreHook(reviewText.slice(0,220));
@@ -1766,6 +1799,9 @@ async function processVideoJob(jobId) {
         endContact: initial.endContact || "",
         subtitlesApplied: translatedSubtitles.length > 0,
         subtitleLanguage: translatedSubtitles.length ? "pt-BR" : "",
+        subtitleSize: initial.subtitleSize || "auto",
+        subtitleColor: initial.subtitleColor || "white",
+        subtitleBg: initial.subtitleBg || "black",
         sourceLanguage: transcription.language || "",
         subtitleSegments: translatedSubtitles,
         intelligence: { hookScore: hookReview.score, beatIssues: beatReview.issues, targetDuration: Number(initial.clipDuration || 30), selectionModel: selection.model },
@@ -2193,7 +2229,8 @@ async function adjustVideoClip(clientId, jobId, clipId, body) {
     found.job.outputFormat || found.clip.outputFormat || "reel",
     nextEndText,
     nextEndContact,
-    translatedSubtitles
+    translatedSubtitles,
+    { size: found.job.subtitleSize, color: found.job.subtitleColor, bg: found.job.subtitleBg }
   );
   const fresh = findVideoClip(clientId, jobId, clipId);
   fresh.clip.start = start;
@@ -2206,6 +2243,9 @@ async function adjustVideoClip(clientId, jobId, clipId, body) {
   fresh.clip.endContact = nextEndContact;
   fresh.clip.subtitlesApplied = translatedSubtitles.length > 0;
   fresh.clip.subtitleLanguage = translatedSubtitles.length ? "pt-BR" : "";
+  fresh.clip.subtitleSize = fresh.job.subtitleSize || "auto";
+  fresh.clip.subtitleColor = fresh.job.subtitleColor || "white";
+  fresh.clip.subtitleBg = fresh.job.subtitleBg || "black";
   fresh.clip.sourceLanguage = fresh.job.detectedLanguage || "";
   fresh.clip.subtitleSegments = translatedSubtitles;
   fresh.clip.status = "ready";
@@ -4805,6 +4845,11 @@ const server = http.createServer(async (req, res) => {
       const goal = String(req.headers["x-video-goal"] || "viral").slice(0, 40);
       const outputFormat = videoFormatSpec(String(req.headers["x-output-format"] || "reel")).key;
       const autoSubtitles = String(req.headers["x-auto-subtitles"] || "") === "1";
+      const subtitleStyle = normalizeSubtitleStyle({
+        size: req.headers["x-subtitle-size"],
+        color: req.headers["x-subtitle-color"],
+        bg: req.headers["x-subtitle-bg"]
+      });
       const endText = decodeURIComponent(String(req.headers["x-video-end-text"] || "")).trim().slice(0, 90);
       const endContact = decodeURIComponent(String(req.headers["x-video-end-contact"] || "")).trim().slice(0, 90);
       const requestedFolder = String(req.headers["x-video-folder"] || "default");
@@ -4821,6 +4866,9 @@ const server = http.createServer(async (req, res) => {
         folderId,
         outputFormat,
         autoSubtitles,
+        subtitleSize: subtitleStyle.size,
+        subtitleColor: subtitleStyle.color,
+        subtitleBg: subtitleStyle.bg,
         endText,
         endContact,
         storedPath: destination,
@@ -4844,7 +4892,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (url.pathname.startsWith("/video-media/") && req.method === "GET") {
+  if (url.pathname.startsWith("/video-media/") && (req.method === "GET" || req.method === "HEAD")) {
     const publicName = path.basename(decodeURIComponent(url.pathname.slice("/video-media/".length)));
     const jobs = loadVideoJobs();
     let file = "";
@@ -4856,29 +4904,56 @@ const server = http.createServer(async (req, res) => {
       }
     }
     if (!file) return send(res, 404, "Not found", "text/plain; charset=utf-8");
+
     const stat = fs.statSync(file);
-    const range = String(req.headers.range || "");
+    const size = Number(stat.size || 0);
+    const range = String(req.headers.range || "").trim();
+
     res.setHeader("accept-ranges", "bytes");
     res.setHeader("content-type", "video/mp4");
-    res.setHeader("cache-control", "public, max-age=3600");
+    res.setHeader("content-disposition", 'inline; filename="' + publicName.replace(/"/g, "") + '"');
+    res.setHeader("cache-control", "private, max-age=0, must-revalidate");
     res.setHeader("x-content-type-options", "nosniff");
+
     if (range) {
-      const match = /bytes=(\d*)-(\d*)/.exec(range);
-      const start = match?.[1] ? Number(match[1]) : 0;
-      const end = match?.[2] ? Math.min(Number(match[2]), stat.size - 1) : stat.size - 1;
-      if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end < start || start >= stat.size) {
-        res.writeHead(416, { "content-range": "bytes */" + stat.size });
+      const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+      if (!match || (!match[1] && !match[2])) {
+        res.writeHead(416, { "content-range": "bytes */" + size });
         return res.end();
       }
+
+      let start;
+      let end;
+      if (!match[1] && match[2]) {
+        const suffixLength = Math.max(1, Number(match[2]));
+        start = Math.max(0, size - suffixLength);
+        end = size - 1;
+      } else {
+        start = Number(match[1]);
+        end = match[2] ? Math.min(Number(match[2]), size - 1) : size - 1;
+      }
+
+      if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end < start || start >= size) {
+        res.writeHead(416, { "content-range": "bytes */" + size });
+        return res.end();
+      }
+
       res.writeHead(206, {
-        "content-range": "bytes " + start + "-" + end + "/" + stat.size,
+        "content-range": "bytes " + start + "-" + end + "/" + size,
         "content-length": end - start + 1
       });
-      fs.createReadStream(file, { start, end }).pipe(res);
+      if (req.method === "HEAD") return res.end();
+      const stream = fs.createReadStream(file, { start, end });
+      stream.on("error", () => { try { res.destroy(); } catch {} });
+      stream.pipe(res);
       return;
     }
-    res.writeHead(200, { "content-length": stat.size });
-    fs.createReadStream(file).pipe(res);
+
+    res.writeHead(200, { "content-length": size });
+    if (req.method === "HEAD") return res.end();
+    const stream = fs.createReadStream(file);
+    stream.on("error", () => { try { res.destroy(); } catch {} });
+    stream.pipe(res);
     return;
   }
 
