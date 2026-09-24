@@ -1,6 +1,15 @@
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 let sessionAuth=null,currentClient=null;
 
+function showPortalLogin(message="Sua sessão precisa ser renovada. Entre novamente uma vez para manter o painel conectado."){
+  sessionAuth=null;
+  currentClient=null;
+  const portal=$("#portal-view"),login=$("#login-view"),error=$("#login-error");
+  if(portal)portal.hidden=true;
+  if(login)login.hidden=false;
+  if(error)error.textContent=message;
+}
+
 function nextPostTime(times=[]){if(!Array.isArray(times)||!times.length)return"—";const parts=new Intl.DateTimeFormat("pt-BR",{timeZone:"America/Sao_Paulo",hour:"2-digit",minute:"2-digit",hour12:false}).formatToParts(new Date());const now=Number(parts.find(p=>p.type==="hour")?.value||0)*60+Number(parts.find(p=>p.type==="minute")?.value||0);const sorted=times.map(v=>{const[h,m]=String(v).split(":").map(Number);return{v,m:h*60+m}}).filter(x=>Number.isFinite(x.m)).sort((a,b)=>a.m-b.m);return sorted.find(x=>x.m>now)?.v||sorted[0]?.v||"—";}
 function showView(name){$$("[data-view]").forEach(b=>b.classList.toggle("active",b.dataset.view===name));["overview","posts","capture","leads","videos","trailers","posting","support","setup"].forEach(v=>{const el=$("#view-"+v);if(el)el.hidden=v!==name;});if(name==="support")loadSupportTickets();if(name==="posts")loadClientPosts();if(name==="capture")loadLeadHunter();if(name==="leads")loadClientLeads();if(name==="videos"){ensureBulkVideoScheduler();loadVideoJobs();}if(name==="overview"){loadAgentTeam();loadTokenUsage();}}
 function onboardingKeys(){return["github","railway","openai","facebook","instagram","metaApp","creativeProfile","supportRequested"];}
@@ -1114,6 +1123,7 @@ function renderVideoJobs(data={}){
 async function loadVideoJobs(){
   try{
     const r=await fetch("/api/portal/videos",{credentials:"same-origin",headers:sessionAuth?{"x-nexus-session":sessionAuth}:{}});
+    if(r.status===401){showPortalLogin();return;}
     if(!r.ok)throw new Error();
     renderVideoJobs(await r.json());
   }catch{
@@ -1759,6 +1769,7 @@ async function resumeCookieSession(){
   }
   try{
     const r=await fetch("/api/portal/session",{credentials:"same-origin"});
+    if(r.status===401){showPortalLogin("");return;}
     if(!r.ok)return;
     const c=await r.json();
     $("#login-view").hidden=true;

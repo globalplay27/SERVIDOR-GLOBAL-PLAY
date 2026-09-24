@@ -140,9 +140,40 @@ function parseCookies(req) {
 
 function redirectWithCookie(res, location, cookie = "") {
   const headers = { location, "cache-control": "no-store", "content-length": "0" };
-  if (cookie) headers["set-cookie"] = cookie;
+  if (cookie) headers["set-cookie"] = Array.isArray(cookie) ? cookie : [cookie];
   res.writeHead(303, headers);
   res.end();
+}
+
+function portalIdentitySecret() {
+  const source = String(process.env.NEXUS_SECRET_KEY || process.env.ADMIN_PASSWORD || process.env.META_APP_SECRET || "").trim();
+  return crypto.createHash("sha256").update("nexus-portal-identity:" + source).digest();
+}
+
+function portalIdentityValue(clientId) {
+  const issued = String(Date.now());
+  const payload = String(clientId || "") + "|" + issued;
+  const sig = crypto.createHmac("sha256", portalIdentitySecret()).update(payload).digest("base64url");
+  return payload + "|" + sig;
+}
+
+function portalIdentityCookie(clientId) {
+  return "nexus_client=" + encodeURIComponent(portalIdentityValue(clientId))
+    + "; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=" + PORTAL_SESSION_MAX_AGE_SECONDS;
+}
+
+function signedPortalClientForRequest(req) {
+  const raw = String(parseCookies(req).nexus_client || "");
+  const parts = raw.split("|");
+  if (parts.length !== 3) return null;
+  const [clientId, issuedRaw, supplied] = parts;
+  const issued = Number(issuedRaw || 0);
+  if (!clientId || !Number.isFinite(issued) || issued <= 0) return null;
+  if (Date.now() - issued > PORTAL_SESSION_MAX_AGE_SECONDS * 1000) return null;
+  const payload = clientId + "|" + issuedRaw;
+  const expected = crypto.createHmac("sha256", portalIdentitySecret()).update(payload).digest("base64url");
+  if (!safeEqualText(supplied, expected)) return null;
+  return loadClients().find(client => client.id === clientId) || null;
 }
 
 function readBody(req) {
@@ -3568,10 +3599,21 @@ async function searchOfficialTrailers(query, type = "movie", clientId = "") {
         }
       } catch {}
       const youtube = videos.filter(v => v.site === "YouTube");
-      const trailer = youtube.find(v => v.official === true && v.type === "Trailer")
-        || youtube.find(v => v.type === "Trailer")
-        || youtube.find(v => v.official === true)
-        || null;
+      const ptBrScore = v => {
+        const name = String(v?.name || "").toLowerCase();
+        const lang = String(v?.iso_639_1 || "").toLowerCase();
+        const country = String(v?.iso_3166_1 || "").toUpperCase();
+        let score = 0;
+        if (/dublad|portugu[eê]s|pt[- ]?br|brasil/.test(name)) score += 120;
+        if (lang === "pt") score += 100;
+        if (country === "BR") score += 80;
+        if (v?.type === "Trailer") score += 35;
+        if (v?.official === true) score += 30;
+        if (/legendad/.test(name)) score -= 45;
+        if (lang === "en") score -= 80;
+        return score;
+      };
+      const trailer = [...youtube].sort((a,b)=>ptBrScore(b)-ptBrScore(a))[0] || null;
       const title = String(kind === "tv" ? item.name : item.title || q);
       const date = String(kind === "tv" ? item.first_air_date : item.release_date || "");
       results.push(normalizeResult({
@@ -3596,8 +3638,8 @@ async function searchOfficialTrailers(query, type = "movie", clientId = "") {
     const payload = await openAIResponsesForClient(clientId, {
       model:"gpt-5.6-luna",
       tools:[{ type:"web_search" }],
-      instructions:"Você localiza trailers oficiais de filmes e séries. Priorize links do YouTube publicados pelo estúdio, distribuidora, streaming oficial ou canal oficial da obra. Nunca invente URL. Se houver uma fonte oficial que ofereça explicitamente um ARQUIVO DIRETO de vídeo para download/reutilização, você pode retornar downloadUrl e downloadAllowed=true; nunca use isso para YouTube, Netflix, Prime Video, Disney+, Globoplay ou qualquer conteúdo protegido/DRM. Se não puder confirmar, deixe downloadUrl vazio e downloadAllowed=false. Retorne somente JSON válido.",
-      input:"Pesquise " + (kind === "tv" ? "a série" : "o filme") + " chamado \"" + q + "\". Retorne até 6 resultados compatíveis em JSON no formato {\"results\":[{\"title\":\"...\",\"year\":\"2026\",\"overview\":\"sinopse curta\",\"trailerUrl\":\"https://www.youtube.com/watch?v=...\",\"channel\":\"canal\",\"official\":true,\"downloadUrl\":\"\",\"downloadAllowed\":false}]}.",
+      instructions:"Você localiza trailers oficiais de filmes e séries para público brasileiro. PRIORIDADE ABSOLUTA: trailer com ÁUDIO DUBLADO EM PORTUGUÊS DO BRASIL (PT-BR). Pesquise primeiro versões com termos como 'trailer oficial dublado', 'dublado português', 'dublado PT-BR' e priorize canais oficiais brasileiros de estúdios, distribuidoras, cinemas ou streamings. Evite trailer em inglês. Evite versão apenas legendada quando existir uma versão dublada. Só use trailer em português legendado como segunda opção se não encontrar uma versão dublada confiável. Nunca invente URL. Se houver uma fonte oficial que ofereça explicitamente um ARQUIVO DIRETO de vídeo para download/reutilização, você pode retornar downloadUrl e downloadAllowed=true; nunca use isso para YouTube, Netflix, Prime Video, Disney+, Globoplay ou qualquer conteúdo protegido/DRM. Se não puder confirmar, deixe downloadUrl vazio e downloadAllowed=false. Retorne somente JSON válido.",
+      input:"Pesquise " + (kind === "tv" ? "a série" : "o filme") + " chamado \"" + q + "\". Quero TRAILER OFICIAL DUBLADO EM PORTUGUÊS DO BRASIL. Faça buscas equivalentes a: \"" + q + " trailer oficial dublado\", \"" + q + " trailer dublado português Brasil\" e \"" + q + " trailer dublado PT-BR\". Priorize YouTube de estúdio/distribuidora/streaming/canal oficial brasileiro. Não escolha trailer em inglês se houver opção dublada em PT-BR. Evite legendado quando houver dublado. Retorne até 6 resultados compatíveis em JSON no formato {\"results\":[{\"title\":\"...\",\"year\":\"2026\",\"overview\":\"sinopse curta\",\"trailerUrl\":\"https://www.youtube.com/watch?v=...\",\"channel\":\"canal\",\"official\":true,\"audioLanguage\":\"pt-BR\",\"dubbed\":true,\"downloadUrl\":\"\",\"downloadAllowed\":false}]}.",
       max_output_tokens:1800
     }, 90000, { enforceBudget: false });
     const output = responseOutputText(payload);
@@ -5172,6 +5214,9 @@ function portalClientForRequest(req) {
   const tokenClient = tokenClientForRequest(req);
   if (tokenClient) return tokenClient;
 
+  const signedClient = signedPortalClientForRequest(req);
+  if (signedClient) return signedClient;
+
   const credentials = parseBasicAuth(req);
   if (!credentials) return null;
   return clientFromCredentials(credentials.username, credentials.password);
@@ -5308,7 +5353,10 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === "/login" && req.method === "GET") {
     res.writeHead(303, {
       location: "/portal.html?v=25&login=1",
-      "set-cookie": "nexus_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0",
+      "set-cookie": [
+        "nexus_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0",
+        "nexus_client=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0"
+      ],
       "cache-control": "no-store",
       "content-length": "0"
     });
@@ -5374,6 +5422,10 @@ const server = http.createServer(async (req, res) => {
       persistent: true,
       createdAt: new Date().toISOString()
     });
+    res.setHeader("set-cookie", [
+      "nexus_session=" + encodeURIComponent(token) + "; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=" + PORTAL_SESSION_MAX_AGE_SECONDS,
+      portalIdentityCookie(client.id)
+    ]);
     return send(res, 200, {
       token,
       client: clientPortalView(client)
@@ -5395,8 +5447,11 @@ const server = http.createServer(async (req, res) => {
         remembered: remember,
         createdAt: new Date().toISOString()
       });
-      const cookie = "nexus_session=" + encodeURIComponent(token) + "; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=" + maxAgeSeconds;
-      return redirectWithCookie(res, "/portal.html?v=25&auth=1", cookie);
+      const cookies = [
+        "nexus_session=" + encodeURIComponent(token) + "; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=" + maxAgeSeconds,
+        portalIdentityCookie(client.id)
+      ];
+      return redirectWithCookie(res, "/portal.html?v=25&auth=1", cookies);
     } catch {
       return redirectWithCookie(res, "/portal.html?v=24&error=1");
     }
@@ -5420,9 +5475,11 @@ const server = http.createServer(async (req, res) => {
       return send(res, 401, { error: "unauthorized" });
     }
 
-    // Upgrade an older short-lived session to persistent mode as soon as the
-    // client successfully resumes the portal.
+    // Keep a durable signed identity cookie in addition to the server-side
+    // session ledger. This prevents rolling deploys or a transient ledger miss
+    // from leaving the client panel open but unusable with repeated 401s.
     const token = String(parseCookies(req).nexus_session || req.headers["x-nexus-session"] || "");
+    const cookies = [portalIdentityCookie(client.id)];
     if (token) {
       const current = portalSessions.get(token) || readObjectFile(portalSessionsFile, {})?.[token];
       if (current && current.persistent !== true) {
@@ -5432,20 +5489,24 @@ const server = http.createServer(async (req, res) => {
           upgradedAt: new Date().toISOString()
         });
       }
-      if (parseCookies(req).nexus_session) {
-        res.setHeader("set-cookie",
+      if (parseCookies(req).nexus_session && current) {
+        cookies.unshift(
           "nexus_session=" + encodeURIComponent(token)
           + "; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=" + PORTAL_SESSION_MAX_AGE_SECONDS
         );
       }
     }
+    res.setHeader("set-cookie", cookies);
     return send(res, 200, clientPortalView(client));
   }
 
   if (url.pathname === "/api/portal/logout" && req.method === "POST") {
     const token = String(parseCookies(req).nexus_session || req.headers["x-nexus-session"] || "");
     if (token) deletePortalSession(token);
-    res.setHeader("set-cookie", "nexus_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0");
+    res.setHeader("set-cookie", [
+      "nexus_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0",
+      "nexus_client=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0"
+    ]);
     return send(res, 200, { ok: true });
   }
 
