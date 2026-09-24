@@ -141,3 +141,26 @@ export async function proxyRailwayVideoRequest(request, env, url, clientId) {
     headers: responseHeaders(response)
   });
 }
+
+
+export async function storeManualPostImage(env, clientId, imageDataUrl) {
+  const base = bridgeBase(env);
+  const secret = bridgeSecret(env);
+  if (!base || !secret) throw new Error("railway_video_bridge_not_configured");
+
+  const response = await fetch(base + "/api/nexus/bridge/manual-post", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-nexus-bridge-secret": secret,
+      "x-nexus-client-id": String(clientId),
+      "x-nexus-bridge-source": "cloudflare"
+    },
+    body: JSON.stringify({ imageDataUrl: String(imageDataUrl || "") })
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || !payload.imageUrl) {
+    throw new Error(String(payload.error || "manual_post_store_failed"));
+  }
+  return { imageUrl: String(payload.imageUrl) };
+}
