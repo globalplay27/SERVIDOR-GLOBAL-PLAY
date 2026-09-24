@@ -75,6 +75,12 @@ Railway não é desligado durante preparação ou testes. A virada só acontece 
 O Worker não deve executar `ffmpeg` nem depender de filesystem persistente. Arquivos ficam no R2; processamento pesado é desacoplado do Worker. Isso evita portar para Cloudflare código que depende de processos do sistema e volume local.
 
 
+## Configuração do Workers Build
+
+- Branch de produção: `cloudflare-migration`
+- Diretório raiz: `cloudflare`
+- Deploy command: `npx wrangler deploy`
+
 ## Estado atual da migração
 
 Já estão preparados no branch `cloudflare-migration`:
