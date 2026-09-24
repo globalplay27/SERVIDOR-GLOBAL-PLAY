@@ -12,6 +12,7 @@ import { startInstagramOAuth, handleInstagramOAuthCallback } from "./instagram.j
 import { AGENT_CORE_MODULES, normalizeAgentCoreConfig, agentCoreState, agentExecutions, saveAgentCoreConfig } from "./agent-core.js";
 import { leadsForClient, leadHunterSummary } from "./leads.js";
 import { leadHunterView, saveLeadHunterConfig, runLeadHunter, discardLead } from "./lead-hunter.js";
+import { createVideoFolder, renameVideoFolder, deleteVideoFolder, patchVideoJob, deleteVideoJob, setClipApproval, adjustClip, selectClip, scheduleClip, bulkScheduleClips } from "./video-library.js";
 
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
@@ -359,6 +360,34 @@ export async function handlePortalApi(request, env, url) {
   if (url.pathname === "/api/portal/video-folders" && request.method === "GET") {
     return json({ ok: true, folders: await listVideoFolders(env, client.id) });
   }
+  if (url.pathname === "/api/portal/video-folders" && request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    try {
+      return json({ ok: true, ...(await createVideoFolder(env, client.id, body.name)) }, 201);
+    } catch (error) {
+      return json({ error: error instanceof Error ? error.message : String(error) }, 400);
+    }
+  }
+
+  const folderMatch = url.pathname.match(/^\/api\/portal\/video-folders\/([^/]+)$/);
+  if (folderMatch && request.method === "PATCH") {
+    const body = await request.json().catch(() => ({}));
+    try {
+      return json({ ok: true, ...(await renameVideoFolder(env, client.id, decodeURIComponent(folderMatch[1]), body.name)) });
+    } catch (error) {
+      const code = error instanceof Error ? error.message : String(error);
+      return json({ error: code }, code === "folder_not_found" ? 404 : 400);
+    }
+  }
+
+  if (folderMatch && request.method === "DELETE") {
+    try {
+      return json({ ok: true, ...(await deleteVideoFolder(env, client.id, decodeURIComponent(folderMatch[1]))) });
+    } catch (error) {
+      const code = error instanceof Error ? error.message : String(error);
+      return json({ error: code }, code === "folder_not_found" ? 404 : 400);
+    }
+  }
 
   if (url.pathname === "/api/portal/videos" && request.method === "GET") {
     return json({
@@ -366,6 +395,80 @@ export async function handlePortalApi(request, env, url) {
       jobs: await listVideos(env, client.id),
       folders: await listVideoFolders(env, client.id)
     });
+  }
+  if (url.pathname === "/api/portal/videos/bulk-schedule" && request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    try {
+      return json({ ok: true, ...(await bulkScheduleClips(env, client.id, body.items || [])) });
+    } catch (error) {
+      return json({ error: error instanceof Error ? error.message : String(error) }, 400);
+    }
+  }
+
+  const videoManageMatch = url.pathname.match(/^\/api\/portal\/videos\/([^/]+)$/);
+  if (videoManageMatch && request.method === "PATCH") {
+    const body = await request.json().catch(() => ({}));
+    try {
+      await patchVideoJob(env, client.id, decodeURIComponent(videoManageMatch[1]), body);
+      return json({ ok: true, jobs: await listVideos(env, client.id) });
+    } catch (error) {
+      const code = error instanceof Error ? error.message : String(error);
+      return json({ error: code }, code === "video_not_found" ? 404 : 400);
+    }
+  }
+
+  if (videoManageMatch && request.method === "DELETE") {
+    try {
+      const result = await deleteVideoJob(env, client.id, decodeURIComponent(videoManageMatch[1]));
+      return json({ ok: true, ...result });
+    } catch (error) {
+      const code = error instanceof Error ? error.message : String(error);
+      return json({ error: code }, code === "video_not_found" ? 404 : 400);
+    }
+  }
+
+  const clipApprovalMatch = url.pathname.match(/^\/api\/portal\/videos\/([^/]+)\/clips\/([^/]+)\/approval$/);
+  if (clipApprovalMatch && request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    try {
+      const clip = await setClipApproval(env, client.id, decodeURIComponent(clipApprovalMatch[1]), decodeURIComponent(clipApprovalMatch[2]), body.status);
+      return json({ ok: true, clip });
+    } catch (error) {
+      return json({ error: error instanceof Error ? error.message : String(error) }, 400);
+    }
+  }
+
+  const clipAdjustMatch = url.pathname.match(/^\/api\/portal\/videos\/([^/]+)\/clips\/([^/]+)\/adjust$/);
+  if (clipAdjustMatch && request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    try {
+      const clip = await adjustClip(env, client.id, decodeURIComponent(clipAdjustMatch[1]), decodeURIComponent(clipAdjustMatch[2]), body);
+      return json({ ok: true, clip });
+    } catch (error) {
+      return json({ error: error instanceof Error ? error.message : String(error) }, 400);
+    }
+  }
+
+  const clipSelectMatch = url.pathname.match(/^\/api\/portal\/videos\/([^/]+)\/clips\/([^/]+)\/select$/);
+  if (clipSelectMatch && request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    try {
+      const clip = await selectClip(env, client.id, decodeURIComponent(clipSelectMatch[1]), decodeURIComponent(clipSelectMatch[2]), body.selected);
+      return json({ ok: true, clip });
+    } catch (error) {
+      return json({ error: error instanceof Error ? error.message : String(error) }, 400);
+    }
+  }
+
+  const clipScheduleMatch = url.pathname.match(/^\/api\/portal\/videos\/([^/]+)\/clips\/([^/]+)\/schedule$/);
+  if (clipScheduleMatch && request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    try {
+      const clip = await scheduleClip(env, client.id, decodeURIComponent(clipScheduleMatch[1]), decodeURIComponent(clipScheduleMatch[2]), body.scheduledFor, body.caption || "");
+      return json({ ok: true, clip });
+    } catch (error) {
+      return json({ error: error instanceof Error ? error.message : String(error) }, 400);
+    }
   }
 
   if (url.pathname === "/api/portal/onboarding" && request.method === "POST") {
