@@ -9,6 +9,7 @@ import {
 import { getClient, upsertClient, portalClientView } from "./clients.js";
 import { tokenUsageToday } from "./openai.js";
 import { startInstagramOAuth, handleInstagramOAuthCallback } from "./instagram.js";
+import { AGENT_CORE_MODULES, normalizeAgentCoreConfig, agentCoreState, agentExecutions, saveAgentCoreConfig } from "./agent-core.js";
 
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
@@ -388,15 +389,37 @@ export async function handlePortalApi(request, env, url) {
     return json({ ok: true, client: portalClientView(updated) });
   }
 
+  if (url.pathname === "/api/portal/agent-core" && request.method === "GET") {
+    const [state, executions] = await Promise.all([
+      agentCoreState(env, client.id),
+      agentExecutions(env, client.id, 60)
+    ]);
+    const pendingRow = await env.DB.prepare(
+      "SELECT COUNT(*) AS count FROM post_ledger WHERE client_id = ?1 AND approval_status = 'pending'"
+    ).bind(client.id).first();
+    const correctionRow = await env.DB.prepare(
+      "SELECT COUNT(*) AS count FROM post_ledger WHERE client_id = ?1 AND approval_status = 'correction_requested'"
+    ).bind(client.id).first();
+    return json({
+      ok: true,
+      modules: AGENT_CORE_MODULES,
+      config: normalizeAgentCoreConfig(client),
+      state,
+      executions,
+      pendingApproval: Number(pendingRow?.count || 0),
+      correctionRequested: Number(correctionRow?.count || 0)
+    });
+  }
+
   if (url.pathname === "/api/portal/agent-core" && request.method === "POST") {
     const body = await request.json().catch(() => ({}));
-    const current = client.config?.agentCore && typeof client.config.agentCore === "object"
-      ? client.config.agentCore
-      : {};
-    const updated = await patchClientConfig(env, client, {
-      agentCore: { ...current, ...body }
-    });
-    return json({ ok: true, client: portalClientView(updated) });
+    try {
+      const config = await saveAgentCoreConfig(env, client.id, body);
+      const updated = await getClient(env, client.id);
+      return json({ ok: true, config, client: portalClientView(updated) });
+    } catch (error) {
+      return json({ error: error instanceof Error ? error.message : String(error) }, 400);
+    }
   }
 
   if (url.pathname === "/api/portal/leads" && request.method === "GET") {
