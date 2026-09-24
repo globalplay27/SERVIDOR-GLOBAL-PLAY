@@ -604,3 +604,34 @@ footer span{color:#a8c8d7!important}
 .video-options .video-subtitle-option{grid-column:1/-1}
 .video-clip-card video{background:#000;contain:layout paint}
 @media(max-width:760px){.video-options{grid-template-columns:1fr}.video-options .video-subtitle-option{grid-column:auto}}
+
+
+/* ===== Trailer Finder Premium ===== */
+.trailer-search-panel{position:relative;overflow:hidden}
+.trailer-search-panel:before{content:"";position:absolute;inset:0;pointer-events:none;background:
+  radial-gradient(circle at 12% 18%,rgba(93,211,255,.08),transparent 26%),
+  radial-gradient(circle at 82% 10%,rgba(32,120,255,.06),transparent 24%)}
+.trailer-search-premium{position:relative;z-index:1;display:grid;grid-template-columns:220px minmax(320px,1fr) 190px;gap:14px;align-items:end;padding:18px;border:1px solid rgba(93,211,255,.14);border-radius:18px;background:linear-gradient(180deg,rgba(7,17,24,.92),rgba(4,10,15,.96));box-shadow:inset 0 1px 0 rgba(255,255,255,.025),0 16px 40px rgba(0,0,0,.16)}
+.trailer-field-label{display:block;margin:0 0 8px;color:#9bb2bf;font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+.trailer-kind-block{display:grid}
+.trailer-kind-block select{position:absolute!important;width:1px!important;height:1px!important;opacity:0!important;pointer-events:none!important}
+.trailer-kind-toggle{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:5px;border:1px solid rgba(93,211,255,.16);border-radius:14px;background:#03090d;box-shadow:inset 0 0 0 1px rgba(255,255,255,.012)}
+.trailer-kind-toggle button{min-height:48px;border:1px solid transparent;border-radius:10px;background:transparent;color:#748b99;font-size:11px;font-weight:900;letter-spacing:.1em;cursor:pointer;transition:.18s ease}
+.trailer-kind-toggle button:hover{color:#dff7ff;background:rgba(93,211,255,.05)}
+.trailer-kind-toggle button.active{color:#041017;border-color:rgba(132,226,255,.45);background:linear-gradient(135deg,#9eeaff,#45baff);box-shadow:0 8px 22px rgba(26,156,223,.18),inset 0 1px 0 rgba(255,255,255,.45)}
+.trailer-query{display:grid!important;gap:0!important}
+.trailer-query-shell{display:grid;grid-template-columns:48px 1fr;align-items:center;min-height:58px;border:1px solid rgba(93,211,255,.18);border-radius:14px;background:linear-gradient(180deg,#07121a,#050c11);box-shadow:inset 0 1px 0 rgba(255,255,255,.025);transition:.18s ease}
+.trailer-query-shell:focus-within{border-color:rgba(93,211,255,.62);box-shadow:0 0 0 3px rgba(93,211,255,.07),0 12px 30px rgba(0,0,0,.18)}
+.trailer-search-icon{display:grid;place-items:center;height:100%;color:#68d7ff;font-size:25px;font-weight:300}
+.trailer-query-shell input{width:100%;height:56px!important;border:0!important;outline:0!important;background:transparent!important;color:#f2fbff!important;font-size:15px!important;font-weight:700;padding:0 16px 0 2px!important;box-shadow:none!important}
+.trailer-query-shell input::placeholder{color:#627887!important;font-weight:600!important;opacity:1}
+.trailer-search-submit{min-height:58px;border:1px solid rgba(150,230,255,.28);border-radius:14px;background:linear-gradient(135deg,#a7ebff 0%,#59c6f4 48%,#208de0 100%);color:#031018;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;box-shadow:0 12px 30px rgba(21,135,212,.18),inset 0 1px 0 rgba(255,255,255,.5);transition:transform .18s ease,filter .18s ease,box-shadow .18s ease}
+.trailer-search-submit:hover{transform:translateY(-1px);filter:brightness(1.05);box-shadow:0 15px 34px rgba(21,135,212,.24),inset 0 1px 0 rgba(255,255,255,.55)}
+.trailer-search-submit span{font-size:14px;font-weight:950;letter-spacing:.01em}
+.trailer-search-submit small{font-size:9px;font-weight:800;opacity:.72;text-transform:uppercase;letter-spacing:.08em}
+.trailer-results{position:relative;z-index:1}
+@media(max-width:900px){.trailer-search-premium{grid-template-columns:1fr 1fr}.trailer-query{grid-column:1/-1}.trailer-search-submit{grid-column:1/-1}}
+@media(max-width:620px){.trailer-search-premium{grid-template-columns:1fr;padding:14px}.trailer-query,.trailer-search-submit{grid-column:auto}.trailer-kind-toggle button{min-height:46px}.trailer-query-shell{min-height:54px}.trailer-query-shell input{height:52px!important;font-size:14px!important}}
+
+/* ===== Subtitle controls refinement ===== */
+#video-subtitle-color,#video-subtitle-weight,#video-subtitle-size,#video-subtitle-bg{min-height:42px;color:#eaf9ff;background:#061017;border-color:rgba(93,211,255,.18)}
