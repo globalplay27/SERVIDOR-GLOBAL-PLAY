@@ -1300,18 +1300,18 @@ async function searchTrailers(event){
     if(status){
       const directCount=rows.filter(item=>item.downloadable&&item.downloadUrl).length;
       status.textContent=d.configured
-        ?(directCount?"Resultados encontrados · "+directCount+" com envio direto ao NEXUS.":"Resultados encontrados. As fontes exibidas não oferecem arquivo direto para importação no servidor.")
-        :"Busca limitada: nenhuma fonte direta configurada.";
+        ?(directCount?"Resultados encontrados · "+directCount+" com envio direto ao NEXUS.":"Resultados encontrados dentro do NEXUS.")
+        :"A pesquisa interna não respondeu. Tente novamente.";
       status.className=directCount?"save-status ok":"save-status";
     }
     if(!rows.length){
-      const fallback=d.youtubeSearchUrl||("https://www.youtube.com/results?search_query="+encodeURIComponent(query+" trailer oficial"));
-      root.innerHTML='<div class="post-client-empty"><strong>Nenhum trailer confirmado automaticamente</strong><span>Você ainda pode abrir a busca oficial no YouTube.</span><a class="trailer-open" target="_blank" rel="noopener" href="'+escapeSupport(fallback)+'">Buscar no YouTube</a></div>';
+      root.innerHTML='<div class="post-client-empty"><strong>Nenhum resultado encontrado agora</strong><span>O NEXUS não vai redirecionar você para outro site. Tente novamente em alguns segundos.</span><button type="button" class="ghost-action" id="trailer-retry-search">Tentar novamente</button></div>';
+      $("#trailer-retry-search")?.addEventListener("click",()=>searchTrailers());
       return;
     }
     root.innerHTML=rows.map(item=>{
-      const link=item.trailerUrl||item.youtubeSearchUrl||"#";
-      const badge=item.trailerUrl?(item.official?"TRAILER OFICIAL":"TRAILER ENCONTRADO"):"BUSCAR NO YOUTUBE";
+      const link=item.trailerUrl||"";
+      const badge=item.trailerUrl?(item.official?"TRAILER OFICIAL":"TRAILER ENCONTRADO"):"TRAILER INDISPONÍVEL";
       const cutterAction=item.downloadable&&item.downloadUrl
         ?'<button type="button" class="trailer-import trailer-primary-action" data-import-video="'+escapeSupport(item.downloadUrl)+'" data-import-title="'+escapeSupport(item.title||"")+'">Fazer cortes</button>'
         :'<div class="trailer-manual-actions"><button type="button" class="trailer-use-title trailer-primary-action" data-use-trailer-title="'+escapeSupport(item.title||"")+'">Enviar vídeo</button><span class="trailer-direct-note">Sem fonte direta</span></div>';
@@ -1320,7 +1320,7 @@ async function searchTrailers(event){
         +'<div class="trailer-card-copy"><span>'+escapeSupport(item.type==="series"?"SÉRIE":"FILME")+' · '+escapeSupport(item.year||"—")+'</span>'
         +'<strong>'+escapeSupport(item.title||"")+'</strong>'
         +'<p>'+escapeSupport(item.overview||"Sinopse não disponível.")+'</p>'
-        +'<div class="trailer-card-actions"><a class="trailer-open" target="_blank" rel="noopener" href="'+escapeSupport(link)+'">'+badge+'</a>'+cutterAction+'</div></div>'
+        +'<div class="trailer-card-actions">'+(link?'<a class="trailer-open" target="_blank" rel="noopener" href="'+escapeSupport(link)+'">'+badge+'</a>':'<span class="trailer-open unavailable">'+badge+'</span>')+cutterAction+'</div></div>'
         +'</article>';
     }).join("");
     root.querySelectorAll("[data-trailer-poster]").forEach(img=>{
