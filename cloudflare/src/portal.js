@@ -14,6 +14,7 @@ import { leadsForClient, leadHunterSummary } from "./leads.js";
 import { leadHunterView, saveLeadHunterConfig, runLeadHunter, discardLead } from "./lead-hunter.js";
 import { createVideoFolder, renameVideoFolder, deleteVideoFolder, patchVideoJob, deleteVideoJob, setClipApproval, adjustClip, selectClip, scheduleClip, bulkScheduleClips } from "./video-library.js";
 import { proxyRailwayVideoRequest, createVideoUploadTicket } from "./railway-video-bridge.js";
+import { decidePost, requestPostRevision, saveOwnPostContent, publishPostNow } from "./posts.js";
 
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
@@ -370,6 +371,57 @@ export async function handlePortalApi(request, env, url) {
   if (url.pathname === "/api/portal/posts" && request.method === "GET") {
     return json({ ok: true, posts: await listPosts(env, client.id) });
   }
+
+  const postDecisionMatch = url.pathname.match(/^\/api\/portal\/posts\/([^/]+)\/decision$/);
+  if (postDecisionMatch && request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    try {
+      return json(await decidePost(env, client, decodeURIComponent(postDecisionMatch[1]), body.decision));
+    } catch (error) {
+      const code = error instanceof Error ? error.message : String(error);
+      return json({ error: code }, code === "not_found" ? 404 : 400);
+    }
+  }
+
+  const postRevisionMatch = url.pathname.match(/^\/api\/portal\/posts\/([^/]+)\/revision$/);
+  if (postRevisionMatch && request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    try {
+      return json(await requestPostRevision(env, client, decodeURIComponent(postRevisionMatch[1]), body.instructions));
+    } catch (error) {
+      const code = error instanceof Error ? error.message : String(error);
+      return json({ error: code, message: code === "revision_instructions_required" ? "Explique o que precisa ser corrigido." : "Não foi possível pedir a correção." }, code === "post_not_found" ? 404 : 400);
+    }
+  }
+
+  const postContentMatch = url.pathname.match(/^\/api\/portal\/posts\/([^/]+)\/content$/);
+  if (postContentMatch && request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    try {
+      return json(await saveOwnPostContent(env, client, decodeURIComponent(postContentMatch[1]), body));
+    } catch (error) {
+      const code = error instanceof Error ? error.message : String(error);
+      const status = code === "post_not_found" ? 404
+        : code === "railway_video_bridge_not_configured" ? 503
+        : 400;
+      return json({ error: code, message: code === "railway_video_bridge_not_configured" ? "O armazenamento de mídia ainda precisa ser autorizado pelo administrador NEXUS." : code }, status);
+    }
+  }
+
+  const postManualMatch = url.pathname.match(/^\/api\/portal\/posts\/([^/]+)\/manual$/);
+  if (postManualMatch && request.method === "POST") {
+    try {
+      return json(await publishPostNow(env, client, decodeURIComponent(postManualMatch[1])));
+    } catch (error) {
+      const code = error instanceof Error ? error.message : String(error);
+      return json({
+        error: code,
+        message: error?.messageForUser || code,
+        post: error?.post || null
+      }, Number(error?.status || (code === "post_not_found" ? 404 : 400)));
+    }
+  }
+
 
   if (url.pathname === "/api/portal/video-folders" && request.method === "GET") {
     return json({ ok: true, folders: await listVideoFolders(env, client.id) });
