@@ -1296,6 +1296,7 @@ function uploadSingleVideo(file,index,total,settings,progress){
   return new Promise((resolve,reject)=>{
     const xhr=new XMLHttpRequest();
     xhr.open("POST","/api/portal/videos");
+    xhr.withCredentials=true;
     xhr.setRequestHeader("Content-Type",file.type||"application/octet-stream");
     xhr.setRequestHeader("X-File-Name",encodeURIComponent(file.name));
     xhr.setRequestHeader("X-Video-Goal",settings.goal);
@@ -1319,7 +1320,9 @@ function uploadSingleVideo(file,index,total,settings,progress){
     };
     xhr.onload=()=>{
       let d={};try{d=JSON.parse(xhr.responseText||"{}");}catch{}
-      if(xhr.status>=200&&xhr.status<300)resolve(d);else reject(new Error(d.error==="video_too_large"?"Vídeo acima do limite de 750 MB.":(d.error||"Não foi possível enviar "+file.name)));
+      if(xhr.status>=200&&xhr.status<300){resolve(d);return;}
+      if(xhr.status===401){const err=new Error("Sua sessão expirou. Entre novamente no portal e o vídeo continuará selecionado.");err.code="session_expired";reject(err);return;}
+      reject(new Error(d.error==="video_too_large"?"Vídeo acima do limite de 750 MB.":(d.error||"Não foi possível enviar "+file.name)));
     };
     xhr.onerror=()=>reject(new Error("Falha de conexão ao enviar "+file.name));
     xhr.send(file);
@@ -1355,12 +1358,18 @@ if(videoUploadForm)videoUploadForm.addEventListener("submit",async event=>{
     catch(error){failed++;lastError=error.message;}
   }
   button.disabled=false;if(progress)progress.hidden=true;
-  videoUploadForm.reset();
-  if($("#video-file-name"))$("#video-file-name").textContent="MP4, MOV, WEBM ou MKV";
-  syncVideoFolderControls();
+  if(sent>0){
+    videoUploadForm.reset();
+    if($("#video-file-name"))$("#video-file-name").textContent="MP4, MOV, WEBM ou MKV";
+    syncVideoFolderControls();
+  }
   if(status){
     status.textContent=sent+" vídeo(s) carregado(s) para cortes"+(failed?"; "+failed+" falhou: "+lastError:".");
     status.className=failed?"save-status error":"save-status ok";
+  }
+  if(sent===0&&/sessão expirou/i.test(lastError)){
+    setTimeout(()=>location.reload(),1200);
+    return;
   }
   await loadVideoJobs();
 });
