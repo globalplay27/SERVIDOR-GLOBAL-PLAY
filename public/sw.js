@@ -1,8 +1,8 @@
-const CACHE="nexus-ai-v67";
+const CACHE="nexus-ai-v68";
 const SHELL=[
-  "/portal.html?v=67",
-  "/client.css?v=67",
-  "/client.js?v=67",
+  "/portal.html?v=68",
+  "/client.css?v=68",
+  "/client.js?v=68",
   "/manifest.webmanifest?v=1",
   "/assets/nexus-ai-logo.png?v=3",
   "/assets/nexus-ai-mark.svg"
@@ -33,6 +33,8 @@ self.addEventListener("fetch",event=>{
   const authOrMaster=
     url.pathname==="/" ||
     url.pathname==="/login" ||
+    url.pathname==="/acesso-cliente" ||
+    url.pathname==="/acesso-master" ||
     url.pathname==="/portal-login" ||
     url.pathname==="/master" ||
     url.pathname==="/master/" ||
@@ -49,7 +51,7 @@ self.addEventListener("fetch",event=>{
   if(request.mode==="navigate"){
     event.respondWith(
       fetch(request,{cache:"no-store"})
-        .catch(()=>caches.match("/portal.html?v=67"))
+        .catch(()=>caches.match("/portal.html?v=68"))
     );
     return;
   }
