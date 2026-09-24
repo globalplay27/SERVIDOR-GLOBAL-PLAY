@@ -1479,8 +1479,31 @@ async function runRadarAgent(client, options = {}) {
   const medianEngagementRate = numericMedian(engagementRates);
   const medianAmplificationRate = numericMedian(amplificationRates);
   const followersCount = Math.max(0, Number(snapshot.followersCount || 0));
-  const previousFollowersCount = Math.max(0, Number(agentCoreStateFor(client.id)?.radar?.followersCount || 0));
+  const previousRadarState = agentCoreStateFor(client.id)?.radar || {};
+  const previousFollowersCount = Math.max(0, Number(previousRadarState?.followersCount || 0));
   const followersDelta = previousFollowersCount > 0 ? followersCount - previousFollowersCount : null;
+  const previousGrowthGoal = previousRadarState?.growthGoal && typeof previousRadarState.growthGoal === "object" ? previousRadarState.growthGoal : {};
+  const growthBaselineFollowers = Math.max(1, Number(previousGrowthGoal.baselineFollowers || followersCount || 1));
+  const growthBaselineAt = String(previousGrowthGoal.baselineAt || startedAt);
+  const growthTargetDays = 28;
+  const growthTargetFollowers = growthBaselineFollowers * 2;
+  const elapsedGrowthDays = Math.max(0, (Date.now() - new Date(growthBaselineAt).getTime()) / 86400000);
+  const remainingGrowthDays = Math.max(0.01, growthTargetDays - elapsedGrowthDays);
+  const expectedFollowersByNow = Math.round(growthBaselineFollowers + (growthTargetFollowers - growthBaselineFollowers) * Math.min(1, elapsedGrowthDays / growthTargetDays));
+  const growthPaceGap = followersCount - expectedFollowersByNow;
+  const neededFollowersPerDay = followersCount >= growthTargetFollowers ? 0 : (growthTargetFollowers - followersCount) / remainingGrowthDays;
+  const growthGoal = {
+    baselineFollowers: growthBaselineFollowers,
+    baselineAt: growthBaselineAt,
+    targetFollowers: growthTargetFollowers,
+    targetDays: growthTargetDays,
+    targetAt: new Date(new Date(growthBaselineAt).getTime() + growthTargetDays * 86400000).toISOString(),
+    currentFollowers: followersCount,
+    expectedFollowersByNow,
+    paceGap: growthPaceGap,
+    neededFollowersPerDay: Math.round(neededFollowersPerDay * 10) / 10,
+    status: followersCount >= growthTargetFollowers ? "completed" : (growthPaceGap >= 0 ? "on_pace" : "behind_pace")
+  };
   const medianReachRate = followersCount > 0 && medianReachValue > 0 ? medianReachValue / followersCount : null;
 
   const diagnosis = [];
@@ -1529,6 +1552,7 @@ async function runRadarAgent(client, options = {}) {
     followersCount,
     previousFollowersCount,
     followersDelta,
+    growthGoal,
     topTerms,
     bestRecent,
     outliers: reliableOutliers.slice(0,5).map(item => ({
@@ -1546,6 +1570,10 @@ async function runRadarAgent(client, options = {}) {
       medianViews: medianViewsValue,
       medianReach: medianReachValue,
       followerDelta: followersDelta,
+      growthTargetFollowers: growthGoal.targetFollowers,
+      growthExpectedNow: growthGoal.expectedFollowersByNow,
+      growthPaceGap: growthGoal.paceGap,
+      neededFollowersPerDay: growthGoal.neededFollowersPerDay,
       medianReachRate: medianReachRate === null ? null : Math.round(medianReachRate * 10000) / 100,
       medianEngagementRate: Math.round(medianEngagementRate * 10000) / 100,
       medianAmplificationRate: Math.round(medianAmplificationRate * 10000) / 100,
@@ -1565,6 +1593,7 @@ async function runRadarAgent(client, options = {}) {
       followersDelta !== null
         ? "Variação de seguidores desde o último ciclo: " + (followersDelta >= 0 ? "+" : "") + followersDelta + "."
         : "KPI principal: crescimento de seguidores; iniciando linha de base para medir variação entre ciclos.",
+      "Meta agressiva: dobrar a base em 28 dias. Estado atual: " + growthGoal.status + "; alvo " + growthGoal.targetFollowers + "; ritmo necessário " + growthGoal.neededFollowersPerDay + " seguidores/dia.",
       "KPI principal: crescimento de seguidores. Priorizar compartilhamentos, salvamentos, visitas ao perfil e conteúdo recorrente em série.",
       "Comparar desempenho com a mediana da própria conta, não apenas com views brutas."
     ]
@@ -1577,6 +1606,7 @@ async function runRadarAgent(client, options = {}) {
     measuredMedia: output.measuredMedia,
     followersCount,
     followersDelta,
+    growthGoal,
     metrics: output.metrics,
     bestFormat: formatStats[0]?.mediaType || "",
     formatStats: formatStats.slice(0, 4),
@@ -1639,7 +1669,10 @@ async function runStrategistAgent(client, context = {}, options = {}) {
   const plan = {
     primaryKpi: "followers",
     secondaryKpis: ["profile_visits","shares","saves","reach"],
-    growthRule: "Priorizar conteúdo que dê motivo para seguir o perfil; venda direta é secundária.",
+    growthGoal: radar.growthGoal || {},
+    growthMode: radar?.growthGoal?.status === "behind_pace" ? "recovery" : "growth",
+    contentMix: { reels: 70, carousel: 20, static: 10 },
+    growthRule: "Meta: dobrar seguidores em 28 dias. Priorizar conteúdo que dê motivo para seguir o perfil; venda direta é secundária. Se estiver abaixo do ritmo, concentrar testes em Reels, séries, compartilhamentos e salvamentos sem aumentar frequência de forma cega.",
     niche: client.niche || "Outro",
     audience: profile.targetAudience,
     objective: profile.contentStrategy,
