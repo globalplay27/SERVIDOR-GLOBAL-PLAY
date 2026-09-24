@@ -1273,8 +1273,21 @@ async function searchTrailers(event){
   if(status){status.textContent="Pesquisando…";status.className="save-status";}
   if(root)root.innerHTML='<div class="post-client-empty"><strong>Pesquisando</strong><span>Localizando a obra e o trailer oficial…</span></div>';
   try{
-    const r=await fetch("/api/portal/trailers/search?q="+encodeURIComponent(query)+"&type="+encodeURIComponent(type),{credentials:"same-origin",headers:sessionAuth?{"x-nexus-session":sessionAuth}:{}});
-    const d=await r.json().catch(()=>({}));
+    let r=await fetch("/api/portal/trailers/search?q="+encodeURIComponent(query)+"&type="+encodeURIComponent(type),{credentials:"same-origin",headers:sessionAuth?{"x-nexus-session":sessionAuth}:{}});
+    let d=await r.json().catch(()=>({}));
+    if(r.status===401){
+      const sessionCheck=await fetch("/api/portal/session",{credentials:"same-origin",headers:sessionAuth?{"x-nexus-session":sessionAuth}:{}});
+      if(sessionCheck.ok){
+        r=await fetch("/api/portal/trailers/search?q="+encodeURIComponent(query)+"&type="+encodeURIComponent(type),{credentials:"same-origin",headers:sessionAuth?{"x-nexus-session":sessionAuth}:{}});
+        d=await r.json().catch(()=>({}));
+      }
+    }
+    if(r.status===401){
+      if(status){status.textContent="Sua sessão expirou. Entre novamente no painel.";status.className="save-status error";}
+      if(root)root.innerHTML='<div class="post-client-empty"><strong>Sessão expirada</strong><span>Por segurança, faça login novamente para continuar a pesquisa.</span><button type="button" id="trailer-login-again" class="ghost-action">Entrar novamente</button></div>';
+      $("#trailer-login-again")?.addEventListener("click",()=>{location.href="/portal.html?v=55";});
+      return;
+    }
     if(!r.ok)throw new Error(d.message||d.error||"Falha na pesquisa.");
     const rows=Array.isArray(d.results)?d.results:[];
     if(status){
