@@ -1,6 +1,6 @@
 FROM node:22-alpine
 WORKDIR /app
-RUN apk add --no-cache ffmpeg font-dejavu
+RUN apk add --no-cache ffmpeg font-dejavu yt-dlp
 COPY package.json ./
 COPY server.js instagram-intelligence.js ./
 COPY public ./public
