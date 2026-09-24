@@ -11,6 +11,7 @@ import { tokenUsageToday } from "./openai.js";
 import { startInstagramOAuth, handleInstagramOAuthCallback } from "./instagram.js";
 import { AGENT_CORE_MODULES, normalizeAgentCoreConfig, agentCoreState, agentExecutions, saveAgentCoreConfig } from "./agent-core.js";
 import { leadsForClient, leadHunterSummary } from "./leads.js";
+import { leadHunterView, saveLeadHunterConfig, runLeadHunter, discardLead } from "./lead-hunter.js";
 
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
@@ -423,6 +424,34 @@ export async function handlePortalApi(request, env, url) {
     }
   }
 
+  if (url.pathname === "/api/portal/lead-hunter" && request.method === "GET") {
+    return json(await leadHunterView(env, client));
+  }
+
+  if (url.pathname === "/api/portal/lead-hunter/config" && request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    const config = await saveLeadHunterConfig(env, client, body);
+    const summary = await leadHunterSummary(env, client.id);
+    return json({ ok: true, config, summary });
+  }
+
+  if (url.pathname === "/api/portal/lead-hunter/run" && request.method === "POST") {
+    try {
+      return json(await runLeadHunter(env, client.id, { trigger: "manual" }));
+    } catch (error) {
+      return json({ error: error instanceof Error ? error.message : String(error) }, 400);
+    }
+  }
+
+  const discardMatch = url.pathname.match(/^\/api\/portal\/lead-hunter\/leads\/([^/]+)\/discard$/);
+  if (discardMatch && request.method === "POST") {
+    try {
+      const view = await discardLead(env, client.id, decodeURIComponent(discardMatch[1]));
+      return json({ ok: true, view });
+    } catch (error) {
+      return json({ error: error instanceof Error ? error.message : String(error) }, 400);
+    }
+  }
   if (url.pathname === "/api/portal/leads" && request.method === "GET") {
     const [summary, leads] = await Promise.all([
       leadHunterSummary(env, client.id),
