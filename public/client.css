@@ -734,3 +734,7 @@ footer span{color:#a8c8d7!important}
   border-color:rgba(93,211,255,.62);
   background:linear-gradient(135deg,rgba(93,211,255,.30),rgba(0,168,255,.22));
 }
+
+.trailer-manual-actions{display:grid;gap:6px}
+.trailer-manual-actions .trailer-primary-action{width:100%}
+.trailer-direct-note{display:block;text-align:center;font-size:8px;font-weight:800;color:#6f8793;letter-spacing:.04em}
