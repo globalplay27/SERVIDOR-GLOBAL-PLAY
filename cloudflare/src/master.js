@@ -66,7 +66,7 @@ function masterClientView(client) {
   };
 }
 
-function masterLoginPage(error = false) {
+function masterLoginPage(error = false, action = "/master-login") {
   return `<!doctype html>
 <html lang="pt-BR">
 <head>
@@ -87,7 +87,7 @@ button{width:100%;margin-top:12px;padding:14px;border:0;border-radius:10px;backg
 <body><main class="card">
 <div class="brand"><img src="/assets/nexus-ai-mark.svg" alt=""><div><strong>NEXUS AI</strong><small>SERVIDOR NEXUS</small></div></div>
 <h1>Acesso administrativo</h1><p class="muted">Área exclusiva do administrador NEXUS.</p>
-<form method="post" action="/master-login">
+<form method="post" action="${action}">
 <label>Usuário<input name="username" autocomplete="username" required></label>
 <label>Senha<input name="password" type="password" autocomplete="current-password" required></label>
 <button type="submit">Entrar no Master</button>
@@ -210,6 +210,42 @@ export async function handleMaster(request, env, url) {
   if (url.pathname === "/master-logout" && request.method === "POST") {
     await deleteMasterSession(env, request).catch(() => {});
     return json({ ok: true }, 200, { "set-cookie": clearMasterSessionCookie() });
+  }
+
+  if (url.pathname === "/api/master/access" && request.method === "GET") {
+    return new Response(masterLoginPage(false, "/api/master/access"), {
+      status: 200,
+      headers: {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "no-store, no-cache, must-revalidate",
+        "pragma": "no-cache"
+      }
+    });
+  }
+
+  if (url.pathname === "/api/master/access" && request.method === "POST") {
+    const form = await request.formData().catch(() => null);
+    const username = String(form?.get("username") || "").trim();
+    const password = String(form?.get("password") || "");
+    if (!await masterCredentialsValid(env, username, password)) {
+      return new Response(masterLoginPage(true, "/api/master/access"), {
+        status: 401,
+        headers: {
+          "content-type": "text/html; charset=utf-8",
+          "cache-control": "no-store, no-cache, must-revalidate",
+          "pragma": "no-cache"
+        }
+      });
+    }
+    const session = await createMasterSession(env);
+    return redirect("/api/master/console", { "set-cookie": masterSessionCookie(session.token) });
+  }
+
+  if (url.pathname === "/api/master/console" && request.method === "GET") {
+    if (!await requireMaster(request, env)) {
+      return redirect("/api/master/access");
+    }
+    return asset(env, request, "/index.html");
   }
 
   const protectedApi =
