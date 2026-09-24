@@ -55,6 +55,75 @@ export async function safeEqualText(left, right) {
   return safeEqualHex(a, b);
 }
 
+function cleanConfiguredValue(value) {
+  let text = String(value ?? "").trim();
+  if (
+    text.length >= 2
+    && ((text.startsWith('"') && text.endsWith('"')) || (text.startsWith("'") && text.endsWith("'")))
+  ) {
+    text = text.slice(1, -1).trim();
+  }
+  return text;
+}
+
+async function configuredCredentialMatches(input, configured) {
+  const raw = String(configured ?? "");
+  if (!raw) return false;
+  if (await safeEqualText(String(input ?? ""), raw)) return true;
+  const clean = cleanConfiguredValue(raw);
+  if (clean !== raw && await safeEqualText(String(input ?? "").trim(), clean)) return true;
+  return await safeEqualText(String(input ?? "").trim(), clean);
+}
+
+async function ensureMasterUserSchema(env) {
+  if (!env?.DB) return;
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS master_users (
+      username TEXT PRIMARY KEY COLLATE NOCASE,
+      password_algo TEXT NOT NULL DEFAULT 'hmac-sha256-v1',
+      password_salt TEXT NOT NULL,
+      password_hash TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`
+  ).run();
+}
+
+async function createMasterPasswordRecord(env, password) {
+  const value = String(password || "");
+  if (!value) throw new Error("master_password_required");
+  const salt = randomToken(18);
+  const hash = await hmacHex(authPepper(env), "master-password-v1|" + salt + "|" + value);
+  return { algorithm: "hmac-sha256-v1", salt, hash };
+}
+
+async function verifyMasterPasswordRecord(env, password, record) {
+  if (!record?.password_salt || !record?.password_hash) return false;
+  if (String(record.password_algo || "hmac-sha256-v1") !== "hmac-sha256-v1") return false;
+  const hash = await hmacHex(
+    authPepper(env),
+    "master-password-v1|" + String(record.password_salt) + "|" + String(password || "")
+  );
+  return safeEqualHex(hash, record.password_hash);
+}
+
+async function upsertMasterUser(env, username, password) {
+  if (!env?.DB || !env.NEXUS_SECRET_KEY) return;
+  const cleanUsername = cleanConfiguredValue(username);
+  if (!cleanUsername || !String(password || "")) return;
+  await ensureMasterUserSchema(env);
+  const record = await createMasterPasswordRecord(env, password);
+  await env.DB.prepare(
+    `INSERT INTO master_users(username, password_algo, password_salt, password_hash, created_at, updated_at)
+     VALUES(?1, ?2, ?3, ?4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+     ON CONFLICT(username) DO UPDATE SET
+       password_algo = excluded.password_algo,
+       password_salt = excluded.password_salt,
+       password_hash = excluded.password_hash,
+       updated_at = CURRENT_TIMESTAMP`
+  ).bind(cleanUsername, record.algorithm, record.salt, record.hash).run();
+}
+
 export function parseCookies(request) {
   const cookie = String(request.headers.get("cookie") || "");
   const result = {};
@@ -145,16 +214,19 @@ export async function authenticatePortalUser(env, username, password) {
     return String(row.client_id);
   }
 
-  const fallbackUser = String(env.CLIENT_PORTAL_USERNAME || "").trim();
+  const fallbackUser = cleanConfiguredValue(env.CLIENT_PORTAL_USERNAME);
   const fallbackPassword = String(env.CLIENT_PORTAL_PASSWORD || "");
-  const fallbackClientId = String(env.CLIENT_PORTAL_CLIENT_ID || "").trim();
+  const fallbackClientId = cleanConfiguredValue(env.CLIENT_PORTAL_CLIENT_ID);
   if (
     fallbackUser
     && fallbackPassword
     && fallbackClientId
-    && await safeEqualText(cleanUsername, fallbackUser)
-    && await safeEqualText(String(password || ""), fallbackPassword)
+    && await configuredCredentialMatches(cleanUsername, fallbackUser)
+    && await configuredCredentialMatches(String(password || ""), fallbackPassword)
   ) {
+    try {
+      await upsertPortalUser(env, fallbackClientId, fallbackUser, cleanConfiguredValue(fallbackPassword));
+    } catch {}
     return fallbackClientId;
   }
 
@@ -212,11 +284,44 @@ export async function deletePortalSession(env, request) {
 }
 
 export async function masterCredentialsValid(env, username, password) {
-  const expectedUser = String(env.NEXUS_ADMIN_USERNAME || "").trim();
-  const expectedPassword = String(env.NEXUS_ADMIN_PASSWORD || "");
-  if (!expectedUser || !expectedPassword) return false;
-  return await safeEqualText(String(username || "").trim(), expectedUser)
-    && await safeEqualText(String(password || ""), expectedPassword);
+  const cleanUsername = String(username || "").trim();
+  const suppliedPassword = String(password || "");
+
+  if (env?.DB && env.NEXUS_SECRET_KEY) {
+    try {
+      await ensureMasterUserSchema(env);
+      const row = cleanUsername
+        ? await env.DB.prepare(
+            `SELECT username, password_algo, password_salt, password_hash
+             FROM master_users WHERE username = ?1 COLLATE NOCASE LIMIT 1`
+          ).bind(cleanUsername).first()
+        : null;
+      if (row && await verifyMasterPasswordRecord(env, suppliedPassword, row)) {
+        return true;
+      }
+    } catch {}
+  }
+
+  const candidates = [
+    [env.NEXUS_ADMIN_USERNAME, env.NEXUS_ADMIN_PASSWORD],
+    [env.ADMIN_USERNAME, env.ADMIN_PASSWORD],
+    [env.MASTER_USERNAME, env.MASTER_PASSWORD]
+  ];
+
+  for (const [configuredUser, configuredPassword] of candidates) {
+    const expectedUser = cleanConfiguredValue(configuredUser);
+    const expectedPassword = String(configuredPassword || "");
+    if (!expectedUser || !expectedPassword) continue;
+    const userOk = await configuredCredentialMatches(cleanUsername, expectedUser);
+    const passwordOk = await configuredCredentialMatches(suppliedPassword, expectedPassword);
+    if (!userOk || !passwordOk) continue;
+    try {
+      await upsertMasterUser(env, expectedUser, cleanConfiguredValue(expectedPassword));
+    } catch {}
+    return true;
+  }
+
+  return false;
 }
 
 export async function createMasterSession(env) {
