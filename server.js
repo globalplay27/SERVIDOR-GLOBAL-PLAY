@@ -5455,6 +5455,37 @@ const server = http.createServer(async (req, res) => {
       version: "1.0.0"
     });
   }
+  if (url.pathname === "/api/nexus/bridge/auth-check" && req.method === "POST") {
+    const expected = String(process.env.NEXUS_RAILWAY_BRIDGE_SECRET || "").trim();
+    const supplied = String(req.headers["x-nexus-bridge-secret"] || "").trim();
+    if (!expected || !supplied || !safeEqualText(supplied, expected)) {
+      return send(res, 401, { ok: false, error: "unauthorized" });
+    }
+
+    const body = await readBody(req);
+    const kind = String(body.kind || "").trim().toLowerCase();
+    const username = String(body.username || "").trim();
+    const password = String(body.password || "");
+
+    if (kind === "master") {
+      return send(res, 200, {
+        ok: masterCredentialsValid(username, password),
+        kind: "master"
+      });
+    }
+
+    if (kind === "portal") {
+      const client = clientFromCredentials(username, password);
+      return send(res, 200, {
+        ok: Boolean(client),
+        kind: "portal",
+        clientId: client?.id || null
+      });
+    }
+
+    return send(res, 400, { ok: false, error: "invalid_kind" });
+  }
+
 
   // Master API authorization must be enforced independently of the page login.
   if ((url.pathname === "/api/clients" || url.pathname.startsWith("/api/clients/")
