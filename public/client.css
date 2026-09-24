@@ -752,3 +752,20 @@ footer span{color:#a8c8d7!important}
 .video-upload-divider{display:flex;align-items:center;gap:10px;color:#58727f;font-size:8px;text-transform:uppercase;letter-spacing:.12em}
 .video-upload-divider:before,.video-upload-divider:after{content:"";height:1px;flex:1;background:rgba(93,211,255,.09)}
 @media(max-width:620px){.video-remote-row{grid-template-columns:1fr}.video-remote-row .ghost-action{width:100%}}
+
+
+/* ===== per-video cutter configuration ===== */
+.video-cutter-config{margin-top:14px;padding:16px;border:1px solid rgba(93,211,255,.14);border-radius:14px;background:rgba(2,9,13,.82)}
+.video-cutter-config-head{display:flex;justify-content:space-between;gap:12px;margin-bottom:14px}
+.video-cutter-config-head strong{display:block;color:#eefaff;font-size:13px}
+.video-cutter-config-head span{display:block;margin-top:4px;color:#7d98a5;font-size:9px;line-height:1.5}
+.video-cutter-config-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.video-cutter-config-grid label{display:grid;gap:5px}
+.video-cutter-config-grid label>span{color:#9bb7c3;font-size:9px;font-weight:800}
+.video-cutter-config-grid select,.video-cutter-config-grid input[type="number"],.video-cutter-config-grid input[type="text"],.video-cutter-config-grid input:not([type]){height:40px;padding:0 10px;border-radius:9px;border:1px solid rgba(93,211,255,.14);background:#02090d;color:#edfaff;outline:none;min-width:0}
+.video-cutter-config-grid select:focus,.video-cutter-config-grid input:focus{border-color:rgba(93,211,255,.48);box-shadow:0 0 0 3px rgba(93,211,255,.06)}
+.video-config-check{grid-column:1/-1;display:flex!important;align-items:center;grid-template-columns:auto 1fr!important;padding:10px;border:1px solid rgba(93,211,255,.09);border-radius:9px;background:rgba(93,211,255,.03)}
+.video-config-check input{width:18px;height:18px}
+.video-config-error{margin:10px 0 0;color:#ff9ba8;font-size:9px;line-height:1.45}
+.video-start-processing{margin-top:12px;width:100%}
+@media(max-width:720px){.video-cutter-config-grid{grid-template-columns:1fr}.video-config-check{grid-column:auto}}
