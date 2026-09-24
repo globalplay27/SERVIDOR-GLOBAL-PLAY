@@ -6,6 +6,10 @@ import crypto from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
+import { lookup } from "node:dns/promises";
+import { isIP } from "node:net";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { buildHookCandidates, captionAudit, classifyInteraction, estimateBeats, humanizeText, performanceAudit, profileAudit, repurposeCandidates, scoreHook, skillCoverageForAgent, suggestFormat } from "./instagram-intelligence.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -37,6 +41,7 @@ const leadHunterRunsFile = path.join(DATA_DIR, "lead-hunter-runs.json");
 const leadHunterSeenFile = path.join(DATA_DIR, "lead-hunter-seen.json");
 const videoJobsFile = path.join(DATA_DIR, "video-jobs.json");
 const videoFoldersFile = path.join(DATA_DIR, "video-folders.json");
+const tokenUsageFile = path.join(DATA_DIR, "token-usage.json");
 const clientLogoDir = path.join(DATA_DIR, "client-logos");
 const manualPostDir = path.join(DATA_DIR, "manual-posts");
 const clientVideoDir = path.join(DATA_DIR, "client-videos");
@@ -265,6 +270,97 @@ function loadClients() {
 
 function saveClients(items) {
   writeJsonAtomic(runtimeFile, items);
+}
+
+function nexusLocalDay(value = new Date()) {
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Sao_Paulo",
+      year: "numeric", month: "2-digit", day: "2-digit"
+    }).formatToParts(value instanceof Date ? value : new Date(value));
+    const get = type => parts.find(item => item.type === type)?.value || "";
+    return [get("year"), get("month"), get("day")].join("-");
+  } catch {
+    return new Date(value).toISOString().slice(0, 10);
+  }
+}
+
+function dailyTokenLimitForClient(clientOrId) {
+  const client = typeof clientOrId === "string"
+    ? loadClients().find(item => item.id === clientOrId)
+    : clientOrId;
+  const clientLimit = Number(client?.aiDailyTokenLimit || 0);
+  if (Number.isFinite(clientLimit) && clientLimit > 0) return Math.round(clientLimit);
+  const envLimit = Number(process.env.NEXUS_DEFAULT_DAILY_TOKEN_LIMIT || 100000);
+  return Number.isFinite(envLimit) && envLimit > 0 ? Math.round(envLimit) : 100000;
+}
+
+function clientTokenUsageSummary(clientOrId) {
+  const clientId = typeof clientOrId === "string" ? clientOrId : String(clientOrId?.id || "");
+  const day = nexusLocalDay();
+  const ledger = readObjectFile(tokenUsageFile, {});
+  const row = ledger?.[clientId]?.[day] || {};
+  const inputTokens = Math.max(0, Number(row.inputTokens || 0));
+  const outputTokens = Math.max(0, Number(row.outputTokens || 0));
+  const usedTokens = Math.max(0, Number(row.usedTokens || (inputTokens + outputTokens)));
+  const limitTokens = dailyTokenLimitForClient(clientOrId);
+  const remainingTokens = Math.max(0, limitTokens - usedTokens);
+  const percent = limitTokens > 0 ? Math.min(100, Math.round((usedTokens / limitTokens) * 100)) : 0;
+  return {
+    day,
+    timezone: "America/Sao_Paulo",
+    usedTokens,
+    inputTokens,
+    outputTokens,
+    calls: Math.max(0, Number(row.calls || 0)),
+    limitTokens,
+    remainingTokens,
+    percent,
+    blocked: usedTokens >= limitTokens,
+    updatedAt: row.updatedAt || null
+  };
+}
+
+function assertClientTokenBudget(clientId) {
+  const summary = clientTokenUsageSummary(clientId);
+  if (summary.blocked) {
+    const error = new Error("daily_token_limit_reached");
+    error.code = "daily_token_limit_reached";
+    error.tokenUsage = summary;
+    throw error;
+  }
+  return summary;
+}
+
+function recordClientTokenUsage(clientId, usage = {}, model = "") {
+  if (!clientId || !usage || typeof usage !== "object") return clientTokenUsageSummary(clientId);
+  const inputTokens = Math.max(0, Number(
+    usage.input_tokens ?? usage.prompt_tokens ?? usage.inputTokens ?? 0
+  ));
+  const outputTokens = Math.max(0, Number(
+    usage.output_tokens ?? usage.completion_tokens ?? usage.outputTokens ?? 0
+  ));
+  const declaredTotal = Math.max(0, Number(usage.total_tokens ?? usage.totalTokens ?? 0));
+  const usedTokens = declaredTotal || (inputTokens + outputTokens);
+  if (!usedTokens) return clientTokenUsageSummary(clientId);
+
+  const ledger = readObjectFile(tokenUsageFile, {});
+  const day = nexusLocalDay();
+  const perClient = ledger[clientId] && typeof ledger[clientId] === "object" ? ledger[clientId] : {};
+  const current = perClient[day] && typeof perClient[day] === "object" ? perClient[day] : {};
+  perClient[day] = {
+    inputTokens: Math.max(0, Number(current.inputTokens || 0)) + inputTokens,
+    outputTokens: Math.max(0, Number(current.outputTokens || 0)) + outputTokens,
+    usedTokens: Math.max(0, Number(current.usedTokens || 0)) + usedTokens,
+    calls: Math.max(0, Number(current.calls || 0)) + 1,
+    lastModel: String(model || current.lastModel || "").slice(0, 120),
+    updatedAt: new Date().toISOString()
+  };
+  const days = Object.keys(perClient).sort().reverse();
+  for (const oldDay of days.slice(31)) delete perClient[oldDay];
+  ledger[clientId] = perClient;
+  writeJsonAtomic(tokenUsageFile, ledger);
+  return clientTokenUsageSummary(clientId);
 }
 
 function readObjectFile(file, fallback = {}) {
@@ -912,6 +1008,7 @@ async function aiQualifyLeadCandidates(client, candidates, config) {
     localScore:item.localScore
   }));
   try {
+    assertClientTokenBudget(client.id);
     const response = await fetch("https://api.openai.com/v1/responses", {
       method:"POST",
       headers:{ authorization:"Bearer " + apiKey, "content-type":"application/json" },
@@ -931,6 +1028,7 @@ async function aiQualifyLeadCandidates(client, candidates, config) {
     });
     const payload = await response.json().catch(()=>({}));
     if (!response.ok) throw new Error("lead_ai_" + response.status);
+    recordClientTokenUsage(client.id, payload.usage || {}, "gpt-5.6-luna");
     const raw = responseOutputText(payload);
     const a = raw.indexOf("{"), b = raw.lastIndexOf("}");
     if (a < 0 || b <= a) throw new Error("lead_ai_invalid_json");
@@ -2422,6 +2520,7 @@ function ragnarVideoBridge(clientId) {
 }
 
 async function openAIResponsesForClient(clientId, body, timeoutMs = 120000) {
+  assertClientTokenBudget(clientId);
   const apiKey = videoOpenAIKeyForClient(clientId);
   if (apiKey) {
     const response = await fetch("https://api.openai.com/v1/responses", {
@@ -2432,6 +2531,7 @@ async function openAIResponsesForClient(clientId, body, timeoutMs = 120000) {
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error("openai_responses_" + response.status);
+    recordClientTokenUsage(clientId, payload.usage || {}, String(body?.model || ""));
     return payload;
   }
 
@@ -2450,6 +2550,7 @@ async function openAIResponsesForClient(clientId, body, timeoutMs = 120000) {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error("ragnar_openai_bridge_" + response.status + ":" + String(payload?.error || payload?.detail || "").slice(0,160));
+  recordClientTokenUsage(clientId, payload.usage || {}, String(body?.model || ""));
   return payload;
 }
 
@@ -2754,6 +2855,19 @@ function refineClipBoundary(clip, segments, silences, duration, targetDuration) 
       start = Math.max(0, Number(current.start || start) - 0.12);
     }
 
+    // Give the scene enough lead-in to avoid opening in the middle of a thought.
+    let naturalStartIndex = startIndex;
+    for (let step = 0; step < 3 && naturalStartIndex > 0; step += 1) {
+      const before = segments[naturalStartIndex - 1];
+      if (sentenceLooksFinished(before?.text)) break;
+      if (end - Number(before?.start || 0) > maxWanted) break;
+      naturalStartIndex -= 1;
+    }
+    if (segments[naturalStartIndex]) {
+      start = Math.max(0, Number(segments[naturalStartIndex].start || start) - 0.12);
+      startIndex = naturalStartIndex;
+    }
+
     let endIndex = segments.findIndex(seg => Number(seg.end || 0) >= end);
     if (endIndex < startIndex) endIndex = startIndex;
     if (endIndex < 0) endIndex = segments.length - 1;
@@ -2772,6 +2886,22 @@ function refineClipBoundary(clip, segments, silences, duration, targetDuration) 
       endIndex += 1;
       end = Math.min(total, Number(next.end || end) + 0.22);
       if (end - start >= desired && sentenceLooksFinished(next.text)) break;
+    }
+
+    // If the target duration lands in an unfinished sentence, keep a small
+    // reserve to reach the next natural conclusion instead of cutting abruptly.
+    let closureSteps = 0;
+    while (
+      endIndex + 1 < segments.length
+      && !sentenceLooksFinished(segments[endIndex]?.text)
+      && closureSteps < 3
+    ) {
+      const next = segments[endIndex + 1];
+      if (Number(next.end || 0) - start > maxWanted) break;
+      endIndex += 1;
+      closureSteps += 1;
+      end = Math.min(total, Number(next.end || end) + 0.22);
+      if (sentenceLooksFinished(next.text)) break;
     }
   }
 
@@ -2888,7 +3018,9 @@ async function selectSmartClips(transcription, duration, count, targetDuration, 
       + "Não divida o vídeo em partes iguais e não privilegie os primeiros segundos. Escolha os pontos de maior valor, gancho, clareza, emoção, prova ou informação.\n"
       + "Cada corte deve ficar o mais próximo possível de " + desiredDuration + " segundos. Aceite alguns segundos a mais para concluir a fala, mas nunca entregue 13s quando foram pedidos 30s se houver material suficiente.\n"
       + "REGRA CRÍTICA: nunca cortar palavra, frase, resposta, CTA ou despedida. O corte começa e termina em ideia natural.\n"
-      + "Cada opção precisa funcionar como um mini-vídeo completo: começo com contexto/introdução suficiente para entender a cena, desenvolvimento e final com conclusão, payoff ou gancho conscientemente fechado. Não comece no meio de uma fala sem contexto e não termine abruptamente.\n"
+      + "Priorize cenas completas e memoráveis: conflito, revelação, humor, emoção, surpresa, ação, frase forte ou informação que faça sentido sozinha. Penalize trechos mornos, repetitivos, com silêncio excessivo ou que dependam de contexto ausente.\n"
+      + "Cada opção precisa funcionar como um mini-vídeo completo: começo com contexto suficiente para entender a cena, desenvolvimento e final com conclusão, payoff ou gancho conscientemente fechado. Não comece no meio de uma fala sem contexto e não termine abruptamente.\n"
+      + "Não peça nem planeje texto gráfico de introdução ou título sobreposto: o NEXUS deve preservar somente o que já existe na imagem original do vídeo.\n"
       + (contentTitle ? "O conteúdo foi identificado como " + JSON.stringify(contentTitle) + ". Use esse contexto apenas para estruturar o corte; não invente falas.\n" : "")
       + "As opções podem compartilhar parte do mesmo vídeo quando forem alternativas realmente diferentes, mas não podem ser praticamente o mesmo corte. Dê score de 1 a 100 e explique o motivo.\n"
       + (attempt > 1 ? "Na tentativa anterior faltaram alternativas válidas; varie melhor os pontos de entrada e saída e evite opções quase idênticas.\n" : "")
@@ -2966,10 +3098,13 @@ function escapeFfmpegDrawtext(value) {
 async function renderVideoClip(inputPath, outputPath, start, end, outputFormat = "reel", endText = "", endContact = "", subtitleSegments = [], subtitleOptions = {}, contentTitle = "", introText = "") {
   const duration = Math.max(3, Number(end) - Number(start));
   const spec = videoFormatSpec(outputFormat);
-  const finalTitle = String(contentTitle || "").trim().slice(0, 100);
+  // Never burn an inferred/generated content title or intro into the image.
+  // If the source video already contains a title card, it remains naturally
+  // because we preserve the original frames. Explicit user CTA fields stay optional.
+  const finalTitle = "";
   const finalText = String(endText || "").trim().slice(0, 90);
   const finalContact = String(endContact || "").trim().slice(0, 90);
-  const openingText = String(introText || "").trim().slice(0, 90);
+  const openingText = "";
   const outroStart = Math.max(0, duration - 2.8);
   const defaultFontFile = "/usr/share/fonts/ttf-dejavu/DejaVuSans-Bold.ttf";
   const subtitleStyle = normalizeSubtitleStyle(subtitleOptions);
@@ -3188,14 +3323,20 @@ async function processVideoJob(jobId) {
         initial.outputFormat || "reel", initial.endText || "", initial.endContact || "",
         translatedSubtitles,
         { size: initial.subtitleSize, color: initial.subtitleColor, weight: initial.subtitleWeight, bg: initial.subtitleBg },
-        contentIdentity.title || "",
-        selected.introText || selected.title || ""
+        "",
+        ""
       );
       const transcript = transcriptForRange(transcription.segments, selected.start, selected.end);
       const reviewText = translatedSubtitles.length ? translatedSubtitles.map(item => item.text).join(" ") : transcript;
       const hookReview = scoreHook(reviewText.slice(0,220));
       const beatReview = estimateBeats(transcript, Number(initial.clipDuration || 30));
-      const combinedScore = Math.round(Math.min(100, Number(selected.score || 0) * .65 + Number(hookReview.score || 0) * .35));
+      const naturalEndingScore = sentenceLooksFinished(transcript.slice(-280)) ? 100 : 58;
+      const combinedScore = Math.round(Math.min(
+        100,
+        Number(selected.score || 0) * .55
+          + Number(hookReview.score || 0) * .25
+          + naturalEndingScore * .20
+      ));
       clips.push({
         id: clipId, publicName, storedPath: outputPath,
         title: selected.title || "Corte " + (index + 1),
@@ -3285,6 +3426,8 @@ async function processVideoJob(jobId) {
       friendlyMessage = "A IA encontrou bons momentos, mas eles não atendem à duração solicitada sem sobrepor ou cortar a fala. Nenhum corte curto foi entregue. Tente novamente ou envie um vídeo mais longo.";
     } else if (code.includes("subtitle_translation_")) {
       friendlyMessage = "O corte foi identificado, mas a tradução das legendas para PT-BR falhou. O NEXUS não vai entregar o vídeo sem a legenda solicitada; tente novamente.";
+    } else if (code.includes("daily_token_limit_reached")) {
+      friendlyMessage = "O limite diário de tokens deste cliente foi atingido. O processamento por IA fica bloqueado até a virada do dia em São Paulo ou até o administrador aumentar o limite.";
     } else if (["smart_clip_analysis_unavailable","smart_transcript_required","ragnar_openai_not_available","openai_not_configured","clip_selection_incomplete","clip_selection_failed_"].some(item => code.includes(item))) {
       friendlyMessage = "A análise inteligente não foi concluída. O NEXUS não fará corte técnico ou pegará os primeiros segundos; corrija a IA e tente novamente.";
     }
@@ -3328,6 +3471,22 @@ async function searchOfficialTrailers(query, type = "movie", clientId = "") {
     return id ? "https://i.ytimg.com/vi/" + encodeURIComponent(id) + "/hqdefault.jpg" : "";
   };
 
+  const normalizeDirectDownloadUrl = item => {
+    if (item?.downloadAllowed !== true) return "";
+    const raw = String(item.downloadUrl || item.mediaUrl || "").trim();
+    if (!raw) return "";
+    try {
+      const parsed = new URL(raw);
+      const host = parsed.hostname.toLowerCase();
+      if (parsed.protocol !== "https:") return "";
+      if (/(^|\.)(youtube\.com|youtu\.be|netflix\.com|primevideo\.com|disneyplus\.com|globoplay\.globo\.com)$/.test(host)) return "";
+      if (!/\.(mp4|mov|m4v|webm|mkv)$/i.test(parsed.pathname)) return "";
+      return parsed.toString();
+    } catch {
+      return "";
+    }
+  };
+
   const normalizeResult = item => {
     const rawTrailerUrl = String(item.trailerUrl || "").trim();
     const trailerUrl = /^https:\/\/(?:www\.)?youtube\.com\/watch\?v=|^https:\/\/youtu\.be\/|^https:\/\/(?:www\.)?youtube\.com\/(?:shorts|embed|live)\//i.test(rawTrailerUrl)
@@ -3346,6 +3505,8 @@ async function searchOfficialTrailers(query, type = "movie", clientId = "") {
       trailerUrl,
       trailerName: String(item.trailerName || item.channel || "").slice(0,180),
       official: item.official === true,
+      downloadUrl: normalizeDirectDownloadUrl(item),
+      downloadable: Boolean(normalizeDirectDownloadUrl(item)),
       youtubeSearchUrl: String(item.youtubeSearchUrl || youtubeSearchUrl)
     };
   };
@@ -3406,20 +3567,22 @@ async function searchOfficialTrailers(query, type = "movie", clientId = "") {
   const aiKey = videoOpenAIKeyForClient(clientId);
   if (aiKey) {
     try {
+      assertClientTokenBudget(clientId);
       const response = await fetch("https://api.openai.com/v1/responses", {
         method:"POST",
         headers:{ authorization:"Bearer " + aiKey, "content-type":"application/json" },
         body:JSON.stringify({
           model:"gpt-5.6-luna",
           tools:[{ type:"web_search" }],
-          instructions:"Você localiza trailers oficiais de filmes e séries. Priorize links do YouTube publicados pelo estúdio, distribuidora, streaming oficial ou canal oficial da obra. Nunca invente URL. Se não puder confirmar um trailer oficial, deixe trailerUrl vazio e official=false. Retorne somente JSON válido.",
-          input:"Pesquise " + (kind === "tv" ? "a série" : "o filme") + " chamado \"" + q + "\". Retorne até 6 resultados compatíveis em JSON no formato {\"results\":[{\"title\":\"...\",\"year\":\"2026\",\"overview\":\"sinopse curta\",\"trailerUrl\":\"https://www.youtube.com/watch?v=...\",\"channel\":\"canal\",\"official\":true}]}.",
+          instructions:"Você localiza trailers oficiais de filmes e séries. Priorize links do YouTube publicados pelo estúdio, distribuidora, streaming oficial ou canal oficial da obra. Nunca invente URL. Se houver uma fonte oficial que ofereça explicitamente um ARQUIVO DIRETO de vídeo para download/reutilização, você pode retornar downloadUrl e downloadAllowed=true; nunca use isso para YouTube, Netflix, Prime Video, Disney+, Globoplay ou qualquer conteúdo protegido/DRM. Se não puder confirmar, deixe downloadUrl vazio e downloadAllowed=false. Retorne somente JSON válido.",
+          input:"Pesquise " + (kind === "tv" ? "a série" : "o filme") + " chamado \"" + q + "\". Retorne até 6 resultados compatíveis em JSON no formato {\"results\":[{\"title\":\"...\",\"year\":\"2026\",\"overview\":\"sinopse curta\",\"trailerUrl\":\"https://www.youtube.com/watch?v=...\",\"channel\":\"canal\",\"official\":true,\"downloadUrl\":\"\",\"downloadAllowed\":false}]}.",
           max_output_tokens:1800
         }),
         signal:AbortSignal.timeout(90000)
       });
       const payload = await response.json().catch(() => ({}));
       if (response.ok) {
+        recordClientTokenUsage(clientId, payload.usage || {}, "gpt-5.6-luna:web-search");
         const output = responseOutputText(payload);
         const a = output.indexOf("{"), b = output.lastIndexOf("}");
         if (a >= 0 && b > a) {
@@ -3452,6 +3615,113 @@ function startPendingVideoJobs() {
 function videoPublicOrigin() {
   const domain = String(process.env.RAILWAY_PUBLIC_DOMAIN || "").trim();
   return domain ? "https://" + domain : "https://servidor-global-play-production.up.railway.app";
+}
+
+function privateIpAddress(address) {
+  const value = String(address || "").toLowerCase();
+  if (!value) return true;
+  if (isIP(value) === 4) {
+    const parts = value.split(".").map(Number);
+    return parts[0] === 10
+      || parts[0] === 127
+      || (parts[0] === 169 && parts[1] === 254)
+      || (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31)
+      || (parts[0] === 192 && parts[1] === 168)
+      || parts[0] === 0;
+  }
+  if (isIP(value) === 6) {
+    return value === "::1" || value.startsWith("fc") || value.startsWith("fd") || value.startsWith("fe80:");
+  }
+  return false;
+}
+
+async function validateAuthorizedVideoUrl(value) {
+  let parsed;
+  try { parsed = new URL(String(value || "").trim()); }
+  catch { throw new Error("invalid_video_url"); }
+  if (parsed.protocol !== "https:") throw new Error("video_url_https_required");
+  if (parsed.username || parsed.password) throw new Error("video_url_credentials_not_allowed");
+  const host = parsed.hostname.toLowerCase();
+  if (!host || host === "localhost" || host.endsWith(".local")) throw new Error("video_url_host_not_allowed");
+  if (/(^|\.)(youtube\.com|youtu\.be|netflix\.com|primevideo\.com|disneyplus\.com|globoplay\.globo\.com)$/.test(host)) {
+    throw new Error("protected_streaming_source_not_downloadable");
+  }
+  if (isIP(host) && privateIpAddress(host)) throw new Error("video_url_private_network_not_allowed");
+  try {
+    const resolved = await lookup(host, { all: true, verbatim: true });
+    if (!resolved.length || resolved.some(item => privateIpAddress(item.address))) {
+      throw new Error("video_url_private_network_not_allowed");
+    }
+  } catch (error) {
+    if (String(error?.message || "").includes("private_network")) throw error;
+    throw new Error("video_url_dns_failed");
+  }
+  return parsed;
+}
+
+async function fetchAuthorizedVideoSource(value) {
+  let current = await validateAuthorizedVideoUrl(value);
+  for (let redirects = 0; redirects < 4; redirects += 1) {
+    const response = await fetch(current, {
+      redirect: "manual",
+      headers: { "user-agent": "NEXUS-AI-Authorized-Video-Importer/1.0" },
+      signal: AbortSignal.timeout(120000)
+    });
+    if (response.status >= 300 && response.status < 400 && response.headers.get("location")) {
+      current = await validateAuthorizedVideoUrl(new URL(response.headers.get("location"), current).toString());
+      continue;
+    }
+    if (!response.ok) throw new Error("video_source_http_" + response.status);
+    return { response, finalUrl: current.toString() };
+  }
+  throw new Error("video_source_too_many_redirects");
+}
+
+function createImportedVideoJob(client, destination, safeBase, sizeBytes, settings = {}, sourceUrl = "") {
+  const jobId = path.basename(destination, path.extname(destination));
+  const subtitleStyle = normalizeSubtitleStyle({
+    size: settings.subtitleSize,
+    color: settings.subtitleColor,
+    weight: settings.subtitleWeight,
+    bg: settings.subtitleBg
+  });
+  const requestedFolder = String(settings.folderId || "default");
+  const folderId = videoFoldersForClient(client.id).some(item => item.id === requestedFolder) ? requestedFolder : "default";
+  const job = {
+    id: jobId,
+    clientId: client.id,
+    clientName: client.name || client.id,
+    filename: safeBase,
+    displayName: path.basename(safeBase, path.extname(safeBase)),
+    folderId,
+    outputFormat: videoFormatSpec(String(settings.outputFormat || "reel")).key,
+    autoSubtitles: settings.autoSubtitles !== false,
+    subtitleSize: subtitleStyle.size,
+    subtitleColor: subtitleStyle.color,
+    subtitleWeight: subtitleStyle.weight,
+    subtitleBg: subtitleStyle.bg,
+    contentTitle: String(settings.contentTitle || "").trim().slice(0, 100),
+    contentTitleSource: settings.contentTitle ? "catalog" : "",
+    endText: String(settings.endText || "").trim().slice(0, 90),
+    endContact: String(settings.endContact || "").trim().slice(0, 90),
+    storedPath: destination,
+    sizeBytes: Number(sizeBytes || 0),
+    goal: String(settings.goal || "viral").slice(0, 40),
+    clipDuration: Math.min(90, Math.max(10, Number(settings.duration || settings.clipDuration || 30) || 30)),
+    requestedClips: Math.min(12, Math.max(1, Number(settings.clips || settings.requestedClips || 3) || 3)),
+    sourceType: "authorized-direct-url",
+    sourceUrl: String(sourceUrl || "").slice(0, 1200),
+    status: "queued",
+    progress: 5,
+    message: "Vídeo importado da fonte autorizada. Preparando os melhores cortes; nada será publicado automaticamente.",
+    clips: [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+  const jobs = loadVideoJobs();
+  jobs.push(job);
+  saveVideoJobs(jobs);
+  return job;
 }
 
 function findVideoClip(clientId, jobId, clipId) {
@@ -6169,6 +6439,12 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  if (url.pathname === "/api/portal/token-usage" && req.method === "GET") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    return send(res, 200, clientTokenUsageSummary(client));
+  }
+
   if (url.pathname === "/api/portal/trailers/search" && req.method === "GET") {
     const client = portalClientForRequest(req);
     if (!client) return send(res, 401, { error: "unauthorized" });
@@ -6351,6 +6627,68 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { ok: true, ...result });
     } catch (error) {
       return send(res, 400, { error: String(error?.message || "video_bulk_schedule_failed") });
+    }
+  }
+
+  if (url.pathname === "/api/portal/videos/import" && req.method === "POST") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    let destination = "";
+    try {
+      const body = await readBody(req);
+      const sourceUrl = String(body.url || body.downloadUrl || "").trim();
+      if (!sourceUrl) return send(res, 400, { error: "video_url_required" });
+
+      const { response, finalUrl } = await fetchAuthorizedVideoSource(sourceUrl);
+      const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+      const declaredLength = Number(response.headers.get("content-length") || 0);
+      const maxBytes = 750 * 1024 * 1024;
+      if (declaredLength > maxBytes) throw new Error("video_too_large");
+
+      const remotePath = (() => {
+        try { return decodeURIComponent(new URL(finalUrl).pathname); } catch { return ""; }
+      })();
+      let ext = path.extname(remotePath).toLowerCase();
+      const allowedExt = new Set([".mp4",".mov",".m4v",".webm",".mkv"]);
+      if (!allowedExt.has(ext)) {
+        if (contentType.includes("video/webm")) ext = ".webm";
+        else if (contentType.includes("quicktime")) ext = ".mov";
+        else if (contentType.startsWith("video/")) ext = ".mp4";
+        else throw new Error("video_source_not_direct_media");
+      }
+      if (!contentType.startsWith("video/") && !allowedExt.has(path.extname(remotePath).toLowerCase())) {
+        throw new Error("video_source_not_direct_media");
+      }
+      if (!response.body) throw new Error("video_source_empty");
+
+      const jobId = "vid_" + crypto.randomBytes(10).toString("hex");
+      const clientDir = path.join(clientVideoDir, slug(client.id));
+      fs.mkdirSync(clientDir, { recursive: true });
+      destination = path.join(clientDir, jobId + ext);
+      const readable = Readable.fromWeb(response.body);
+      let received = 0;
+      readable.on("data", chunk => {
+        received += chunk.length;
+        if (received > maxBytes) readable.destroy(new Error("video_too_large"));
+      });
+      await pipeline(readable, fs.createWriteStream(destination));
+      if (!received) throw new Error("video_source_empty");
+
+      const title = String(body.contentTitle || "").trim().slice(0,100);
+      const safeStem = slug(title || path.basename(remotePath, path.extname(remotePath)) || "video") || "video";
+      const safeBase = safeStem.slice(0,140) + ext;
+      const job = createImportedVideoJob(client, destination, safeBase, received, body, finalUrl);
+      send(res, 201, { ok: true, job: portalVideoJobView(job) });
+      setTimeout(() => processVideoJob(job.id).catch(() => {}), 300);
+      return;
+    } catch (error) {
+      if (destination) { try { if (fs.existsSync(destination)) fs.unlinkSync(destination); } catch {} }
+      const code = String(error?.message || "video_import_failed");
+      const status = code.includes("too_large") ? 413
+        : code.includes("protected_streaming") ? 409
+        : code.includes("private_network") ? 403
+        : 400;
+      return send(res, status, { error: code });
     }
   }
 
