@@ -248,6 +248,37 @@ export async function handleMaster(request, env, url) {
     return asset(env, request, "/index.html");
   }
 
+  if (url.pathname === "/api/master/diagnostic" && request.method === "GET") {
+    let d1Ready = false;
+    let masterUsers = 0;
+    try {
+      const health = await env.DB.prepare("SELECT 1 AS ok").first();
+      d1Ready = Number(health?.ok || 0) === 1;
+      await env.DB.prepare(
+        `CREATE TABLE IF NOT EXISTS master_users (
+          username TEXT PRIMARY KEY COLLATE NOCASE,
+          password_algo TEXT NOT NULL DEFAULT 'hmac-sha256-v1',
+          password_salt TEXT NOT NULL,
+          password_hash TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )`
+      ).run();
+      const count = await env.DB.prepare("SELECT COUNT(*) AS count FROM master_users").first();
+      masterUsers = Number(count?.count || 0);
+    } catch {}
+    return json({
+      ok: d1Ready,
+      runtime: "cloudflare-workers",
+      service: "Servidor Nexus",
+      d1Ready,
+      masterUsers,
+      canonicalMasterConfigured: Boolean(env.NEXUS_ADMIN_USERNAME && env.NEXUS_ADMIN_PASSWORD),
+      legacyMasterConfigured: Boolean(env.ADMIN_USERNAME && env.ADMIN_PASSWORD),
+      nexusSecretConfigured: Boolean(env.NEXUS_SECRET_KEY)
+    }, d1Ready ? 200 : 503);
+  }
+
   const protectedApi =
     url.pathname === "/api/clients"
     || url.pathname.startsWith("/api/clients/")
