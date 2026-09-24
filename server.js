@@ -2417,6 +2417,7 @@ function portalVideoJobView(job) {
     goal: job.goal || "viral",
     clipDuration: Number(job.clipDuration || 30),
     requestedClips: Number(job.requestedClips || 3),
+    sourceType: job.sourceType || "",
     status: job.status || "queued",
     progress: Number(job.progress || 0),
     message: job.message || "",
@@ -3293,9 +3294,21 @@ async function processVideoJob(jobId) {
       initial.clientId,
       contentIdentity.title || ""
     );
-    selection.clips = selection.clips.map(clip => refineClipBoundary(
-      clip, transcription.segments || [], speechSilences, duration, Number(initial.clipDuration || 30)
-    ));
+    const refinedClips = [];
+    for (const originalClip of selection.clips) {
+      const refined = refineClipBoundary(
+        originalClip, transcription.segments || [], speechSilences, duration, Number(initial.clipDuration || 30)
+      );
+      const duplicateAfterRefine = refinedClips.some(item => {
+        const overlap = Math.max(0, Math.min(Number(item.end||0),Number(refined.end||0)) - Math.max(Number(item.start||0),Number(refined.start||0)));
+        const shortest = Math.max(0.001, Math.min(Number(item.end||0)-Number(item.start||0), Number(refined.end||0)-Number(refined.start||0)));
+        const sameBounds = Math.abs(Number(item.start||0)-Number(refined.start||0)) < 0.8
+          && Math.abs(Number(item.end||0)-Number(refined.end||0)) < 0.8;
+        return sameBounds || overlap / shortest > 0.94;
+      });
+      refinedClips.push(duplicateAfterRefine ? originalClip : refined);
+    }
+    selection.clips = refinedClips;
     validateRequestedClipSet(
       selection.clips,
       duration,
@@ -3435,7 +3448,9 @@ async function processVideoJob(jobId) {
       const target = Math.max(8, Number(rawTarget || 30));
       friendlyMessage = "Este vídeo tem cerca de " + sourceSeconds + "s e é curto demais para um corte de " + target + "s. Envie um vídeo mais longo ou escolha uma duração menor.";
     } else if (code.startsWith("clip_duration_below_target:") || code.includes("clip_windows_overlap")) {
-      friendlyMessage = "A IA encontrou bons momentos, mas eles não atendem à duração solicitada sem sobrepor ou cortar a fala. Nenhum corte curto foi entregue. Tente novamente ou envie um vídeo mais longo.";
+      friendlyMessage = "A IA encontrou bons momentos, mas eles não atendem à duração solicitada sem sobrepor ou cortar a fala. Tente uma duração menor ou reduza a quantidade de cortes.";
+    } else if (code.includes("clip_windows_duplicate")) {
+      friendlyMessage = "Os melhores momentos ficaram parecidos demais. Escolha menos cortes ou uma duração menor e tente novamente.";
     } else if (code.includes("subtitle_translation_")) {
       friendlyMessage = "O corte foi identificado, mas a tradução das legendas para PT-BR falhou. O NEXUS não vai entregar o vídeo sem a legenda solicitada; tente novamente.";
     } else if (code.includes("daily_token_limit_reached")) {
@@ -3784,11 +3799,9 @@ function createImportedVideoJob(client, destination, safeBase, sizeBytes, settin
     requestedClips: Math.min(12, Math.max(1, Number(settings.clips || settings.requestedClips || 3) || 3)),
     sourceType: String(settings.sourceType || "authorized-direct-url").slice(0, 60),
     sourceUrl: String(sourceUrl || "").slice(0, 1200),
-    status: "queued",
-    progress: 5,
-    message: settings.sourceType === "public-trailer"
-      ? "Trailer recebido pelo servidor. Preparando os melhores cortes; nada será publicado automaticamente."
-      : "Vídeo importado da fonte autorizada. Preparando os melhores cortes; nada será publicado automaticamente.",
+    status: "awaiting_configuration",
+    progress: 0,
+    message: "Vídeo recebido na biblioteca. Escolha o tipo, o tempo e a quantidade de cortes antes de iniciar.",
     clips: [],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
@@ -6626,6 +6639,54 @@ const server = http.createServer(async (req, res) => {
     return send(res, 200, { ok: true, folders: videoFoldersForClient(client.id) });
   }
 
+  const portalVideoProcessMatch = url.pathname.match(/^\/api\/portal\/videos\/([^/]+)\/process$/);
+  if (portalVideoProcessMatch && req.method === "POST") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    const jobId = decodeURIComponent(portalVideoProcessMatch[1]);
+    if (videoProcessing.has(jobId)) return send(res, 409, { error: "video_processing", message: "Este vídeo já está sendo processado." });
+    const body = await readBody(req);
+    const jobs = loadVideoJobs();
+    const job = jobs.find(item => item.id === jobId && item.clientId === client.id);
+    if (!job) return send(res, 404, { error: "video_not_found" });
+    if (!job.storedPath || !fs.existsSync(job.storedPath)) return send(res, 409, { error: "video_file_missing" });
+
+    const requestedFolder = String(body.folderId || job.folderId || "default");
+    if (videoFoldersForClient(client.id).some(item => item.id === requestedFolder)) job.folderId = requestedFolder;
+    job.goal = ["viral","sales","educational","podcast","testimonial"].includes(String(body.goal || "")) ? String(body.goal) : "viral";
+    job.clipDuration = Math.min(90, Math.max(10, Number(body.duration || body.clipDuration || 30) || 30));
+    job.requestedClips = Math.min(12, Math.max(1, Number(body.clips || body.requestedClips || 3) || 3));
+    job.outputFormat = videoFormatSpec(String(body.outputFormat || job.outputFormat || "reel")).key;
+    job.autoSubtitles = body.autoSubtitles !== false;
+    const subtitleStyle = normalizeSubtitleStyle({
+      size: body.subtitleSize || job.subtitleSize,
+      color: body.subtitleColor || job.subtitleColor,
+      weight: body.subtitleWeight || job.subtitleWeight,
+      bg: body.subtitleBg || job.subtitleBg
+    });
+    job.subtitleSize = subtitleStyle.size;
+    job.subtitleColor = subtitleStyle.color;
+    job.subtitleWeight = subtitleStyle.weight;
+    job.subtitleBg = subtitleStyle.bg;
+    if (Object.prototype.hasOwnProperty.call(body, "endText")) job.endText = String(body.endText || "").trim().slice(0, 90);
+    if (Object.prototype.hasOwnProperty.call(body, "endContact")) job.endContact = String(body.endContact || "").trim().slice(0, 90);
+    if (Object.prototype.hasOwnProperty.call(body, "contentTitle")) {
+      job.contentTitle = String(body.contentTitle || "").trim().slice(0, 100);
+      job.contentTitleSource = job.contentTitle ? "user" : "";
+    }
+    job.status = "queued";
+    job.progress = 5;
+    job.message = "Configuração confirmada. Preparando a análise e os cortes.";
+    job.error = "";
+    job.clips = [];
+    job.completedAt = null;
+    job.updatedAt = new Date().toISOString();
+    saveVideoJobs(jobs);
+    send(res, 202, { ok: true, job: portalVideoJobView(job) });
+    setTimeout(() => processVideoJob(job.id).catch(() => {}), 250);
+    return;
+  }
+
   const portalVideoManageMatch = url.pathname.match(/^\/api\/portal\/videos\/([^/]+)$/);
   if (portalVideoManageMatch && req.method === "PATCH") {
     const client = portalClientForRequest(req);
@@ -6748,9 +6809,8 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody(req);
       const sourceUrl = String(body.url || body.trailerUrl || "").trim();
       if (!sourceUrl) return send(res, 400, { error: "trailer_url_required" });
-      const job = await importPublicTrailerVideo(client, sourceUrl, body);
+      const job = await importPublicTrailerVideo(client, sourceUrl, { ...body, sourceType: "public-trailer" });
       send(res, 201, { ok: true, job: portalVideoJobView(job) });
-      setTimeout(() => processVideoJob(job.id).catch(() => {}), 300);
       return;
     } catch (error) {
       const code = String(error?.message || "trailer_import_failed");
@@ -6811,7 +6871,6 @@ const server = http.createServer(async (req, res) => {
       const safeBase = safeStem.slice(0,140) + ext;
       const job = createImportedVideoJob(client, destination, safeBase, received, body, finalUrl);
       send(res, 201, { ok: true, job: portalVideoJobView(job) });
-      setTimeout(() => processVideoJob(job.id).catch(() => {}), 300);
       return;
     } catch (error) {
       if (destination) { try { if (fs.existsSync(destination)) fs.unlinkSync(destination); } catch {} }
