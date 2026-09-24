@@ -1314,7 +1314,7 @@ async function searchTrailers(event){
       const badge=item.trailerUrl?(item.official?"TRAILER OFICIAL":"TRAILER ENCONTRADO"):"TRAILER INDISPONÍVEL";
       const cutterAction=item.downloadable&&item.downloadUrl
         ?'<button type="button" class="trailer-import trailer-primary-action" data-import-video="'+escapeSupport(item.downloadUrl)+'" data-import-title="'+escapeSupport(item.title||"")+'">Fazer cortes</button>'
-        :'<div class="trailer-manual-actions"><button type="button" class="trailer-use-title trailer-primary-action" data-use-trailer-title="'+escapeSupport(item.title||"")+'">Enviar vídeo</button><span class="trailer-direct-note">Sem fonte direta</span></div>';
+        :'<div class="trailer-manual-actions"><button type="button" class="trailer-use-title trailer-primary-action" data-use-trailer-title="'+escapeSupport(item.title||"")+'">Usar no Cutter</button><span class="trailer-direct-note">Sem arquivo direto</span></div>';
       return '<article class="trailer-card">'
         +(item.posterUrl?'<img class="trailer-poster" data-trailer-poster="1" data-fallback="'+escapeSupport(item.posterFallbackUrl||"")+'" data-title="'+escapeSupport(item.title||"")+'" loading="lazy" referrerpolicy="no-referrer" src="'+escapeSupport(item.posterUrl)+'" alt="Imagem de '+escapeSupport(item.title)+'">':'<div class="trailer-poster-empty">'+escapeSupport((item.title||"NEXUS").slice(0,18))+'</div>')
         +'<div class="trailer-card-copy"><span>'+escapeSupport(item.type==="series"?"SÉRIE":"FILME")+' · '+escapeSupport(item.year||"—")+'</span>'
@@ -1347,10 +1347,11 @@ async function searchTrailers(event){
       const status=$("#video-upload-status");
       if(status){
         status.textContent=title
-          ?"Título preparado. Use “Selecionar vídeo” quando quiser enviar um arquivo do computador; o NEXUS não abriu nenhuma pasta automaticamente."
+          ?"Título preparado. Para enviar sem baixar no PC, cole abaixo um link HTTPS direto do arquivo de vídeo. O NEXUS baixa no servidor e coloca na biblioteca."
           :"";
         status.className="save-status";
       }
+      setTimeout(()=>$("#video-remote-url")?.focus(),80);
     }));
     root.querySelectorAll("[data-import-video]").forEach(button=>button.addEventListener("click",()=>importAuthorizedVideo(button)));
 
@@ -1365,14 +1366,14 @@ if(videoFileInput)videoFileInput.addEventListener("change",()=>{
   const files=[...(videoFileInput.files||[])];
   if($("#video-file-name"))$("#video-file-name").textContent=files.length>1?files.length+" vídeos selecionados":files[0]?.name||"MP4, MOV, WEBM ou MKV";
 });
-async function importAuthorizedVideo(button){
+async function importAuthorizedVideo(button,statusTarget=null){
   const url=String(button?.dataset.importVideo||"").trim();
   const title=String(button?.dataset.importTitle||"").trim();
   if(!url||!button)return;
   const original=button.textContent;
   button.disabled=true;button.textContent="Baixando…";
-  const status=$("#trailer-search-status");
-  if(status){status.textContent="Baixando o arquivo autorizado e enviando para análise…";status.className="save-status";}
+  const status=statusTarget||$("#trailer-search-status")||$("#video-upload-status");
+  if(status){status.textContent="Baixando o arquivo direto no servidor e enviando para a biblioteca…";status.className="save-status";}
   const payload={
     url,
     contentTitle:title,
@@ -1399,7 +1400,10 @@ async function importAuthorizedVideo(button){
     const d=await r.json().catch(()=>({}));
     if(!r.ok){
       const code=String(d.error||"");
-      if(code.includes("protected_streaming"))throw new Error("Essa fonte usa streaming protegido e não permite download direto pelo NEXUS.");
+      if(code.includes("protected_streaming"))throw new Error("Essa plataforma não fornece um arquivo direto para importação. Use um link HTTPS direto de um arquivo autorizado.");
+      if(code.includes("video_source_not_direct_media"))throw new Error("Esse link abre uma página, não um arquivo de vídeo. Cole um link direto para MP4, MOV, WEBM ou MKV.");
+      if(code.includes("video_url_https_required"))throw new Error("O link precisa começar com https://.");
+      if(code.includes("video_source_http_"))throw new Error("O servidor de origem recusou o download do vídeo.");
       if(code.includes("too_large"))throw new Error("O arquivo ultrapassa o limite de 750 MB.");
       throw new Error("Não foi possível importar esse arquivo direto.");
     }
@@ -1419,6 +1423,22 @@ async function importAuthorizedVideo(button){
     button.disabled=false;button.textContent=original;
   }
 }
+
+const videoRemoteImportButton=$("#video-remote-import");
+if(videoRemoteImportButton)videoRemoteImportButton.addEventListener("click",async()=>{
+  const input=$("#video-remote-url");
+  const status=$("#video-upload-status");
+  const url=String(input?.value||"").trim();
+  if(!url){
+    if(status){status.textContent="Cole um link HTTPS direto do arquivo de vídeo.";status.className="save-status error";}
+    input?.focus();
+    return;
+  }
+  videoRemoteImportButton.dataset.importVideo=url;
+  videoRemoteImportButton.dataset.importTitle=$("#video-content-title")?.value?.trim()||"";
+  await importAuthorizedVideo(videoRemoteImportButton,status);
+});
+
 
 $("#video-folder-filter")?.addEventListener("change",event=>{videoFolderFilter=event.target.value||"";renderVideoJobs({jobs:latestVideoJobs,folders:latestVideoFolders});});
 $("#video-create-folder")?.addEventListener("click",createVideoFolder);
