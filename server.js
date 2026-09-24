@@ -1945,9 +1945,7 @@ function responseOutputText(payload) {
 }
 
 function videoOpenAIKeyForClient(clientId) {
-  // Ragnar is intentionally isolated from the shared NEXUS OpenAI account.
-  // Regra NEXUS: sem IA válida o corte inteligente FALHA de forma explícita.
-  // Nunca substituir análise inteligente por "primeiros segundos" ou divisão técnica.
+  // Ragnar permanece isolado da conta OpenAI compartilhada do NEXUS.
   if (clientId === "ragnar-one") {
     const direct = loadConnections()?.[clientId]?.openai;
     return direct?.apiKey ? decryptSecret(direct.apiKey) : "";
@@ -1955,24 +1953,84 @@ function videoOpenAIKeyForClient(clientId) {
   return masterOpenAIProjectKey();
 }
 
-async function transcribeVideoAudio(audioPath, durationSeconds, clientId) {
+function ragnarVideoBridge(clientId) {
+  if (clientId !== "ragnar-one") return null;
+  const client = loadClients().find(item => item.id === clientId);
+  const base = String(client?.agentApiUrl || "").replace(/\/+$/, "");
+  const token = agentTokenForClient(clientId);
+  return base && token ? { base, token } : null;
+}
+
+async function openAIResponsesForClient(clientId, body, timeoutMs = 120000) {
   const apiKey = videoOpenAIKeyForClient(clientId);
-  if (!apiKey) throw new Error(clientId === "ragnar-one" ? "ragnar_openai_not_available" : "openai_not_configured");
-  const bytes = fs.readFileSync(audioPath);
-  if (bytes.length > 25 * 1024 * 1024) throw new Error("audio_too_large_for_transcription");
-  const form = new FormData();
-  form.append("file", new Blob([bytes], { type: "audio/mpeg" }), "audio.mp3");
-  form.append("model", "whisper-1");
-  form.append("response_format", "verbose_json");
-  form.append("timestamp_granularities[]", "segment");
-  const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+  if (apiKey) {
+    const response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: { authorization: "Bearer " + apiKey, "content-type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs)
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error("openai_responses_" + response.status);
+    return payload;
+  }
+
+  const bridge = ragnarVideoBridge(clientId);
+  if (!bridge) throw new Error(clientId === "ragnar-one" ? "ragnar_openai_bridge_not_available" : "openai_not_configured");
+  const response = await fetch(bridge.base + "/nexus/openai/responses", {
     method: "POST",
-    headers: { authorization: "Bearer " + apiKey },
-    body: form,
-    signal: AbortSignal.timeout(10 * 60 * 1000)
+    headers: {
+      authorization: "Bearer " + bridge.token,
+      "content-type": "application/json",
+      accept: "application/json",
+      "user-agent": "NEXUS-Video-Cutter/1.0"
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(timeoutMs)
   });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error("transcription_failed_" + response.status);
+  if (!response.ok) throw new Error("ragnar_openai_bridge_" + response.status + ":" + String(payload?.error || payload?.detail || "").slice(0,160));
+  return payload;
+}
+
+async function transcribeVideoAudio(audioPath, durationSeconds, clientId) {
+  const bytes = fs.readFileSync(audioPath);
+  if (bytes.length > 25 * 1024 * 1024) throw new Error("audio_too_large_for_transcription");
+
+  let payload = {};
+  const apiKey = videoOpenAIKeyForClient(clientId);
+  if (apiKey) {
+    const form = new FormData();
+    form.append("file", new Blob([bytes], { type: "audio/mpeg" }), "audio.mp3");
+    form.append("model", "whisper-1");
+    form.append("response_format", "verbose_json");
+    form.append("timestamp_granularities[]", "segment");
+    const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+      method: "POST",
+      headers: { authorization: "Bearer " + apiKey },
+      body: form,
+      signal: AbortSignal.timeout(10 * 60 * 1000)
+    });
+    payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error("transcription_failed_" + response.status);
+  } else {
+    const bridge = ragnarVideoBridge(clientId);
+    if (!bridge) throw new Error(clientId === "ragnar-one" ? "ragnar_openai_bridge_not_available" : "openai_not_configured");
+    const response = await fetch(bridge.base + "/nexus/openai/transcriptions", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer " + bridge.token,
+        "content-type": "application/json",
+        accept: "application/json",
+        "user-agent": "NEXUS-Video-Cutter/1.0"
+      },
+      body: JSON.stringify({ audio_base64: bytes.toString("base64"), filename: "audio.mp3" }),
+      signal: AbortSignal.timeout(10 * 60 * 1000)
+    });
+    payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error("ragnar_transcription_bridge_" + response.status + ":" + String(payload?.error || payload?.detail || "").slice(0,160));
+  }
+
   const segments = Array.isArray(payload.segments) ? payload.segments.map(item => ({
     start: Number(item.start || 0),
     end: Number(item.end || 0),
