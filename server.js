@@ -1022,6 +1022,8 @@ function portalVideoJobView(job) {
     outputFormatLabel: videoFormatSpec(job.outputFormat).label,
     endText: job.endText || "",
     endContact: job.endContact || "",
+    autoSubtitles: Boolean(job.autoSubtitles),
+    detectedLanguage: job.detectedLanguage || "",
     sizeBytes: Number(job.sizeBytes || 0),
     goal: job.goal || "viral",
     clipDuration: Number(job.clipDuration || 30),
@@ -1038,6 +1040,8 @@ function portalVideoJobView(job) {
       reason: clip.reason || "",
       hook: clip.hook || "",
       qualityScore: Number(clip.qualityScore || 0),
+      subtitlesApplied: Boolean(clip.subtitlesApplied),
+      sourceLanguage: clip.sourceLanguage || job.detectedLanguage || "",
       rank: Number(clip.rank || 0),
       selectedForSchedule: Boolean(clip.selectedForSchedule),
       transcript: clip.transcript || "",
@@ -1126,7 +1130,6 @@ async function transcribeVideoAudio(audioPath, durationSeconds, clientId) {
   form.append("model", "whisper-1");
   form.append("response_format", "verbose_json");
   form.append("timestamp_granularities[]", "segment");
-  form.append("language", "pt");
   const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
     method: "POST",
     headers: { authorization: "Bearer " + apiKey },
@@ -1143,8 +1146,84 @@ async function transcribeVideoAudio(audioPath, durationSeconds, clientId) {
   return {
     text: String(payload.text || "").trim(),
     segments,
+    language: String(payload.language || "").trim(),
     costUsd: Math.max(0, Number(durationSeconds || payload.duration || 0)) / 60 * 0.006
   };
+}
+
+
+function normalizeDetectedLanguage(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function isPortugueseLanguage(value) {
+  const lang = normalizeDetectedLanguage(value);
+  return !lang || lang === "pt" || lang === "pt-br" || lang === "portuguese" || lang === "português" || lang === "portugues";
+}
+
+async function translateClipSegmentsToPtBr(segments, clientId) {
+  const rows = (Array.isArray(segments) ? segments : []).filter(item => item?.text).slice(0, 80);
+  if (!rows.length) return [];
+  const apiKey = videoOpenAIKeyForClient(clientId);
+  if (!apiKey) throw new Error(clientId === "ragnar-one" ? "ragnar_openai_not_available" : "openai_not_configured");
+  const compact = rows.map((item, index) => ({ i: index, text: String(item.text || "").trim() }));
+  const response = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: { authorization: "Bearer " + apiKey, "content-type": "application/json" },
+    body: JSON.stringify({
+      model: "gpt-5.6-luna",
+      instructions: "Traduza legendas para português brasileiro natural e curto. Preserve sentido, nomes, números e tom. Não resuma, não acrescente informação e não junte itens. Retorne somente JSON válido.",
+      input: "Traduza cada item para PT-BR. Entrada: " + JSON.stringify(compact) + "\nRetorne: {\"translations\":[{\"i\":0,\"text\":\"...\"}]}",
+      max_output_tokens: 2400
+    }),
+    signal: AbortSignal.timeout(120000)
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error("subtitle_translation_failed_" + response.status);
+  const output = responseOutputText(payload);
+  const a = output.indexOf("{"), b = output.lastIndexOf("}");
+  if (a < 0 || b <= a) throw new Error("subtitle_translation_invalid_json");
+  let parsed;
+  try { parsed = JSON.parse(output.slice(a, b + 1)); }
+  catch { throw new Error("subtitle_translation_invalid_json"); }
+  const translations = new Map((Array.isArray(parsed.translations) ? parsed.translations : [])
+    .map(item => [Number(item.i), String(item.text || "").trim()]));
+  const translated = rows.map((item, index) => ({
+    start: Number(item.start || 0),
+    end: Number(item.end || 0),
+    text: translations.get(index) || ""
+  })).filter(item => item.text && item.end > item.start);
+  if (!translated.length) throw new Error("subtitle_translation_empty");
+  return translated;
+}
+
+function wrapSubtitleText(value, maxLine = 34, maxLines = 3) {
+  const words = String(value || "").replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+  const lines = [];
+  let current = "";
+  for (const word of words) {
+    const next = current ? current + " " + word : word;
+    if (next.length <= maxLine || !current) {
+      current = next;
+    } else {
+      lines.push(current);
+      current = word;
+      if (lines.length >= maxLines - 1) break;
+    }
+  }
+  if (current && lines.length < maxLines) lines.push(current);
+  return lines.join("\n");
+}
+
+function subtitleSegmentsForRange(segments, start, end) {
+  return (Array.isArray(segments) ? segments : [])
+    .filter(item => Number(item.end || 0) > Number(start || 0) && Number(item.start || 0) < Number(end || 0))
+    .map(item => ({
+      start: Math.max(Number(start || 0), Number(item.start || 0)),
+      end: Math.min(Number(end || 0), Number(item.end || 0)),
+      text: String(item.text || "").trim()
+    }))
+    .filter(item => item.text && item.end > item.start);
 }
 
 function transcriptHeuristicSelections(segments, duration, count, targetDuration) {
@@ -1434,10 +1513,11 @@ function escapeFfmpegDrawtext(value) {
     .replace(/\\/g, "\\\\")
     .replace(/'/g, "\\'")
     .replace(/:/g, "\\:")
-    .replace(/%/g, "\\%");
+    .replace(/%/g, "\\%")
+    .replace(/\n/g, "\\n");
 }
 
-async function renderVideoClip(inputPath, outputPath, start, end, outputFormat = "reel", endText = "", endContact = "") {
+async function renderVideoClip(inputPath, outputPath, start, end, outputFormat = "reel", endText = "", endContact = "", subtitleSegments = []) {
   const duration = Math.max(3, Number(end) - Number(start));
   const spec = videoFormatSpec(outputFormat);
   const finalText = String(endText || "").trim().slice(0, 90);
@@ -1453,6 +1533,26 @@ async function renderVideoClip(inputPath, outputPath, start, end, outputFormat =
   ];
 
   let videoLabel = "base";
+  const subtitles = (Array.isArray(subtitleSegments) ? subtitleSegments : []).slice(0, 30);
+  for (let index = 0; index < subtitles.length; index += 1) {
+    const subtitle = subtitles[index];
+    const from = Math.max(0, Number(subtitle.start || 0) - Number(start || 0));
+    const to = Math.min(duration, Number(subtitle.end || 0) - Number(start || 0));
+    if (!(to > from)) continue;
+    const text = wrapSubtitleText(subtitle.text || "");
+    if (!text) continue;
+    const nextLabel = "subtitle" + index;
+    filters.push("[" + videoLabel + "]drawtext=fontfile=" + fontFile
+      + ":text='" + escapeFfmpegDrawtext(text) + "'"
+      + ":fontcolor=white:fontsize=" + Math.round(spec.width * 0.042)
+      + ":line_spacing=" + Math.round(spec.width * 0.008)
+      + ":box=1:boxcolor=black@0.68:boxborderw=" + Math.round(spec.width * 0.014)
+      + ":borderw=1:bordercolor=black@0.9"
+      + ":x=(w-text_w)/2:y=h*0.78-text_h/2"
+      + ":enable='between(t," + from.toFixed(3) + "," + to.toFixed(3) + ")'[" + nextLabel + "]");
+    videoLabel = nextLabel;
+  }
+
   if (finalText || finalContact) {
     filters.push("[" + videoLabel + "]drawbox=x=0:y=ih*0.68:w=iw:h=ih*0.32:color=black@0.62:t=fill:enable='gte(t," + outroStart.toFixed(3) + ")'[outbox]");
     videoLabel = "outbox";
@@ -1523,11 +1623,13 @@ async function processVideoJob(jobId) {
       throw new Error("smart_transcript_required:" + String(error?.message || error));
     }
     if (!transcription.segments?.length) throw new Error("smart_transcript_required:no_segments");
+    const detectedLanguage = transcription.language || "desconhecido";
+    updateVideoJob(jobId, { detectedLanguage });
     const speechSilences = await detectSpeechSilences(audioPath);
     recordAgentExecution(client, "RADAR", {
       function: "video-full-transcript-analysis", trigger: "video-upload", status: "success",
       model: "whisper-1+ig-repurpose", quantity: transcription.segments.length, costUsd: Number(transcription.costUsd || 0),
-      message: "Vídeo inteiro transcrito antes de qualquer corte.", metadata: { jobId, duration }
+      message: "Vídeo inteiro transcrito antes de qualquer corte.", metadata: { jobId, duration, detectedLanguage: transcription.language || "" }
     });
 
     updateVideoJob(jobId, job => {
@@ -1588,9 +1690,13 @@ async function processVideoJob(jobId) {
       const clipId = "clip_" + crypto.randomBytes(7).toString("hex");
       const publicName = initial.id + "-" + clipId + "-" + crypto.randomBytes(6).toString("hex") + ".mp4";
       const outputPath = path.join(clipDir, publicName);
-      await renderVideoClip(initial.storedPath, outputPath, selected.start, selected.end, initial.outputFormat || "reel", initial.endText || "", initial.endContact || "");
+      const sourceSegments = subtitleSegmentsForRange(transcription.segments, selected.start, selected.end);
+      const shouldSubtitle = Boolean(initial.autoSubtitles) && !isPortugueseLanguage(transcription.language);
+      const translatedSubtitles = shouldSubtitle ? await translateClipSegmentsToPtBr(sourceSegments, initial.clientId) : [];
+      await renderVideoClip(initial.storedPath, outputPath, selected.start, selected.end, initial.outputFormat || "reel", initial.endText || "", initial.endContact || "", translatedSubtitles);
       const transcript = transcriptForRange(transcription.segments, selected.start, selected.end);
-      const hookReview = scoreHook(transcript.slice(0,220));
+      const reviewText = translatedSubtitles.length ? translatedSubtitles.map(item => item.text).join(" ") : transcript;
+      const hookReview = scoreHook(reviewText.slice(0,220));
       const beatReview = estimateBeats(transcript, Number(initial.clipDuration || 30));
       const combinedScore = Math.round(Math.min(100, Number(selected.score || 0) * .65 + Number(hookReview.score || 0) * .35));
       clips.push({
@@ -1614,6 +1720,10 @@ async function processVideoJob(jobId) {
         outputFormat: videoFormatSpec(initial.outputFormat).key,
         endText: initial.endText || "",
         endContact: initial.endContact || "",
+        subtitlesApplied: translatedSubtitles.length > 0,
+        subtitleLanguage: translatedSubtitles.length ? "pt-BR" : "",
+        sourceLanguage: transcription.language || "",
+        subtitleSegments: translatedSubtitles,
         intelligence: { hookScore: hookReview.score, beatIssues: beatReview.issues, targetDuration: Number(initial.clipDuration || 30), selectionModel: selection.model },
         createdAt: new Date().toISOString()
       });
@@ -1669,6 +1779,8 @@ async function processVideoJob(jobId) {
       friendlyMessage = "Este vídeo tem cerca de " + sourceSeconds + "s e é curto demais para um corte de " + target + "s. Envie um vídeo mais longo ou escolha uma duração menor.";
     } else if (code.startsWith("clip_duration_below_target:") || code.includes("clip_windows_overlap")) {
       friendlyMessage = "A IA encontrou bons momentos, mas eles não atendem à duração solicitada sem sobrepor ou cortar a fala. Nenhum corte curto foi entregue. Tente novamente ou envie um vídeo mais longo.";
+    } else if (code.includes("subtitle_translation_")) {
+      friendlyMessage = "O corte foi identificado, mas a tradução das legendas para PT-BR falhou. O NEXUS não vai entregar o vídeo sem a legenda solicitada; tente novamente.";
     } else if (["smart_clip_analysis_unavailable","smart_transcript_required","ragnar_openai_not_available","openai_not_configured","clip_selection_incomplete","clip_selection_failed_"].some(item => code.includes(item))) {
       friendlyMessage = "A análise inteligente não foi concluída. O NEXUS não fará corte técnico ou pegará os primeiros segundos; corrija a IA e tente novamente.";
     }
@@ -2026,6 +2138,9 @@ async function adjustVideoClip(clientId, jobId, clipId, body) {
   saveVideoClipState(found.jobs, found.job);
   const nextEndText = Object.prototype.hasOwnProperty.call(body, "endText") ? String(body.endText || "").slice(0, 90) : (found.clip.endText || found.job.endText || "");
   const nextEndContact = Object.prototype.hasOwnProperty.call(body, "endContact") ? String(body.endContact || "").slice(0, 90) : (found.clip.endContact || found.job.endContact || "");
+  const sourceSegments = subtitleSegmentsForRange(found.job.transcriptSegments || [], start, end);
+  const shouldSubtitle = Boolean(found.job.autoSubtitles) && !isPortugueseLanguage(found.job.detectedLanguage);
+  const translatedSubtitles = shouldSubtitle ? await translateClipSegmentsToPtBr(sourceSegments, clientId) : [];
   await renderVideoClip(
     found.job.storedPath,
     found.clip.storedPath,
@@ -2033,7 +2148,8 @@ async function adjustVideoClip(clientId, jobId, clipId, body) {
     end,
     found.job.outputFormat || found.clip.outputFormat || "reel",
     nextEndText,
-    nextEndContact
+    nextEndContact,
+    translatedSubtitles
   );
   const fresh = findVideoClip(clientId, jobId, clipId);
   fresh.clip.start = start;
@@ -2044,6 +2160,10 @@ async function adjustVideoClip(clientId, jobId, clipId, body) {
   fresh.clip.transcript = transcriptForRange(fresh.job.transcriptSegments || [], start, end);
   fresh.clip.endText = nextEndText;
   fresh.clip.endContact = nextEndContact;
+  fresh.clip.subtitlesApplied = translatedSubtitles.length > 0;
+  fresh.clip.subtitleLanguage = translatedSubtitles.length ? "pt-BR" : "";
+  fresh.clip.sourceLanguage = fresh.job.detectedLanguage || "";
+  fresh.clip.subtitleSegments = translatedSubtitles;
   fresh.clip.status = "ready";
   fresh.clip.approvalStatus = "pending";
   fresh.clip.publishStatus = "";
@@ -4640,6 +4760,7 @@ const server = http.createServer(async (req, res) => {
 
       const goal = String(req.headers["x-video-goal"] || "viral").slice(0, 40);
       const outputFormat = videoFormatSpec(String(req.headers["x-output-format"] || "reel")).key;
+      const autoSubtitles = String(req.headers["x-auto-subtitles"] || "") === "1";
       const endText = decodeURIComponent(String(req.headers["x-video-end-text"] || "")).trim().slice(0, 90);
       const endContact = decodeURIComponent(String(req.headers["x-video-end-contact"] || "")).trim().slice(0, 90);
       const requestedFolder = String(req.headers["x-video-folder"] || "default");
@@ -4655,6 +4776,7 @@ const server = http.createServer(async (req, res) => {
         displayName: path.basename(safeBase, path.extname(safeBase)),
         folderId,
         outputFormat,
+        autoSubtitles,
         endText,
         endContact,
         storedPath: destination,
