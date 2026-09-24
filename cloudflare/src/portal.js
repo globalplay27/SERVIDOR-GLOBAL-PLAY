@@ -20,6 +20,17 @@ function json(data, status = 200, headers = {}) {
   });
 }
 
+function redirect(location, headers = {}) {
+  return new Response(null, {
+    status: 303,
+    headers: {
+      location,
+      "cache-control": "no-store",
+      ...headers
+    }
+  });
+}
+
 async function sessionClient(request, env) {
   const session = await resolvePortalSession(env, request);
   if (!session?.clientId) return { session: null, client: null };
@@ -190,6 +201,24 @@ async function patchClientConfig(env, client, patch) {
 }
 
 export async function handlePortalApi(request, env, url) {
+  if (url.pathname === "/portal-login" && request.method === "POST") {
+    const form = await request.formData().catch(() => null);
+    const username = String(form?.get("username") || "").trim();
+    const password = String(form?.get("password") || "");
+    const clientId = await authenticatePortalUser(env, username, password);
+    if (!clientId) return redirect("/portal.html?error=1");
+    const client = await getClient(env, clientId);
+    if (!client) return redirect("/portal.html?error=1");
+    const session = await createPortalSession(env, clientId, {
+      persistent: true,
+      remembered: String(form?.get("remember") || "") === "1",
+      source: "cloudflare"
+    });
+    return redirect("/portal.html?auth=1", {
+      "set-cookie": portalSessionCookie(session.token)
+    });
+  }
+
   if (url.pathname === "/api/portal/login" && request.method === "POST") {
     const body = await request.json().catch(() => ({}));
     const clientId = await authenticatePortalUser(env, body.username, body.password);
