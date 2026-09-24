@@ -12,7 +12,8 @@
   },
   "vars": {
     "APP_NAME": "Servidor Nexus",
-    "RAGNAR_CLIENT_ID": "ragnar-one"
+    "RAGNAR_CLIENT_ID": "ragnar-one",
+    "CLOUDFLARE_AUTOMATION_ACTIVE": "false"
   },
   "assets": {
     "directory": "../public",
