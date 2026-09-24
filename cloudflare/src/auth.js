@@ -140,6 +140,7 @@ async function railwayMigrationAuth(env, kind, username, password) {
 }
 
 async function upsertMigratedPortalUser(env, clientId, username, password) {
+  await ensureAuthRuntimeSchema(env);
   const cleanClientId = String(clientId || "").trim();
   const cleanUsername = String(username || "").trim();
   const value = String(password || "");
@@ -201,6 +202,82 @@ async function ensureMasterUserSchema(env) {
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )`
   ).run();
+}
+
+let authRuntimeSchemaReady = false;
+
+async function ensureAuthRuntimeSchema(env) {
+  if (authRuntimeSchemaReady) return;
+  if (!env?.DB) throw new Error("d1_not_configured");
+
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS clients (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      niche TEXT,
+      instagram TEXT,
+      status TEXT NOT NULL DEFAULT 'online',
+      config_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`
+  ).run();
+
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS portal_sessions (
+      token_hash TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      payload_json TEXT NOT NULL DEFAULT '{}',
+      expires_at TEXT,
+      persistent INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`
+  ).run();
+
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS portal_users (
+      client_id TEXT PRIMARY KEY,
+      username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+      password_algo TEXT NOT NULL DEFAULT 'hmac-sha256-v1',
+      password_salt TEXT NOT NULL,
+      password_hash TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(client_id) REFERENCES clients(id) ON DELETE CASCADE
+    )`
+  ).run();
+
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS master_sessions (
+      token_hash TEXT PRIMARY KEY,
+      expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`
+  ).run();
+
+  await ensureMasterUserSchema(env);
+
+  await env.DB.prepare(
+    "CREATE INDEX IF NOT EXISTS idx_portal_users_username ON portal_users(username)"
+  ).run();
+
+  await env.DB.prepare(
+    "CREATE INDEX IF NOT EXISTS idx_portal_sessions_client ON portal_sessions(client_id, created_at)"
+  ).run();
+
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO clients(id, name, niche, instagram, status, config_json)
+     VALUES('ragnar-one', 'Ragnar One', 'Streaming', '@ragnarplay1', 'online',
+       '{"runtime":"cloudflare","openaiKeySource":"ragnar-exclusive","agentName":"Ragnar","odin":true,"setupMode":"ready"}')`
+  ).run();
+
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO clients(id, name, niche, instagram, status, config_json)
+     VALUES('globalplay-streaming', 'Global Play', 'Streaming', '@globalplay_streaming', 'online',
+       '{"runtime":"cloudflare","openaiKeySource":"shared","agentName":"Claire","odin":true,"setupMode":"ready","ownerAccount":true}')`
+  ).run();
+
+  authRuntimeSchemaReady = true;
 }
 
 async function createMasterPasswordRecord(env, password) {
@@ -296,6 +373,7 @@ export async function verifyPortalPasswordRecord(env, password, record) {
 }
 
 export async function upsertPortalUser(env, clientId, username, password) {
+  await ensureAuthRuntimeSchema(env);
   const cleanClientId = String(clientId || "").trim();
   const cleanUsername = String(username || "").trim();
   if (!cleanClientId || !cleanUsername) throw new Error("client_id_and_username_required");
@@ -316,6 +394,7 @@ export async function upsertPortalUser(env, clientId, username, password) {
 }
 
 export async function authenticatePortalUser(env, username, password) {
+  await ensureAuthRuntimeSchema(env);
   const cleanUsername = String(username || "").trim();
   const row = cleanUsername
     ? await env.DB.prepare(
@@ -376,6 +455,7 @@ export async function authenticatePortalUser(env, username, password) {
 }
 
 export async function createPortalSession(env, clientId, payload = {}) {
+  await ensureAuthRuntimeSchema(env);
   const token = randomToken(32);
   const tokenHash = await sha256Hex(token);
   const expiresAt = new Date(Date.now() + PORTAL_SESSION_TTL_SECONDS * 1000).toISOString();
@@ -392,6 +472,7 @@ function portalTokenFromRequest(request) {
 }
 
 export async function resolvePortalSession(env, request) {
+  await ensureAuthRuntimeSchema(env);
   const token = portalTokenFromRequest(request);
   if (!token) return null;
   const tokenHash = await sha256Hex(token);
@@ -418,6 +499,7 @@ export async function resolvePortalSession(env, request) {
 }
 
 export async function deletePortalSession(env, request) {
+  await ensureAuthRuntimeSchema(env);
   const token = portalTokenFromRequest(request);
   if (!token) return false;
   const tokenHash = await sha256Hex(token);
@@ -426,6 +508,7 @@ export async function deletePortalSession(env, request) {
 }
 
 export async function masterCredentialsValid(env, username, password) {
+  await ensureAuthRuntimeSchema(env);
   const cleanUsername = String(username || "").trim();
   const suppliedPassword = String(password || "");
 
@@ -495,6 +578,7 @@ export async function masterCredentialsValid(env, username, password) {
 }
 
 export async function createMasterSession(env) {
+  await ensureAuthRuntimeSchema(env);
   const token = randomToken(32);
   const tokenHash = await sha256Hex(token);
   const expiresAt = new Date(Date.now() + MASTER_SESSION_TTL_SECONDS * 1000).toISOString();
@@ -506,6 +590,7 @@ export async function createMasterSession(env) {
 }
 
 export async function resolveMasterSession(env, request) {
+  await ensureAuthRuntimeSchema(env);
   const authorization = String(request.headers.get("authorization") || "");
   const internalSecret = String(env.NEXUS_SECRET_KEY || "");
   if (internalSecret && authorization === "Bearer " + internalSecret) {
@@ -528,6 +613,7 @@ export async function resolveMasterSession(env, request) {
 }
 
 export async function deleteMasterSession(env, request) {
+  await ensureAuthRuntimeSchema(env);
   const token = String(parseCookies(request).nexus_master || "").trim();
   if (!token) return false;
   const tokenHash = await sha256Hex(token);
