@@ -1,5 +1,6 @@
 import { openAIKeyStatus } from "./openai-routing.js";
 import { getState, putState, deleteState } from "./storage.js";
+import { listClients, getClient, upsertClient } from "./clients.js";
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -70,6 +71,39 @@ async function handleState(request, env, url) {
   return json({ error: "method_not_allowed" }, 405);
 }
 
+async function handleClients(request, env, url) {
+  const denied = requireAuth(request, env);
+  if (denied) return denied;
+
+  const prefix = "/api/clients/";
+  const clientId = url.pathname.startsWith(prefix)
+    ? decodeURIComponent(url.pathname.slice(prefix.length))
+    : "";
+
+  if (request.method === "GET" && !clientId) {
+    return json({ ok: true, clients: await listClients(env) });
+  }
+
+  if (request.method === "GET" && clientId) {
+    const client = await getClient(env, clientId);
+    return client ? json({ ok: true, client }) : json({ error: "client_not_found" }, 404);
+  }
+
+  if ((request.method === "PUT" || request.method === "POST")) {
+    const body = await request.json().catch(() => ({}));
+    const input = { ...(body || {}) };
+    if (clientId) input.id = clientId;
+    try {
+      const client = await upsertClient(env, input);
+      return json({ ok: true, client });
+    } catch (error) {
+      return json({ error: error instanceof Error ? error.message : String(error) }, 400);
+    }
+  }
+
+  return json({ error: "method_not_allowed" }, 405);
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -87,6 +121,10 @@ export default {
 
     if (url.pathname === "/api/state") {
       return handleState(request, env, url);
+    }
+
+    if (url.pathname === "/api/clients" || url.pathname.startsWith("/api/clients/")) {
+      return handleClients(request, env, url);
     }
 
     return json({
