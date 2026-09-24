@@ -176,6 +176,14 @@ function signedPortalClientForRequest(req) {
   return loadClients().find(client => client.id === clientId) || null;
 }
 
+function bridgePortalClientForRequest(req) {
+  const expected = String(process.env.NEXUS_RAILWAY_BRIDGE_SECRET || "").trim();
+  const supplied = String(req.headers["x-nexus-bridge-secret"] || "").trim();
+  const clientId = String(req.headers["x-nexus-client-id"] || "").trim();
+  if (!expected || !supplied || !clientId || !safeEqualText(supplied, expected)) return null;
+  return loadClients().find(client => client.id === clientId) || null;
+}
+
 function readBody(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -5216,6 +5224,9 @@ function portalClientForRequest(req) {
 
   const signedClient = signedPortalClientForRequest(req);
   if (signedClient) return signedClient;
+
+  const bridgeClient = bridgePortalClientForRequest(req);
+  if (bridgeClient) return bridgeClient;
 
   const credentials = parseBasicAuth(req);
   if (!credentials) return null;
