@@ -1259,7 +1259,7 @@ async function searchTrailers(event){
         +'<div class="trailer-card-copy"><span>'+escapeSupport(item.type==="series"?"SÉRIE":"FILME")+' · '+escapeSupport(item.year||"—")+'</span>'
         +'<strong>'+escapeSupport(item.title||"")+'</strong>'
         +'<p>'+escapeSupport(item.overview||"Sinopse não disponível.")+'</p>'
-        +'<a class="trailer-open" target="_blank" rel="noopener" href="'+escapeSupport(link)+'">'+badge+'</a></div>'
+        +'<div class="trailer-card-actions"><a class="trailer-open" target="_blank" rel="noopener" href="'+escapeSupport(link)+'">'+badge+'</a><button type="button" class="trailer-use-title" data-use-trailer-title="'+escapeSupport(item.title||"")+'">Usar no Video Cutter</button></div></div>'
         +'</article>';
     }).join("");
     root.querySelectorAll("[data-trailer-poster]").forEach(img=>{
@@ -1276,6 +1276,16 @@ async function searchTrailers(event){
         img.replaceWith(empty);
       });
     });
+    root.querySelectorAll("[data-use-trailer-title]").forEach(button=>button.addEventListener("click",()=>{
+      const title=String(button.dataset.useTrailerTitle||"").trim();
+      const input=$("#video-content-title");
+      if(input)input.value=title;
+      showView("videos");
+      input?.focus();
+      const status=$("#video-upload-status");
+      if(status){status.textContent=title?"Título preparado para introdução e fechamento: "+title:"";status.className="save-status ok";}
+    }));
+
   }catch(error){
     if(status){status.textContent=error.message;status.className="save-status error";}
     if(root)root.innerHTML='<div class="post-client-empty"><strong>Não foi possível pesquisar</strong><span>'+escapeSupport(error.message)+'</span></div>';
@@ -1309,6 +1319,7 @@ function uploadSingleVideo(file,index,total,settings,progress){
     xhr.setRequestHeader("X-Subtitle-Weight",settings.subtitleWeight);
     xhr.setRequestHeader("X-Subtitle-Bg",settings.subtitleBg);
     xhr.setRequestHeader("X-Video-Folder",settings.folderId);
+    xhr.setRequestHeader("X-Content-Title",encodeURIComponent(settings.contentTitle||""));
     xhr.setRequestHeader("X-Video-End-Text",encodeURIComponent(settings.endText||""));
     xhr.setRequestHeader("X-Video-End-Contact",encodeURIComponent(settings.endContact||""));
     xhr.upload.onprogress=e=>{
@@ -1346,6 +1357,7 @@ if(videoUploadForm)videoUploadForm.addEventListener("submit",async event=>{
     subtitleWeight:$("#video-subtitle-weight")?.value||"bold",
     subtitleBg:$("#video-subtitle-bg")?.value||"black",
     folderId:$("#video-upload-folder")?.value||"default",
+    contentTitle:$("#video-content-title")?.value?.trim()||"",
     endText:$("#video-end-text")?.value?.trim()||"",
     endContact:$("#video-end-contact")?.value?.trim()||""
   };
@@ -1494,8 +1506,22 @@ if(toggleLoginPassword&&loginPassword){
   });
 }
 
+let loginSubmitCommitted=false;
+
+async function hydrateRememberedCredential(){
+  const remember=Boolean(rememberAccess?.checked);
+  if(!remember||!("credentials" in navigator)||!("PasswordCredential" in window))return;
+  try{
+    const credential=await navigator.credentials.get({password:true,mediation:"optional"});
+    if(!credential||credential.type!=="password")return;
+    if(loginUsername&&!loginUsername.value)loginUsername.value=credential.id||"";
+    if(loginPassword&&!loginPassword.value&&credential.password)loginPassword.value=credential.password;
+  }catch{}
+}
+
 if(loginForm){
-  loginForm.addEventListener("submit",()=>{
+  loginForm.addEventListener("submit",async event=>{
+    if(loginSubmitCommitted)return;
     const remember=Boolean(rememberAccess?.checked);
     try{
       if(remember){
@@ -1506,18 +1532,25 @@ if(loginForm){
         localStorage.removeItem("nexus_remember_username");
       }
     }catch{}
+
     if(remember && "credentials" in navigator && "PasswordCredential" in window){
+      event.preventDefault();
+      const submit=loginForm.querySelector('button[type="submit"]');
+      if(submit){submit.disabled=true;submit.textContent="Salvando acesso…";}
       try{
         const credential=new PasswordCredential(loginForm);
-        navigator.credentials.store(credential).catch(()=>{});
+        await navigator.credentials.store(credential);
       }catch{}
+      loginSubmitCommitted=true;
+      HTMLFormElement.prototype.submit.call(loginForm);
     }
   });
 }
+hydrateRememberedCredential();
 
 resumeCookieSession();
 function videoPlaybackActive(){
-  return $("video").some(video=>!video.paused&&!video.ended&&video.readyState>1);
+  return $$("video").some(video=>!video.paused&&!video.ended&&video.readyState>1);
 }
 setInterval(()=>{
   const view=$("#view-videos");if(!view||view.hidden)return;
