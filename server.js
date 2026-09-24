@@ -2574,12 +2574,8 @@ function videoOpenAIKeyForClient(clientId) {
 
 function clientVideoBridge(clientId) {
   const clients = loadClients();
-  if (clientId === "ragnar-one") {
-    const ragnar = clients.find(item => item.id === "ragnar-one");
-    const base = String(ragnar?.agentApiUrl || "").replace(/\/+$/, "");
-    const token = agentTokenForClient("ragnar-one");
-    return base && token ? { base, token, providerClientId: "ragnar-one" } : null;
-  }
+  // Ragnar é isolado: sem chave OpenAI própria, falha localmente e nunca retorna ao agente antigo.
+  if (clientId === "ragnar-one") return null;
 
   // Global Play and managed customer portals share Claire's OpenAI bridge.
   // This keeps customer search/cutting functional without requiring a
