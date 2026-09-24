@@ -10,7 +10,7 @@
   <title>NEXUS AI · Portal do Cliente</title>
   <link rel="icon" href="/assets/nexus-ai-mark.svg" type="image/svg+xml">
   <link rel="manifest" href="/manifest.webmanifest?v=1">
-  <link rel="stylesheet" href="/client.css?v=47">
+  <link rel="stylesheet" href="/client.css?v=50">
 </head>
 <body>
   <div id="nexus-boot" class="nexus-boot" hidden>
@@ -63,6 +63,7 @@
       <nav class="client-nav">
         <button type="button" class="active" data-view="overview">Visão geral</button>
         <button type="button" data-view="posts">Postagens</button>
+        <button type="button" data-view="capture">Captação</button>
         <button type="button" data-view="leads">Leads</button>
         <button type="button" data-view="videos">Vídeos</button>
         <button type="button" data-view="trailers">Trailers</button>
@@ -126,6 +127,74 @@
           <article class="panel nexus-agent-team">
             <div class="panel-heading"><div><p class="eyebrow">EQUIPE DIGITAL</p><h2>Agentes trabalhando agora</h2></div><button type="button" id="refresh-agent-team" class="ghost-action">Atualizar</button></div>
             <div id="client-agent-team" class="client-agent-team"><div class="post-client-empty"><strong>Carregando equipe...</strong><span>Sincronizando RADAR, ESTRATEGISTA, CREATOR, PUBLISHER, AUDITOR e ODIN.</span></div></div>
+          </article>
+        </section>
+      </div>
+
+      <div id="view-capture" class="client-view" hidden>
+        <section class="settings-heading lead-hunter-heading">
+          <div>
+            <p class="eyebrow">NEXUS LEAD HUNTER</p>
+            <h1>Captação inteligente de oportunidades</h1>
+            <p class="muted">O RADAR coleta sinais públicos permitidos e o ODIN qualifica intenção comercial. O NEXUS não dispara mensagens automáticas para pessoas encontradas.</p>
+          </div>
+          <div class="lead-hunter-heading-actions">
+            <span id="lead-hunter-status" class="save-status"></span>
+            <button type="button" id="lead-hunter-run" class="lead-hunter-run">Captar agora</button>
+          </div>
+        </section>
+
+        <section class="lead-hunter-summary">
+          <article><span>Base NEXUS</span><strong id="lead-hunter-total">0</strong><small>oportunidades ativas</small></article>
+          <article><span>Quentes</span><strong id="lead-hunter-hot">0</strong><small>alta intenção</small></article>
+          <article><span>Última varredura</span><strong id="lead-hunter-analyzed">0</strong><small>interações analisadas</small></article>
+          <article><span>Novos</span><strong id="lead-hunter-new">0</strong><small>na última execução</small></article>
+          <article><span>RADAR</span><strong id="lead-hunter-last-run">—</strong><small>última execução</small></article>
+        </section>
+
+        <section class="lead-hunter-grid">
+          <article class="panel settings-panel lead-hunter-config-card">
+            <div class="panel-heading">
+              <div><p class="eyebrow">CONFIGURAÇÃO</p><h2>Onde o RADAR deve procurar</h2></div>
+              <span class="lead-hunter-chip">RADAR + ODIN</span>
+            </div>
+            <form id="lead-hunter-form" class="lead-hunter-form">
+              <div class="lead-hunter-switches">
+                <label><input id="lead-hunter-enabled" type="checkbox" checked><span><strong>Lead Hunter ativo</strong><small>Permite coleta e classificação.</small></span></label>
+                <label><input id="lead-hunter-auto" type="checkbox" checked><span><strong>Rodar automaticamente</strong><small>Executa no ciclo configurado.</small></span></label>
+                <label><input id="lead-hunter-meta" type="checkbox" checked><span><strong>Comentários da minha conta</strong><small>Usa a conexão oficial do Instagram.</small></span></label>
+                <label><input id="lead-hunter-public" type="checkbox" checked><span><strong>Alvos públicos</strong><small>Analisa URLs públicas cadastradas, quando acessíveis.</small></span></label>
+                <label><input id="lead-hunter-ai" type="checkbox" checked><span><strong>Qualificação por IA</strong><small>ODIN refina os sinais comerciais ambíguos.</small></span></label>
+              </div>
+
+              <div class="lead-hunter-controls">
+                <label><span>Intervalo automático</span><select id="lead-hunter-interval"><option value="15">15 min</option><option value="30">30 min</option><option value="60" selected>1 hora</option><option value="180">3 horas</option><option value="360">6 horas</option><option value="720">12 horas</option><option value="1440">1 dia</option></select></label>
+                <label><span>Período dos comentários</span><select id="lead-hunter-lookback"><option value="1">1 dia</option><option value="3">3 dias</option><option value="7" selected>7 dias</option><option value="14">14 dias</option><option value="30">30 dias</option></select></label>
+                <label><span>Máximo por varredura</span><select id="lead-hunter-limit"><option value="20">20</option><option value="50">50</option><option value="100" selected>100</option><option value="150">150</option><option value="250">250</option></select></label>
+                <label><span>Score mínimo</span><input id="lead-hunter-min-score" type="number" min="10" max="90" value="35"></label>
+              </div>
+
+              <label class="lead-hunter-wide"><span>Perfis, posts, Reels ou hashtags para observar</span><textarea id="lead-hunter-targets" rows="5" maxlength="5000" placeholder="@perfilconcorrente&#10;#streaming&#10;https://www.instagram.com/reel/..."></textarea><small>Um alvo por linha. O coletor próprio não tenta burlar login ou bloqueios do Instagram; ele trabalha somente com o que estiver publicamente acessível.</small></label>
+
+              <label class="lead-hunter-wide"><span>Sinais de intenção de compra</span><textarea id="lead-hunter-intents" rows="4" maxlength="3000" placeholder="quanto custa, tem teste, quero, manda o link, como assino..."></textarea></label>
+
+              <label class="lead-hunter-wide"><span>Termos do nicho</span><textarea id="lead-hunter-niche-terms" rows="3" maxlength="2500" placeholder="produto, serviço, categoria, problema que o cliente resolve..."></textarea></label>
+
+              <div class="lead-hunter-form-actions">
+                <span id="lead-hunter-save-status" class="save-status"></span>
+                <button type="submit" class="ghost-action">Salvar configuração</button>
+              </div>
+            </form>
+          </article>
+
+          <article class="panel settings-panel lead-hunter-live-card">
+            <div class="panel-heading">
+              <div><p class="eyebrow">OPORTUNIDADES</p><h2>Encontradas pelo NEXUS</h2></div>
+              <span id="lead-hunter-source-status" class="post-client-help">Aguardando varredura</span>
+            </div>
+            <div id="lead-hunter-leads" class="lead-hunter-leads">
+              <div class="post-client-empty"><strong>Nenhuma oportunidade ainda</strong><span>Salve a configuração e mande o RADAR captar agora.</span></div>
+            </div>
           </article>
         </section>
       </div>
@@ -434,6 +503,6 @@
       <footer><span>NEXUS AI</span><small>Client Portal · ambiente exclusivo</small></footer>
     </section>
   </main>
-  <script src="/client.js?v=48" defer></script>
+  <script src="/client.js?v=50" defer></script>
 </body>
 </html>
