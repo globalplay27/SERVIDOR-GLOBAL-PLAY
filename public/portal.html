@@ -10,7 +10,7 @@
   <title>NEXUS AI · Portal do Cliente</title>
   <link rel="icon" href="/assets/nexus-ai-mark.svg" type="image/svg+xml">
   <link rel="manifest" href="/manifest.webmanifest?v=1">
-  <link rel="stylesheet" href="/client.css?v=50">
+  <link rel="stylesheet" href="/client.css?v=52">
 </head>
 <body>
   <div id="nexus-boot" class="nexus-boot" hidden>
@@ -276,6 +276,7 @@
               </label>
               <div class="video-options">
                 <label><span>Objetivo</span><select id="video-goal"><option value="viral">Cortes com potencial de engajamento</option><option value="sales">Vendas</option><option value="educational">Conteúdo educativo</option><option value="podcast">Podcast / entrevista</option><option value="testimonial">Depoimento</option></select></label>
+                <label><span>Nome do filme / série / conteúdo</span><input id="video-content-title" maxlength="100" placeholder="Ex.: Reacher (opcional)"><small>Quando informado, o NEXUS usa o nome na introdução e no fechamento. Se ficar vazio, tenta identificar sem inventar.</small></label>
                 <label><span>Duração desejada</span><select id="video-clip-duration"><option value="15">15 segundos</option><option value="30" selected>30 segundos</option><option value="45">45 segundos</option><option value="60">60 segundos</option><option value="90">90 segundos</option></select></label>
                 <label><span>Opções de melhores cortes</span><input id="video-requested-clips" type="number" min="1" max="12" value="3"></label>
                 <label><span>Formato de saída</span><select id="video-output-format"><option value="reel" selected>Reels / Stories 9:16</option><option value="feed">Feed do Instagram 4:5</option><option value="square">Quadrado 1:1</option></select></label>
@@ -503,6 +504,6 @@
       <footer><span>NEXUS AI</span><small>Client Portal · ambiente exclusivo</small></footer>
     </section>
   </main>
-  <script src="/client.js?v=51" defer></script>
+  <script src="/client.js?v=52" defer></script>
 </body>
 </html>
