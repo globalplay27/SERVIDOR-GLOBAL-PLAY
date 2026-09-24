@@ -738,3 +738,17 @@ footer span{color:#a8c8d7!important}
 .trailer-manual-actions{display:grid;gap:6px}
 .trailer-manual-actions .trailer-primary-action{width:100%}
 .trailer-direct-note{display:block;text-align:center;font-size:8px;font-weight:800;color:#6f8793;letter-spacing:.04em}
+
+
+/* ===== direct server video import ===== */
+.video-remote-import{display:grid;gap:10px;padding:14px;border:1px solid rgba(93,211,255,.14);border-radius:14px;background:rgba(3,10,14,.72)}
+.video-remote-copy{display:grid;gap:4px}
+.video-remote-copy span{color:#e9f8ff;font-size:11px;font-weight:900;letter-spacing:.02em}
+.video-remote-copy small{color:#7893a0;font-size:9px;line-height:1.5}
+.video-remote-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center}
+.video-remote-row input{min-width:0;height:42px;padding:0 12px;border-radius:10px;border:1px solid rgba(93,211,255,.16);background:#02090d;color:#eafaff;outline:none}
+.video-remote-row input:focus{border-color:rgba(93,211,255,.52);box-shadow:0 0 0 3px rgba(93,211,255,.07)}
+.video-remote-row .ghost-action{min-height:42px;white-space:nowrap}
+.video-upload-divider{display:flex;align-items:center;gap:10px;color:#58727f;font-size:8px;text-transform:uppercase;letter-spacing:.12em}
+.video-upload-divider:before,.video-upload-divider:after{content:"";height:1px;flex:1;background:rgba(93,211,255,.09)}
+@media(max-width:620px){.video-remote-row{grid-template-columns:1fr}.video-remote-row .ghost-action{width:100%}}
