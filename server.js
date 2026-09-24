@@ -30,6 +30,10 @@ const supportTicketsFile = path.join(DATA_DIR, "support-tickets.json");
 const postLedgerFile = path.join(DATA_DIR, "post-ledger.json");
 const agentExecutionsFile = path.join(DATA_DIR, "agent-executions.json");
 const agentCoreStateFile = path.join(DATA_DIR, "agent-core-state.json");
+const leadHunterConfigFile = path.join(DATA_DIR, "lead-hunter-config.json");
+const leadHunterLeadsFile = path.join(DATA_DIR, "lead-hunter-leads.json");
+const leadHunterRunsFile = path.join(DATA_DIR, "lead-hunter-runs.json");
+const leadHunterSeenFile = path.join(DATA_DIR, "lead-hunter-seen.json");
 const videoJobsFile = path.join(DATA_DIR, "video-jobs.json");
 const videoFoldersFile = path.join(DATA_DIR, "video-folders.json");
 const clientLogoDir = path.join(DATA_DIR, "client-logos");
@@ -455,6 +459,697 @@ function agentCoreTopTerms(texts, limit = 6) {
   }
   return [...counts.entries()].sort((a,b) => b[1]-a[1]).slice(0, limit).map(([term,count]) => ({ term, count }));
 }
+
+
+function loadLeadHunterConfigMap() {
+  return readObjectFile(leadHunterConfigFile, {});
+}
+
+function saveLeadHunterConfigMap(value) {
+  writeJsonAtomic(leadHunterConfigFile, value && typeof value === "object" && !Array.isArray(value) ? value : {});
+}
+
+function loadLeadHunterLeads() {
+  return readJsonFile(leadHunterLeadsFile, []);
+}
+
+function saveLeadHunterLeads(value) {
+  writeJsonAtomic(leadHunterLeadsFile, Array.isArray(value) ? value.slice(-10000) : []);
+}
+
+function loadLeadHunterRuns() {
+  return readJsonFile(leadHunterRunsFile, []);
+}
+
+function saveLeadHunterRuns(value) {
+  writeJsonAtomic(leadHunterRunsFile, Array.isArray(value) ? value.slice(-2000) : []);
+}
+
+function loadLeadHunterSeen() {
+  return readObjectFile(leadHunterSeenFile, {});
+}
+
+function saveLeadHunterSeen(value) {
+  const entries = Object.entries(value && typeof value === "object" ? value : {})
+    .sort((a,b)=>Number(b[1] || 0)-Number(a[1] || 0))
+    .slice(0, 20000);
+  writeJsonAtomic(leadHunterSeenFile, Object.fromEntries(entries));
+}
+
+function defaultLeadHunterConfig(client) {
+  const profile = client?.agentProfile && typeof client.agentProfile === "object" ? client.agentProfile : {};
+  const posting = client?.postingProfile && typeof client.postingProfile === "object" ? client.postingProfile : {};
+  const nicheTerms = [
+    client?.niche,
+    profile.niche,
+    profile.brandName,
+    profile.offer,
+    profile.services,
+    posting.targetAudience
+  ].filter(Boolean).join(", ");
+  return {
+    enabled: true,
+    autoRun: true,
+    metaComments: true,
+    publicTargets: true,
+    aiQualification: true,
+    scanIntervalMinutes: 60,
+    lookbackDays: 7,
+    maxResultsPerRun: 100,
+    minScore: 35,
+    targets: [],
+    intentTerms: [
+      "quanto custa","qual o valor","preço","valor","tem teste","quero","onde compro",
+      "como assino","como contratar","manda o link","me chama","whatsapp","interessado",
+      "orçamento","tem disponível","como funciona"
+    ],
+    nicheTerms: nicheTerms.split(",").map(item=>String(item).trim()).filter(Boolean).slice(0, 20)
+  };
+}
+
+function normalizeInstagramTarget(value) {
+  let raw = String(value || "").trim();
+  if (!raw) return "";
+  if (/^@[A-Za-z0-9._]{1,30}$/.test(raw)) {
+    return "https://www.instagram.com/" + raw.slice(1) + "/";
+  }
+  if (/^#[A-Za-z0-9._-]{1,80}$/.test(raw)) {
+    return "https://www.instagram.com/explore/tags/" + encodeURIComponent(raw.slice(1)) + "/";
+  }
+  try {
+    const parsed = new URL(raw);
+    const host = parsed.hostname.toLowerCase().replace(/^www\./,"");
+    if (host !== "instagram.com") return "";
+    parsed.protocol = "https:";
+    parsed.hash = "";
+    return parsed.toString();
+  } catch {
+    return "";
+  }
+}
+
+function leadHunterConfigFor(client) {
+  const defaults = defaultLeadHunterConfig(client);
+  const map = loadLeadHunterConfigMap();
+  const current = map?.[client.id] && typeof map[client.id] === "object" ? map[client.id] : {};
+  const targets = Array.isArray(current.targets) ? current.targets.map(normalizeInstagramTarget).filter(Boolean).slice(0,20) : defaults.targets;
+  const terms = Array.isArray(current.intentTerms) ? current.intentTerms.map(x=>String(x).trim()).filter(Boolean).slice(0,40) : defaults.intentTerms;
+  const nicheTerms = Array.isArray(current.nicheTerms) ? current.nicheTerms.map(x=>String(x).trim()).filter(Boolean).slice(0,30) : defaults.nicheTerms;
+  return {
+    enabled: current.enabled !== false,
+    autoRun: current.autoRun !== false,
+    metaComments: current.metaComments !== false,
+    publicTargets: current.publicTargets !== false,
+    aiQualification: current.aiQualification !== false,
+    scanIntervalMinutes: Math.max(15, Math.min(1440, Number(current.scanIntervalMinutes || defaults.scanIntervalMinutes))),
+    lookbackDays: Math.max(1, Math.min(30, Number(current.lookbackDays || defaults.lookbackDays))),
+    maxResultsPerRun: Math.max(10, Math.min(250, Number(current.maxResultsPerRun || defaults.maxResultsPerRun))),
+    minScore: Math.max(10, Math.min(90, Number(current.minScore || defaults.minScore))),
+    targets,
+    intentTerms: terms,
+    nicheTerms
+  };
+}
+
+function saveLeadHunterConfig(client, patch = {}) {
+  const current = leadHunterConfigFor(client);
+  const next = {
+    ...current,
+    enabled: patch.enabled === undefined ? current.enabled : Boolean(patch.enabled),
+    autoRun: patch.autoRun === undefined ? current.autoRun : Boolean(patch.autoRun),
+    metaComments: patch.metaComments === undefined ? current.metaComments : Boolean(patch.metaComments),
+    publicTargets: patch.publicTargets === undefined ? current.publicTargets : Boolean(patch.publicTargets),
+    aiQualification: patch.aiQualification === undefined ? current.aiQualification : Boolean(patch.aiQualification),
+    scanIntervalMinutes: Math.max(15, Math.min(1440, Number(patch.scanIntervalMinutes ?? current.scanIntervalMinutes))),
+    lookbackDays: Math.max(1, Math.min(30, Number(patch.lookbackDays ?? current.lookbackDays))),
+    maxResultsPerRun: Math.max(10, Math.min(250, Number(patch.maxResultsPerRun ?? current.maxResultsPerRun))),
+    minScore: Math.max(10, Math.min(90, Number(patch.minScore ?? current.minScore))),
+    targets: Array.isArray(patch.targets)
+      ? patch.targets.map(normalizeInstagramTarget).filter(Boolean).slice(0,20)
+      : current.targets,
+    intentTerms: Array.isArray(patch.intentTerms)
+      ? patch.intentTerms.map(x=>String(x).trim()).filter(Boolean).slice(0,40)
+      : current.intentTerms,
+    nicheTerms: Array.isArray(patch.nicheTerms)
+      ? patch.nicheTerms.map(x=>String(x).trim()).filter(Boolean).slice(0,30)
+      : current.nicheTerms,
+    updatedAt: new Date().toISOString()
+  };
+  const map = loadLeadHunterConfigMap();
+  map[client.id] = next;
+  saveLeadHunterConfigMap(map);
+  return next;
+}
+
+function leadHunterLeadsForClient(clientId, limit = 1000) {
+  return loadLeadHunterLeads()
+    .filter(item => item.clientId === clientId && item.status !== "discarded")
+    .sort((a,b)=>Number(b.score||0)-Number(a.score||0) || String(b.updatedAt||"").localeCompare(String(a.updatedAt||"")))
+    .slice(0, Math.max(1, Math.min(2000, Number(limit || 1000))));
+}
+
+function summarizeLeadRows(rows = []) {
+  return rows.reduce((acc, lead) => {
+    acc.total += 1;
+    const temp = ["hot","warm","cold"].includes(String(lead.temperature)) ? String(lead.temperature) : "cold";
+    acc[temp] += 1;
+    if (lead.needsHuman) acc.needsHuman += 1;
+    return acc;
+  }, { total:0, hot:0, warm:0, cold:0, needsHuman:0 });
+}
+
+function leadHunterSummaryForClient(clientId) {
+  const leads = leadHunterLeadsForClient(clientId, 5000);
+  const runs = loadLeadHunterRuns()
+    .filter(item=>item.clientId===clientId)
+    .sort((a,b)=>String(b.finishedAt||b.startedAt||"").localeCompare(String(a.finishedAt||a.startedAt||"")));
+  const last = runs[0] || null;
+  return {
+    ...summarizeLeadRows(leads),
+    lastRunAt: last?.finishedAt || null,
+    lastRunStatus: last?.status || "idle",
+    lastAnalyzed: Number(last?.analyzed || 0),
+    lastNew: Number(last?.newLeads || 0),
+    lastUpdated: Number(last?.updatedLeads || 0),
+    lastSources: last?.sources || {},
+    lastErrors: Array.isArray(last?.errors) ? last.errors : []
+  };
+}
+
+function decodeInstagramJsonString(value) {
+  const raw = String(value || "");
+  try { return JSON.parse('"' + raw.replace(/"/g,'\\"') + '"'); }
+  catch {
+    return raw.replace(/\\u0026/g,"&").replace(/\\n/g," ").replace(/\\"/g,'"').replace(/\\\\/g,"\\");
+  }
+}
+
+function publicInstagramCandidatesFromHtml(html, targetUrl, max = 200) {
+  const out = [];
+  const seen = new Set();
+  let targetUsername = "";
+  try {
+    const parsed = new URL(targetUrl);
+    const parts = parsed.pathname.split("/").filter(Boolean);
+    if (parts[0] && !["p","reel","reels","explore","stories"].includes(parts[0])) targetUsername = parts[0].toLowerCase();
+  } catch {}
+
+  const add = (username, text, externalId = "", timestamp = null) => {
+    const handle = String(username || "").replace(/^@/,"").trim();
+    const message = String(text || "").replace(/\s+/g," ").trim();
+    if (!/^[A-Za-z0-9._]{1,30}$/.test(handle) || message.length < 2 || message.length > 700) return;
+    if (targetUsername && handle.toLowerCase() === targetUsername) return;
+    const key = handle.toLowerCase() + "|" + message.toLowerCase().slice(0,180);
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({
+      externalId: String(externalId || ""),
+      instagramUsername: handle,
+      instagramUserId: "",
+      message,
+      source: "public-target",
+      sourceUrl: targetUrl,
+      sourceMediaId: "",
+      createdAt: timestamp || null
+    });
+  };
+
+  const walk = (node, depth = 0) => {
+    if (!node || depth > 12 || out.length >= max) return;
+    if (Array.isArray(node)) {
+      for (const item of node) walk(item, depth + 1);
+      return;
+    }
+    if (typeof node !== "object") return;
+    const username =
+      node?.user?.username || node?.owner?.username || node?.from?.username ||
+      (typeof node.username === "string" ? node.username : "");
+    const text =
+      (typeof node.text === "string" ? node.text : "") ||
+      (typeof node.comment_text === "string" ? node.comment_text : "") ||
+      (typeof node.body === "string" ? node.body : "");
+    if (username && text) {
+      add(username, text, node.pk || node.id || node.comment_id || "", node.created_at || node.timestamp || null);
+    }
+    for (const value of Object.values(node)) walk(value, depth + 1);
+  };
+
+  const scripts = String(html || "").matchAll(/<script[^>]*type=["']application\/json["'][^>]*>([\s\S]*?)<\/script>/gi);
+  for (const match of scripts) {
+    try { walk(JSON.parse(match[1])); } catch {}
+    if (out.length >= max) break;
+  }
+
+  const raw = String(html || "");
+  const patterns = [
+    /"username":"([^"]{1,40})"[\s\S]{0,1200}?"text":"((?:\\.|[^"]) {0,700})"/g,
+    /"text":"((?:\\.|[^"]) {0,700})"[\s\S]{0,1200}?"username":"([^"]{1,40})"/g
+  ];
+  // Correct the literal-space quantifier above for engines that do not tolerate copied minification.
+  const fallbackPatterns = [
+    /"username":"([^"]{1,40})"[\s\S]{0,1200}?"text":"((?:\\.|[^"]){1,700})"/g,
+    /"text":"((?:\\.|[^"]){1,700})"[\s\S]{0,1200}?"username":"([^"]{1,40})"/g
+  ];
+  for (let p = 0; p < fallbackPatterns.length && out.length < max; p += 1) {
+    const regex = fallbackPatterns[p];
+    let match;
+    while ((match = regex.exec(raw)) && out.length < max) {
+      if (p === 0) add(match[1], decodeInstagramJsonString(match[2]));
+      else add(match[2], decodeInstagramJsonString(match[1]));
+    }
+  }
+  return out;
+}
+
+async function collectPublicInstagramTarget(targetUrl, maxResults) {
+  const url = normalizeInstagramTarget(targetUrl);
+  if (!url) return { items:[], error:"invalid_instagram_target", target:targetUrl };
+  try {
+    const response = await fetch(url, {
+      redirect: "follow",
+      headers: {
+        accept: "text/html,application/xhtml+xml",
+        "accept-language": "pt-BR,pt;q=0.9,en;q=0.7",
+        "user-agent": "Mozilla/5.0 (compatible; NEXUSLeadHunter/1.0; +https://nexus.local)"
+      },
+      signal: AbortSignal.timeout(15000)
+    });
+    if (!response.ok) return { items:[], error:"instagram_public_http_" + response.status, target:url };
+    const html = await response.text();
+    return {
+      items: publicInstagramCandidatesFromHtml(html, url, maxResults),
+      target:url,
+      error:""
+    };
+  } catch (error) {
+    return { items:[], error:String(error?.message || error).slice(0,160), target:url };
+  }
+}
+
+async function collectOwnInstagramComments(client, config) {
+  const connection = directConnection(client.id, "meta");
+  const accessToken = decryptSecret(connection?.accessToken || "");
+  const igUserId = String(connection?.igUserId || "").trim();
+  if (!accessToken || !igUserId) return { items:[], error:"instagram_not_connected", source:"meta-comments" };
+
+  try {
+    const mediaUrl = "https://graph.instagram.com/" + encodeURIComponent(igUserId)
+      + "/media?fields=" + encodeURIComponent("id,permalink,timestamp")
+      + "&limit=12";
+    const mediaResponse = await fetch(mediaUrl, {
+      headers: { authorization:"Bearer " + accessToken, accept:"application/json", "user-agent":"NEXUSLeadHunter/1.0" },
+      signal: AbortSignal.timeout(12000)
+    });
+    const mediaPayload = await mediaResponse.json().catch(()=>({}));
+    if (!mediaResponse.ok) throw new Error(String(mediaPayload?.error?.message || "instagram_media_" + mediaResponse.status));
+    const media = Array.isArray(mediaPayload.data) ? mediaPayload.data : [];
+    const cutoff = Date.now() - Number(config.lookbackDays || 7) * 86400000;
+    const ownUsername = String(connection?.meta?.username || client.instagram || "").replace(/^@/,"").toLowerCase();
+    const items = [];
+    const errors = [];
+
+    for (const post of media) {
+      if (items.length >= config.maxResultsPerRun) break;
+      const postTime = post.timestamp ? new Date(post.timestamp).getTime() : Date.now();
+      if (Number.isFinite(postTime) && postTime < cutoff) continue;
+      try {
+        const commentUrl = "https://graph.instagram.com/" + encodeURIComponent(String(post.id))
+          + "/comments?fields=" + encodeURIComponent("id,text,username,timestamp")
+          + "&limit=50";
+        const commentResponse = await fetch(commentUrl, {
+          headers: { authorization:"Bearer " + accessToken, accept:"application/json", "user-agent":"NEXUSLeadHunter/1.0" },
+          signal: AbortSignal.timeout(12000)
+        });
+        const payload = await commentResponse.json().catch(()=>({}));
+        if (!commentResponse.ok) throw new Error(String(payload?.error?.message || "comments_" + commentResponse.status));
+        for (const comment of Array.isArray(payload.data) ? payload.data : []) {
+          if (items.length >= config.maxResultsPerRun) break;
+          const username = String(comment.username || "").replace(/^@/,"").trim();
+          if (!username || username.toLowerCase() === ownUsername) continue;
+          items.push({
+            externalId: String(comment.id || ""),
+            instagramUsername: username,
+            instagramUserId: "",
+            message: String(comment.text || "").trim().slice(0,700),
+            source: "meta-comment",
+            sourceUrl: String(post.permalink || ""),
+            sourceMediaId: String(post.id || ""),
+            createdAt: comment.timestamp || post.timestamp || null
+          });
+        }
+      } catch (error) {
+        errors.push(String(error?.message || error).slice(0,140));
+      }
+    }
+    return { items, errors, source:"meta-comments" };
+  } catch (error) {
+    return { items:[], error:String(error?.message || error).slice(0,180), source:"meta-comments" };
+  }
+}
+
+function localLeadQualification(candidate, client, config) {
+  const message = String(candidate.message || "").replace(/\s+/g," ").trim();
+  const low = message.toLowerCase();
+  const cls = classifyInteraction(message, client.leadKeyword || "QUERO");
+  let score = 8;
+  if (cls === "KEYWORD") score += 48;
+  else if (cls === "LEAD") score += 38;
+  else if (cls === "QUESTION") score += 18;
+  else if (cls === "SUBSTANCE") score += 9;
+  else if (cls === "NOISE") score -= 45;
+
+  const intentMatches = (config.intentTerms || []).filter(term => term && low.includes(String(term).toLowerCase()));
+  score += Math.min(28, intentMatches.length * 9);
+
+  const nicheMatches = (config.nicheTerms || []).filter(term => {
+    const clean = String(term || "").trim().toLowerCase();
+    return clean.length >= 3 && low.includes(clean);
+  });
+  score += Math.min(12, nicheMatches.length * 4);
+
+  if (candidate.source === "meta-comment") score += 10;
+  if (candidate.instagramUsername) score += 4;
+  if (/\b(?:http|www\.|ganhe seguidores|divulgue|promoção imperdível|renda extra garantida)\b/i.test(message)) score -= 28;
+
+  const when = candidate.createdAt ? new Date(candidate.createdAt).getTime() : NaN;
+  const ageHours = Number.isFinite(when) ? Math.max(0,(Date.now()-when)/3600000) : null;
+  if (ageHours !== null && ageHours <= 24) score += 10;
+  else if (ageHours !== null && ageHours <= 72) score += 5;
+
+  score = Math.max(0, Math.min(100, Math.round(score)));
+  const temperature = score >= 80 ? "hot" : score >= 55 ? "warm" : "cold";
+  const intent = intentMatches[0] || (cls === "KEYWORD" ? "palavra-chave de compra" : cls === "LEAD" ? "intenção comercial" : cls === "QUESTION" ? "pergunta comercial" : "interação");
+  return {
+    ...candidate,
+    conversationClass: cls,
+    localScore: score,
+    score,
+    temperature,
+    intent,
+    stage: temperature === "hot" ? "ready_for_contact" : temperature === "warm" ? "qualifying" : "new",
+    needsHuman: score >= 85 || cls === "KEYWORD",
+    qualificationReason: "Classificação local por intenção, contexto, recência e aderência ao nicho.",
+    intentMatches,
+    nicheMatches
+  };
+}
+
+async function aiQualifyLeadCandidates(client, candidates, config) {
+  const apiKey = videoOpenAIKeyForClient(client.id);
+  const eligible = candidates.filter(item => item.localScore >= Math.max(15, config.minScore - 20)).slice(0,60);
+  if (!apiKey || !config.aiQualification || !eligible.length) return { items:candidates, costUsd:0, model:"local-intent-engine" };
+
+  const profile = client.agentProfile && typeof client.agentProfile === "object" ? client.agentProfile : {};
+  const input = eligible.map(item => ({
+    id:item.candidateId,
+    username:item.instagramUsername,
+    text:item.message,
+    source:item.source,
+    localScore:item.localScore
+  }));
+  try {
+    const response = await fetch("https://api.openai.com/v1/responses", {
+      method:"POST",
+      headers:{ authorization:"Bearer " + apiKey, "content-type":"application/json" },
+      body:JSON.stringify({
+        model:"gpt-5.6-luna",
+        instructions:"Você qualifica sinais comerciais públicos para um CRM. Use somente o texto fornecido e o contexto comercial. Não infira saúde, religião, política, raça, sexualidade, renda ou outros atributos sensíveis. Não invente intenção. Score 0-100 deve representar chance de ser uma oportunidade comercial explícita ou plausível para o negócio. Retorne somente JSON válido.",
+        input:"Negócio: " + JSON.stringify({
+          niche:client.niche || profile.niche || "",
+          offer:profile.offer || "",
+          services:profile.services || "",
+          audience:profile.audience || profile.targetAudience || ""
+        }) + "\nCandidatos: " + JSON.stringify(input)
+          + '\nRetorne {"leads":[{"id":"...","score":0,"intent":"...","stage":"new|qualifying|ready_for_contact","needsHuman":false,"reason":"..."}]}',
+        max_output_tokens:3200
+      }),
+      signal:AbortSignal.timeout(120000)
+    });
+    const payload = await response.json().catch(()=>({}));
+    if (!response.ok) throw new Error("lead_ai_" + response.status);
+    const raw = responseOutputText(payload);
+    const a = raw.indexOf("{"), b = raw.lastIndexOf("}");
+    if (a < 0 || b <= a) throw new Error("lead_ai_invalid_json");
+    const parsed = JSON.parse(raw.slice(a,b+1));
+    const map = new Map((Array.isArray(parsed.leads) ? parsed.leads : []).map(item=>[String(item.id||""),item]));
+    const items = candidates.map(item => {
+      const ai = map.get(item.candidateId);
+      if (!ai) return item;
+      const aiScore = Math.max(0,Math.min(100,Number(ai.score || 0)));
+      const score = Math.round(item.localScore * 0.45 + aiScore * 0.55);
+      const temperature = score >= 80 ? "hot" : score >= 55 ? "warm" : "cold";
+      return {
+        ...item,
+        aiScore,
+        score,
+        temperature,
+        intent:String(ai.intent || item.intent || "").slice(0,180),
+        stage:["new","qualifying","ready_for_contact"].includes(String(ai.stage)) ? String(ai.stage) : (temperature==="hot"?"ready_for_contact":temperature==="warm"?"qualifying":"new"),
+        needsHuman:Boolean(ai.needsHuman) || score >= 85,
+        qualificationReason:String(ai.reason || item.qualificationReason || "").slice(0,300)
+      };
+    });
+    const usage = payload.usage || {};
+    const costUsd = Math.max(0,Number(usage.input_tokens||0))*0.20/1_000_000
+      + Math.max(0,Number(usage.output_tokens||0))*1.20/1_000_000;
+    return { items, costUsd, model:"local-intent-engine+gpt-5.6-luna" };
+  } catch (error) {
+    return { items:candidates, costUsd:0, model:"local-intent-engine", error:String(error?.message || error).slice(0,180) };
+  }
+}
+
+function leadCandidateFingerprint(clientId, item) {
+  if (item.externalId) return clientId + "|id|" + item.source + "|" + item.externalId;
+  const raw = [
+    clientId,
+    String(item.instagramUsername || item.instagramUserId || "").toLowerCase(),
+    String(item.message || "").toLowerCase().replace(/\s+/g," ").slice(0,220),
+    String(item.sourceUrl || "")
+  ].join("|");
+  return clientId + "|hash|" + crypto.createHash("sha256").update(raw).digest("hex").slice(0,32);
+}
+
+function mergeLeadHunterCandidates(client, candidates, config) {
+  const all = loadLeadHunterLeads();
+  const seen = loadLeadHunterSeen();
+  const now = new Date().toISOString();
+  let newLeads = 0, updatedLeads = 0, ignored = 0;
+
+  for (const candidate of candidates) {
+    if (Number(candidate.score || 0) < Number(config.minScore || 35)) { ignored += 1; continue; }
+    const fingerprint = candidate.fingerprint || leadCandidateFingerprint(client.id,candidate);
+    if (seen[fingerprint]) { ignored += 1; continue; }
+
+    const identity = String(candidate.instagramUsername || candidate.instagramUserId || "").toLowerCase();
+    if (!identity) { ignored += 1; continue; }
+    const leadKey = client.id + "|" + identity;
+    let row = all.find(item => item.leadKey === leadKey);
+    const evidence = {
+      fingerprint,
+      source:candidate.source,
+      sourceUrl:candidate.sourceUrl || "",
+      sourceMediaId:candidate.sourceMediaId || "",
+      message:String(candidate.message || "").slice(0,700),
+      capturedAt:candidate.createdAt || now,
+      score:Number(candidate.score || 0),
+      reason:String(candidate.qualificationReason || "").slice(0,300)
+    };
+    if (row) {
+      row.evidence = Array.isArray(row.evidence) ? row.evidence : [];
+      row.evidence.push(evidence);
+      row.evidence = row.evidence.slice(-12);
+      const repeatBoost = Math.min(12, Math.max(0,row.evidence.length-1)*3);
+      row.score = Math.max(Number(row.score||0), Math.min(100, Number(candidate.score||0)+repeatBoost));
+      row.temperature = row.score >= 80 ? "hot" : row.score >= 55 ? "warm" : "cold";
+      row.intent = candidate.intent || row.intent;
+      row.stage = candidate.stage || row.stage;
+      row.needsHuman = Boolean(row.needsHuman || candidate.needsHuman || row.score >= 85);
+      row.lastMessage = candidate.message || row.lastMessage;
+      row.lastContactAt = candidate.createdAt || row.lastContactAt || now;
+      row.updatedAt = now;
+      row.source = row.source === candidate.source ? row.source : "multi-source";
+      row.sources = [...new Set([...(row.sources||[]),candidate.source])];
+      row.evidenceCount = row.evidence.length;
+      updatedLeads += 1;
+    } else {
+      row = {
+        id:"nxl_" + crypto.randomBytes(9).toString("hex"),
+        leadKey,
+        clientId:client.id,
+        clientName:client.name || client.id,
+        instagram:client.instagram || "",
+        instagramUserId:String(candidate.instagramUserId || ""),
+        instagramUsername:String(candidate.instagramUsername || ""),
+        temperature:candidate.temperature || "cold",
+        score:Number(candidate.score || 0),
+        stage:candidate.stage || "new",
+        intent:String(candidate.intent || "").slice(0,180),
+        needsHuman:Boolean(candidate.needsHuman),
+        triggerKeyword:candidate.conversationClass === "KEYWORD" ? (client.leadKeyword || "QUERO") : "",
+        lastMessage:String(candidate.message || "").slice(0,700),
+        lastContactAt:candidate.createdAt || now,
+        source:candidate.source || "nexus-hunter",
+        sources:[candidate.source || "nexus-hunter"],
+        sourceUrl:candidate.sourceUrl || "",
+        evidence:[evidence],
+        evidenceCount:1,
+        status:"active",
+        createdAt:now,
+        updatedAt:now
+      };
+      all.push(row);
+      newLeads += 1;
+    }
+    seen[fingerprint] = Date.now();
+  }
+
+  saveLeadHunterLeads(all);
+  saveLeadHunterSeen(seen);
+  return { newLeads, updatedLeads, ignored };
+}
+
+const leadHunterRunning = new Set();
+
+async function runLeadHunter(client, options = {}) {
+  if (leadHunterRunning.has(client.id)) return { ok:false, skipped:"already_running", summary:leadHunterSummaryForClient(client.id) };
+  const config = leadHunterConfigFor(client);
+  if (!config.enabled) return { ok:false, skipped:"disabled", summary:leadHunterSummaryForClient(client.id) };
+
+  const previousRuns = loadLeadHunterRuns()
+    .filter(item=>item.clientId===client.id && item.status!=="running")
+    .sort((a,b)=>String(b.finishedAt||"").localeCompare(String(a.finishedAt||"")));
+  const lastTime = previousRuns[0]?.finishedAt ? new Date(previousRuns[0].finishedAt).getTime() : 0;
+  if (options.automatic && lastTime && Date.now()-lastTime < config.scanIntervalMinutes*60000) {
+    return { ok:false, skipped:"not_due", summary:leadHunterSummaryForClient(client.id) };
+  }
+
+  leadHunterRunning.add(client.id);
+  const startedAt = new Date().toISOString();
+  const runId = "lh_" + crypto.randomBytes(8).toString("hex");
+  const errors = [];
+  const sourceCounts = {};
+  let raw = [];
+  let costUsd = 0;
+  let model = "local-intent-engine";
+
+  try {
+    if (config.metaComments) {
+      const meta = await collectOwnInstagramComments(client, config);
+      raw.push(...(meta.items || []));
+      sourceCounts.metaComments = (meta.items || []).length;
+      if (meta.error) errors.push("Meta: " + meta.error);
+      for (const err of meta.errors || []) errors.push("Meta: " + err);
+    }
+
+    if (config.publicTargets && config.targets.length) {
+      let remaining = config.maxResultsPerRun;
+      for (const target of config.targets) {
+        if (remaining <= 0) break;
+        const result = await collectPublicInstagramTarget(target, Math.min(remaining,80));
+        raw.push(...(result.items || []));
+        sourceCounts.publicTargets = (sourceCounts.publicTargets || 0) + (result.items || []).length;
+        remaining -= (result.items || []).length;
+        if (result.error) errors.push("Public target " + target + ": " + result.error);
+      }
+    }
+
+    const candidateSeen = new Set();
+    raw = raw.filter(item => {
+      const fingerprint = leadCandidateFingerprint(client.id,item);
+      if (candidateSeen.has(fingerprint)) return false;
+      candidateSeen.add(fingerprint);
+      item.fingerprint = fingerprint;
+      item.candidateId = fingerprint.slice(-24);
+      return String(item.message || "").trim().length >= 2;
+    }).slice(0, config.maxResultsPerRun);
+
+    const locallyQualified = raw.map(item=>localLeadQualification(item,client,config));
+    const ai = await aiQualifyLeadCandidates(client, locallyQualified, config);
+    costUsd += Number(ai.costUsd || 0);
+    model = ai.model || model;
+    if (ai.error) errors.push("IA: " + ai.error);
+
+    const merge = mergeLeadHunterCandidates(client, ai.items || locallyQualified, config);
+    const finishedAt = new Date().toISOString();
+    const run = {
+      id:runId,
+      clientId:client.id,
+      clientName:client.name || client.id,
+      trigger:String(options.trigger || "manual"),
+      status:errors.length && !raw.length ? "warning" : "success",
+      startedAt,
+      finishedAt,
+      analyzed:raw.length,
+      newLeads:merge.newLeads,
+      updatedLeads:merge.updatedLeads,
+      ignored:merge.ignored,
+      model,
+      costUsd,
+      sources:sourceCounts,
+      errors:errors.slice(0,20)
+    };
+    const runs = loadLeadHunterRuns();
+    runs.push(run);
+    saveLeadHunterRuns(runs);
+
+    recordAgentExecution(client, "RADAR", {
+      function:"nexus-lead-hunter",
+      trigger:options.trigger || "manual",
+      startedAt,
+      status:run.status,
+      model,
+      quantity:raw.length,
+      costUsd,
+      message:raw.length
+        ? "Lead Hunter analisou " + raw.length + " interação(ões): " + merge.newLeads + " novo(s) lead(s) e " + merge.updatedLeads + " atualizado(s)."
+        : "Lead Hunter executou a coleta; nenhuma nova interação pública utilizável foi encontrada.",
+      metadata:{ sources:sourceCounts, newLeads:merge.newLeads, updatedLeads:merge.updatedLeads, ignored:merge.ignored, errors:errors.slice(0,5) }
+    });
+
+    return { ok:true, run, summary:leadHunterSummaryForClient(client.id), leads:leadHunterLeadsForClient(client.id,100) };
+  } catch (error) {
+    const finishedAt = new Date().toISOString();
+    const run = {
+      id:runId, clientId:client.id, clientName:client.name || client.id,
+      trigger:String(options.trigger || "manual"), status:"failed", startedAt, finishedAt,
+      analyzed:raw.length, newLeads:0, updatedLeads:0, ignored:0, model, costUsd,
+      sources:sourceCounts, errors:[String(error?.message || error).slice(0,300)]
+    };
+    const runs = loadLeadHunterRuns(); runs.push(run); saveLeadHunterRuns(runs);
+    recordAgentExecution(client,"RADAR",{
+      function:"nexus-lead-hunter",trigger:options.trigger||"manual",startedAt,status:"failed",model,quantity:raw.length,costUsd,
+      message:"Lead Hunter falhou: " + String(error?.message || error).slice(0,300),
+      metadata:{sources:sourceCounts}
+    });
+    throw error;
+  } finally {
+    leadHunterRunning.delete(client.id);
+  }
+}
+
+function leadHunterPortalView(client) {
+  const config = leadHunterConfigFor(client);
+  const summary = leadHunterSummaryForClient(client.id);
+  const leads = leadHunterLeadsForClient(client.id,100).map(item=>({
+    id:item.id,
+    instagramUsername:item.instagramUsername || "",
+    instagramUserId:item.instagramUserId || "",
+    temperature:item.temperature || "cold",
+    score:Number(item.score || 0),
+    stage:item.stage || "new",
+    intent:item.intent || "",
+    needsHuman:Boolean(item.needsHuman),
+    lastMessage:item.lastMessage || "",
+    lastContactAt:item.lastContactAt || null,
+    updatedAt:item.updatedAt || null,
+    source:item.source || "",
+    sources:item.sources || [],
+    sourceUrl:item.sourceUrl || item.evidence?.[item.evidence.length-1]?.sourceUrl || "",
+    evidenceCount:Number(item.evidenceCount || item.evidence?.length || 0)
+  }));
+  return { config, summary, leads };
+}
+
 
 async function fetchInstagramMediaSnapshot(clientId) {
   const connection = directConnection(clientId, "meta");
@@ -905,6 +1600,22 @@ async function processAgentCoreScheduler() {
       const config = agentCoreConfig(client);
       if (!config.enabled) continue;
       const state = agentCoreStateFor(client.id);
+      const hunterConfig = leadHunterConfigFor(client);
+      const hunterSummary = leadHunterSummaryForClient(client.id);
+      const lastHunter = hunterSummary.lastRunAt ? new Date(hunterSummary.lastRunAt).getTime() : 0;
+      const dueHunter = hunterConfig.enabled && hunterConfig.autoRun
+        && (!lastHunter || now - lastHunter >= hunterConfig.scanIntervalMinutes * 60000);
+      if (dueHunter) {
+        const hunter = await runLeadHunter(client, { trigger:"scheduler", automatic:true }).catch(error => {
+          console.warn("Lead Hunter failed for " + client.id + ": " + String(error?.message || error));
+          return null;
+        });
+        if (hunter?.ok && config.modules.odin) {
+          await runOdinAgent(client, { trigger:"lead-hunter" }).catch(error => {
+            console.warn("Odin lead triage failed for " + client.id + ": " + String(error?.message || error));
+          });
+        }
+      }
       const lastCycle = state.lastCycleAt ? new Date(state.lastCycleAt).getTime() : 0;
       const dueFullCycle = !lastCycle || now - lastCycle >= config.cycleMinutes * 60000;
       if (dueFullCycle) {
@@ -3192,9 +3903,47 @@ function normalizeLeadPayload(client, payload) {
 }
 
 async function fetchAgentLeads(client) {
+  const internal = leadHunterLeadsForClient(client.id, 1000).map(item => ({
+    clientId:client.id,
+    clientName:client.name || client.id,
+    instagram:client.instagram || "",
+    instagramUserId:String(item.instagramUserId || ""),
+    instagramUsername:String(item.instagramUsername || ""),
+    temperature:["hot","warm","cold"].includes(String(item.temperature)) ? String(item.temperature) : "cold",
+    score:Math.max(0,Number(item.score || 0)),
+    stage:String(item.stage || "new"),
+    intent:String(item.intent || ""),
+    needsHuman:Boolean(item.needsHuman),
+    triggerKeyword:String(item.triggerKeyword || ""),
+    lastMessage:String(item.lastMessage || ""),
+    lastContactAt:item.lastContactAt || null,
+    updatedAt:item.updatedAt || null,
+    source:item.source || "nexus-hunter",
+    sourceUrl:item.sourceUrl || "",
+    evidenceCount:Number(item.evidenceCount || 0)
+  }));
+
+  const mergeRows = rows => {
+    const map = new Map();
+    for (const lead of rows) {
+      const identity = String(lead.instagramUsername || lead.instagramUserId || "").toLowerCase();
+      const key = identity || crypto.createHash("sha1").update(String(lead.lastMessage||"")).digest("hex");
+      const current = map.get(key);
+      if (!current || Number(lead.score||0) > Number(current.score||0)) map.set(key,lead);
+      else if (current) {
+        current.needsHuman = Boolean(current.needsHuman || lead.needsHuman);
+        current.source = current.source === lead.source ? current.source : "multi-source";
+      }
+    }
+    return [...map.values()];
+  };
+
   const base = String(client?.agentApiUrl || "").replace(/\/+$/, "");
   const token = agentTokenForClient(client?.id);
   if (!base || !token) {
+    if (internal.length) {
+      return { summary:summarizeLeadRows(internal), leads:internal, source:"nexus-hunter" };
+    }
     return {
       summary: {
         total: Number(client?.leads?.total || 0),
@@ -3218,9 +3967,13 @@ async function fetchAgentLeads(client) {
     });
     if (!response.ok) throw new Error("agent_leads_" + response.status);
     const payload = await response.json();
-    return { ...normalizeLeadPayload(client, payload), source: "agent" };
+    const external = normalizeLeadPayload(client, payload).leads;
+    const leads = mergeRows([...internal,...external])
+      .sort((a,b)=>Number(b.score||0)-Number(a.score||0) || String(b.updatedAt||"").localeCompare(String(a.updatedAt||"")));
+    return { summary:summarizeLeadRows(leads), leads, source:internal.length ? "nexus-hunter+agent" : "agent" };
   } catch (error) {
     console.warn("Lead sync failed for " + client?.id + ": " + String(error?.message || error));
+    if (internal.length) return { summary:summarizeLeadRows(internal), leads:internal, source:"nexus-hunter", error:"agent_unavailable" };
     return {
       summary: {
         total: Number(client?.leads?.total || 0),
@@ -4453,6 +5206,68 @@ const server = http.createServer(async (req, res) => {
     tickets.push(ticket);
     saveSupportTickets(tickets);
     return send(res, 201, supportTicketView(ticket));
+  }
+
+  if (url.pathname === "/api/portal/lead-hunter" && req.method === "GET") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error:"unauthorized" });
+    return send(res, 200, leadHunterPortalView(client));
+  }
+
+  if (url.pathname === "/api/portal/lead-hunter/config" && req.method === "POST") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error:"unauthorized" });
+    const body = await readBody(req);
+    const targets = Array.isArray(body.targets)
+      ? body.targets
+      : String(body.targets || "").split(/\r?\n|,/).map(x=>x.trim()).filter(Boolean);
+    const intentTerms = Array.isArray(body.intentTerms)
+      ? body.intentTerms
+      : String(body.intentTerms || "").split(/\r?\n|,/).map(x=>x.trim()).filter(Boolean);
+    const nicheTerms = Array.isArray(body.nicheTerms)
+      ? body.nicheTerms
+      : String(body.nicheTerms || "").split(/\r?\n|,/).map(x=>x.trim()).filter(Boolean);
+    const config = saveLeadHunterConfig(client, {
+      enabled:body.enabled,
+      autoRun:body.autoRun,
+      metaComments:body.metaComments,
+      publicTargets:body.publicTargets,
+      aiQualification:body.aiQualification,
+      scanIntervalMinutes:body.scanIntervalMinutes,
+      lookbackDays:body.lookbackDays,
+      maxResultsPerRun:body.maxResultsPerRun,
+      minScore:body.minScore,
+      targets,
+      intentTerms,
+      nicheTerms
+    });
+    return send(res, 200, { ok:true, config, summary:leadHunterSummaryForClient(client.id) });
+  }
+
+  if (url.pathname === "/api/portal/lead-hunter/run" && req.method === "POST") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error:"unauthorized" });
+    try {
+      const result = await runLeadHunter(client, { trigger:"portal-manual", automatic:false });
+      if (result?.ok) await runOdinAgent(client, { trigger:"lead-hunter-manual" }).catch(()=>{});
+      return send(res, 200, { ...result, view:leadHunterPortalView(client) });
+    } catch (error) {
+      return send(res, 500, { error:"lead_hunter_failed", message:String(error?.message || error).slice(0,300), view:leadHunterPortalView(client) });
+    }
+  }
+
+  const discardLeadMatch = url.pathname.match(/^\/api\/portal\/lead-hunter\/leads\/([^/]+)\/discard$/);
+  if (discardLeadMatch && req.method === "POST") {
+    const client = portalClientForRequest(req);
+    if (!client) return send(res, 401, { error:"unauthorized" });
+    const id = decodeURIComponent(discardLeadMatch[1]);
+    const rows = loadLeadHunterLeads();
+    const row = rows.find(item=>item.id===id && item.clientId===client.id);
+    if (!row) return send(res,404,{error:"lead_not_found"});
+    row.status = "discarded";
+    row.updatedAt = new Date().toISOString();
+    saveLeadHunterLeads(rows);
+    return send(res,200,{ok:true,view:leadHunterPortalView(client)});
   }
 
   if (url.pathname === "/api/portal/leads" && req.method === "GET") {
