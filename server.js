@@ -992,13 +992,38 @@ function videoFormatSpec(value) {
 function normalizeSubtitleStyle(options = {}) {
   const size = ["auto","small","medium","large"].includes(String(options.size || "").toLowerCase())
     ? String(options.size).toLowerCase() : "auto";
-  const colorKey = ["white","yellow","cyan","green","red"].includes(String(options.color || "").toLowerCase())
+  const colorKey = ["white","yellow","gold","orange","cyan","blue","green","lime","pink","purple","red"].includes(String(options.color || "").toLowerCase())
     ? String(options.color).toLowerCase() : "white";
+  const weight = ["normal","semibold","bold","extrabold"].includes(String(options.weight || "").toLowerCase())
+    ? String(options.weight).toLowerCase() : "bold";
   const bgKey = ["black","navy","transparent"].includes(String(options.bg || "").toLowerCase())
     ? String(options.bg).toLowerCase() : "black";
-  const colors = { white:"white", yellow:"yellow", cyan:"cyan", green:"lime", red:"red" };
+  const colors = {
+    white:"white",
+    yellow:"0xFFD600",
+    gold:"0xFFC107",
+    orange:"0xFF8A00",
+    cyan:"0x43E8FF",
+    blue:"0x4AA8FF",
+    green:"0x48E58A",
+    lime:"0xA8FF3E",
+    pink:"0xFF5DB1",
+    purple:"0xB978FF",
+    red:"0xFF5252"
+  };
   const backgrounds = { black:"black@0.68", navy:"0x061b2b@0.72", transparent:"black@0.0" };
-  return { size, color:colorKey, bg:bgKey, ffmpegColor:colors[colorKey], ffmpegBg:backgrounds[bgKey], box:bgKey !== "transparent" };
+  const fontFile = weight === "normal"
+    ? "/usr/share/fonts/ttf-dejavu/DejaVuSans.ttf"
+    : "/usr/share/fonts/ttf-dejavu/DejaVuSans-Bold.ttf";
+  const borderWidth = weight === "normal" ? 1 : weight === "semibold" ? 1 : weight === "extrabold" ? 4 : 2;
+  return {
+    size, color:colorKey, weight, bg:bgKey,
+    ffmpegColor:colors[colorKey],
+    ffmpegBg:backgrounds[bgKey],
+    box:bgKey !== "transparent",
+    fontFile,
+    borderWidth
+  };
 }
 
 function subtitleFontSizeForFormat(spec, sizeKey = "auto") {
@@ -1043,6 +1068,7 @@ function portalVideoJobView(job) {
     autoSubtitles: Boolean(job.autoSubtitles),
     subtitleSize: job.subtitleSize || "auto",
     subtitleColor: job.subtitleColor || "white",
+    subtitleWeight: job.subtitleWeight || "bold",
     subtitleBg: job.subtitleBg || "black",
     detectedLanguage: job.detectedLanguage || "",
     sizeBytes: Number(job.sizeBytes || 0),
@@ -1064,6 +1090,7 @@ function portalVideoJobView(job) {
       subtitlesApplied: Boolean(clip.subtitlesApplied),
       subtitleSize: clip.subtitleSize || job.subtitleSize || "auto",
       subtitleColor: clip.subtitleColor || job.subtitleColor || "white",
+      subtitleWeight: clip.subtitleWeight || job.subtitleWeight || "bold",
       subtitleBg: clip.subtitleBg || job.subtitleBg || "black",
       sourceLanguage: clip.sourceLanguage || job.detectedLanguage || "",
       rank: Number(clip.rank || 0),
@@ -1591,8 +1618,9 @@ async function renderVideoClip(inputPath, outputPath, start, end, outputFormat =
   const finalText = String(endText || "").trim().slice(0, 90);
   const finalContact = String(endContact || "").trim().slice(0, 90);
   const outroStart = Math.max(0, duration - 3);
-  const fontFile = "/usr/share/fonts/ttf-dejavu/DejaVuSans-Bold.ttf";
+  const defaultFontFile = "/usr/share/fonts/ttf-dejavu/DejaVuSans-Bold.ttf";
   const subtitleStyle = normalizeSubtitleStyle(subtitleOptions);
+  const subtitleFontFile = subtitleStyle.fontFile || defaultFontFile;
   const subtitleFontSize = subtitleFontSizeForFormat(spec, subtitleStyle.size);
   const subtitleLineSpacing = Math.max(5, Math.round(subtitleFontSize * 0.18));
   const subtitleBoxBorder = Math.max(8, Math.round(subtitleFontSize * 0.32));
@@ -1614,12 +1642,12 @@ async function renderVideoClip(inputPath, outputPath, start, end, outputFormat =
     const text = wrapSubtitleText(subtitle.text || "");
     if (!text) continue;
     const nextLabel = "subtitle" + index;
-    filters.push("[" + videoLabel + "]drawtext=fontfile=" + fontFile
+    filters.push("[" + videoLabel + "]drawtext=fontfile=" + subtitleFontFile
       + ":text='" + escapeFfmpegDrawtext(text) + "'"
       + ":fontcolor=" + subtitleStyle.ffmpegColor + ":fontsize=" + subtitleFontSize
       + ":line_spacing=" + subtitleLineSpacing
       + ":box=" + (subtitleStyle.box ? "1" : "0") + ":boxcolor=" + subtitleStyle.ffmpegBg + ":boxborderw=" + subtitleBoxBorder
-      + ":borderw=2:bordercolor=black@0.9"
+      + ":borderw=" + subtitleStyle.borderWidth + ":bordercolor=black@0.9"
       + ":x=(w-text_w)/2:y=h*0.78-text_h/2"
       + ":enable='between(t," + from.toFixed(3) + "," + to.toFixed(3) + ")'[" + nextLabel + "]");
     videoLabel = nextLabel;
@@ -1629,11 +1657,11 @@ async function renderVideoClip(inputPath, outputPath, start, end, outputFormat =
     filters.push("[" + videoLabel + "]drawbox=x=0:y=ih*0.68:w=iw:h=ih*0.32:color=black@0.62:t=fill:enable='gte(t," + outroStart.toFixed(3) + ")'[outbox]");
     videoLabel = "outbox";
     if (finalText) {
-      filters.push("[" + videoLabel + "]drawtext=fontfile=" + fontFile + ":text='" + escapeFfmpegDrawtext(finalText) + "':fontcolor=white:fontsize=" + Math.round(spec.width * 0.052) + ":borderw=2:bordercolor=black@0.7:x=(w-text_w)/2:y=h*0.75:enable='gte(t," + outroStart.toFixed(3) + ")'[outtext]");
+      filters.push("[" + videoLabel + "]drawtext=fontfile=" + defaultFontFile + ":text='" + escapeFfmpegDrawtext(finalText) + "':fontcolor=white:fontsize=" + Math.round(spec.width * 0.052) + ":borderw=2:bordercolor=black@0.7:x=(w-text_w)/2:y=h*0.75:enable='gte(t," + outroStart.toFixed(3) + ")'[outtext]");
       videoLabel = "outtext";
     }
     if (finalContact) {
-      filters.push("[" + videoLabel + "]drawtext=fontfile=" + fontFile + ":text='" + escapeFfmpegDrawtext(finalContact) + "':fontcolor=white:fontsize=" + Math.round(spec.width * 0.035) + ":borderw=2:bordercolor=black@0.7:x=(w-text_w)/2:y=h*0.84:enable='gte(t," + outroStart.toFixed(3) + ")'[outcontact]");
+      filters.push("[" + videoLabel + "]drawtext=fontfile=" + defaultFontFile + ":text='" + escapeFfmpegDrawtext(finalContact) + "':fontcolor=white:fontsize=" + Math.round(spec.width * 0.035) + ":borderw=2:bordercolor=black@0.7:x=(w-text_w)/2:y=h*0.84:enable='gte(t," + outroStart.toFixed(3) + ")'[outcontact]");
       videoLabel = "outcontact";
     }
   }
@@ -1769,7 +1797,7 @@ async function processVideoJob(jobId) {
         initial.storedPath, outputPath, selected.start, selected.end,
         initial.outputFormat || "reel", initial.endText || "", initial.endContact || "",
         translatedSubtitles,
-        { size: initial.subtitleSize, color: initial.subtitleColor, bg: initial.subtitleBg }
+        { size: initial.subtitleSize, color: initial.subtitleColor, weight: initial.subtitleWeight, bg: initial.subtitleBg }
       );
       const transcript = transcriptForRange(transcription.segments, selected.start, selected.end);
       const reviewText = translatedSubtitles.length ? translatedSubtitles.map(item => item.text).join(" ") : transcript;
@@ -1801,6 +1829,7 @@ async function processVideoJob(jobId) {
         subtitleLanguage: translatedSubtitles.length ? "pt-BR" : "",
         subtitleSize: initial.subtitleSize || "auto",
         subtitleColor: initial.subtitleColor || "white",
+        subtitleWeight: initial.subtitleWeight || "bold",
         subtitleBg: initial.subtitleBg || "black",
         sourceLanguage: transcription.language || "",
         subtitleSegments: translatedSubtitles,
@@ -2259,7 +2288,7 @@ async function adjustVideoClip(clientId, jobId, clipId, body) {
     nextEndText,
     nextEndContact,
     translatedSubtitles,
-    { size: found.job.subtitleSize, color: found.job.subtitleColor, bg: found.job.subtitleBg }
+    { size: found.job.subtitleSize, color: found.job.subtitleColor, weight: found.job.subtitleWeight, bg: found.job.subtitleBg }
   );
   const fresh = findVideoClip(clientId, jobId, clipId);
   fresh.clip.start = start;
@@ -2274,6 +2303,7 @@ async function adjustVideoClip(clientId, jobId, clipId, body) {
   fresh.clip.subtitleLanguage = translatedSubtitles.length ? "pt-BR" : "";
   fresh.clip.subtitleSize = fresh.job.subtitleSize || "auto";
   fresh.clip.subtitleColor = fresh.job.subtitleColor || "white";
+  fresh.clip.subtitleWeight = fresh.job.subtitleWeight || "bold";
   fresh.clip.subtitleBg = fresh.job.subtitleBg || "black";
   fresh.clip.sourceLanguage = fresh.job.detectedLanguage || "";
   fresh.clip.subtitleSegments = translatedSubtitles;
@@ -4877,6 +4907,7 @@ const server = http.createServer(async (req, res) => {
       const subtitleStyle = normalizeSubtitleStyle({
         size: req.headers["x-subtitle-size"],
         color: req.headers["x-subtitle-color"],
+        weight: req.headers["x-subtitle-weight"],
         bg: req.headers["x-subtitle-bg"]
       });
       const endText = decodeURIComponent(String(req.headers["x-video-end-text"] || "")).trim().slice(0, 90);
@@ -4897,6 +4928,7 @@ const server = http.createServer(async (req, res) => {
         autoSubtitles,
         subtitleSize: subtitleStyle.size,
         subtitleColor: subtitleStyle.color,
+        subtitleWeight: subtitleStyle.weight,
         subtitleBg: subtitleStyle.bg,
         endText,
         endContact,
