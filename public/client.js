@@ -1859,5 +1859,14 @@ if(window.matchMedia("(display-mode: standalone)").matches){
   setInstallButtonsVisible(false);
 }
 if("serviceWorker" in navigator){
-  window.addEventListener("load",()=>navigator.serviceWorker.register("/sw.js?v=70").catch(()=>{}));
+  window.addEventListener("load",async()=>{
+    try{
+      const registrations=await navigator.serviceWorker.getRegistrations();
+      await Promise.all(registrations.map(registration=>registration.unregister()));
+    }catch{}
+    try{
+      const keys=await caches.keys();
+      await Promise.all(keys.map(key=>caches.delete(key)));
+    }catch{}
+  });
 }
