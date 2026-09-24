@@ -3568,10 +3568,21 @@ async function searchOfficialTrailers(query, type = "movie", clientId = "") {
         }
       } catch {}
       const youtube = videos.filter(v => v.site === "YouTube");
-      const trailer = youtube.find(v => v.official === true && v.type === "Trailer")
-        || youtube.find(v => v.type === "Trailer")
-        || youtube.find(v => v.official === true)
-        || null;
+      const ptBrScore = v => {
+        const name = String(v?.name || "").toLowerCase();
+        const lang = String(v?.iso_639_1 || "").toLowerCase();
+        const country = String(v?.iso_3166_1 || "").toUpperCase();
+        let score = 0;
+        if (/dublad|portugu[eê]s|pt[- ]?br|brasil/.test(name)) score += 120;
+        if (lang === "pt") score += 100;
+        if (country === "BR") score += 80;
+        if (v?.type === "Trailer") score += 35;
+        if (v?.official === true) score += 30;
+        if (/legendad/.test(name)) score -= 45;
+        if (lang === "en") score -= 80;
+        return score;
+      };
+      const trailer = [...youtube].sort((a,b)=>ptBrScore(b)-ptBrScore(a))[0] || null;
       const title = String(kind === "tv" ? item.name : item.title || q);
       const date = String(kind === "tv" ? item.first_air_date : item.release_date || "");
       results.push(normalizeResult({
@@ -3596,8 +3607,8 @@ async function searchOfficialTrailers(query, type = "movie", clientId = "") {
     const payload = await openAIResponsesForClient(clientId, {
       model:"gpt-5.6-luna",
       tools:[{ type:"web_search" }],
-      instructions:"Você localiza trailers oficiais de filmes e séries. Priorize links do YouTube publicados pelo estúdio, distribuidora, streaming oficial ou canal oficial da obra. Nunca invente URL. Se houver uma fonte oficial que ofereça explicitamente um ARQUIVO DIRETO de vídeo para download/reutilização, você pode retornar downloadUrl e downloadAllowed=true; nunca use isso para YouTube, Netflix, Prime Video, Disney+, Globoplay ou qualquer conteúdo protegido/DRM. Se não puder confirmar, deixe downloadUrl vazio e downloadAllowed=false. Retorne somente JSON válido.",
-      input:"Pesquise " + (kind === "tv" ? "a série" : "o filme") + " chamado \"" + q + "\". Retorne até 6 resultados compatíveis em JSON no formato {\"results\":[{\"title\":\"...\",\"year\":\"2026\",\"overview\":\"sinopse curta\",\"trailerUrl\":\"https://www.youtube.com/watch?v=...\",\"channel\":\"canal\",\"official\":true,\"downloadUrl\":\"\",\"downloadAllowed\":false}]}.",
+      instructions:"Você localiza trailers oficiais de filmes e séries para público brasileiro. PRIORIDADE ABSOLUTA: trailer com ÁUDIO DUBLADO EM PORTUGUÊS DO BRASIL (PT-BR). Pesquise primeiro versões com termos como 'trailer oficial dublado', 'dublado português', 'dublado PT-BR' e priorize canais oficiais brasileiros de estúdios, distribuidoras, cinemas ou streamings. Evite trailer em inglês. Evite versão apenas legendada quando existir uma versão dublada. Só use trailer em português legendado como segunda opção se não encontrar uma versão dublada confiável. Nunca invente URL. Se houver uma fonte oficial que ofereça explicitamente um ARQUIVO DIRETO de vídeo para download/reutilização, você pode retornar downloadUrl e downloadAllowed=true; nunca use isso para YouTube, Netflix, Prime Video, Disney+, Globoplay ou qualquer conteúdo protegido/DRM. Se não puder confirmar, deixe downloadUrl vazio e downloadAllowed=false. Retorne somente JSON válido.",
+      input:"Pesquise " + (kind === "tv" ? "a série" : "o filme") + " chamado \"" + q + "\". Quero TRAILER OFICIAL DUBLADO EM PORTUGUÊS DO BRASIL. Faça buscas equivalentes a: \"" + q + " trailer oficial dublado\", \"" + q + " trailer dublado português Brasil\" e \"" + q + " trailer dublado PT-BR\". Priorize YouTube de estúdio/distribuidora/streaming/canal oficial brasileiro. Não escolha trailer em inglês se houver opção dublada em PT-BR. Evite legendado quando houver dublado. Retorne até 6 resultados compatíveis em JSON no formato {\"results\":[{\"title\":\"...\",\"year\":\"2026\",\"overview\":\"sinopse curta\",\"trailerUrl\":\"https://www.youtube.com/watch?v=...\",\"channel\":\"canal\",\"official\":true,\"audioLanguage\":\"pt-BR\",\"dubbed\":true,\"downloadUrl\":\"\",\"downloadAllowed\":false}]}.",
       max_output_tokens:1800
     }, 90000, { enforceBudget: false });
     const output = responseOutputText(payload);
