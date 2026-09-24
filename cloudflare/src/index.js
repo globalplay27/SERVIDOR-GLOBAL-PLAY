@@ -1,4 +1,5 @@
 import { openAIKeyStatus } from "./openai-routing.js";
+import { openAIResponses, tokenUsageToday } from "./openai.js";
 import { getState, putState, deleteState } from "./storage.js";
 import { listClients, getClient, upsertClient } from "./clients.js";
 
@@ -89,7 +90,7 @@ async function handleClients(request, env, url) {
     return client ? json({ ok: true, client }) : json({ error: "client_not_found" }, 404);
   }
 
-  if ((request.method === "PUT" || request.method === "POST")) {
+  if (request.method === "PUT" || request.method === "POST") {
     const body = await request.json().catch(() => ({}));
     const input = { ...(body || {}) };
     if (clientId) input.id = clientId;
@@ -102,6 +103,29 @@ async function handleClients(request, env, url) {
   }
 
   return json({ error: "method_not_allowed" }, 405);
+}
+
+async function handleOpenAIResponses(request, env) {
+  const denied = requireAuth(request, env);
+  if (denied) return denied;
+  if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
+
+  const body = await request.json().catch(() => ({}));
+  const clientId = String(body?.clientId || "").trim();
+  if (!clientId) return json({ error: "client_id_required" }, 400);
+
+  const client = await getClient(env, clientId);
+  if (!client) return json({ error: "client_not_found" }, 404);
+
+  try {
+    const result = await openAIResponses(env, clientId, body);
+    return json(result);
+  } catch (error) {
+    return json({
+      error: error instanceof Error ? error.message : String(error),
+      detail: error?.detail || null
+    }, Number(error?.status || 502));
+  }
 }
 
 export default {
@@ -117,6 +141,18 @@ export default {
       if (denied) return denied;
       const clientId = url.searchParams.get("clientId") || "";
       return json(openAIKeyStatus(env, clientId));
+    }
+
+    if (url.pathname === "/api/system/token-usage" && request.method === "GET") {
+      const denied = requireAuth(request, env);
+      if (denied) return denied;
+      const clientId = url.searchParams.get("clientId") || "";
+      if (!clientId) return json({ error: "client_id_required" }, 400);
+      return json({ ok: true, usage: await tokenUsageToday(env, clientId) });
+    }
+
+    if (url.pathname === "/api/openai/responses") {
+      return handleOpenAIResponses(request, env);
     }
 
     if (url.pathname === "/api/state") {
