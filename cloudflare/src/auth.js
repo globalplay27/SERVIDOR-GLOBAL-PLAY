@@ -75,6 +75,32 @@ async function configuredCredentialMatches(input, configured) {
   return await safeEqualText(String(input ?? "").trim(), clean);
 }
 
+async function migrateCredentialFromRailway(env, kind, username, password) {
+  const base = String(env.RAILWAY_VIDEO_BRIDGE_URL || "").trim().replace(/\/+$/, "");
+  const secret = String(env.NEXUS_RAILWAY_BRIDGE_SECRET || "").trim();
+  if (!base || !secret) return { ok: false, clientId: "" };
+  try {
+    const response = await fetch(base + "/api/nexus/bridge/auth-check", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-nexus-bridge-secret": secret,
+        "x-nexus-bridge-source": "cloudflare-auth-migration"
+      },
+      body: JSON.stringify({
+        kind: String(kind || ""),
+        username: String(username || ""),
+        password: String(password || "")
+      })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.ok !== true) return { ok: false, clientId: "" };
+    return { ok: true, clientId: String(payload?.clientId || "") };
+  } catch {
+    return { ok: false, clientId: "" };
+  }
+}
+
 async function ensureMasterUserSchema(env) {
   if (!env?.DB) return;
   await env.DB.prepare(
@@ -230,6 +256,14 @@ export async function authenticatePortalUser(env, username, password) {
     return fallbackClientId;
   }
 
+  const railwayMigration = await migrateCredentialFromRailway(env, "portal", cleanUsername, String(password || ""));
+  if (railwayMigration.ok && railwayMigration.clientId) {
+    try {
+      await upsertPortalUser(env, railwayMigration.clientId, cleanUsername, String(password || ""));
+    } catch {}
+    return railwayMigration.clientId;
+  }
+
   const ragnarLegacyUsername = "ragnar-one";
   const ragnarLegacyPasswordHash = "1cbc2275dd868000ae0fc093c2bcb5aa05e75156a0681e0a7a52dc13e9bd14e3";
   if (
@@ -329,6 +363,14 @@ export async function masterCredentialsValid(env, username, password) {
     if (!userOk || !passwordOk) continue;
     try {
       await upsertMasterUser(env, expectedUser, cleanConfiguredValue(expectedPassword));
+    } catch {}
+    return true;
+  }
+
+  const railwayMigration = await migrateCredentialFromRailway(env, "master", cleanUsername, suppliedPassword);
+  if (railwayMigration.ok) {
+    try {
+      await upsertMasterUser(env, cleanUsername, suppliedPassword);
     } catch {}
     return true;
   }
