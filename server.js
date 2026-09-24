@@ -2513,8 +2513,8 @@ function videoOpenAIKeyForClient(clientId) {
   return masterOpenAIProjectKey();
 }
 
-function ragnarVideoBridge(clientId) {
-  if (clientId !== "ragnar-one") return null;
+function clientVideoBridge(clientId) {
+  if (!["ragnar-one","globalplay-streaming"].includes(clientId)) return null;
   const client = loadClients().find(item => item.id === clientId);
   const base = String(client?.agentApiUrl || "").replace(/\/+$/, "");
   const token = agentTokenForClient(clientId);
@@ -2537,8 +2537,8 @@ async function openAIResponsesForClient(clientId, body, timeoutMs = 120000) {
     return payload;
   }
 
-  const bridge = ragnarVideoBridge(clientId);
-  if (!bridge) throw new Error(clientId === "ragnar-one" ? "ragnar_openai_bridge_not_available" : "openai_not_configured");
+  const bridge = clientVideoBridge(clientId);
+  if (!bridge) throw new Error("agent_openai_bridge_not_available");
   const response = await fetch(bridge.base + "/nexus/openai/responses", {
     method: "POST",
     headers: {
@@ -2551,7 +2551,7 @@ async function openAIResponsesForClient(clientId, body, timeoutMs = 120000) {
     signal: AbortSignal.timeout(timeoutMs)
   });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error("ragnar_openai_bridge_" + response.status + ":" + String(payload?.error || payload?.detail || "").slice(0,160));
+  if (!response.ok) throw new Error("agent_openai_bridge_" + response.status + ":" + String(payload?.error || payload?.detail || "").slice(0,160));
   recordClientTokenUsage(clientId, payload.usage || {}, String(body?.model || ""));
   return payload;
 }
@@ -2577,8 +2577,8 @@ async function transcribeVideoAudio(audioPath, durationSeconds, clientId) {
     payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error("transcription_failed_" + response.status);
   } else {
-    const bridge = ragnarVideoBridge(clientId);
-    if (!bridge) throw new Error(clientId === "ragnar-one" ? "ragnar_openai_bridge_not_available" : "openai_not_configured");
+    const bridge = clientVideoBridge(clientId);
+    if (!bridge) throw new Error("agent_openai_bridge_not_available");
     const response = await fetch(bridge.base + "/nexus/openai/transcriptions", {
       method: "POST",
       headers: {
@@ -2591,7 +2591,7 @@ async function transcribeVideoAudio(audioPath, durationSeconds, clientId) {
       signal: AbortSignal.timeout(10 * 60 * 1000)
     });
     payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error("ragnar_transcription_bridge_" + response.status + ":" + String(payload?.error || payload?.detail || "").slice(0,160));
+    if (!response.ok) throw new Error("agent_transcription_bridge_" + response.status + ":" + String(payload?.error || payload?.detail || "").slice(0,160));
   }
 
   const segments = Array.isArray(payload.segments) ? payload.segments.map(item => ({
@@ -3564,42 +3564,29 @@ async function searchOfficialTrailers(query, type = "movie", clientId = "") {
     return { configured:true, source:"tmdb", results, youtubeSearchUrl };
   }
 
-  // Sem TMDB, o NEXUS usa a própria camada de IA com pesquisa web.
-  // Para Ragnar, respeita a separação da conta OpenAI; para os demais usa a conta NEXUS.
-  const aiKey = videoOpenAIKeyForClient(clientId);
-  if (aiKey) {
-    try {
-      assertClientTokenBudget(clientId);
-      const response = await fetch("https://api.openai.com/v1/responses", {
-        method:"POST",
-        headers:{ authorization:"Bearer " + aiKey, "content-type":"application/json" },
-        body:JSON.stringify({
-          model:"gpt-5.6-luna",
-          tools:[{ type:"web_search" }],
-          instructions:"Você localiza trailers oficiais de filmes e séries. Priorize links do YouTube publicados pelo estúdio, distribuidora, streaming oficial ou canal oficial da obra. Nunca invente URL. Se houver uma fonte oficial que ofereça explicitamente um ARQUIVO DIRETO de vídeo para download/reutilização, você pode retornar downloadUrl e downloadAllowed=true; nunca use isso para YouTube, Netflix, Prime Video, Disney+, Globoplay ou qualquer conteúdo protegido/DRM. Se não puder confirmar, deixe downloadUrl vazio e downloadAllowed=false. Retorne somente JSON válido.",
-          input:"Pesquise " + (kind === "tv" ? "a série" : "o filme") + " chamado \"" + q + "\". Retorne até 6 resultados compatíveis em JSON no formato {\"results\":[{\"title\":\"...\",\"year\":\"2026\",\"overview\":\"sinopse curta\",\"trailerUrl\":\"https://www.youtube.com/watch?v=...\",\"channel\":\"canal\",\"official\":true,\"downloadUrl\":\"\",\"downloadAllowed\":false}]}.",
-          max_output_tokens:1800
-        }),
-        signal:AbortSignal.timeout(90000)
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (response.ok) {
-        recordClientTokenUsage(clientId, payload.usage || {}, "gpt-5.6-luna:web-search");
-        const output = responseOutputText(payload);
-        const a = output.indexOf("{"), b = output.lastIndexOf("}");
-        if (a >= 0 && b > a) {
-          const parsed = JSON.parse(output.slice(a,b+1));
-          const results = (Array.isArray(parsed.results) ? parsed.results : []).slice(0,6).map(item => normalizeResult({
-            ...item,
-            type: kind === "tv" ? "series" : "movie",
-            youtubeSearchUrl:"https://www.youtube.com/results?search_query=" + encodeURIComponent(String(item.title || q) + " " + String(item.year || "") + " trailer oficial")
-          }));
-          return { configured:true, source:"openai-web-search", results, youtubeSearchUrl };
-        }
-      }
-    } catch (error) {
-      console.warn("Trailer AI search unavailable:", String(error?.message || error));
+  // Sem TMDB, usa a IA do próprio agente do cliente quando disponível.
+  // Global Play -> Claire. Ragnar -> Ragnar. Isso evita depender de uma chave central ausente.
+  try {
+    const payload = await openAIResponsesForClient(clientId, {
+      model:"gpt-5.6-luna",
+      tools:[{ type:"web_search" }],
+      instructions:"Você localiza trailers oficiais de filmes e séries. Priorize links do YouTube publicados pelo estúdio, distribuidora, streaming oficial ou canal oficial da obra. Nunca invente URL. Se houver uma fonte oficial que ofereça explicitamente um ARQUIVO DIRETO de vídeo para download/reutilização, você pode retornar downloadUrl e downloadAllowed=true; nunca use isso para YouTube, Netflix, Prime Video, Disney+, Globoplay ou qualquer conteúdo protegido/DRM. Se não puder confirmar, deixe downloadUrl vazio e downloadAllowed=false. Retorne somente JSON válido.",
+      input:"Pesquise " + (kind === "tv" ? "a série" : "o filme") + " chamado \"" + q + "\". Retorne até 6 resultados compatíveis em JSON no formato {\"results\":[{\"title\":\"...\",\"year\":\"2026\",\"overview\":\"sinopse curta\",\"trailerUrl\":\"https://www.youtube.com/watch?v=...\",\"channel\":\"canal\",\"official\":true,\"downloadUrl\":\"\",\"downloadAllowed\":false}]}.",
+      max_output_tokens:1800
+    }, 90000);
+    const output = responseOutputText(payload);
+    const a = output.indexOf("{"), b = output.lastIndexOf("}");
+    if (a >= 0 && b > a) {
+      const parsed = JSON.parse(output.slice(a,b+1));
+      const results = (Array.isArray(parsed.results) ? parsed.results : []).slice(0,6).map(item => normalizeResult({
+        ...item,
+        type: kind === "tv" ? "series" : "movie",
+        youtubeSearchUrl:"https://www.youtube.com/results?search_query=" + encodeURIComponent(String(item.title || q) + " " + String(item.year || "") + " trailer oficial")
+      }));
+      return { configured:true, source:"agent-openai-web-search", results, youtubeSearchUrl };
     }
+  } catch (error) {
+    console.warn("Trailer AI search unavailable for " + clientId + ":", String(error?.message || error));
   }
 
   return { configured:false, source:"youtube-search", results:[], youtubeSearchUrl };
