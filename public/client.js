@@ -2,7 +2,7 @@ const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 let sessionAuth=null,currentClient=null;
 
 function nextPostTime(times=[]){if(!Array.isArray(times)||!times.length)return"—";const parts=new Intl.DateTimeFormat("pt-BR",{timeZone:"America/Sao_Paulo",hour:"2-digit",minute:"2-digit",hour12:false}).formatToParts(new Date());const now=Number(parts.find(p=>p.type==="hour")?.value||0)*60+Number(parts.find(p=>p.type==="minute")?.value||0);const sorted=times.map(v=>{const[h,m]=String(v).split(":").map(Number);return{v,m:h*60+m}}).filter(x=>Number.isFinite(x.m)).sort((a,b)=>a.m-b.m);return sorted.find(x=>x.m>now)?.v||sorted[0]?.v||"—";}
-function showView(name){$$("[data-view]").forEach(b=>b.classList.toggle("active",b.dataset.view===name));["overview","posts","capture","leads","videos","trailers","posting","support","setup"].forEach(v=>{const el=$("#view-"+v);if(el)el.hidden=v!==name;});if(name==="support")loadSupportTickets();if(name==="posts")loadClientPosts();if(name==="capture")loadLeadHunter();if(name==="leads")loadClientLeads();if(name==="videos"){ensureBulkVideoScheduler();loadVideoJobs();}if(name==="overview")loadAgentTeam();}
+function showView(name){$("[data-view]").forEach(b=>b.classList.toggle("active",b.dataset.view===name));["overview","posts","capture","leads","videos","trailers","posting","support","setup"].forEach(v=>{const el=$("#view-"+v);if(el)el.hidden=v!==name;});if(name==="support")loadSupportTickets();if(name==="posts")loadClientPosts();if(name==="capture")loadLeadHunter();if(name==="leads")loadClientLeads();if(name==="videos"){ensureBulkVideoScheduler();loadVideoJobs();}if(name==="overview"){loadAgentTeam();loadTokenUsage();}}
 function onboardingKeys(){return["github","railway","openai","facebook","instagram","metaApp","creativeProfile","supportRequested"];}
 function setupPercent(){const o=currentClient?.onboarding||{};const keys=onboardingKeys();return Math.round(keys.filter(k=>o[k]).length/keys.length*100);}
 function renderOnboarding(){
@@ -156,6 +156,37 @@ async function optimizeLogo(file){
   const canvas=document.createElement("canvas");canvas.width=w;canvas.height=h;canvas.getContext("2d").drawImage(source,0,0,w,h);
   return canvas.toDataURL("image/webp",0.86);
 }
+function formatTokenCount(value){
+  const number=Math.max(0,Number(value||0));
+  try{return new Intl.NumberFormat("pt-BR",{maximumFractionDigits:0}).format(number);}
+  catch{return String(Math.round(number));}
+}
+async function loadTokenUsage(){
+  if(!currentClient)return;
+  const state=$("#token-budget-state"),used=$("#token-used-today"),limit=$("#token-daily-limit"),remaining=$("#token-remaining"),bar=$("#token-budget-bar"),calls=$("#token-call-count"),detail=$("#token-budget-detail");
+  try{
+    const r=await fetch("/api/portal/token-usage",{credentials:"same-origin",headers:sessionAuth?{"x-nexus-session":sessionAuth}:{}});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(d.error||"token_usage_unavailable");
+    if(used)used.textContent=formatTokenCount(d.usedTokens);
+    if(limit)limit.textContent=formatTokenCount(d.limitTokens);
+    if(remaining)remaining.textContent=formatTokenCount(d.remainingTokens);
+    if(calls)calls.textContent=Number(d.calls||0)+" chamada"+(Number(d.calls||0)===1?"":"s")+" registrada"+(Number(d.calls||0)===1?"":"s");
+    if(bar)bar.style.width=Math.max(0,Math.min(100,Number(d.percent||0)))+"%";
+    if(state){
+      state.textContent=d.blocked?"LIMITE ATINGIDO":Number(d.percent||0)>=80?"ATENÇÃO":"DISPONÍVEL";
+      state.classList.toggle("off",Boolean(d.blocked));
+      state.classList.toggle("warning",!d.blocked&&Number(d.percent||0)>=80);
+    }
+    if(detail)detail.textContent=d.blocked
+      ?"O limite de hoje foi atingido. Novas chamadas de IA ficam bloqueadas até a virada do dia em São Paulo."
+      :"Uso de hoje: "+Number(d.percent||0)+"% do limite. A contagem reinicia à meia-noite no horário de São Paulo.";
+  }catch{
+    if(state){state.textContent="INDISPONÍVEL";state.classList.add("off");}
+    if(detail)detail.textContent="Não foi possível sincronizar o consumo de tokens agora.";
+  }
+}
+
 async function providerUsage(){
   if(currentClient?.managedInfrastructure)return;
   try{
@@ -173,6 +204,10 @@ async function providerUsage(){
     }
   }catch{}
 }
+
+setInterval(()=>{
+  if(currentClient&&!$("#portal-view")?.hidden)loadTokenUsage();
+},30000);
 
 async function liveStatus(){
   try{
@@ -1254,12 +1289,15 @@ async function searchTrailers(event){
     root.innerHTML=rows.map(item=>{
       const link=item.trailerUrl||item.youtubeSearchUrl||"#";
       const badge=item.trailerUrl?(item.official?"TRAILER OFICIAL":"TRAILER ENCONTRADO"):"BUSCAR NO YOUTUBE";
+      const importAction=item.downloadable&&item.downloadUrl
+        ?'<button type="button" class="trailer-import" data-import-video="'+escapeSupport(item.downloadUrl)+'" data-import-title="'+escapeSupport(item.title||"")+'">Baixar no NEXUS</button>'
+        :'<button type="button" class="trailer-import unavailable" disabled title="A fonte encontrada não oferece arquivo direto autorizado">Sem download direto</button>';
       return '<article class="trailer-card">'
         +(item.posterUrl?'<img class="trailer-poster" data-trailer-poster="1" data-fallback="'+escapeSupport(item.posterFallbackUrl||"")+'" data-title="'+escapeSupport(item.title||"")+'" loading="lazy" referrerpolicy="no-referrer" src="'+escapeSupport(item.posterUrl)+'" alt="Imagem de '+escapeSupport(item.title)+'">':'<div class="trailer-poster-empty">'+escapeSupport((item.title||"NEXUS").slice(0,18))+'</div>')
         +'<div class="trailer-card-copy"><span>'+escapeSupport(item.type==="series"?"SÉRIE":"FILME")+' · '+escapeSupport(item.year||"—")+'</span>'
         +'<strong>'+escapeSupport(item.title||"")+'</strong>'
         +'<p>'+escapeSupport(item.overview||"Sinopse não disponível.")+'</p>'
-        +'<div class="trailer-card-actions"><a class="trailer-open" target="_blank" rel="noopener" href="'+escapeSupport(link)+'">'+badge+'</a><button type="button" class="trailer-use-title" data-use-trailer-title="'+escapeSupport(item.title||"")+'">Usar no Video Cutter</button></div></div>'
+        +'<div class="trailer-card-actions"><a class="trailer-open" target="_blank" rel="noopener" href="'+escapeSupport(link)+'">'+badge+'</a><button type="button" class="trailer-use-title" data-use-trailer-title="'+escapeSupport(item.title||"")+'">Usar no Video Cutter</button>'+importAction+'</div></div>'
         +'</article>';
     }).join("");
     root.querySelectorAll("[data-trailer-poster]").forEach(img=>{
@@ -1283,8 +1321,9 @@ async function searchTrailers(event){
       showView("videos");
       input?.focus();
       const status=$("#video-upload-status");
-      if(status){status.textContent=title?"Título preparado para introdução e fechamento: "+title:"";status.className="save-status ok";}
+      if(status){status.textContent=title?"Título enviado somente como contexto para escolher as cenas. Ele não será escrito no vídeo.":"";status.className="save-status ok";}
     }));
+    root.querySelectorAll("[data-import-video]").forEach(button=>button.addEventListener("click",()=>importAuthorizedVideo(button)));
 
   }catch(error){
     if(status){status.textContent=error.message;status.className="save-status error";}
@@ -1297,6 +1336,54 @@ if(videoFileInput)videoFileInput.addEventListener("change",()=>{
   const files=[...(videoFileInput.files||[])];
   if($("#video-file-name"))$("#video-file-name").textContent=files.length>1?files.length+" vídeos selecionados":files[0]?.name||"MP4, MOV, WEBM ou MKV";
 });
+async function importAuthorizedVideo(button){
+  const url=String(button?.dataset.importVideo||"").trim();
+  const title=String(button?.dataset.importTitle||"").trim();
+  if(!url||!button)return;
+  const original=button.textContent;
+  button.disabled=true;button.textContent="Baixando…";
+  const status=$("#trailer-search-status");
+  if(status){status.textContent="Baixando o arquivo autorizado e enviando para análise…";status.className="save-status";}
+  const payload={
+    url,
+    contentTitle:title,
+    goal:$("#video-goal")?.value||"viral",
+    duration:$("#video-clip-duration")?.value||30,
+    clips:$("#video-requested-clips")?.value||3,
+    outputFormat:$("#video-output-format")?.value||"reel",
+    autoSubtitles:Boolean($("#video-auto-subtitles")?.checked),
+    subtitleSize:$("#video-subtitle-size")?.value||"auto",
+    subtitleColor:$("#video-subtitle-color")?.value||"white",
+    subtitleWeight:$("#video-subtitle-weight")?.value||"bold",
+    subtitleBg:$("#video-subtitle-bg")?.value||"black",
+    folderId:$("#video-upload-folder")?.value||"default",
+    endText:$("#video-end-text")?.value?.trim()||"",
+    endContact:$("#video-end-contact")?.value?.trim()||""
+  };
+  try{
+    const r=await fetch("/api/portal/videos/import",{
+      method:"POST",
+      credentials:"same-origin",
+      headers:{"content-type":"application/json",...(sessionAuth?{"x-nexus-session":sessionAuth}:{})},
+      body:JSON.stringify(payload)
+    });
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok){
+      const code=String(d.error||"");
+      if(code.includes("protected_streaming"))throw new Error("Essa fonte usa streaming protegido e não permite download direto pelo NEXUS.");
+      if(code.includes("too_large"))throw new Error("O arquivo ultrapassa o limite de 750 MB.");
+      throw new Error("Não foi possível importar esse arquivo direto.");
+    }
+    if(status){status.textContent="Vídeo baixado no NEXUS. A IA já está escolhendo as melhores cenas.";status.className="save-status ok";}
+    showView("videos");
+    await loadVideoJobs();
+  }catch(error){
+    if(status){status.textContent=error.message;status.className="save-status error";}
+  }finally{
+    button.disabled=false;button.textContent=original;
+  }
+}
+
 $("#video-folder-filter")?.addEventListener("change",event=>{videoFolderFilter=event.target.value||"";renderVideoJobs({jobs:latestVideoJobs,folders:latestVideoFolders});});
 $("#video-create-folder")?.addEventListener("click",createVideoFolder);
 $("#video-rename-folder")?.addEventListener("click",renameCurrentVideoFolder);
@@ -1475,6 +1562,7 @@ async function resumeCookieSession(){
     showView("overview");
     liveStatus();
     providerUsage();
+    loadTokenUsage();
     loadConnections();
     loadClientPosts();
     loadClientLeads();
