@@ -1010,7 +1010,14 @@ function renderVideoJobs(data={}){
   if(Array.isArray(data.folders)&&data.folders.length)latestVideoFolders=data.folders;
   syncVideoFolderControls();
   const visibleJobs=videoFolderFilter?jobs.filter(job=>(job.folderId||"default")===videoFolderFilter):jobs;
-  if(!visibleJobs.length){root.innerHTML='<div class="post-client-empty"><strong>Nenhum vídeo nesta pasta</strong><span>Envie vídeos ou escolha outra pasta.</span></div>';renderBulkVideoScheduler();return;}
+  if(!visibleJobs.length){
+    const hiddenElsewhere=jobs.length>0&&Boolean(videoFolderFilter);
+    root.innerHTML=hiddenElsewhere
+      ?'<div class="post-client-empty"><strong>Nenhum vídeo nesta pasta</strong><span>Existem '+jobs.length+' vídeo(s) em outra pasta. Escolha “Todas as pastas” para visualizar.</span><button type="button" class="ghost-action" id="video-show-all-folders">Mostrar todos os vídeos</button></div>'
+      :'<div class="post-client-empty"><strong>Nenhum vídeo recebido</strong><span>Envie um arquivo acima ou use “Baixar e criar cortes” quando a busca encontrar uma fonte direta autorizada.</span></div>';
+    $("#video-show-all-folders")?.addEventListener("click",()=>{videoFolderFilter="";renderVideoJobs({jobs:latestVideoJobs,folders:latestVideoFolders});});
+    renderBulkVideoScheduler();return;
+  }
   root.innerHTML=visibleJobs.map(job=>{
     const clips=Array.isArray(job.clips)?job.clips:[];
     const folderOptions=latestVideoFolders.map(folder=>`<option value="${escapeSupport(folder.id)}" ${(job.folderId||"default")===folder.id?"selected":""}>${escapeSupport(folder.name)}</option>`).join("");
@@ -1302,15 +1309,15 @@ async function searchTrailers(event){
     root.innerHTML=rows.map(item=>{
       const link=item.trailerUrl||item.youtubeSearchUrl||"#";
       const badge=item.trailerUrl?(item.official?"TRAILER OFICIAL":"TRAILER ENCONTRADO"):"BUSCAR NO YOUTUBE";
-      const importAction=item.downloadable&&item.downloadUrl
-        ?'<button type="button" class="trailer-import" data-import-video="'+escapeSupport(item.downloadUrl)+'" data-import-title="'+escapeSupport(item.title||"")+'">Baixar no NEXUS</button>'
-        :'<button type="button" class="trailer-import unavailable" disabled title="A fonte encontrada não oferece arquivo direto autorizado">Sem download direto</button>';
+      const cutterAction=item.downloadable&&item.downloadUrl
+        ?'<button type="button" class="trailer-import" data-import-video="'+escapeSupport(item.downloadUrl)+'" data-import-title="'+escapeSupport(item.title||"")+'">Baixar e criar cortes</button>'
+        :'<button type="button" class="trailer-use-title" data-use-trailer-title="'+escapeSupport(item.title||"")+'">Preparar título + enviar vídeo</button>';
       return '<article class="trailer-card">'
         +(item.posterUrl?'<img class="trailer-poster" data-trailer-poster="1" data-fallback="'+escapeSupport(item.posterFallbackUrl||"")+'" data-title="'+escapeSupport(item.title||"")+'" loading="lazy" referrerpolicy="no-referrer" src="'+escapeSupport(item.posterUrl)+'" alt="Imagem de '+escapeSupport(item.title)+'">':'<div class="trailer-poster-empty">'+escapeSupport((item.title||"NEXUS").slice(0,18))+'</div>')
         +'<div class="trailer-card-copy"><span>'+escapeSupport(item.type==="series"?"SÉRIE":"FILME")+' · '+escapeSupport(item.year||"—")+'</span>'
         +'<strong>'+escapeSupport(item.title||"")+'</strong>'
         +'<p>'+escapeSupport(item.overview||"Sinopse não disponível.")+'</p>'
-        +'<div class="trailer-card-actions"><a class="trailer-open" target="_blank" rel="noopener" href="'+escapeSupport(link)+'">'+badge+'</a><button type="button" class="trailer-use-title" data-use-trailer-title="'+escapeSupport(item.title||"")+'">Usar no Video Cutter</button>'+importAction+'</div></div>'
+        +'<div class="trailer-card-actions"><a class="trailer-open" target="_blank" rel="noopener" href="'+escapeSupport(link)+'">'+badge+'</a>'+cutterAction+'</div></div>'
         +'</article>';
     }).join("");
     root.querySelectorAll("[data-trailer-poster]").forEach(img=>{
@@ -1331,10 +1338,12 @@ async function searchTrailers(event){
       const title=String(button.dataset.useTrailerTitle||"").trim();
       const input=$("#video-content-title");
       if(input)input.value=title;
+      videoFolderFilter="default";
       showView("videos");
+      const folderFilter=$("#video-folder-filter");if(folderFilter)folderFilter.value="default";
       input?.focus();
       const status=$("#video-upload-status");
-      if(status){status.textContent=title?"Título enviado somente como contexto para escolher as cenas. Ele não será escrito no vídeo.":"";status.className="save-status ok";}
+      if(status){status.textContent=title?"Título preparado. Agora selecione o arquivo de vídeo acima para o NEXUS criar os cortes. Nenhum vídeo foi importado apenas pelo título.":"";status.className="save-status";}
     }));
     root.querySelectorAll("[data-import-video]").forEach(button=>button.addEventListener("click",()=>importAuthorizedVideo(button)));
 
@@ -1387,8 +1396,15 @@ async function importAuthorizedVideo(button){
       if(code.includes("too_large"))throw new Error("O arquivo ultrapassa o limite de 750 MB.");
       throw new Error("Não foi possível importar esse arquivo direto.");
     }
-    if(status){status.textContent="Vídeo baixado no NEXUS. A IA já está escolhendo as melhores cenas.";status.className="save-status ok";}
+    const importedJob=d.job||null;
+    videoFolderFilter=String(importedJob?.folderId||payload.folderId||"default");
+    if(importedJob){
+      const others=latestVideoJobs.filter(job=>job.id!==importedJob.id);
+      renderVideoJobs({jobs:[importedJob,...others],folders:latestVideoFolders});
+    }
+    if(status){status.textContent="Vídeo recebido. O NEXUS já iniciou a análise para criar os melhores cortes.";status.className="save-status ok";}
     showView("videos");
+    const folderFilter=$("#video-folder-filter");if(folderFilter)folderFilter.value=videoFolderFilter;
     await loadVideoJobs();
   }catch(error){
     if(status){status.textContent=error.message;status.className="save-status error";}
@@ -1471,9 +1487,11 @@ if(videoUploadForm)videoUploadForm.addEventListener("submit",async event=>{
   }
   button.disabled=false;if(progress)progress.hidden=true;
   if(sent>0){
+    videoFolderFilter=String(settings.folderId||"default");
     videoUploadForm.reset();
     if($("#video-file-name"))$("#video-file-name").textContent="MP4, MOV, WEBM ou MKV";
     syncVideoFolderControls();
+    const folderFilter=$("#video-folder-filter");if(folderFilter)folderFilter.value=videoFolderFilter;
   }
   if(status){
     status.textContent=sent+" vídeo(s) carregado(s) para cortes"+(failed?"; "+failed+" falhou: "+lastError:".");
