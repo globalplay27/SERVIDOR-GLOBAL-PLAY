@@ -1773,6 +1773,45 @@ function subtitleFontSizeForFormat(spec, sizeKey = "auto") {
   return Math.max(28, Math.min(72, Math.round(auto * multiplier)));
 }
 
+function subtitleLayoutForFormat(spec, fontSize) {
+  const horizontalSafe = spec.key === "reel" ? 0.80 : spec.key === "feed" ? 0.86 : 0.84;
+  const safeWidth = Math.round(spec.width * horizontalSafe);
+  const estimatedGlyphWidth = Math.max(1, fontSize * 0.62);
+  const charsPerLine = Math.max(18, Math.min(30, Math.floor(safeWidth / estimatedGlyphWidth)));
+  const yRatio = spec.key === "reel" ? 0.72 : spec.key === "feed" ? 0.79 : 0.77;
+  return { safeWidth, charsPerLine, maxLines: 2, y: Math.round(spec.height * yRatio) };
+}
+
+function splitSubtitleCueForScreen(cue, charsPerLine, maxLines = 2) {
+  const text = String(cue?.text || "").replace(/\s+/g, " ").trim();
+  const start = Number(cue?.start || 0);
+  const end = Number(cue?.end || start);
+  if (!text || !(end > start)) return [];
+  const words = text.split(" ").filter(Boolean);
+  const maxChunkChars = Math.max(charsPerLine + 4, charsPerLine * maxLines - 3);
+  const chunks = [];
+  let current = "";
+  for (const word of words) {
+    const next = current ? current + " " + word : word;
+    if (next.length <= maxChunkChars || !current) current = next;
+    else { chunks.push(current); current = word; }
+  }
+  if (current) chunks.push(current);
+  if (chunks.length === 1) return [{ start, end, text: wrapSubtitleText(chunks[0], charsPerLine, maxLines) }];
+
+  const weights = chunks.map(item => Math.max(1, item.length));
+  const totalWeight = weights.reduce((sum,item)=>sum+item,0);
+  const duration = end - start;
+  let cursor = start;
+  return chunks.map((chunk,index) => {
+    const nextEnd = index === chunks.length - 1 ? end : cursor + duration * (weights[index] / totalWeight);
+    const row = { start: cursor, end: nextEnd, text: wrapSubtitleText(chunk, charsPerLine, maxLines) };
+    cursor = nextEnd;
+    return row;
+  });
+}
+
+
 function deleteVideoJobFiles(job) {
   const targets = new Set();
   if (job?.storedPath) {
@@ -1804,6 +1843,8 @@ function portalVideoJobView(job) {
     folderId: job.folderId || "default",
     outputFormat: videoFormatSpec(job.outputFormat).key,
     outputFormatLabel: videoFormatSpec(job.outputFormat).label,
+    contentTitle: job.contentTitle || "",
+    contentTitleSource: job.contentTitleSource || "",
     endText: job.endText || "",
     endContact: job.endContact || "",
     autoSubtitles: Boolean(job.autoSubtitles),
@@ -1850,6 +1891,8 @@ function portalVideoJobView(job) {
       caption: clip.caption || "",
       previewUrl: clip.previewUrl || "",
       outputFormat: clip.outputFormat || videoFormatSpec(job.outputFormat).key,
+      contentTitle: clip.contentTitle || job.contentTitle || "",
+      introText: clip.introText || "",
       endText: clip.endText || job.endText || "",
       endContact: clip.endContact || job.endContact || ""
     })) : [],
@@ -1943,6 +1986,58 @@ async function transcribeVideoAudio(audioPath, durationSeconds, clientId) {
   };
 }
 
+
+
+function filenameContentTitleCandidate(filename) {
+  let value = path.basename(String(filename || ""), path.extname(String(filename || "")))
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!value || /^(?:vid|video|clip|untitled|download|arquivo|movie|series?|trailer)(?:\s|$)/i.test(value) && value.length < 18) return "";
+  value = value
+    .replace(/\b(?:official|oficial|trailer|teaser|1080p|720p|4k|uhd|hdr|legendado|dublado|ptbr|pt br|prime video|netflix)\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (value.length < 3 || value.length > 100 || /^[a-f0-9]{12,}$/i.test(value)) return "";
+  return value;
+}
+
+async function inferVideoContentTitle(transcription, explicitTitle, filename, clientId) {
+  const explicit = String(explicitTitle || "").trim().slice(0,100);
+  if (explicit) return { title:explicit, source:"user", confidence:1 };
+
+  const filenameCandidate = filenameContentTitleCandidate(filename);
+  const apiKey = videoOpenAIKeyForClient(clientId);
+  if (!apiKey) return { title:filenameCandidate, source:filenameCandidate ? "filename" : "", confidence:filenameCandidate ? 0.68 : 0 };
+
+  const transcriptText = String(transcription?.text || "").replace(/\s+/g," ").trim().slice(0,7000);
+  if (!filenameCandidate && !transcriptText) return { title:"", source:"", confidence:0 };
+
+  try {
+    const response = await fetch("https://api.openai.com/v1/responses", {
+      method:"POST",
+      headers:{ authorization:"Bearer " + apiKey, "content-type":"application/json" },
+      body:JSON.stringify({
+        model:"gpt-5.6-luna",
+        instructions:"Identifique o nome exato do filme, série, programa ou conteúdo somente quando houver evidência clara no nome do arquivo ou na transcrição. Não adivinhe. Não use conhecimento externo. Se não houver segurança, retorne título vazio. Retorne somente JSON válido.",
+        input:"Nome do arquivo: " + JSON.stringify(filenameCandidate || filename || "") + "\\nTranscrição: " + transcriptText
+          + '\\nRetorne {"title":"", "confidence":0.0, "type":"movie|series|program|other|unknown"}.',
+        max_output_tokens:300
+      }),
+      signal:AbortSignal.timeout(45000)
+    });
+    const payload = await response.json().catch(()=>({}));
+    if (!response.ok) throw new Error("content_title_" + response.status);
+    const raw = responseOutputText(payload);
+    const a=raw.indexOf("{"), b=raw.lastIndexOf("}");
+    if (a<0 || b<=a) throw new Error("content_title_invalid");
+    const parsed=JSON.parse(raw.slice(a,b+1));
+    const title=String(parsed.title||"").trim().slice(0,100);
+    const confidence=Math.max(0,Math.min(1,Number(parsed.confidence||0)));
+    if (title && confidence >= 0.72) return { title, source:"ai", confidence, type:String(parsed.type||"unknown") };
+  } catch {}
+  return { title:filenameCandidate, source:filenameCandidate ? "filename" : "", confidence:filenameCandidate ? 0.68 : 0 };
+}
 
 function normalizeDetectedLanguage(value) {
   return String(value || "").trim().toLowerCase();
@@ -2235,7 +2330,7 @@ function validateRequestedClipSet(clips, videoDuration, requestedClips, targetDu
   return true;
 }
 
-async function selectSmartClips(transcription, duration, count, targetDuration, goal, clientId) {
+async function selectSmartClips(transcription, duration, count, targetDuration, goal, clientId, contentTitle = "") {
   const segments = Array.isArray(transcription?.segments) ? transcription.segments : [];
   if (!segments.length) throw new Error("smart_transcript_required");
   const desiredCount = Math.max(1, Number(count || 3));
@@ -2265,6 +2360,8 @@ async function selectSmartClips(transcription, duration, count, targetDuration, 
         ? "Trecho escolhido pela IA."
         : "Trecho selecionado pelo ranking inteligente da transcrição completa.")).slice(0,300),
       hook: String(item.hook || text.slice(0,220)).slice(0,220),
+      introText: String(item.introText || item.intro || item.title || "").slice(0,90),
+      closingText: String(item.closingText || item.conclusion || "").slice(0,120),
       score: Math.max(1,Math.min(100,Number(item.score || item.hookScore || (source === "ai" ? 70 : 60)))),
       selectionSource: source
     };
@@ -2295,11 +2392,13 @@ async function selectSmartClips(transcription, duration, count, targetDuration, 
       + "Não divida o vídeo em partes iguais e não privilegie os primeiros segundos. Escolha os pontos de maior valor, gancho, clareza, emoção, prova ou informação.\n"
       + "Cada corte deve ficar o mais próximo possível de " + desiredDuration + " segundos. Aceite alguns segundos a mais para concluir a fala, mas nunca entregue 13s quando foram pedidos 30s se houver material suficiente.\n"
       + "REGRA CRÍTICA: nunca cortar palavra, frase, resposta, CTA ou despedida. O corte começa e termina em ideia natural.\n"
-      + "As opções podem compartilhar parte do mesmo vídeo quando forem alternativas realmente diferentes, mas não podem ser praticamente o mesmo corte. Não invente falas. Dê score de 1 a 100 e explique o motivo.\n"
+      + "Cada opção precisa funcionar como um mini-vídeo completo: começo com contexto/introdução suficiente para entender a cena, desenvolvimento e final com conclusão, payoff ou gancho conscientemente fechado. Não comece no meio de uma fala sem contexto e não termine abruptamente.\n"
+      + (contentTitle ? "O conteúdo foi identificado como " + JSON.stringify(contentTitle) + ". Use esse contexto apenas para estruturar o corte; não invente falas.\n" : "")
+      + "As opções podem compartilhar parte do mesmo vídeo quando forem alternativas realmente diferentes, mas não podem ser praticamente o mesmo corte. Dê score de 1 a 100 e explique o motivo.\n"
       + (attempt > 1 ? "Na tentativa anterior faltaram alternativas válidas; varie melhor os pontos de entrada e saída e evite opções quase idênticas.\n" : "")
       + "Pré-ranking local (apenas pistas; você deve validar pela transcrição):\n" + hints + "\n\n"
       + "Transcrição completa com timestamps:\n" + compact + "\n\n"
-      + "Responda SOMENTE JSON válido: {\"clips\":[{\"start\":12.3,\"end\":42.0,\"title\":\"Título curto\",\"hook\":\"Primeira ideia forte\",\"reason\":\"Por que funciona\",\"score\":94}]}";
+      + "Responda SOMENTE JSON válido: {\"clips\":[{\"start\":12.3,\"end\":42.0,\"title\":\"Título curto\",\"introText\":\"Contexto curto para abrir o corte\",\"closingText\":\"Ideia de fechamento\",\"hook\":\"Primeira ideia forte\",\"reason\":\"Por que funciona\",\"score\":94}]}";
 
     const response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
@@ -2371,18 +2470,21 @@ function escapeFfmpegDrawtext(value) {
     .replace(/\n/g, "\\n");
 }
 
-async function renderVideoClip(inputPath, outputPath, start, end, outputFormat = "reel", endText = "", endContact = "", subtitleSegments = [], subtitleOptions = {}) {
+async function renderVideoClip(inputPath, outputPath, start, end, outputFormat = "reel", endText = "", endContact = "", subtitleSegments = [], subtitleOptions = {}, contentTitle = "", introText = "") {
   const duration = Math.max(3, Number(end) - Number(start));
   const spec = videoFormatSpec(outputFormat);
+  const finalTitle = String(contentTitle || "").trim().slice(0, 100);
   const finalText = String(endText || "").trim().slice(0, 90);
   const finalContact = String(endContact || "").trim().slice(0, 90);
-  const outroStart = Math.max(0, duration - 3);
+  const openingText = String(introText || "").trim().slice(0, 90);
+  const outroStart = Math.max(0, duration - 2.8);
   const defaultFontFile = "/usr/share/fonts/ttf-dejavu/DejaVuSans-Bold.ttf";
   const subtitleStyle = normalizeSubtitleStyle(subtitleOptions);
   const subtitleFontFile = subtitleStyle.fontFile || defaultFontFile;
   const subtitleFontSize = subtitleFontSizeForFormat(spec, subtitleStyle.size);
   const subtitleLineSpacing = Math.max(5, Math.round(subtitleFontSize * 0.18));
-  const subtitleBoxBorder = Math.max(8, Math.round(subtitleFontSize * 0.32));
+  const subtitleBoxBorder = Math.max(8, Math.round(subtitleFontSize * 0.28));
+  const subtitleLayout = subtitleLayoutForFormat(spec, subtitleFontSize);
 
   const filters = [
     "[0:v]split=2[bg][fg]",
@@ -2392,13 +2494,26 @@ async function renderVideoClip(inputPath, outputPath, start, end, outputFormat =
   ];
 
   let videoLabel = "base";
-  const subtitles = (Array.isArray(subtitleSegments) ? subtitleSegments : []).slice(0, 30);
+
+  if (openingText) {
+    filters.push("[" + videoLabel + "]drawbox=x=iw*0.07:y=ih*0.075:w=iw*0.86:h=ih*0.075:color=black@0.48:t=fill:enable='between(t,0,1.65)'[introbox]");
+    videoLabel = "introbox";
+    filters.push("[" + videoLabel + "]drawtext=fontfile=" + defaultFontFile
+      + ":text='" + escapeFfmpegDrawtext(wrapSubtitleText(openingText, 34, 2)) + "'"
+      + ":fontcolor=white:fontsize=" + Math.round(spec.width * 0.032)
+      + ":borderw=2:bordercolor=black@0.75:x=(w-text_w)/2:y=h*0.095-text_h/2:fix_bounds=1"
+      + ":enable='between(t,0,1.65)'[introtext]");
+    videoLabel = "introtext";
+  }
+
+  const rawSubtitles = (Array.isArray(subtitleSegments) ? subtitleSegments : []).slice(0, 80);
+  const subtitles = rawSubtitles.flatMap(item => splitSubtitleCueForScreen(item, subtitleLayout.charsPerLine, subtitleLayout.maxLines)).slice(0, 120);
   for (let index = 0; index < subtitles.length; index += 1) {
     const subtitle = subtitles[index];
     const from = Math.max(0, Number(subtitle.start || 0) - Number(start || 0));
     const to = Math.min(duration, Number(subtitle.end || 0) - Number(start || 0));
     if (!(to > from)) continue;
-    const text = wrapSubtitleText(subtitle.text || "");
+    const text = String(subtitle.text || "").trim();
     if (!text) continue;
     const nextLabel = "subtitle" + index;
     filters.push("[" + videoLabel + "]drawtext=fontfile=" + subtitleFontFile
@@ -2407,20 +2522,36 @@ async function renderVideoClip(inputPath, outputPath, start, end, outputFormat =
       + ":line_spacing=" + subtitleLineSpacing
       + ":box=" + (subtitleStyle.box ? "1" : "0") + ":boxcolor=" + subtitleStyle.ffmpegBg + ":boxborderw=" + subtitleBoxBorder
       + ":borderw=" + subtitleStyle.borderWidth + ":bordercolor=black@0.9"
-      + ":x=(w-text_w)/2:y=h*0.78-text_h/2"
+      + ":x=(w-text_w)/2:y=" + subtitleLayout.y + "-text_h/2:fix_bounds=1"
       + ":enable='between(t," + from.toFixed(3) + "," + to.toFixed(3) + ")'[" + nextLabel + "]");
     videoLabel = nextLabel;
   }
 
-  if (finalText || finalContact) {
-    filters.push("[" + videoLabel + "]drawbox=x=0:y=ih*0.68:w=iw:h=ih*0.32:color=black@0.62:t=fill:enable='gte(t," + outroStart.toFixed(3) + ")'[outbox]");
+  if (finalTitle || finalText || finalContact) {
+    filters.push("[" + videoLabel + "]drawbox=x=0:y=ih*0.66:w=iw:h=ih*0.34:color=black@0.70:t=fill:enable='gte(t," + outroStart.toFixed(3) + ")'[outbox]");
     videoLabel = "outbox";
+    if (finalTitle) {
+      filters.push("[" + videoLabel + "]drawtext=fontfile=" + defaultFontFile
+        + ":text='" + escapeFfmpegDrawtext(wrapSubtitleText(finalTitle, 26, 2)) + "'"
+        + ":fontcolor=white:fontsize=" + Math.round(spec.width * 0.060)
+        + ":borderw=2:bordercolor=black@0.8:x=(w-text_w)/2:y=h*0.735-text_h/2:fix_bounds=1"
+        + ":enable='gte(t," + outroStart.toFixed(3) + ")'[outtitle]");
+      videoLabel = "outtitle";
+    }
     if (finalText) {
-      filters.push("[" + videoLabel + "]drawtext=fontfile=" + defaultFontFile + ":text='" + escapeFfmpegDrawtext(finalText) + "':fontcolor=white:fontsize=" + Math.round(spec.width * 0.052) + ":borderw=2:bordercolor=black@0.7:x=(w-text_w)/2:y=h*0.75:enable='gte(t," + outroStart.toFixed(3) + ")'[outtext]");
+      filters.push("[" + videoLabel + "]drawtext=fontfile=" + defaultFontFile
+        + ":text='" + escapeFfmpegDrawtext(wrapSubtitleText(finalText, 32, 2)) + "'"
+        + ":fontcolor=white:fontsize=" + Math.round(spec.width * (finalTitle ? 0.034 : 0.050))
+        + ":borderw=2:bordercolor=black@0.7:x=(w-text_w)/2:y=h*" + (finalTitle ? "0.825" : "0.76") + "-text_h/2:fix_bounds=1"
+        + ":enable='gte(t," + outroStart.toFixed(3) + ")'[outtext]");
       videoLabel = "outtext";
     }
     if (finalContact) {
-      filters.push("[" + videoLabel + "]drawtext=fontfile=" + defaultFontFile + ":text='" + escapeFfmpegDrawtext(finalContact) + "':fontcolor=white:fontsize=" + Math.round(spec.width * 0.035) + ":borderw=2:bordercolor=black@0.7:x=(w-text_w)/2:y=h*0.84:enable='gte(t," + outroStart.toFixed(3) + ")'[outcontact]");
+      filters.push("[" + videoLabel + "]drawtext=fontfile=" + defaultFontFile
+        + ":text='" + escapeFfmpegDrawtext(wrapSubtitleText(finalContact, 34, 2)) + "'"
+        + ":fontcolor=white:fontsize=" + Math.round(spec.width * 0.029)
+        + ":borderw=2:bordercolor=black@0.7:x=(w-text_w)/2:y=h*0.90-text_h/2:fix_bounds=1"
+        + ":enable='gte(t," + outroStart.toFixed(3) + ")'[outcontact]");
       videoLabel = "outcontact";
     }
   }
@@ -2481,7 +2612,13 @@ async function processVideoJob(jobId) {
     }
     if (!transcription.segments?.length) throw new Error("smart_transcript_required:no_segments");
     const detectedLanguage = transcription.language || "desconhecido";
-    updateVideoJob(jobId, { detectedLanguage });
+    const contentIdentity = await inferVideoContentTitle(transcription, initial.contentTitle || "", initial.filename || "", initial.clientId);
+    updateVideoJob(jobId, {
+      detectedLanguage,
+      contentTitle: contentIdentity.title || "",
+      contentTitleSource: contentIdentity.source || "",
+      contentTitleConfidence: Number(contentIdentity.confidence || 0)
+    });
     const speechSilences = await detectSpeechSilences(audioPath);
     recordAgentExecution(client, "RADAR", {
       function: "video-full-transcript-analysis", trigger: "video-upload", status: "success",
@@ -2513,7 +2650,8 @@ async function processVideoJob(jobId) {
       effectiveRequestedCount,
       Number(initial.clipDuration || 30),
       initial.goal || "viral",
-      initial.clientId
+      initial.clientId,
+      contentIdentity.title || ""
     );
     selection.clips = selection.clips.map(clip => refineClipBoundary(
       clip, transcription.segments || [], speechSilences, duration, Number(initial.clipDuration || 30)
@@ -2556,7 +2694,9 @@ async function processVideoJob(jobId) {
         initial.storedPath, outputPath, selected.start, selected.end,
         initial.outputFormat || "reel", initial.endText || "", initial.endContact || "",
         translatedSubtitles,
-        { size: initial.subtitleSize, color: initial.subtitleColor, weight: initial.subtitleWeight, bg: initial.subtitleBg }
+        { size: initial.subtitleSize, color: initial.subtitleColor, weight: initial.subtitleWeight, bg: initial.subtitleBg },
+        contentIdentity.title || "",
+        selected.introText || selected.title || ""
       );
       const transcript = transcriptForRange(transcription.segments, selected.start, selected.end);
       const reviewText = translatedSubtitles.length ? translatedSubtitles.map(item => item.text).join(" ") : transcript;
@@ -2566,6 +2706,9 @@ async function processVideoJob(jobId) {
       clips.push({
         id: clipId, publicName, storedPath: outputPath,
         title: selected.title || "Corte " + (index + 1),
+        introText: selected.introText || selected.title || "",
+        closingText: selected.closingText || "",
+        contentTitle: contentIdentity.title || "",
         reason: selected.reason || "",
         hook: selected.hook || transcript.slice(0,180),
         qualityScore: combinedScore,
@@ -3047,7 +3190,9 @@ async function adjustVideoClip(clientId, jobId, clipId, body) {
     nextEndText,
     nextEndContact,
     translatedSubtitles,
-    { size: found.job.subtitleSize, color: found.job.subtitleColor, weight: found.job.subtitleWeight, bg: found.job.subtitleBg }
+    { size: found.job.subtitleSize, color: found.job.subtitleColor, weight: found.job.subtitleWeight, bg: found.job.subtitleBg },
+    found.job.contentTitle || found.clip.contentTitle || "",
+    found.clip.introText || found.clip.title || ""
   );
   const fresh = findVideoClip(clientId, jobId, clipId);
   fresh.clip.start = start;
@@ -5773,6 +5918,7 @@ const server = http.createServer(async (req, res) => {
         weight: req.headers["x-subtitle-weight"],
         bg: req.headers["x-subtitle-bg"]
       });
+      const contentTitle = decodeURIComponent(String(req.headers["x-content-title"] || "")).trim().slice(0, 100);
       const endText = decodeURIComponent(String(req.headers["x-video-end-text"] || "")).trim().slice(0, 90);
       const endContact = decodeURIComponent(String(req.headers["x-video-end-contact"] || "")).trim().slice(0, 90);
       const requestedFolder = String(req.headers["x-video-folder"] || "default");
@@ -5793,6 +5939,8 @@ const server = http.createServer(async (req, res) => {
         subtitleColor: subtitleStyle.color,
         subtitleWeight: subtitleStyle.weight,
         subtitleBg: subtitleStyle.bg,
+        contentTitle,
+        contentTitleSource: contentTitle ? "user" : "",
         endText,
         endContact,
         storedPath: destination,
