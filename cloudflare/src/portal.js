@@ -13,6 +13,7 @@ import { AGENT_CORE_MODULES, normalizeAgentCoreConfig, agentCoreState, agentExec
 import { leadsForClient, leadHunterSummary } from "./leads.js";
 import { leadHunterView, saveLeadHunterConfig, runLeadHunter, discardLead } from "./lead-hunter.js";
 import { createVideoFolder, renameVideoFolder, deleteVideoFolder, patchVideoJob, deleteVideoJob, setClipApproval, adjustClip, selectClip, scheduleClip, bulkScheduleClips } from "./video-library.js";
+import { proxyRailwayVideoRequest, createVideoUploadTicket } from "./railway-video-bridge.js";
 
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
@@ -279,6 +280,19 @@ export async function handlePortalApi(request, env, url) {
 
   const { session, client } = await sessionClient(request, env);
   if (!session || !client) return json({ error: "unauthorized" }, 401);
+
+  if (url.pathname === "/api/portal/video-upload-ticket" && request.method === "POST") {
+    try {
+      return json({ ok: true, ...(await createVideoUploadTicket(env, client.id)) });
+    } catch (error) {
+      return json({
+        error: error instanceof Error ? error.message : String(error)
+      }, 503);
+    }
+  }
+
+  const videoBridgeResponse = await proxyRailwayVideoRequest(request, env, url, client.id);
+  if (videoBridgeResponse) return videoBridgeResponse;
 
   if (url.pathname === "/api/portal/session" && request.method === "GET") {
     return json(
