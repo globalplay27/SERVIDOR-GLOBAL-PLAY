@@ -3482,7 +3482,8 @@ async function searchOfficialTrailers(query, type = "movie", clientId = "") {
       const host = parsed.hostname.toLowerCase();
       if (parsed.protocol !== "https:") return "";
       if (/(^|\.)(youtube\.com|youtu\.be|netflix\.com|primevideo\.com|disneyplus\.com|globoplay\.globo\.com)$/.test(host)) return "";
-      if (!/\.(mp4|mov|m4v|webm|mkv)$/i.test(parsed.pathname)) return "";
+      // Signed CDN URLs often have no video extension. The importer validates
+      // the real Content-Type before storing the file, so do not discard them here.
       return parsed.toString();
     } catch {
       return "";
@@ -5872,7 +5873,7 @@ const server = http.createServer(async (req, res) => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 6000);
     try {
-      const token = String(process.env.RAGNAR_AGENT_TOKEN || "");
+      const token = agentTokenForClient(client.id);
       const response = await fetch(base + "/nexus/status", {
         headers: {
           "accept": "application/json",
