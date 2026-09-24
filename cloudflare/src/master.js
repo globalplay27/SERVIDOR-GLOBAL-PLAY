@@ -9,6 +9,7 @@ import {
 } from "./auth.js";
 import { listClients, getClient, upsertClient } from "./clients.js";
 import { getMasterInstagramSummary, saveMasterInstagramConfig } from "./instagram.js";
+import { agentCoreDashboard, agentCoreClientView, saveAgentCoreConfig, queueManualAgentRun } from "./agent-core.js";
 
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
@@ -362,7 +363,39 @@ export async function handleMaster(request, env, url) {
   }
 
   if (url.pathname === "/api/master/agent-core" && request.method === "GET") {
-    return json({ ok: true, executions: await allExecutions(env) });
+    return json(await agentCoreDashboard(env));
+  }
+
+  const agentCoreMatch = url.pathname.match(/^\/api\/master\/agent-core\/([^/]+)$/);
+  if (agentCoreMatch && request.method === "GET") {
+    const clientId = decodeURIComponent(agentCoreMatch[1]);
+    const client = await getClient(env, clientId);
+    if (!client) return json({ error: "not_found" }, 404);
+    return json({ ok: true, ...(await agentCoreClientView(env, client)) });
+  }
+
+  if (agentCoreMatch && request.method === "PATCH") {
+    const clientId = decodeURIComponent(agentCoreMatch[1]);
+    const body = await request.json().catch(() => ({}));
+    try {
+      const config = await saveAgentCoreConfig(env, clientId, body);
+      return json({ ok: true, config });
+    } catch (error) {
+      const code = error instanceof Error ? error.message : String(error);
+      return json({ error: code }, code === "client_not_found" ? 404 : 400);
+    }
+  }
+
+  const agentRunMatch = url.pathname.match(/^\/api\/master\/agent-core\/([^/]+)\/run$/);
+  if (agentRunMatch && request.method === "POST") {
+    const clientId = decodeURIComponent(agentRunMatch[1]);
+    const body = await request.json().catch(() => ({}));
+    try {
+      return json(await queueManualAgentRun(env, clientId, body.agent || "all"));
+    } catch (error) {
+      const code = error instanceof Error ? error.message : String(error);
+      return json({ error: code }, code === "client_not_found" ? 404 : 400);
+    }
   }
 
   if (url.pathname === "/api/master/instagram" && request.method === "GET") {
