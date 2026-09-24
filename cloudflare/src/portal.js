@@ -10,6 +10,7 @@ import { getClient, upsertClient, portalClientView } from "./clients.js";
 import { tokenUsageToday } from "./openai.js";
 import { startInstagramOAuth, handleInstagramOAuthCallback } from "./instagram.js";
 import { AGENT_CORE_MODULES, normalizeAgentCoreConfig, agentCoreState, agentExecutions, saveAgentCoreConfig } from "./agent-core.js";
+import { leadsForClient, leadHunterSummary } from "./leads.js";
 
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
@@ -423,16 +424,11 @@ export async function handlePortalApi(request, env, url) {
   }
 
   if (url.pathname === "/api/portal/leads" && request.method === "GET") {
-    const state = await env.DB.prepare(
-      `SELECT value_json, updated_at FROM nexus_state
-       WHERE namespace = 'leads' AND item_key = 'summary' AND client_id = ?1 LIMIT 1`
-    ).bind(client.id).first();
-    return json({
-      ok: true,
-      summary: state ? parseJson(state.value_json, {}) : { total: 0, hot: 0, warm: 0, cold: 0 },
-      leads: [],
-      updatedAt: state?.updated_at || null
-    });
+    const [summary, leads] = await Promise.all([
+      leadHunterSummary(env, client.id),
+      leadsForClient(env, client.id, 200)
+    ]);
+    return json({ ok: true, summary, leads, source: "cloudflare-d1" });
   }
 
   if (
