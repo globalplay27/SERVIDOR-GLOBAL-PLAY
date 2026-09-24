@@ -1,4 +1,5 @@
 import { openAIKeyStatus } from "./openai-routing.js";
+import { getState, putState, deleteState } from "./storage.js";
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -8,6 +9,16 @@ function json(data, status = 200) {
       "cache-control": "no-store"
     }
   });
+}
+
+function authorized(request, env) {
+  const expected = String(env.NEXUS_SECRET_KEY || "");
+  const provided = String(request.headers.get("authorization") || "");
+  return Boolean(expected && provided === `Bearer ${expected}`);
+}
+
+function requireAuth(request, env) {
+  return authorized(request, env) ? null : json({ error: "unauthorized" }, 401);
 }
 
 async function health(env) {
@@ -31,6 +42,34 @@ async function health(env) {
   }, d1 ? 200 : 503);
 }
 
+async function handleState(request, env, url) {
+  const denied = requireAuth(request, env);
+  if (denied) return denied;
+
+  const namespace = url.searchParams.get("namespace") || "";
+  const itemKey = url.searchParams.get("key") || "";
+  const clientId = url.searchParams.get("clientId") || "";
+  if (!namespace || !itemKey) return json({ error: "namespace_and_key_required" }, 400);
+
+  if (request.method === "GET") {
+    const record = await getState(env, namespace, itemKey, clientId);
+    return record ? json({ ok: true, record }) : json({ error: "not_found" }, 404);
+  }
+
+  if (request.method === "PUT") {
+    const body = await request.json().catch(() => ({}));
+    const record = await putState(env, namespace, itemKey, clientId, body?.value ?? body);
+    return json({ ok: true, record });
+  }
+
+  if (request.method === "DELETE") {
+    const deleted = await deleteState(env, namespace, itemKey, clientId);
+    return json({ ok: true, deleted });
+  }
+
+  return json({ error: "method_not_allowed" }, 405);
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -40,8 +79,14 @@ export default {
     }
 
     if (url.pathname === "/api/system/openai-routing" && request.method === "GET") {
+      const denied = requireAuth(request, env);
+      if (denied) return denied;
       const clientId = url.searchParams.get("clientId") || "";
       return json(openAIKeyStatus(env, clientId));
+    }
+
+    if (url.pathname === "/api/state") {
+      return handleState(request, env, url);
     }
 
     return json({
