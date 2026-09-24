@@ -10,7 +10,7 @@
   <title>NEXUS AI · Portal do Cliente</title>
   <link rel="icon" href="/assets/nexus-ai-mark.svg" type="image/svg+xml">
   <link rel="manifest" href="/manifest.webmanifest?v=1">
-  <link rel="stylesheet" href="/client.css?v=69">
+  <link rel="stylesheet" href="/client.css?v=70">
 </head>
 <body>
   <div id="nexus-boot" class="nexus-boot" hidden>
@@ -543,29 +543,9 @@
         </section>
       </div>
 
-      <div id="connection-modal" class="connection-modal" hidden>
-        <div class="connection-dialog">
-          <div class="connection-dialog-head"><div><p class="eyebrow">CONEXÃO SEGURA</p><h2 id="connection-title">Conectar</h2></div><button type="button" id="connection-close">×</button></div>
-          <p id="connection-help" class="muted"></p>
-          <form id="connection-form">
-            <div id="github-fields" class="connection-fields" hidden>
-              <label><span>Token de acesso GitHub</span><input id="github-token" type="password" autocomplete="off" placeholder="github_pat_..."></label>
-              <small>Use um token de acesso do GitHub. Ele será validado e armazenado criptografado.</small>
-            </div>
-            <div id="openai-fields" class="connection-fields" hidden>
-              <label><span>Chave da API do projeto</span><input id="openai-key" type="password" autocomplete="off" placeholder="sk-..."></label>
-              <label><span>Chave administrativa para custos (opcional)</span><input id="openai-admin-key" type="password" autocomplete="off" placeholder="Opcional"></label>
-              <small>A chave administrativa é opcional e só é necessária para os dados de custo que exigem esse nível de acesso.</small>
-            </div>
-            <span id="connection-error" class="connection-error"></span>
-            <button type="submit" class="connection-submit">Validar e conectar</button>
-          </form>
-        </div>
-      </div>
-
       <footer><span>NEXUS AI</span><small>Client Portal · ambiente exclusivo</small></footer>
     </section>
   </main>
-  <script src="/client.js?v=69" defer></script>
+  <script src="/client.js?v=70" defer></script>
 </body>
 </html>
