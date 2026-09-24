@@ -1181,11 +1181,76 @@ function leadHunterPortalView(client) {
 }
 
 
+
+async function fetchAgentInstagramSnapshot(clientId) {
+  const client = loadClients().find(item => item.id === clientId);
+  const base = String(client?.agentApiUrl || "").replace(/\/+$/, "");
+  const token = agentTokenForClient(clientId);
+  if (!base || !token) {
+    return { source: "local", items: [], error: "agent_instagram_bridge_not_configured", followersCount: 0, insightErrors: [] };
+  }
+  try {
+    const response = await fetch(base + "/nexus/instagram/insights", {
+      headers: {
+        authorization: "Bearer " + token,
+        accept: "application/json",
+        "user-agent": "NEXUS-AI-AgentCore/2.0"
+      },
+      signal: AbortSignal.timeout(20000)
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(String(payload?.detail || payload?.error || "agent_instagram_bridge_" + response.status));
+    }
+    const items = Array.isArray(payload?.items) ? payload.items.map(item => ({
+      id: String(item?.id || ""),
+      caption: String(item?.caption || "").slice(0, 2200),
+      timestamp: item?.timestamp || null,
+      mediaType: String(item?.mediaType || item?.media_type || ""),
+      likeCount: Math.max(0, Number(item?.likeCount ?? item?.like_count ?? 0)),
+      commentsCount: Math.max(0, Number(item?.commentsCount ?? item?.comments_count ?? 0)),
+      permalink: String(item?.permalink || ""),
+      reach: Number.isFinite(Number(item?.reach)) ? Number(item.reach) : null,
+      views: Number.isFinite(Number(item?.views)) ? Number(item.views) : null,
+      saved: Number.isFinite(Number(item?.saved)) ? Number(item.saved) : null,
+      shares: Number.isFinite(Number(item?.shares)) ? Number(item.shares) : null,
+      totalInteractions: Number.isFinite(Number(item?.totalInteractions ?? item?.total_interactions))
+        ? Number(item?.totalInteractions ?? item?.total_interactions)
+        : null,
+      insightMetrics: Array.isArray(item?.insightMetrics) ? item.insightMetrics.map(String) : [],
+      insightError: String(item?.insightError || "")
+    })) : [];
+    return {
+      source: String(payload?.source || "agent-instagram-api"),
+      items,
+      followersCount: Math.max(0, Number(payload?.followersCount || 0)),
+      mediaCount: Math.max(0, Number(payload?.mediaCount || 0)),
+      username: String(payload?.username || client?.instagram || ""),
+      insightErrors: Array.isArray(payload?.insightErrors) ? payload.insightErrors.slice(0, 10) : [],
+      profileError: String(payload?.profileError || ""),
+      bridge: true
+    };
+  } catch (error) {
+    return {
+      source: "local",
+      items: [],
+      error: "agent_instagram_bridge_failed:" + String(error?.message || error).slice(0, 260),
+      followersCount: 0,
+      insightErrors: []
+    };
+  }
+}
+
 async function fetchInstagramMediaSnapshot(clientId) {
   const connection = directConnection(clientId, "meta");
   const accessToken = decryptSecret(connection?.accessToken || "");
   const igUserId = String(connection?.igUserId || "").trim();
-  if (!accessToken || !igUserId) return { source: "local", items: [], error: "instagram_not_connected", followersCount: 0, insightErrors: [] };
+  if (!accessToken || !igUserId) {
+    const bridged = await fetchAgentInstagramSnapshot(clientId);
+    return bridged.items?.length || !String(bridged.error || "").startsWith("agent_instagram_bridge")
+      ? bridged
+      : { ...bridged, error: bridged.error || "instagram_not_connected" };
+  }
 
   const authHeaders = {
     authorization: "Bearer " + accessToken,
@@ -1303,7 +1368,12 @@ async function fetchInstagramMediaSnapshot(clientId) {
       profileError: String(profileResult?.profileError || "")
     };
   } catch (error) {
-    return { source: "local", items: [], error: String(error?.message || error).slice(0, 300), followersCount: 0, insightErrors: [] };
+    const directError = String(error?.message || error).slice(0, 300);
+    const bridged = await fetchAgentInstagramSnapshot(clientId);
+    if (bridged.items?.length || !String(bridged.error || "").startsWith("agent_instagram_bridge")) {
+      return { ...bridged, directError };
+    }
+    return { source: "local", items: [], error: directError, bridgeError: bridged.error || "", followersCount: 0, insightErrors: [] };
   }
 }
 
