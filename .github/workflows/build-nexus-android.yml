@@ -1,0 +1,52 @@
+name: Build NEXUS AI Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "apps/nexus_app/**"
+      - ".github/workflows/build-nexus-android.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Generate Android platform
+        working-directory: apps/nexus_app
+        run: flutter create --platforms=android .
+
+      - name: Install dependencies
+        working-directory: apps/nexus_app
+        run: flutter pub get
+
+      - name: Analyze
+        working-directory: apps/nexus_app
+        run: flutter analyze
+
+      - name: Build release APK
+        working-directory: apps/nexus_app
+        run: flutter build apk --release
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: NEXUS-AI-Android
+          path: apps/nexus_app/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
