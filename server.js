@@ -6486,6 +6486,32 @@ const server = http.createServer(async (req, res) => {
     });
   }
 
+  if (url.pathname === "/api/nexus/bridge/manual-post" && req.method === "POST") {
+    const client = bridgePortalClientForRequest(req);
+    if (!client) return send(res, 401, { error: "unauthorized" });
+    try {
+      const body = await readLargeJsonBody(req, 14 * 1024 * 1024);
+      const imageDataUrl = String(body.imageDataUrl || "").trim();
+      const match = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/.exec(imageDataUrl);
+      if (!match) return send(res, 400, { error: "invalid_image" });
+
+      const bytes = Buffer.from(match[2], "base64");
+      if (!bytes.length || bytes.length > 10 * 1024 * 1024) {
+        return send(res, 400, { error: "image_too_large" });
+      }
+
+      const ext = match[1] === "jpeg" ? "jpg" : match[1];
+      const filename = slug(client.id) + "-" + crypto.randomBytes(12).toString("hex") + "." + ext;
+      fs.writeFileSync(path.join(manualPostDir, filename), bytes);
+      return send(res, 201, {
+        ok: true,
+        imageUrl: publicOrigin(req) + "/manual-post/" + filename
+      });
+    } catch (error) {
+      return send(res, 400, { error: String(error?.message || "manual_post_store_failed") });
+    }
+  }
+
   if (url.pathname === "/api/portal/posts" && req.method === "GET") {
     const client = portalClientForRequest(req);
     if (!client) return send(res, 401, { error: "unauthorized" });
