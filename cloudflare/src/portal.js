@@ -260,15 +260,29 @@ export async function handlePortalApi(request, env, url) {
       clients = Number(clientCount?.count || 0);
       portalUsers = Number(userCount?.count || 0);
     } catch {}
+    let fallbackClientExists = false;
+    const fallbackClientId = String(env.CLIENT_PORTAL_CLIENT_ID || "").trim();
+    if (fallbackClientId) {
+      try {
+        fallbackClientExists = Boolean(
+          await env.DB.prepare("SELECT id FROM clients WHERE id = ?1 LIMIT 1").bind(fallbackClientId).first()
+        );
+      } catch {}
+    }
     return json({
       ok: d1Ready,
       runtime: "cloudflare-workers",
       service: "Servidor Nexus",
       clients,
       portalUsers,
+      portalClientIdConfigured: Boolean(env.CLIENT_PORTAL_CLIENT_ID),
+      portalUsernameConfigured: Boolean(env.CLIENT_PORTAL_USERNAME),
+      portalPasswordConfigured: Boolean(env.CLIENT_PORTAL_PASSWORD),
       fallbackPortalCredentialsConfigured: Boolean(
         env.CLIENT_PORTAL_CLIENT_ID && env.CLIENT_PORTAL_USERNAME && env.CLIENT_PORTAL_PASSWORD
-      )
+      ),
+      fallbackClientExists,
+      nexusSecretConfigured: Boolean(env.NEXUS_SECRET_KEY)
     }, d1Ready ? 200 : 503);
   }
 
