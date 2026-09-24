@@ -25,6 +25,7 @@ const runtimeFile = path.join(DATA_DIR, "runtime.json");
 const connectionsFile = path.join(DATA_DIR, "connections.json");
 const oauthStateFile = path.join(DATA_DIR, "oauth-states.json");
 const portalUsersFile = path.join(DATA_DIR, "portal-users.json");
+const portalSessionsFile = path.join(DATA_DIR, "portal-sessions.json");
 const masterIntegrationsFile = path.join(DATA_DIR, "master-integrations.json");
 const supportTicketsFile = path.join(DATA_DIR, "support-tickets.json");
 const postLedgerFile = path.join(DATA_DIR, "post-ledger.json");
@@ -42,8 +43,31 @@ const clientVideoDir = path.join(DATA_DIR, "client-videos");
 fs.mkdirSync(clientLogoDir, { recursive: true });
 fs.mkdirSync(manualPostDir, { recursive: true });
 fs.mkdirSync(clientVideoDir, { recursive: true });
-const portalSessions = new Map();
+const portalSessions = new Map(
+  Object.entries(readObjectFile(portalSessionsFile, {}))
+    .filter(([,record]) => record && Number(record.expiresAt || 0) > Date.now())
+);
 const masterSessions = new Map();
+
+function persistPortalSessions() {
+  const now = Date.now();
+  const obj = {};
+  for (const [token, record] of portalSessions.entries()) {
+    if (!record || Number(record.expiresAt || 0) <= now) continue;
+    obj[token] = record;
+  }
+  writeJsonAtomic(portalSessionsFile, obj);
+}
+
+function setPortalSession(token, record) {
+  portalSessions.set(token, record);
+  persistPortalSessions();
+}
+
+function deletePortalSession(token) {
+  if (token) deletePortalSession(token);
+  persistPortalSessions();
+}
 
 function readJsonFile(file, fallback) {
   try {
@@ -2171,29 +2195,35 @@ function refineClipBoundary(clip, segments, silences, duration, targetDuration) 
 
 function validateRequestedClipSet(clips, videoDuration, requestedClips, targetDuration) {
   const desired = Math.max(8, Number(targetDuration || 30));
-  const minWanted = Math.max(6, desired - 2);
-  const count = Math.max(1, Number(requestedClips || 1));
   const total = Math.max(0, Number(videoDuration || 0));
+  const effectiveTarget = Math.min(desired, total);
+  const minWanted = total >= desired ? Math.max(6, desired - 3) : Math.max(3, effectiveTarget * 0.82);
+  const count = Math.max(1, Number(requestedClips || 1));
 
-  if (total < minWanted) {
+  if (total < 3) {
     throw new Error("video_insufficient_duration:" + total.toFixed(2) + ":" + count + ":" + desired);
-  }
-  if (total < minWanted * count) {
-    throw new Error("video_insufficient_duration_for_count:" + total.toFixed(2) + ":" + count + ":" + desired);
   }
   if (!Array.isArray(clips) || clips.length !== count) throw new Error("clip_selection_incomplete");
 
   for (const clip of clips) {
     const len = Number(clip.end || 0) - Number(clip.start || 0);
     if (!Number.isFinite(len) || len < minWanted) {
-      throw new Error("clip_duration_below_target:" + len.toFixed(2) + ":" + desired);
+      throw new Error("clip_duration_below_target:" + len.toFixed(2) + ":" + effectiveTarget.toFixed(2));
     }
   }
 
-  const sorted = [...clips].sort((a,b)=>Number(a.start||0)-Number(b.start||0));
-  for (let i=1;i<sorted.length;i+=1) {
-    if (Number(sorted[i].start||0) < Number(sorted[i-1].end||0) - 0.15) {
-      throw new Error("clip_windows_overlap");
+  // These are alternatives for the client to choose, so moderate overlap is valid.
+  // Reject only effectively duplicated windows.
+  for (let i=0;i<clips.length;i+=1) {
+    for (let j=i+1;j<clips.length;j+=1) {
+      const a=clips[i], b=clips[j];
+      const overlap=Math.max(0,Math.min(Number(a.end||0),Number(b.end||0))-Math.max(Number(a.start||0),Number(b.start||0)));
+      const shortest=Math.max(0.001,Math.min(Number(a.end||0)-Number(a.start||0),Number(b.end||0)-Number(b.start||0)));
+      const sameStart=Math.abs(Number(a.start||0)-Number(b.start||0)) < 1.2;
+      const sameEnd=Math.abs(Number(a.end||0)-Number(b.end||0)) < 1.2;
+      if ((sameStart && sameEnd) || overlap/shortest > 0.92) {
+        throw new Error("clip_windows_duplicate");
+      }
     }
   }
   return true;
@@ -2203,7 +2233,7 @@ async function selectSmartClips(transcription, duration, count, targetDuration, 
   const segments = Array.isArray(transcription?.segments) ? transcription.segments : [];
   if (!segments.length) throw new Error("smart_transcript_required");
   const desiredCount = Math.max(1, Number(count || 3));
-  const desiredDuration = Math.max(8, Number(targetDuration || 30));
+  const desiredDuration = Math.max(8, Math.min(Number(targetDuration || 30), Math.max(8, Number(duration || 0))));
   const compact = segments.map(item => "[" + item.start.toFixed(1) + "-" + item.end.toFixed(1) + "] " + item.text).join("\n").slice(0, 120000);
   const preRanked = repurposeCandidates(segments, desiredDuration, Math.max(16, desiredCount * 6));
   const heuristic = transcriptHeuristicSelections(segments, duration, Math.max(12, desiredCount * 5), desiredDuration);
@@ -2234,10 +2264,16 @@ async function selectSmartClips(transcription, duration, count, targetDuration, 
     };
   };
 
-  const pickNonOverlapping = candidates => {
+  const pickDiverse = candidates => {
     const unique = [];
     for (const clip of candidates.filter(Boolean).sort((a,b)=>Number(b.score||0)-Number(a.score||0))) {
-      if (unique.some(item => Math.max(item.start,clip.start) < Math.min(item.end,clip.end))) continue;
+      const duplicate = unique.some(item => {
+        const overlap=Math.max(0,Math.min(item.end,clip.end)-Math.max(item.start,clip.start));
+        const shortest=Math.max(0.001,Math.min(item.end-item.start,clip.end-clip.start));
+        const nearSameBounds=Math.abs(item.start-clip.start)<1.2 && Math.abs(item.end-clip.end)<1.2;
+        return nearSameBounds || overlap/shortest>0.92;
+      });
+      if (duplicate) continue;
       unique.push(clip);
       if (unique.length >= desiredCount) break;
     }
@@ -2253,8 +2289,8 @@ async function selectSmartClips(transcription, duration, count, targetDuration, 
       + "Não divida o vídeo em partes iguais e não privilegie os primeiros segundos. Escolha os pontos de maior valor, gancho, clareza, emoção, prova ou informação.\n"
       + "Cada corte deve ficar o mais próximo possível de " + desiredDuration + " segundos. Aceite alguns segundos a mais para concluir a fala, mas nunca entregue 13s quando foram pedidos 30s se houver material suficiente.\n"
       + "REGRA CRÍTICA: nunca cortar palavra, frase, resposta, CTA ou despedida. O corte começa e termina em ideia natural.\n"
-      + "Não escolha trechos sobrepostos. Não invente falas. Dê score de 1 a 100 e explique o motivo.\n"
-      + (attempt > 1 ? "Na tentativa anterior faltaram trechos válidos; desta vez distribua melhor as escolhas ao longo do vídeo e evite intervalos sobrepostos.\n" : "")
+      + "As opções podem compartilhar parte do mesmo vídeo quando forem alternativas realmente diferentes, mas não podem ser praticamente o mesmo corte. Não invente falas. Dê score de 1 a 100 e explique o motivo.\n"
+      + (attempt > 1 ? "Na tentativa anterior faltaram alternativas válidas; varie melhor os pontos de entrada e saída e evite opções quase idênticas.\n" : "")
       + "Pré-ranking local (apenas pistas; você deve validar pela transcrição):\n" + hints + "\n\n"
       + "Transcrição completa com timestamps:\n" + compact + "\n\n"
       + "Responda SOMENTE JSON válido: {\"clips\":[{\"start\":12.3,\"end\":42.0,\"title\":\"Título curto\",\"hook\":\"Primeira ideia forte\",\"reason\":\"Por que funciona\",\"score\":94}]}";
@@ -2283,7 +2319,7 @@ async function selectSmartClips(transcription, duration, count, targetDuration, 
 
     const selected = Array.isArray(parsed.clips) ? parsed.clips : [];
     const normalized = selected.map((item,index)=>normalizeCandidate(item,index,"ai")).filter(Boolean);
-    const unique = pickNonOverlapping(normalized);
+    const unique = pickDiverse(normalized);
     if (unique.length > bestAi.length) bestAi = unique;
     if (unique.length === desiredCount) {
       return { clips: unique, costUsd: totalCost, model: "gpt-5.6-luna+ig-repurpose", preRanked };
@@ -2306,7 +2342,7 @@ async function selectSmartClips(transcription, duration, count, targetDuration, 
     },index,"transcript-ranking"))
   ].filter(Boolean);
 
-  const combined = pickNonOverlapping([...bestAi, ...localPool]);
+  const combined = pickDiverse([...bestAi, ...localPool]);
   if (combined.length === desiredCount) {
     return {
       clips: combined,
@@ -2419,12 +2455,9 @@ async function processVideoJob(jobId) {
     updateVideoJob(jobId, { duration });
     const requestedCount = Math.max(1, Number(initial.requestedClips || 3));
     const requestedDuration = Math.max(8, Number(initial.clipDuration || 30));
-    const minimumPerClip = Math.max(6, requestedDuration - 2);
-    if (duration < minimumPerClip) {
+    const minimumPerClip = Math.max(3, Math.min(requestedDuration - 3, duration * 0.82));
+    if (duration < 3) {
       throw new Error("video_insufficient_duration:" + duration.toFixed(2) + ":" + requestedCount + ":" + requestedDuration);
-    }
-    if (duration < minimumPerClip * requestedCount) {
-      throw new Error("video_insufficient_duration_for_count:" + duration.toFixed(2) + ":" + requestedCount + ":" + requestedDuration);
     }
 
     const workDir = path.join(path.dirname(initial.storedPath), initial.id + "-work");
@@ -2486,7 +2519,7 @@ async function processVideoJob(jobId) {
     recordAgentExecution(client, "CREATOR", {
       function: "video-smart-clip-selection", trigger: "video-upload", status: "success",
       model: selection.model || "gpt-5.6-luna+ig-repurpose", quantity: selection.clips.length, costUsd: Number(selection.costUsd || 0),
-      message: selection.clips.length + " melhores momentos selecionados pela IA, sem divisão técnica do vídeo.",
+      message: selection.clips.length + " alternativas selecionadas pela IA, com duração-alvo de " + Math.min(Number(initial.clipDuration || 30), duration).toFixed(0) + "s e sem divisão técnica do vídeo.",
       metadata: { jobId, selections: selection.clips.map(item => ({ start:item.start,end:item.end,score:item.score,title:item.title })) }
     });
 
@@ -4110,7 +4143,7 @@ function tokenClientForRequest(req) {
   if (!token) return null;
   const record = portalSessions.get(token);
   if (!record || record.expiresAt < Date.now()) {
-    if (record) portalSessions.delete(token);
+    if (record) deletePortalSession(token);
     return null;
   }
   return loadClients().find(client => client.id === record.clientId) || null;
@@ -4317,7 +4350,7 @@ const server = http.createServer(async (req, res) => {
     if (!client) return send(res, 401, { error: "unauthorized" });
 
     const token = crypto.randomBytes(32).toString("base64url");
-    portalSessions.set(token, {
+    setPortalSession(token, {
       clientId: client.id,
       expiresAt: Date.now() + 12 * 60 * 60 * 1000
     });
@@ -4336,7 +4369,7 @@ const server = http.createServer(async (req, res) => {
       const remember = String(body.remember || "") === "1";
       const maxAgeSeconds = remember ? 30 * 24 * 60 * 60 : 12 * 60 * 60;
       const token = crypto.randomBytes(32).toString("base64url");
-      portalSessions.set(token, {
+      setPortalSession(token, {
         clientId: client.id,
         expiresAt: Date.now() + maxAgeSeconds * 1000,
         remembered: remember
@@ -4370,7 +4403,7 @@ const server = http.createServer(async (req, res) => {
 
   if (url.pathname === "/api/portal/logout" && req.method === "POST") {
     const token = String(parseCookies(req).nexus_session || req.headers["x-nexus-session"] || "");
-    if (token) portalSessions.delete(token);
+    if (token) deletePortalSession(token);
     res.setHeader("set-cookie", "nexus_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0");
     return send(res, 200, { ok: true });
   }
@@ -5942,7 +5975,7 @@ const server = http.createServer(async (req, res) => {
     const client = loadClients().find(item => item.id === clientId);
     if (!client) return send(res, 404, { error: "not_found" });
     const token = crypto.randomBytes(32).toString("base64url");
-    portalSessions.set(token, { clientId, expiresAt: Date.now() + 2 * 60 * 60 * 1000, assumedByMaster: true });
+    setPortalSession(token, { clientId, expiresAt: Date.now() + 2 * 60 * 60 * 1000, assumedByMaster: true });
     res.setHeader("set-cookie", "nexus_session=" + encodeURIComponent(token) + "; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=7200");
     return send(res, 200, { ok: true, clientId, url: "/portal.html?assumed=1" });
   }
@@ -6144,7 +6177,7 @@ const server = http.createServer(async (req, res) => {
     saveSupportTickets(loadSupportTickets().filter(item => item.clientId !== clientId));
 
     for (const [token, record] of portalSessions.entries()) {
-      if (record?.clientId === clientId) portalSessions.delete(token);
+      if (record?.clientId === clientId) deletePortalSession(token);
     }
 
     return send(res, 200, { ok: true, deletedClientId: clientId });
