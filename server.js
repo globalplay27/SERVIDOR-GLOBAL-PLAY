@@ -48,9 +48,10 @@ const clientVideoDir = path.join(DATA_DIR, "client-videos");
 fs.mkdirSync(clientLogoDir, { recursive: true });
 fs.mkdirSync(manualPostDir, { recursive: true });
 fs.mkdirSync(clientVideoDir, { recursive: true });
+const PORTAL_SESSION_MAX_AGE_SECONDS = 10 * 365 * 24 * 60 * 60;
 const portalSessions = new Map(
   Object.entries(readObjectFile(portalSessionsFile, {}))
-    .filter(([,record]) => record && Number(record.expiresAt || 0) > Date.now())
+    .filter(([,record]) => record && (record.persistent === true || Number(record.expiresAt || 0) > Date.now()))
 );
 const masterSessions = new Map();
 
@@ -58,7 +59,8 @@ function persistPortalSessions() {
   const now = Date.now();
   const obj = {};
   for (const [token, record] of portalSessions.entries()) {
-    if (!record || Number(record.expiresAt || 0) <= now) continue;
+    if (!record) continue;
+    if (record.persistent !== true && Number(record.expiresAt || 0) <= now) continue;
     obj[token] = record;
   }
   writeJsonAtomic(portalSessionsFile, obj);
@@ -5067,13 +5069,13 @@ function tokenClientForRequest(req) {
     // is not kicked out just because the container changed.
     const persisted = readObjectFile(portalSessionsFile, {});
     const diskRecord = persisted && typeof persisted === "object" ? persisted[token] : null;
-    if (diskRecord && Number(diskRecord.expiresAt || 0) > Date.now()) {
+    if (diskRecord && (diskRecord.persistent === true || Number(diskRecord.expiresAt || 0) > Date.now())) {
       record = diskRecord;
       portalSessions.set(token, record);
     }
   }
 
-  if (!record || Number(record.expiresAt || 0) < Date.now()) {
+  if (!record || (record.persistent !== true && Number(record.expiresAt || 0) < Date.now())) {
     if (record) deletePortalSession(token);
     return null;
   }
@@ -5283,7 +5285,8 @@ const server = http.createServer(async (req, res) => {
     const token = crypto.randomBytes(32).toString("base64url");
     setPortalSession(token, {
       clientId: client.id,
-      expiresAt: Date.now() + 12 * 60 * 60 * 1000
+      persistent: true,
+      createdAt: new Date().toISOString()
     });
     return send(res, 200, {
       token,
@@ -5298,12 +5301,13 @@ const server = http.createServer(async (req, res) => {
       if (!client) return redirectWithCookie(res, "/portal.html?v=25&error=1");
 
       const remember = String(body.remember || "") === "1";
-      const maxAgeSeconds = remember ? 30 * 24 * 60 * 60 : 12 * 60 * 60;
+      const maxAgeSeconds = PORTAL_SESSION_MAX_AGE_SECONDS;
       const token = crypto.randomBytes(32).toString("base64url");
       setPortalSession(token, {
         clientId: client.id,
-        expiresAt: Date.now() + maxAgeSeconds * 1000,
-        remembered: remember
+        persistent: true,
+        remembered: remember,
+        createdAt: new Date().toISOString()
       });
       const cookie = "nexus_session=" + encodeURIComponent(token) + "; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=" + maxAgeSeconds;
       return redirectWithCookie(res, "/portal.html?v=25&auth=1", cookie);
@@ -5328,6 +5332,26 @@ const server = http.createServer(async (req, res) => {
     const client = portalClientForRequest(req);
     if (!client) {
       return send(res, 401, { error: "unauthorized" });
+    }
+
+    // Upgrade an older short-lived session to persistent mode as soon as the
+    // client successfully resumes the portal.
+    const token = String(parseCookies(req).nexus_session || req.headers["x-nexus-session"] || "");
+    if (token) {
+      const current = portalSessions.get(token) || readObjectFile(portalSessionsFile, {})?.[token];
+      if (current && current.persistent !== true) {
+        setPortalSession(token, {
+          ...current,
+          persistent: true,
+          upgradedAt: new Date().toISOString()
+        });
+      }
+      if (parseCookies(req).nexus_session) {
+        res.setHeader("set-cookie",
+          "nexus_session=" + encodeURIComponent(token)
+          + "; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=" + PORTAL_SESSION_MAX_AGE_SECONDS
+        );
+      }
     }
     return send(res, 200, clientPortalView(client));
   }
