@@ -30,6 +30,49 @@ async function railwayAuthCheck(env, kind, username, password) {
   }
 }
 
+async function railwayLegacyMasterAuth(env, username, password) {
+  const base = String(env.RAILWAY_VIDEO_BRIDGE_URL || "").trim().replace(/\/+$/, "");
+  if (!base) return false;
+  try {
+    const body = new URLSearchParams();
+    body.set("username", String(username || ""));
+    body.set("password", String(password || ""));
+    const response = await fetch(base + "/master-login", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: body.toString(),
+      redirect: "manual"
+    });
+    const location = String(response.headers.get("location") || "");
+    return response.status === 303 && location === "/master";
+  } catch {
+    return false;
+  }
+}
+
+async function railwayLegacyPortalAuth(env, username, password) {
+  const base = String(env.RAILWAY_VIDEO_BRIDGE_URL || "").trim().replace(/\/+$/, "");
+  if (!base) return { ok: false, clientId: "" };
+  try {
+    const response = await fetch(base + "/api/portal/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        username: String(username || ""),
+        password: String(password || "")
+      })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) return { ok: false, clientId: "" };
+    return {
+      ok: Boolean(payload?.client?.id),
+      clientId: String(payload?.client?.id || "")
+    };
+  } catch {
+    return { ok: false, clientId: "" };
+  }
+}
+
 
 export const PORTAL_SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
 export const MASTER_SESSION_TTL_SECONDS = 12 * 60 * 60;
@@ -192,6 +235,9 @@ export async function authenticatePortalUser(env, username, password) {
   const railway = await railwayAuthCheck(env, "portal", cleanUsername, password);
   if (railway.ok && railway.clientId) return railway.clientId;
 
+  const legacyRailway = await railwayLegacyPortalAuth(env, cleanUsername, password);
+  if (legacyRailway.ok && legacyRailway.clientId) return legacyRailway.clientId;
+
   return "";
 }
 
@@ -258,7 +304,9 @@ export async function masterCredentialsValid(env, username, password) {
   }
 
   const railway = await railwayAuthCheck(env, "master", username, password);
-  return railway.ok === true;
+  if (railway.ok === true) return true;
+
+  return await railwayLegacyMasterAuth(env, username, password);
 }
 
 export async function createMasterSession(env) {
