@@ -833,7 +833,7 @@ function renderVideoJobs(data={}){
     }
     return header+`<div class="video-clip-grid">${clips.map(clip=>`
       <article class="video-clip-card ${bulkVideoSelection.has(videoClipKey(job.id,clip.id))?"video-bulk-selected":""}" data-video-clip="${escapeSupport(clip.id)}" data-video-job-id="${escapeSupport(job.id)}">
-        <video controls preload="metadata" src="${escapeSupport(clip.previewUrl)}"></video>
+        <video controls playsinline preload="metadata" src="${escapeSupport(clip.previewUrl)}"></video>
         <div class="video-clip-body">
           ${clip.status==="ready"&&clip.publishStatus!=="published"?`<label class="video-bulk-check"><input type="checkbox" data-video-bulk-select="${escapeSupport(job.id)}|${escapeSupport(clip.id)}" ${bulkVideoSelection.has(videoClipKey(job.id,clip.id))?"checked":""}> Selecionar para a agenda do mês</label>`:""}
           <div class="video-clip-top"><strong>Opção ${Number(clip.rank||1)} · ${escapeSupport(clip.title||"Melhor corte")}</strong><span class="video-approval ${escapeSupport(clip.approvalStatus||"pending")}">${videoApprovalLabel(clip.approvalStatus)}</span></div>
@@ -1112,6 +1112,9 @@ function uploadSingleVideo(file,index,total,settings,progress){
     xhr.setRequestHeader("X-Requested-Clips",settings.clips);
     xhr.setRequestHeader("X-Output-Format",settings.outputFormat);
     xhr.setRequestHeader("X-Auto-Subtitles",settings.autoSubtitles?"1":"0");
+    xhr.setRequestHeader("X-Subtitle-Size",settings.subtitleSize);
+    xhr.setRequestHeader("X-Subtitle-Color",settings.subtitleColor);
+    xhr.setRequestHeader("X-Subtitle-Bg",settings.subtitleBg);
     xhr.setRequestHeader("X-Video-Folder",settings.folderId);
     xhr.setRequestHeader("X-Video-End-Text",encodeURIComponent(settings.endText||""));
     xhr.setRequestHeader("X-Video-End-Contact",encodeURIComponent(settings.endContact||""));
@@ -1143,6 +1146,9 @@ if(videoUploadForm)videoUploadForm.addEventListener("submit",async event=>{
     clips:$("#video-requested-clips").value,
     outputFormat:$("#video-output-format")?.value||"reel",
     autoSubtitles:Boolean($("#video-auto-subtitles")?.checked),
+    subtitleSize:$("#video-subtitle-size")?.value||"auto",
+    subtitleColor:$("#video-subtitle-color")?.value||"white",
+    subtitleBg:$("#video-subtitle-bg")?.value||"black",
     folderId:$("#video-upload-folder")?.value||"default",
     endText:$("#video-end-text")?.value?.trim()||"",
     endContact:$("#video-end-contact")?.value?.trim()||""
@@ -1308,13 +1314,17 @@ if(loginForm){
 }
 
 resumeCookieSession();
+function videoPlaybackActive(){
+  return $("video").some(video=>!video.paused&&!video.ended&&video.readyState>1);
+}
 setInterval(()=>{
   const view=$("#view-videos");if(!view||view.hidden)return;
   const active=document.activeElement;
   const editing=view.querySelector(".video-edit-panel:not([hidden])");
   const scheduling=bulkVideoSelection.size>0;
   const typing=active&&view.contains(active)&&["INPUT","TEXTAREA","SELECT"].includes(active.tagName);
-  if(!editing&&!scheduling&&!typing)loadVideoJobs();
+  const playing=videoPlaybackActive();
+  if(!editing&&!scheduling&&!typing&&!playing)loadVideoJobs();
 },12000);
 
 
