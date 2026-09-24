@@ -1230,53 +1230,126 @@ function sentenceLooksFinished(text) {
   return /[.!?…]["')\]]?$/.test(String(text || "").trim());
 }
 
-function refineClipBoundary(clip, segments, silences, duration, targetDuration) {
+function fitClipToRequestedDuration(clip, duration, targetDuration) {
+  const total = Math.max(0, Number(duration || 0));
   const desired = Math.max(8, Number(targetDuration || 30));
-  let start = Math.max(0, Number(clip.start || 0));
-  let end = Math.min(Number(duration || 0), Number(clip.end || (start + desired)));
-  const minWanted = Math.min(Math.max(3, Number(duration || 0) - start), Math.max(3, desired - 2));
+  const minWanted = Math.max(6, desired - 2);
+  if (total < minWanted) return { ...clip, start: 0, end: total };
+
+  let start = Math.max(0, Math.min(total, Number(clip.start || 0)));
+  let end = Math.max(start, Math.min(total, Number(clip.end || start)));
+  if (end <= start) end = Math.min(total, start + desired);
+
+  const current = end - start;
+  if (current < desired) {
+    const center = (start + end) / 2;
+    start = center - desired / 2;
+    end = center + desired / 2;
+    if (start < 0) { end = Math.min(total, end - start); start = 0; }
+    if (end > total) { start = Math.max(0, start - (end - total)); end = total; }
+  } else if (current > desired + 10) {
+    const center = (start + end) / 2;
+    start = Math.max(0, center - desired / 2);
+    end = Math.min(total, start + desired);
+    if (end - start < desired) start = Math.max(0, end - desired);
+  }
+
+  if (end - start < minWanted && total >= minWanted) {
+    if (end >= total - 0.01) start = Math.max(0, total - desired);
+    else end = Math.min(total, start + desired);
+    if (end - start < minWanted) start = Math.max(0, end - minWanted);
+  }
+  return { ...clip, start, end };
+}
+
+function refineClipBoundary(clip, segments, silences, duration, targetDuration) {
+  const total = Math.max(0, Number(duration || 0));
+  const desired = Math.max(8, Number(targetDuration || 30));
+  const minWanted = Math.max(6, desired - 2);
   const maxWanted = Math.min(95, desired + 10);
+  let fitted = fitClipToRequestedDuration(clip, total, desired);
+  let start = fitted.start;
+  let end = fitted.end;
 
   if (segments.length) {
-    let startIndex = segments.findIndex(seg => seg.end >= start);
-    if (startIndex < 0) startIndex = 0;
-    if (segments[startIndex]) start = Math.max(0, Number(segments[startIndex].start || 0) - 0.12);
+    let startIndex = segments.findIndex(seg => Number(seg.end || 0) >= start);
+    if (startIndex < 0) startIndex = Math.max(0, segments.length - 1);
+    const previousIndex = Math.max(0, startIndex - 1);
+    const previous = segments[previousIndex];
+    const current = segments[startIndex];
+    if (previous && current && start > Number(current.start || 0) + 0.15) {
+      start = Math.max(0, Number(current.start || start) - 0.12);
+    } else if (current) {
+      start = Math.max(0, Number(current.start || start) - 0.12);
+    }
 
-    let endIndex = segments.findIndex(seg => seg.end >= end);
+    let endIndex = segments.findIndex(seg => Number(seg.end || 0) >= end);
     if (endIndex < startIndex) endIndex = startIndex;
     if (endIndex < 0) endIndex = segments.length - 1;
-    if (segments[endIndex]) end = Math.min(duration, Number(segments[endIndex].end || end) + 0.22);
+    if (segments[endIndex]) end = Math.min(total, Number(segments[endIndex].end || end) + 0.22);
 
     while (end - start < minWanted && endIndex + 1 < segments.length) {
       const next = segments[endIndex + 1];
       if (Number(next.end || 0) - start > maxWanted) break;
       endIndex += 1;
-      end = Math.min(duration, Number(next.end || end) + 0.22);
+      end = Math.min(total, Number(next.end || end) + 0.22);
     }
 
-    while (endIndex + 1 < segments.length && end - start < maxWanted) {
-      const current = segments[endIndex];
+    while (endIndex + 1 < segments.length && end - start < desired) {
       const next = segments[endIndex + 1];
-      const gap = Math.max(0, Number(next.start || 0) - Number(current.end || 0));
-      if (end - start >= minWanted && sentenceLooksFinished(current.text) && gap >= 0.12) break;
       if (Number(next.end || 0) - start > maxWanted) break;
       endIndex += 1;
-      end = Math.min(duration, Number(next.end || end) + 0.22);
+      end = Math.min(total, Number(next.end || end) + 0.22);
       if (end - start >= desired && sentenceLooksFinished(next.text)) break;
     }
   }
 
   const nextSilence = (silences?.starts || [])
-    .filter(point => point >= end - 0.15 && point <= Math.min(duration, end + 4) && point - start >= minWanted)
+    .filter(point => point >= end - 0.15 && point <= Math.min(total, end + 4) && point - start >= minWanted)
     .sort((a, b) => a - b)[0];
-  if (Number.isFinite(nextSilence) && nextSilence - start <= maxWanted) end = Math.min(duration, nextSilence + 0.08);
+  if (Number.isFinite(nextSilence) && nextSilence - start <= maxWanted) end = Math.min(total, nextSilence + 0.08);
 
-  if (end - start < minWanted && Number(duration || 0) - start >= minWanted) {
-    end = Math.min(duration, start + minWanted);
+  if (end - start < minWanted && total >= minWanted) {
+    // Se a escolha da IA caiu perto do final do vídeo, recua o início em vez de aceitar 2s/13s.
+    start = Math.max(0, Math.min(start, end - minWanted));
+    if (end - start < minWanted) {
+      end = Math.min(total, start + desired);
+      if (end - start < minWanted) start = Math.max(0, end - desired);
+    }
   }
-  if (end <= start + 2.5) end = Math.min(duration, start + Math.max(3, desired));
-  if (end - start > 95) end = start + 95;
+
+  if (end - start > maxWanted) end = Math.min(total, start + maxWanted);
   return { ...clip, start, end };
+}
+
+function validateRequestedClipSet(clips, videoDuration, requestedClips, targetDuration) {
+  const desired = Math.max(8, Number(targetDuration || 30));
+  const minWanted = Math.max(6, desired - 2);
+  const count = Math.max(1, Number(requestedClips || 1));
+  const total = Math.max(0, Number(videoDuration || 0));
+
+  if (total < minWanted) {
+    throw new Error("video_insufficient_duration:" + total.toFixed(2) + ":" + count + ":" + desired);
+  }
+  if (total < minWanted * count) {
+    throw new Error("video_insufficient_duration_for_count:" + total.toFixed(2) + ":" + count + ":" + desired);
+  }
+  if (!Array.isArray(clips) || clips.length !== count) throw new Error("clip_selection_incomplete");
+
+  for (const clip of clips) {
+    const len = Number(clip.end || 0) - Number(clip.start || 0);
+    if (!Number.isFinite(len) || len < minWanted) {
+      throw new Error("clip_duration_below_target:" + len.toFixed(2) + ":" + desired);
+    }
+  }
+
+  const sorted = [...clips].sort((a,b)=>Number(a.start||0)-Number(b.start||0));
+  for (let i=1;i<sorted.length;i+=1) {
+    if (Number(sorted[i].start||0) < Number(sorted[i-1].end||0) - 0.15) {
+      throw new Error("clip_windows_overlap");
+    }
+  }
+  return true;
 }
 
 async function selectSmartClips(transcription, duration, count, targetDuration, goal, clientId) {
@@ -1331,7 +1404,9 @@ async function selectSmartClips(transcription, duration, count, targetDuration, 
       let start = Math.max(0, Number(item.start || 0));
       let end = Math.min(duration, Number(item.end || start + desiredDuration));
       if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null;
-      if (end - start > 95) end = start + 95;
+      const fitted = fitClipToRequestedDuration({ start, end }, duration, desiredDuration);
+      start = fitted.start;
+      end = fitted.end;
       return {
         start,
         end,
@@ -1425,6 +1500,15 @@ async function processVideoJob(jobId) {
     updateVideoJob(jobId, { status: "transcribing", progress: 10, message: "RADAR analisando o vídeo inteiro e preparando a transcrição…" });
     const duration = await probeVideoDuration(initial.storedPath);
     updateVideoJob(jobId, { duration });
+    const requestedCount = Math.max(1, Number(initial.requestedClips || 3));
+    const requestedDuration = Math.max(8, Number(initial.clipDuration || 30));
+    const minimumPerClip = Math.max(6, requestedDuration - 2);
+    if (duration < minimumPerClip) {
+      throw new Error("video_insufficient_duration:" + duration.toFixed(2) + ":" + requestedCount + ":" + requestedDuration);
+    }
+    if (duration < minimumPerClip * requestedCount) {
+      throw new Error("video_insufficient_duration_for_count:" + duration.toFixed(2) + ":" + requestedCount + ":" + requestedDuration);
+    }
 
     const workDir = path.join(path.dirname(initial.storedPath), initial.id + "-work");
     fs.mkdirSync(workDir, { recursive: true });
@@ -1473,7 +1557,12 @@ async function processVideoJob(jobId) {
     selection.clips = selection.clips.map(clip => refineClipBoundary(
       clip, transcription.segments || [], speechSilences, duration, Number(initial.clipDuration || 30)
     ));
-    if (selection.clips.length !== Math.max(1,Number(initial.requestedClips || 3))) throw new Error("clip_selection_incomplete");
+    validateRequestedClipSet(
+      selection.clips,
+      duration,
+      Number(initial.requestedClips || 3),
+      Number(initial.clipDuration || 30)
+    );
 
     recordAgentExecution(client, "CREATOR", {
       function: "video-smart-clip-selection", trigger: "video-upload", status: "success",
@@ -1531,7 +1620,11 @@ async function processVideoJob(jobId) {
       updateVideoJob(jobId, { progress: 56 + Math.round((index + 1) / selection.clips.length * 38), message: "Criando e revisando corte " + (index + 1) + " de " + selection.clips.length + "…" });
     }
 
-    const weak = clips.filter(clip => clip.duration < Math.max(5,Number(initial.clipDuration || 30)-3) || clip.qualityScore < 45);
+    const shortClips = clips.filter(clip => clip.duration < Math.max(6,Number(initial.clipDuration || 30)-2));
+    if (shortClips.length) {
+      throw new Error("clip_duration_below_target:" + Number(shortClips[0].duration || 0).toFixed(2) + ":" + Number(initial.clipDuration || 30));
+    }
+    const weak = clips.filter(clip => clip.qualityScore < 45);
     recordAgentExecution(client, "AUDITOR", {
       function: "video-clip-quality-gate", trigger: "video-upload", status: weak.length ? "warning" : "success",
       model: "ig-human+hookscore+beats", quantity: clips.length, costUsd: 0,
@@ -1561,13 +1654,28 @@ async function processVideoJob(jobId) {
   } catch (error) {
     console.error("Video processing failed", jobId, error);
     const code = String(error?.message || error);
-    const smartUnavailable = ["smart_clip_analysis_unavailable","smart_transcript_required","ragnar_openai_not_available","openai_not_configured","clip_selection_incomplete","clip_selection_failed_"].some(item => code.includes(item));
+    let friendlyMessage = "Falha ao processar o vídeo.";
+    if (code.startsWith("video_insufficient_duration_for_count:")) {
+      const [, rawDuration, rawCount, rawTarget] = code.split(":");
+      const sourceSeconds = Math.round(Number(rawDuration || 0));
+      const count = Math.max(1, Number(rawCount || 1));
+      const target = Math.max(8, Number(rawTarget || 30));
+      const needed = Math.max(1, Math.round((target - 2) * count));
+      friendlyMessage = "Este vídeo tem cerca de " + sourceSeconds + "s. Para gerar " + count + " cortes independentes de " + target + "s, envie um vídeo com pelo menos cerca de " + needed + "s. O NEXUS não vai dividir o vídeo em pedaços curtos.";
+    } else if (code.startsWith("video_insufficient_duration:")) {
+      const [, rawDuration, , rawTarget] = code.split(":");
+      const sourceSeconds = Math.round(Number(rawDuration || 0));
+      const target = Math.max(8, Number(rawTarget || 30));
+      friendlyMessage = "Este vídeo tem cerca de " + sourceSeconds + "s e é curto demais para um corte de " + target + "s. Envie um vídeo mais longo ou escolha uma duração menor.";
+    } else if (code.startsWith("clip_duration_below_target:") || code.includes("clip_windows_overlap")) {
+      friendlyMessage = "A IA encontrou bons momentos, mas eles não atendem à duração solicitada sem sobrepor ou cortar a fala. Nenhum corte curto foi entregue. Tente novamente ou envie um vídeo mais longo.";
+    } else if (["smart_clip_analysis_unavailable","smart_transcript_required","ragnar_openai_not_available","openai_not_configured","clip_selection_incomplete","clip_selection_failed_"].some(item => code.includes(item))) {
+      friendlyMessage = "A análise inteligente não foi concluída. O NEXUS não fará corte técnico ou pegará os primeiros segundos; corrija a IA e tente novamente.";
+    }
     updateVideoJob(jobId, {
       status: "failed",
       progress: 100,
-      message: smartUnavailable
-        ? "A análise inteligente não foi concluída. O NEXUS não fará corte técnico ou pegará os primeiros segundos; corrija a IA e tente novamente."
-        : "Falha ao processar o vídeo.",
+      message: friendlyMessage,
       error: code.slice(0,900)
     });
   } finally {
