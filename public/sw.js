@@ -26,6 +26,15 @@ self.addEventListener("fetch",event=>{
     event.respondWith(fetch(request).catch(()=>caches.match("/portal.html?v=54")));
     return;
   }
+  const liveAsset=["/client.js","/client.css","/portal.html"].includes(url.pathname);
+  if(liveAsset){
+    event.respondWith(fetch(request).then(response=>{
+      const copy=response.clone();
+      caches.open(CACHE).then(cache=>cache.put(request,copy)).catch(()=>{});
+      return response;
+    }).catch(()=>caches.match(request)));
+    return;
+  }
   event.respondWith(caches.match(request).then(cached=>cached||fetch(request).then(response=>{
     const copy=response.clone();
     caches.open(CACHE).then(cache=>cache.put(request,copy)).catch(()=>{});
