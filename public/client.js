@@ -976,7 +976,7 @@ async function moveVideoJob(jobId,folderId){
 }
 
 function videoJobStatus(job){
-  const labels={queued:"RECEBIDO",uploaded:"RECEBIDO",transcribing:"TRANSCREVENDO",selecting:"ESCOLHENDO CORTES",cutting:"CRIANDO CORTES",ready:"PRONTO PARA REVISÃO",failed:"FALHOU"};
+  const labels={awaiting_configuration:"AGUARDANDO CONFIGURAÇÃO",queued:"RECEBIDO",uploaded:"RECEBIDO",transcribing:"TRANSCREVENDO",selecting:"ESCOLHENDO CORTES",cutting:"CRIANDO CORTES",ready:"PRONTO PARA REVISÃO",failed:"FALHOU"};
   return labels[job.status]||String(job.status||"RECEBIDO").toUpperCase();
 }
 function videoApprovalLabel(status){
@@ -1034,7 +1034,44 @@ function renderVideoJobs(data={}){
       </div>
       <div class="video-job-progress"><i style="width:${Math.max(2,Math.min(100,Number(job.progress||0)))}%"></i></div>`;
     if(!clips.length){
-      return header+`<div class="video-wait-card"><strong>${job.status==="failed"?"Não foi possível preparar os cortes.":"O NEXUS está trabalhando neste vídeo."}</strong><span>O vídeo não entra na agenda automática. Quando os cortes ficarem prontos, você decide aprovar, rejeitar ou agendar.</span></div></article>`;
+      const configurable=job.status==="awaiting_configuration"||job.status==="failed";
+      if(configurable){
+        const goal=job.goal||"viral",duration=String(job.clipDuration||30),format=job.outputFormat||"reel";
+        return header+`<div class="video-cutter-config">
+          <div class="video-cutter-config-head">
+            <div><strong>${job.status==="failed"?"Ajuste e tente novamente":"Configure os cortes antes de iniciar"}</strong><span>Escolha o tipo de corte, o tempo e quantas opções você quer. O NEXUS só começa depois da sua confirmação.</span></div>
+          </div>
+          <div class="video-cutter-config-grid">
+            <label><span>Tipo de corte</span><select data-video-job-goal>
+              <option value="viral" ${goal==="viral"?"selected":""}>Engajamento / viral</option>
+              <option value="sales" ${goal==="sales"?"selected":""}>Vendas</option>
+              <option value="educational" ${goal==="educational"?"selected":""}>Educativo</option>
+              <option value="podcast" ${goal==="podcast"?"selected":""}>Podcast / entrevista</option>
+              <option value="testimonial" ${goal==="testimonial"?"selected":""}>Depoimento</option>
+            </select></label>
+            <label><span>Tempo de cada corte</span><select data-video-job-duration>
+              <option value="15" ${duration==="15"?"selected":""}>15 segundos</option>
+              <option value="30" ${duration==="30"?"selected":""}>30 segundos</option>
+              <option value="45" ${duration==="45"?"selected":""}>45 segundos</option>
+              <option value="60" ${duration==="60"?"selected":""}>60 segundos</option>
+              <option value="90" ${duration==="90"?"selected":""}>90 segundos</option>
+            </select></label>
+            <label><span>Quantidade de opções</span><input data-video-job-clips type="number" min="1" max="12" value="${Math.max(1,Math.min(12,Number(job.requestedClips||3)))}"></label>
+            <label><span>Formato</span><select data-video-job-format>
+              <option value="reel" ${format==="reel"?"selected":""}>Reels / Stories 9:16</option>
+              <option value="feed" ${format==="feed"?"selected":""}>Feed 4:5</option>
+              <option value="square" ${format==="square"?"selected":""}>Quadrado 1:1</option>
+            </select></label>
+            <label class="video-config-check"><input data-video-job-subtitles type="checkbox" ${job.autoSubtitles!==false?"checked":""}><span>Legenda automática PT-BR quando o áudio estiver em outro idioma</span></label>
+            <label><span>Frase final (opcional)</span><input data-video-job-end-text maxlength="90" value="${escapeSupport(job.endText||"")}" placeholder="Ex.: Continua..."></label>
+            <label><span>Contato / CTA final (opcional)</span><input data-video-job-end-contact maxlength="90" value="${escapeSupport(job.endContact||"")}" placeholder="Ex.: WhatsApp..."></label>
+          </div>
+          ${job.status==="failed"&&job.message?`<p class="video-config-error">${escapeSupport(job.message)}</p>`:""}
+          <button type="button" class="connection-submit video-start-processing" data-video-start-processing="${escapeSupport(job.id)}">${job.status==="failed"?"Tentar gerar cortes novamente":"Criar cortes agora"}</button>
+          <div class="client-post-response" data-video-job-response></div>
+        </div></article>`;
+      }
+      return header+`<div class="video-wait-card"><strong>O NEXUS está trabalhando neste vídeo.</strong><span>O vídeo não entra na agenda automática. Quando os cortes ficarem prontos, você decide aprovar, rejeitar ou agendar.</span></div></article>`;
     }
     return header+`<div class="video-clip-grid">${clips.map(clip=>`
       <article class="video-clip-card ${bulkVideoSelection.has(videoClipKey(job.id,clip.id))?"video-bulk-selected":""}" data-video-clip="${escapeSupport(clip.id)}" data-video-job-id="${escapeSupport(job.id)}">
@@ -1081,6 +1118,47 @@ async function loadVideoJobs(){
     renderVideoJobs(await r.json());
   }catch{
     const root=$("#client-video-jobs");if(root)root.innerHTML='<p class="muted">Não foi possível carregar seus vídeos agora.</p>';
+  }
+}
+async function startVideoProcessing(button){
+  const jobId=String(button?.dataset.videoStartProcessing||"").trim();
+  const card=button?.closest?.("[data-video-job]");
+  if(!jobId||!card)return;
+  const response=card.querySelector("[data-video-job-response]");
+  const payload={
+    goal:card.querySelector("[data-video-job-goal]")?.value||"viral",
+    duration:card.querySelector("[data-video-job-duration]")?.value||30,
+    clips:card.querySelector("[data-video-job-clips]")?.value||3,
+    outputFormat:card.querySelector("[data-video-job-format]")?.value||"reel",
+    autoSubtitles:Boolean(card.querySelector("[data-video-job-subtitles]")?.checked),
+    endText:card.querySelector("[data-video-job-end-text]")?.value?.trim()||"",
+    endContact:card.querySelector("[data-video-job-end-contact]")?.value?.trim()||""
+  };
+  const clipCount=Math.max(1,Math.min(12,Number(payload.clips||3)));
+  const duration=Math.max(10,Math.min(90,Number(payload.duration||30)));
+  payload.clips=clipCount;payload.duration=duration;
+  button.disabled=true;
+  const original=button.textContent;
+  button.textContent="Iniciando…";
+  if(response){response.textContent="Confirmando configuração e iniciando a análise…";response.className="client-post-response";}
+  try{
+    const r=await fetch(`/api/portal/videos/${encodeURIComponent(jobId)}/process`,{
+      method:"POST",
+      credentials:"same-origin",
+      headers:{"content-type":"application/json",...(sessionAuth?{"x-nexus-session":sessionAuth}:{})},
+      body:JSON.stringify(payload)
+    });
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(d.message||d.error||"Não foi possível iniciar os cortes.");
+    if(response){response.textContent="Configuração confirmada. O NEXUS começou a analisar o vídeo.";response.className="client-post-response ok";}
+    if(d.job){
+      latestVideoJobs=latestVideoJobs.map(job=>job.id===jobId?d.job:job);
+      renderVideoJobs({jobs:latestVideoJobs,folders:latestVideoFolders});
+    }
+    setTimeout(()=>loadVideoJobs(),900);
+  }catch(error){
+    if(response){response.textContent=error.message;response.className="client-post-response error";}
+    button.disabled=false;button.textContent=original;
   }
 }
 function videoActionParts(button){
@@ -1175,6 +1253,7 @@ document.addEventListener("click",event=>{
   if(revision){sendRevision(revision.dataset.postRevisionSend,revision);return;}
   const own=event.target.closest("[data-post-own-save]");
   if(own){saveOwnPost(own.dataset.postOwnSave,own);return;}
+  const startProcessing=event.target.closest("[data-video-start-processing]");if(startProcessing){startVideoProcessing(startProcessing);return;}
   const approve=event.target.closest("[data-video-approve]");if(approve){setVideoApproval(approve,"approved");return;}
   const reject=event.target.closest("[data-video-reject]");if(reject){setVideoApproval(reject,"rejected");return;}
   const toggleEdit=event.target.closest("[data-video-toggle-edit]");if(toggleEdit){const panel=toggleEdit.closest("[data-video-clip]")?.querySelector(".video-edit-panel");if(panel)panel.hidden=!panel.hidden;return;}
@@ -1416,7 +1495,7 @@ async function importAuthorizedVideo(button,statusTarget=null){
       const others=latestVideoJobs.filter(job=>job.id!==importedJob.id);
       renderVideoJobs({jobs:[importedJob,...others],folders:latestVideoFolders});
     }
-    if(status){status.textContent="Vídeo recebido. O NEXUS já iniciou a análise para criar os melhores cortes.";status.className="save-status ok";}
+    if(status){status.textContent="Vídeo recebido e salvo na biblioteca. Configure os cortes no card antes de iniciar.";status.className="save-status ok";}
     showView("videos");
     const folderFilter=$("#video-folder-filter");if(folderFilter)folderFilter.value=videoFolderFilter;
     await loadVideoJobs();
@@ -1472,7 +1551,7 @@ async function importTrailerVideo(button){
       latestVideoJobs=[importedJob,...latestVideoJobs.filter(job=>job.id!==importedJob.id)];
       renderVideoJobs({jobs:latestVideoJobs,folders:latestVideoFolders});
     }
-    if(status){status.textContent="Vídeo recebido pelo NEXUS e adicionado à biblioteca. A análise dos cortes já começou.";status.className="save-status ok";}
+    if(status){status.textContent="Vídeo recebido e salvo na biblioteca. Agora escolha o tipo, o tempo e a quantidade de cortes antes de iniciar.";status.className="save-status ok";}
     showView("videos");
     const folderFilter=$("#video-folder-filter");if(folderFilter)folderFilter.value=videoFolderFilter;
     await loadVideoJobs();
