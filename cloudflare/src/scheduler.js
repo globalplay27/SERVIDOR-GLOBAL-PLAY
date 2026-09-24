@@ -1,3 +1,6 @@
+import { leadHunterConfig } from "./lead-hunter.js";
+import { ensureLeadSchema } from "./leads.js";
+
 function parseJson(raw, fallback = {}) {
   try {
     const value = JSON.parse(String(raw || ""));
@@ -31,6 +34,8 @@ function rowClient(row) {
   return {
     id: String(row.id || ""),
     name: String(row.name || ""),
+    niche: String(row.niche || ""),
+    instagram: String(row.instagram || ""),
     status: String(row.status || "online"),
     config: parseJson(row.config_json, {})
   };
@@ -94,7 +99,7 @@ export async function runSchedulerTick(env, scheduledAt = new Date()) {
   const now = scheduledAt instanceof Date ? scheduledAt : new Date(scheduledAt || Date.now());
   const nowMs = now.getTime();
   const rows = await env.DB.prepare(
-    `SELECT id, name, status, config_json FROM clients
+    `SELECT id, name, niche, instagram, status, config_json FROM clients
      WHERE status = 'online' ORDER BY id`
   ).all();
 
@@ -102,7 +107,8 @@ export async function runSchedulerTick(env, scheduledAt = new Date()) {
     clients: 0,
     queued: 0,
     cycles: 0,
-    publisherSweeps: 0
+    publisherSweeps: 0,
+    leadHunterRuns: 0
   };
 
   for (const raw of rows?.results || []) {
@@ -114,6 +120,23 @@ export async function runSchedulerTick(env, scheduledAt = new Date()) {
     const state = await schedulerState(env, client.id);
     const next = { ...state };
     const cycleIsDue = due(state.lastCycleQueuedAt, config.cycleMinutes, nowMs);
+
+    const hunterConfig = await leadHunterConfig(env, client);
+    let lastHunterAt = null;
+    if (hunterConfig.enabled && hunterConfig.autoRun) {
+      await ensureLeadSchema(env);
+      const lastHunter = await env.DB.prepare(
+        "SELECT finished_at FROM lead_hunter_runs WHERE client_id = ?1 ORDER BY COALESCE(finished_at, created_at) DESC LIMIT 1"
+      ).bind(client.id).first();
+      lastHunterAt = lastHunter?.finished_at || null;
+      if (due(lastHunterAt || state.lastHunterQueuedAt, hunterConfig.scanIntervalMinutes, nowMs)) {
+        if (await enqueue(env, client.id, "lead-hunter", now, { trigger: "scheduler" })) {
+          summary.queued += 1;
+          summary.leadHunterRuns += 1;
+        }
+        next.lastHunterQueuedAt = now.toISOString();
+      }
+    }
 
     if (cycleIsDue) {
       if (await enqueue(env, client.id, "agent-core-cycle", now, {
