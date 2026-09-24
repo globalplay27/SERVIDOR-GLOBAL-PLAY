@@ -2058,7 +2058,13 @@ function transcriptHeuristicSelections(segments, duration, count, targetDuration
   candidates.sort((a, b) => b.score - a.score);
   const selected = [];
   for (const candidate of candidates) {
-    if (selected.some(item => Math.max(item.start, candidate.start) < Math.min(item.end, candidate.end))) continue;
+    const duplicate = selected.some(item => {
+      const overlap=Math.max(0,Math.min(item.end,candidate.end)-Math.max(item.start,candidate.start));
+      const shortest=Math.max(0.001,Math.min(item.end-item.start,candidate.end-candidate.start));
+      return (Math.abs(item.start-candidate.start)<1.2 && Math.abs(item.end-candidate.end)<1.2)
+        || overlap/shortest>0.92;
+    });
+    if (duplicate) continue;
     selected.push(candidate);
     if (selected.length >= Math.max(1, Number(count || 3))) break;
   }
@@ -2455,6 +2461,7 @@ async function processVideoJob(jobId) {
     updateVideoJob(jobId, { duration });
     const requestedCount = Math.max(1, Number(initial.requestedClips || 3));
     const requestedDuration = Math.max(8, Number(initial.clipDuration || 30));
+    const effectiveRequestedCount = duration + 0.25 < requestedDuration ? 1 : requestedCount;
     const minimumPerClip = Math.max(3, Math.min(requestedDuration - 3, duration * 0.82));
     if (duration < 3) {
       throw new Error("video_insufficient_duration:" + duration.toFixed(2) + ":" + requestedCount + ":" + requestedDuration);
@@ -2493,15 +2500,17 @@ async function processVideoJob(jobId) {
 
     recordAgentExecution(client, "ESTRATEGISTA", {
       function: "video-content-strategy", trigger: "video-upload", status: "success",
-      model: "instagram-skills", quantity: Number(initial.requestedClips || 3), costUsd: 0,
-      message: "Objetivo, duração e formato definidos para a seleção dos melhores momentos.",
-      metadata: { jobId, goal: initial.goal, targetDuration: initial.clipDuration, requestedClips: initial.requestedClips }
+      model: "instagram-skills", quantity: effectiveRequestedCount, costUsd: 0,
+      message: effectiveRequestedCount === requestedCount
+        ? "Objetivo, duração e formato definidos para a seleção das alternativas."
+        : "O vídeo é menor que a duração pedida; será criada 1 opção com o conteúdo disponível.",
+      metadata: { jobId, goal: initial.goal, targetDuration: initial.clipDuration, requestedClips: initial.requestedClips, effectiveRequestedCount }
     });
 
     const selection = await selectSmartClips(
       transcription,
       duration,
-      Number(initial.requestedClips || 3),
+      effectiveRequestedCount,
       Number(initial.clipDuration || 30),
       initial.goal || "viral",
       initial.clientId
@@ -2519,7 +2528,7 @@ async function processVideoJob(jobId) {
     recordAgentExecution(client, "CREATOR", {
       function: "video-smart-clip-selection", trigger: "video-upload", status: "success",
       model: selection.model || "gpt-5.6-luna+ig-repurpose", quantity: selection.clips.length, costUsd: Number(selection.costUsd || 0),
-      message: selection.clips.length + " alternativas selecionadas pela IA, com duração-alvo de " + Math.min(Number(initial.clipDuration || 30), duration).toFixed(0) + "s e sem divisão técnica do vídeo.",
+      message: selection.clips.length + " alternativa(s) selecionada(s) pela IA, com duração-alvo de " + Math.min(Number(initial.clipDuration || 30), duration).toFixed(0) + "s e sem divisão técnica do vídeo.",
       metadata: { jobId, selections: selection.clips.map(item => ({ start:item.start,end:item.end,score:item.score,title:item.title })) }
     });
 
