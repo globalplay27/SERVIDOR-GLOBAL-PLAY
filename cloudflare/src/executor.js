@@ -1,5 +1,6 @@
 import { publishInstagramImage } from "./publisher.js";
 import { runLeadHunter } from "./lead-hunter.js";
+import { runAgentCoreCycle } from "./agent-runtime.js";
 
 function parseJson(raw, fallback = {}) {
   try {
@@ -21,7 +22,7 @@ async function duePosts(env, clientId, nowIso) {
      FROM post_ledger
      WHERE client_id = ?1
        AND approval_status = 'approved'
-       AND status IN ('scheduled', 'failed')
+       AND status IN ('ready', 'scheduled', 'failed')
        AND scheduled_for IS NOT NULL
        AND scheduled_for <= ?2
      ORDER BY scheduled_for ASC
@@ -153,14 +154,13 @@ export async function processDueJobs(env, scheduledAt = new Date()) {
         await updateJob(env, job.id, "completed", attempts);
         summary.completed += 1;
       } else if (job.kind === "agent-core-cycle") {
-        await updateJob(
-          env,
-          job.id,
-          "scheduled",
-          Math.max(0, attempts - 1),
-          "agent_core_runtime_pending_migration"
-        );
-        summary.deferred += 1;
+        const payload = parseJson(job.payload_json, {});
+        await runAgentCoreCycle(env, job.client_id, {
+          trigger: String(payload.trigger || "scheduler"),
+          agent: String(payload.agent || "all")
+        });
+        await updateJob(env, job.id, "completed", attempts);
+        summary.completed += 1;
       } else {
         await updateJob(env, job.id, "failed", attempts, "unsupported_job_kind");
         summary.failed += 1;
