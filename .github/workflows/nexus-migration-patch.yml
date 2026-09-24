@@ -30,12 +30,13 @@ jobs:
           server_path = Path('server.js')
           server = server_path.read_text()
           pattern = re.compile(r'function clientVideoBridge\(clientId\) \{\n  const clients = loadClients\(\);\n  if \(clientId === "ragnar-one"\) \{.*?\n  \}\n\n  // Global Play', re.S)
-          replacement = '''function clientVideoBridge(clientId) {
-            const clients = loadClients();
-            // Ragnar é isolado: sem chave OpenAI própria, falha localmente e nunca retorna ao agente antigo.
-            if (clientId === "ragnar-one") return null;
-
-            // Global Play'''
+          replacement = (
+              'function clientVideoBridge(clientId) {\n'
+              '  const clients = loadClients();\n'
+              '  // Ragnar é isolado: sem chave OpenAI própria, falha localmente e nunca retorna ao agente antigo.\n'
+              '  if (clientId === "ragnar-one") return null;\n\n'
+              '  // Global Play'
+          )
           server_new, count = pattern.subn(replacement, server, count=1)
           if count != 1:
               raise SystemExit(f'clientVideoBridge patch count={count}')
@@ -43,26 +44,30 @@ jobs:
 
           client_path = Path('public/client.js')
           client = client_path.read_text()
-          if 'function clientHasVideoTools(' not in client:
-              marker = 'function showView(name){'
-              helper = '''function clientHasVideoTools(client=currentClient){const niche=String(client?.niche||"").trim().toLowerCase();return niche.includes("streaming")||niche.includes("iptv");}\n'''
-              if marker not in client:
-                  raise SystemExit('showView marker missing')
-              client = client.replace(marker, helper + 'function showView(name){if((name==="videos"||name==="trailers")&&!clientHasVideoTools())name="overview";', 1)
-          else:
+          if 'function clientHasVideoTools(' in client:
               raise SystemExit('clientHasVideoTools already exists; refusing duplicate patch')
+          marker = 'function showView(name){'
+          helper = 'function clientHasVideoTools(client=currentClient){const niche=String(client?.niche||"").trim().toLowerCase();return niche.includes("streaming")||niche.includes("iptv");}\n'
+          if marker not in client:
+              raise SystemExit('showView marker missing')
+          client = client.replace(
+              marker,
+              helper + 'function showView(name){if((name==="videos"||name==="trailers")&&!clientHasVideoTools())name="overview";',
+              1
+          )
 
           render_marker = 'function renderClient(c){\n  currentClient=c;\n'
-          render_insert = '''function renderClient(c){
-            currentClient=c;
-            const videoTools=clientHasVideoTools(c);
-            ["videos","trailers"].forEach(view=>{
-              const button=document.querySelector('[data-view="'+view+'"]');
-              const panel=document.querySelector('#view-'+view);
-              if(button)button.hidden=!videoTools;
-              if(panel&&!videoTools)panel.hidden=true;
-            });
-'''
+          render_insert = (
+              'function renderClient(c){\n'
+              '  currentClient=c;\n'
+              '  const videoTools=clientHasVideoTools(c);\n'
+              '  ["videos","trailers"].forEach(view=>{\n'
+              '    const button=document.querySelector(\'[data-view="\'+view+\'"]\');\n'
+              '    const panel=document.querySelector(\'#view-\'+view);\n'
+              '    if(button)button.hidden=!videoTools;\n'
+              '    if(panel&&!videoTools)panel.hidden=true;\n'
+              '  });\n'
+          )
           if render_marker not in client:
               raise SystemExit('renderClient marker missing')
           client = client.replace(render_marker, render_insert, 1)
