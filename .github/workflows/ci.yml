@@ -2,7 +2,7 @@ name: NEXUS CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, cloudflare-migration]
   pull_request:
 
 jobs:
@@ -19,3 +19,9 @@ jobs:
         run: node --check instagram-intelligence.js
       - name: Check client syntax
         run: node --check public/client.js
+      - name: Check Cloudflare Worker syntax
+        shell: bash
+        run: |
+          for file in cloudflare/src/*.js; do
+            node --check "$file"
+          done
