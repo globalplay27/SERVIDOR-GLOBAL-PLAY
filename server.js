@@ -5058,8 +5058,22 @@ function tokenClientForRequest(req) {
   const cookies = parseCookies(req);
   const token = String(cookies.nexus_session || req.headers["x-nexus-session"] || "");
   if (!token) return null;
-  const record = portalSessions.get(token);
-  if (!record || record.expiresAt < Date.now()) {
+
+  let record = portalSessions.get(token);
+  if (!record) {
+    // During Railway rolling deploys the new process can start before its
+    // in-memory session map sees a session written by the previous process.
+    // Re-read the persistent ledger on a miss so an already logged-in client
+    // is not kicked out just because the container changed.
+    const persisted = readObjectFile(portalSessionsFile, {});
+    const diskRecord = persisted && typeof persisted === "object" ? persisted[token] : null;
+    if (diskRecord && Number(diskRecord.expiresAt || 0) > Date.now()) {
+      record = diskRecord;
+      portalSessions.set(token, record);
+    }
+  }
+
+  if (!record || Number(record.expiresAt || 0) < Date.now()) {
     if (record) deletePortalSession(token);
     return null;
   }
