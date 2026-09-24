@@ -1524,10 +1524,16 @@ async function runRadarAgent(client, options = {}) {
   const medianViewsValue = numericMedian(viewValues);
   const medianEngagementRate = numericMedian(engagementRates);
   const medianAmplificationRate = numericMedian(amplificationRates);
-  const followersCount = Math.max(0, Number(snapshot.followersCount || 0));
   const previousRadarState = agentCoreStateFor(client.id)?.radar || {};
   const previousFollowersCount = Math.max(0, Number(previousRadarState?.followersCount || 0));
-  const followersDelta = previousFollowersCount > 0 ? followersCount - previousFollowersCount : null;
+  const rawFollowersCount = Math.max(0, Number(snapshot.followersCount || 0));
+  const reliableFollowerSnapshot = rawFollowersCount > 0 && String(snapshot.source || "") !== "local";
+  const followersCount = reliableFollowerSnapshot
+    ? rawFollowersCount
+    : (previousFollowersCount > 0 ? previousFollowersCount : rawFollowersCount);
+  const followersDelta = reliableFollowerSnapshot && previousFollowersCount > 0
+    ? followersCount - previousFollowersCount
+    : null;
   const previousGrowthGoal = previousRadarState?.growthGoal && typeof previousRadarState.growthGoal === "object" ? previousRadarState.growthGoal : {};
   const growthBaselineFollowers = Math.max(1, Number(previousGrowthGoal.baselineFollowers || followersCount || 1));
   const growthBaselineAt = String(previousGrowthGoal.baselineAt || startedAt);
@@ -1642,7 +1648,9 @@ async function runRadarAgent(client, options = {}) {
       profileScore.score < 70 ? "O perfil ainda perde pontos de conversão; priorizar " + (profileScore.priorities[0] || "clareza da oferta") + "." : "Perfil com boa base; focar em conteúdo que gere visitas ao perfil e seguidores.",
       followersDelta !== null
         ? "Variação de seguidores desde o último ciclo: " + (followersDelta >= 0 ? "+" : "") + followersDelta + "."
-        : "KPI principal: crescimento de seguidores; iniciando linha de base para medir variação entre ciclos.",
+        : (reliableFollowerSnapshot
+          ? "KPI principal: crescimento de seguidores; iniciando linha de base para medir variação entre ciclos."
+          : "Leitura de seguidores indisponível nesta rodada; mantendo a última contagem confiável sem registrar queda falsa."),
       "Meta MOONSHOT: atingir 1.000.000 de seguidores em 28 dias. Estado atual: " + growthGoal.status + "; alvo " + growthGoal.targetFollowers + "; ritmo necessário " + growthGoal.neededFollowersPerDay + " seguidores/dia.",
       "KPI principal: crescimento de seguidores. Priorizar compartilhamentos, salvamentos, visitas ao perfil e conteúdo recorrente em série.",
       "Comparar desempenho com a mediana da própria conta, não apenas com views brutas."
