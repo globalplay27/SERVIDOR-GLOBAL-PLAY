@@ -184,6 +184,25 @@ function bridgePortalClientForRequest(req) {
   return loadClients().find(client => client.id === clientId) || null;
 }
 
+function videoUploadTicketClientForRequest(req) {
+  if (String(req.method || "").toUpperCase() !== "POST") return null;
+  const parsed = new URL(req.url, "http://localhost");
+  if (parsed.pathname !== "/api/portal/videos") return null;
+
+  const secret = String(process.env.NEXUS_RAILWAY_BRIDGE_SECRET || "").trim();
+  const clientId = String(parsed.searchParams.get("bridge_client") || "").trim();
+  const expires = Number(parsed.searchParams.get("bridge_exp") || 0);
+  const supplied = String(parsed.searchParams.get("bridge_sig") || "").trim();
+  if (!secret || !clientId || !supplied || !Number.isFinite(expires)) return null;
+
+  const now = Math.floor(Date.now() / 1000);
+  if (expires < now || expires > now + 15 * 60) return null;
+  const payload = "video-upload|" + clientId + "|" + String(expires);
+  const expected = crypto.createHmac("sha256", secret).update(payload).digest("base64url");
+  if (!safeEqualText(supplied, expected)) return null;
+  return loadClients().find(client => client.id === clientId) || null;
+}
+
 function readBody(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -5228,6 +5247,9 @@ function portalClientForRequest(req) {
   const bridgeClient = bridgePortalClientForRequest(req);
   if (bridgeClient) return bridgeClient;
 
+  const uploadTicketClient = videoUploadTicketClientForRequest(req);
+  if (uploadTicketClient) return uploadTicketClient;
+
   const credentials = parseBasicAuth(req);
   if (!credentials) return null;
   return clientFromCredentials(credentials.username, credentials.password);
@@ -5351,6 +5373,27 @@ function slug(value) {
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+
+  const signedVideoUpload = url.pathname === "/api/portal/videos"
+    && Boolean(url.searchParams.get("bridge_client"))
+    && Boolean(url.searchParams.get("bridge_exp"))
+    && Boolean(url.searchParams.get("bridge_sig"));
+
+  if (signedVideoUpload && req.method === "OPTIONS") {
+    res.writeHead(204, {
+      "access-control-allow-origin": "*",
+      "access-control-allow-methods": "POST, OPTIONS",
+      "access-control-allow-headers": "content-type,x-file-name,x-video-goal,x-clip-duration,x-requested-clips,x-output-format,x-auto-subtitles,x-subtitle-size,x-subtitle-color,x-subtitle-weight,x-subtitle-bg,x-video-folder,x-content-title,x-video-end-text,x-video-end-contact",
+      "access-control-max-age": "600",
+      "content-length": "0"
+    });
+    return res.end();
+  }
+
+  if (signedVideoUpload && videoUploadTicketClientForRequest({ ...req, method: "POST" })) {
+    res.setHeader("access-control-allow-origin", "*");
+    res.setHeader("access-control-expose-headers", "content-type");
+  }
 
   if (url.pathname === "/" && req.method === "GET") {
     res.writeHead(303, {
