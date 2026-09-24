@@ -278,6 +278,22 @@
       </section>
     </main>
   </div>
-  <script src="/app.js?v=15" defer></script>
+  <dialog id="portal-access-dialog" class="nexus-dialog">
+    <form id="portal-access-form" method="dialog">
+      <div class="dialog-head">
+        <div><p class="eyebrow">ACESSO DO CLIENTE</p><h2 id="portal-access-title">Definir acesso</h2></div>
+        <button type="button" id="portal-access-close" class="icon-btn" aria-label="Fechar">×</button>
+      </div>
+      <input type="hidden" id="portal-access-client-id">
+      <label>Usuário<input id="portal-access-username" autocomplete="username" required></label>
+      <label>Senha<input id="portal-access-password" type="password" autocomplete="new-password" minlength="8" required></label>
+      <div class="dialog-actions">
+        <button type="button" id="portal-access-cancel" class="ghost">Cancelar</button>
+        <button type="submit" class="primary">Salvar acesso</button>
+      </div>
+      <span id="portal-access-status" class="form-status"></span>
+    </form>
+  </dialog>
+  <script src="/app.js?v=16" defer></script>
 </body>
 </html>
