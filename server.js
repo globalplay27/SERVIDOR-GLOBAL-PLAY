@@ -1479,6 +1479,8 @@ async function runRadarAgent(client, options = {}) {
   const medianEngagementRate = numericMedian(engagementRates);
   const medianAmplificationRate = numericMedian(amplificationRates);
   const followersCount = Math.max(0, Number(snapshot.followersCount || 0));
+  const previousFollowersCount = Math.max(0, Number(agentCoreStateFor(client.id)?.radar?.followersCount || 0));
+  const followersDelta = previousFollowersCount > 0 ? followersCount - previousFollowersCount : null;
   const medianReachRate = followersCount > 0 && medianReachValue > 0 ? medianReachValue / followersCount : null;
 
   const diagnosis = [];
@@ -1525,6 +1527,8 @@ async function runRadarAgent(client, options = {}) {
     scannedMedia: snapshot.items.length,
     measuredMedia: measured.length,
     followersCount,
+    previousFollowersCount,
+    followersDelta,
     topTerms,
     bestRecent,
     outliers: reliableOutliers.slice(0,5).map(item => ({
@@ -1541,6 +1545,7 @@ async function runRadarAgent(client, options = {}) {
     metrics: {
       medianViews: medianViewsValue,
       medianReach: medianReachValue,
+      followerDelta: followersDelta,
       medianReachRate: medianReachRate === null ? null : Math.round(medianReachRate * 10000) / 100,
       medianEngagementRate: Math.round(medianEngagementRate * 10000) / 100,
       medianAmplificationRate: Math.round(medianAmplificationRate * 10000) / 100,
@@ -1557,6 +1562,9 @@ async function runRadarAgent(client, options = {}) {
       bestRecent?.caption ? "Reaproveitar o mecanismo do melhor conteúdo, sem copiar o criativo." : "Testar ganchos diferentes e medir a resposta da própria conta.",
       topTerms[0]?.term ? "Explorar novas abordagens para o tema " + topTerms[0].term + "." : "Usar o nicho e as dúvidas reais dos leads como matéria-prima.",
       profileScore.score < 70 ? "O perfil ainda perde pontos de conversão; priorizar " + (profileScore.priorities[0] || "clareza da oferta") + "." : "Perfil com boa base; focar em conteúdo que gere visitas ao perfil e seguidores.",
+      followersDelta !== null
+        ? "Variação de seguidores desde o último ciclo: " + (followersDelta >= 0 ? "+" : "") + followersDelta + "."
+        : "KPI principal: crescimento de seguidores; iniciando linha de base para medir variação entre ciclos.",
       "KPI principal: crescimento de seguidores. Priorizar compartilhamentos, salvamentos, visitas ao perfil e conteúdo recorrente em série.",
       "Comparar desempenho com a mediana da própria conta, não apenas com views brutas."
     ]
@@ -1568,6 +1576,7 @@ async function runRadarAgent(client, options = {}) {
     scannedMedia: output.scannedMedia,
     measuredMedia: output.measuredMedia,
     followersCount,
+    followersDelta,
     metrics: output.metrics,
     bestFormat: formatStats[0]?.mediaType || "",
     formatStats: formatStats.slice(0, 4),
