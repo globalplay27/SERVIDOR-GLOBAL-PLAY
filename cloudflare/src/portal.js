@@ -8,6 +8,7 @@ import {
 } from "./auth.js";
 import { getClient, upsertClient, portalClientView } from "./clients.js";
 import { tokenUsageToday } from "./openai.js";
+import { startInstagramOAuth, handleInstagramOAuthCallback } from "./instagram.js";
 
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
@@ -201,6 +202,9 @@ async function patchClientConfig(env, client, patch) {
 }
 
 export async function handlePortalApi(request, env, url) {
+  const instagramCallback = await handleInstagramOAuthCallback(env, request, url);
+  if (instagramCallback) return instagramCallback;
+
   if (url.pathname === "/portal-login" && request.method === "POST") {
     const form = await request.formData().catch(() => null);
     const username = String(form?.get("username") || "").trim();
@@ -308,6 +312,22 @@ export async function handlePortalApi(request, env, url) {
   if (url.pathname === "/api/portal/connections" && request.method === "GET") {
     return json({ ok: true, connections: await connectionSummary(env, client.id) });
   }
+
+  if (url.pathname === "/api/portal/instagram/start" && request.method === "GET") {
+    try {
+      return json({ ok: true, ...(await startInstagramOAuth(env, request, client.id)) });
+    } catch (error) {
+      const code = error instanceof Error ? error.message : String(error);
+      if (code === "instagram_nexus_not_configured") {
+        return json({
+          error: code,
+          message: "O administrador ainda precisa ativar a conexão central do Instagram."
+        }, 503);
+      }
+      return json({ error: code || "instagram_oauth_start_failed" }, 400);
+    }
+  }
+
 
   if (url.pathname === "/api/portal/support") {
     if (request.method === "GET") {
