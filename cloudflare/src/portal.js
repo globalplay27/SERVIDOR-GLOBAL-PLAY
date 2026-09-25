@@ -18,7 +18,7 @@ import { leadsForClient, leadHunterSummary } from "./leads.js";
 import { leadHunterView, saveLeadHunterConfig, runLeadHunter, discardLead } from "./lead-hunter.js";
 import { createVideoFolder, renameVideoFolder, deleteVideoFolder, patchVideoJob, deleteVideoJob, setClipApproval, selectClip, scheduleClip, bulkScheduleClips } from "./video-library.js";
 import { enqueueVideoProcessing, processVideoJob, regenerateVideoClip, publishVideoClipNow } from "./video-processing.js";
-import { createR2VideoUpload, uploadR2VideoPart, completeR2VideoUpload, abortR2VideoUpload, importR2VideoFromUrl, importR2PublicTrailer, createR2PublicTrailerImportJob } from "./r2-video-upload.js";
+import { createR2VideoUpload, uploadR2VideoPart, completeR2VideoUpload, abortR2VideoUpload, importR2VideoFromUrl, importR2PublicTrailer, createR2PublicTrailerImportJob, processR2PublicTrailerImportJob } from "./r2-video-upload.js";
 import { decidePost, requestPostRevision, saveOwnPostContent, publishPostNow } from "./posts.js";
 
 function json(data, status = 200, headers = {}) {
@@ -528,6 +528,14 @@ export async function handlePortalApi(request, env, url, ctx) {
           await processVideoJob(env, client.id, imported.jobId).catch(() => {});
         }
       }
+      if (isTrailerImport && ctx?.waitUntil) {
+        ctx.waitUntil((async () => {
+          const done = await processR2PublicTrailerImportJob(env, client.id, imported.jobId).catch(() => null);
+          if (done?.ok) {
+            await processVideoJob(env, client.id, imported.jobId).catch(() => {});
+          }
+        })());
+      }
       const jobs = await listVideos(env, client.id);
       return json({
         ok: true,
@@ -718,8 +726,17 @@ export async function handlePortalApi(request, env, url, ctx) {
     const body = await request.json().catch(() => ({}));
     const jobId = decodeURIComponent(videoProcessMatch[1]);
     try {
-      await enqueueVideoProcessing(env, client.id, jobId, body);
-      if (ctx?.waitUntil) ctx.waitUntil(processVideoJob(env, client.id, jobId).catch(() => {}));
+      const queued = await enqueueVideoProcessing(env, client.id, jobId, body);
+      if (queued?.status === "importing") {
+        if (ctx?.waitUntil) {
+          ctx.waitUntil((async () => {
+            const done = await processR2PublicTrailerImportJob(env, client.id, jobId).catch(() => null);
+            if (done?.ok) await processVideoJob(env, client.id, jobId).catch(() => {});
+          })());
+        }
+      } else if (ctx?.waitUntil) {
+        ctx.waitUntil(processVideoJob(env, client.id, jobId).catch(() => {}));
+      }
       const jobs = await listVideos(env, client.id);
       return json({ ok: true, job: jobs.find(job => job.id === jobId) || null }, 202);
     } catch (error) {
