@@ -132,6 +132,7 @@ async function health(env) {
   return json({
     ok: d1,
     service: "Servidor Nexus",
+    releaseMarker: "2026-09-25-continuous-test-3",
     runtime: "cloudflare-workers",
     migrationMode: false,
     database: d1 ? "d1-ready" : "d1-unavailable",
