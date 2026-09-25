@@ -138,7 +138,6 @@ class _LoginPageState extends State<LoginPage> {
   final username = TextEditingController();
   final password = TextEditingController();
   bool loading = false;
-  bool masterMode = false;
   String? error;
 
   Future<void> _login() async {
@@ -151,12 +150,11 @@ class _LoginPageState extends State<LoginPage> {
       error = null;
     });
     try {
-      if (masterMode) {
-        await widget.api.loginMaster(username.text, password.text);
+      final result = await widget.api.loginUnified(username.text, password.text);
+      if (result.isMaster) {
         widget.onMasterLoggedIn();
       } else {
-        final client = await widget.api.login(username.text, password.text);
-        widget.onLoggedIn(client);
+        widget.onLoggedIn(result.client!);
       }
     } catch (e) {
       if (mounted) {
@@ -196,28 +194,6 @@ class _LoginPageState extends State<LoginPage> {
                             ),
                       ),
                       const SizedBox(height: 18),
-                      SegmentedButton<bool>(
-                        segments: const [
-                          ButtonSegment<bool>(
-                            value: false,
-                            icon: Icon(Icons.person_outline),
-                            label: Text('Cliente'),
-                          ),
-                          ButtonSegment<bool>(
-                            value: true,
-                            icon: Icon(Icons.admin_panel_settings_outlined),
-                            label: Text('Master'),
-                          ),
-                        ],
-                        selected: {masterMode},
-                        onSelectionChanged: loading
-                            ? null
-                            : (value) => setState(() {
-                                  masterMode = value.first;
-                                  error = null;
-                                }),
-                      ),
-                      const SizedBox(height: 18),
                       TextField(
                         controller: username,
                         textInputAction: TextInputAction.next,
@@ -249,7 +225,7 @@ class _LoginPageState extends State<LoginPage> {
                                 child: CircularProgressIndicator(strokeWidth: 2),
                               )
                             : const Icon(Icons.login),
-                        label: Text(masterMode ? 'Entrar no Master' : 'Entrar como Cliente'),
+                        label: const Text('Entrar'),
                       ),
                     ],
                   ),
