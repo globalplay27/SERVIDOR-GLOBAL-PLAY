@@ -2,6 +2,9 @@ const encoder = new TextEncoder();
 
 export const PORTAL_SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
 export const MASTER_SESSION_TTL_SECONDS = 12 * 60 * 60;
+export const AUTH_LOGIN_MAX_ATTEMPTS = 5;
+export const AUTH_LOGIN_WINDOW_SECONDS = 15 * 60;
+const PORTAL_SESSION_RENEW_THRESHOLD_SECONDS = 7 * 24 * 60 * 60;
 
 function bytesToHex(bytes) {
   return [...bytes].map(value => value.toString(16).padStart(2, "0")).join("");
@@ -255,6 +258,17 @@ async function ensureAuthRuntimeSchema(env) {
     )`
   ).run();
 
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS auth_login_attempts (
+      scope TEXT NOT NULL,
+      ip_hash TEXT NOT NULL,
+      window_started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY(scope, ip_hash)
+    )`
+  ).run();
+
   await ensureMasterUserSchema(env);
 
   await env.DB.prepare(
@@ -313,6 +327,81 @@ async function upsertMasterUser(env, username, password) {
        password_hash = excluded.password_hash,
        updated_at = CURRENT_TIMESTAMP`
   ).bind(cleanUsername, record.algorithm, record.salt, record.hash).run();
+}
+
+function requestIp(request) {
+  const direct = String(request.headers.get("cf-connecting-ip") || "").trim();
+  if (direct) return direct;
+  const forwarded = String(request.headers.get("x-forwarded-for") || "").split(",")[0].trim();
+  return forwarded || "unknown";
+}
+
+async function authRateKey(request, scope) {
+  return {
+    scope: String(scope || "login").slice(0, 80),
+    ipHash: await sha256Hex(requestIp(request))
+  };
+}
+
+export async function loginRateLimitStatus(env, request, scope) {
+  await ensureAuthRuntimeSchema(env);
+  const key = await authRateKey(request, scope);
+  const row = await env.DB.prepare(
+    `SELECT attempts, window_started_at
+     FROM auth_login_attempts
+     WHERE scope = ?1 AND ip_hash = ?2
+     LIMIT 1`
+  ).bind(key.scope, key.ipHash).first();
+
+  if (!row) return { allowed: true, retryAfter: 0, remaining: AUTH_LOGIN_MAX_ATTEMPTS };
+
+  const startedAt = new Date(String(row.window_started_at || "")).getTime();
+  const ageMs = Number.isFinite(startedAt) ? Date.now() - startedAt : Number.POSITIVE_INFINITY;
+  if (ageMs >= AUTH_LOGIN_WINDOW_SECONDS * 1000) {
+    await env.DB.prepare(
+      "DELETE FROM auth_login_attempts WHERE scope = ?1 AND ip_hash = ?2"
+    ).bind(key.scope, key.ipHash).run().catch(() => {});
+    return { allowed: true, retryAfter: 0, remaining: AUTH_LOGIN_MAX_ATTEMPTS };
+  }
+
+  const attempts = Math.max(0, Number(row.attempts || 0));
+  const blocked = attempts >= AUTH_LOGIN_MAX_ATTEMPTS;
+  const retryAfter = blocked
+    ? Math.max(1, Math.ceil((AUTH_LOGIN_WINDOW_SECONDS * 1000 - Math.max(0, ageMs)) / 1000))
+    : 0;
+
+  return {
+    allowed: !blocked,
+    retryAfter,
+    remaining: Math.max(0, AUTH_LOGIN_MAX_ATTEMPTS - attempts)
+  };
+}
+
+export async function recordLoginFailure(env, request, scope) {
+  await ensureAuthRuntimeSchema(env);
+  const key = await authRateKey(request, scope);
+  await env.DB.prepare(
+    `INSERT INTO auth_login_attempts(scope, ip_hash, window_started_at, attempts, updated_at)
+     VALUES(?1, ?2, CURRENT_TIMESTAMP, 1, CURRENT_TIMESTAMP)
+     ON CONFLICT(scope, ip_hash) DO UPDATE SET
+       attempts = CASE
+         WHEN datetime(auth_login_attempts.window_started_at) <= datetime('now', '-15 minutes') THEN 1
+         ELSE auth_login_attempts.attempts + 1
+       END,
+       window_started_at = CASE
+         WHEN datetime(auth_login_attempts.window_started_at) <= datetime('now', '-15 minutes') THEN CURRENT_TIMESTAMP
+         ELSE auth_login_attempts.window_started_at
+       END,
+       updated_at = CURRENT_TIMESTAMP`
+  ).bind(key.scope, key.ipHash).run();
+}
+
+export async function clearLoginFailures(env, request, scope) {
+  await ensureAuthRuntimeSchema(env);
+  const key = await authRateKey(request, scope);
+  await env.DB.prepare(
+    "DELETE FROM auth_login_attempts WHERE scope = ?1 AND ip_hash = ?2"
+  ).bind(key.scope, key.ipHash).run().catch(() => {});
 }
 
 export function parseCookies(request) {
@@ -493,18 +582,28 @@ export async function resolvePortalSession(env, request) {
      FROM portal_sessions WHERE token_hash = ?1 LIMIT 1`
   ).bind(tokenHash).first();
   if (!row) return null;
-  const expires = row.expires_at ? new Date(row.expires_at).getTime() : 0;
+  let expiresAt = row.expires_at || null;
+  let expires = expiresAt ? new Date(expiresAt).getTime() : 0;
   if (expires && expires < Date.now()) {
     await env.DB.prepare("DELETE FROM portal_sessions WHERE token_hash = ?1").bind(tokenHash).run().catch(() => {});
     return null;
   }
+
+  if (expires && expires - Date.now() <= PORTAL_SESSION_RENEW_THRESHOLD_SECONDS * 1000) {
+    expiresAt = new Date(Date.now() + PORTAL_SESSION_TTL_SECONDS * 1000).toISOString();
+    expires = new Date(expiresAt).getTime();
+    await env.DB.prepare(
+      "UPDATE portal_sessions SET expires_at = ?2 WHERE token_hash = ?1"
+    ).bind(tokenHash, expiresAt).run().catch(() => {});
+  }
+
   let payload = {};
   try { payload = JSON.parse(String(row.payload_json || "{}")); } catch {}
   return {
     token,
     tokenHash,
     clientId: String(row.client_id || ""),
-    expiresAt: row.expires_at || null,
+    expiresAt,
     persistent: Number(row.persistent || 0) === 1,
     payload
   };
