@@ -1,7 +1,7 @@
 name: nexus_ai
 publish_to: "none"
 description: NEXUS AI - Android and Windows client
-version: 2.2.0+3
+version: 2.3.0+4
 
 environment:
   sdk: ">=3.4.0 <4.0.0"
@@ -13,6 +13,8 @@ dependencies:
   flutter_secure_storage: ^9.2.2
   shared_preferences: ^2.3.2
   url_launcher: ^6.3.1
+  file_picker: ^8.1.7
+  video_player: ^2.9.2
 
 flutter:
   uses-material-design: true
