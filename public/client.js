@@ -11,7 +11,7 @@ function showPortalLogin(message="Sua sessão precisa ser renovada. Entre novame
 }
 
 function nextPostTime(times=[]){if(!Array.isArray(times)||!times.length)return"—";const parts=new Intl.DateTimeFormat("pt-BR",{timeZone:"America/Sao_Paulo",hour:"2-digit",minute:"2-digit",hour12:false}).formatToParts(new Date());const now=Number(parts.find(p=>p.type==="hour")?.value||0)*60+Number(parts.find(p=>p.type==="minute")?.value||0);const sorted=times.map(v=>{const[h,m]=String(v).split(":").map(Number);return{v,m:h*60+m}}).filter(x=>Number.isFinite(x.m)).sort((a,b)=>a.m-b.m);return sorted.find(x=>x.m>now)?.v||sorted[0]?.v||"—";}
-function showView(name){$$("[data-view]").forEach(b=>b.classList.toggle("active",b.dataset.view===name));["overview","posts","capture","leads","videos","trailers","posting","support","setup"].forEach(v=>{const el=$("#view-"+v);if(el)el.hidden=v!==name;});if(name==="support")loadSupportTickets();if(name==="posts")loadClientPosts();if(name==="capture")loadLeadHunter();if(name==="leads")loadClientLeads();if(name==="videos"){ensureBulkVideoScheduler();loadVideoJobs();}if(name==="overview"){loadAgentTeam();loadTokenUsage();}}
+function showView(name){$("[data-view]").forEach(b=>b.classList.toggle("active",b.dataset.view===name));["overview","posts","capture","leads","instagram","videos","trailers","posting","support","setup"].forEach(v=>{const el=$("#view-"+v);if(el)el.hidden=v!==name;});if(name==="support")loadSupportTickets();if(name==="posts")loadClientPosts();if(name==="capture")loadLeadHunter();if(name==="leads")loadClientLeads();if(name==="instagram")loadConnections();if(name==="videos"){ensureBulkVideoScheduler();loadVideoJobs();}if(name==="overview"){loadAgentTeam();loadTokenUsage();}}
 function onboardingKeys(){return["instagram","creativeProfile"];}
 function setupPercent(){const o=currentClient?.onboarding||{};const keys=onboardingKeys();return Math.round(keys.filter(k=>o[k]).length/keys.length*100);}
 function instagramIsConnected(client=currentClient){
@@ -22,22 +22,36 @@ function instagramIsConnected(client=currentClient){
     || client?.onboarding?.instagram===true
   );
 }
+function formatInstagramDate(value){
+  if(!value)return "—";
+  try{
+    return new Intl.DateTimeFormat("pt-BR",{timeZone:"America/Sao_Paulo",dateStyle:"short",timeStyle:"short"}).format(new Date(value));
+  }catch{return "—";}
+}
 function renderInstagramConnectionState(){
   const connected=instagramIsConnected();
-  const handle=String(currentClient?.instagram||"").trim();
+  const connection=currentClient?.connections?.instagram||currentClient?.connections?.meta||{};
+  const handle=String(currentClient?.instagram||connection?.label||"").trim();
+  const scopes=Array.isArray(connection?.scopes)?connection.scopes:[];
+
   const card=$("#instagram-card");
   const igButton=$("#instagram-connect");
   const igStatus=$("#instagram-connect-status");
   const setupIg=$("#setup-instagram-connect");
   const setupStatus=$("#setup-instagram-status");
+  const pageButton=$("#instagram-page-connect");
+  const pageStatus=$("#instagram-page-status");
+  const pageChip=$("#instagram-page-chip");
 
   if(card)card.textContent=connected?(handle||"Instagram conectado"):"Aguardando conexão";
+
   if(igButton){
     igButton.disabled=connected;
     igButton.textContent=connected?"Instagram conectado":"Conectar Instagram";
     igButton.classList.toggle("connected",connected);
   }
   if(igStatus)igStatus.textContent=connected?(handle?handle+" autorizado":"Conta autorizada"):"";
+
   if(setupIg){
     setupIg.disabled=connected;
     setupIg.textContent=connected?"Instagram conectado":"Conectar Instagram";
@@ -46,6 +60,47 @@ function renderInstagramConnectionState(){
   if(setupStatus){
     setupStatus.textContent=connected?(handle?handle+" autorizado":"Conta autorizada"):"Aguardando autorização";
     setupStatus.className="provider-line"+(connected?" connected":"");
+  }
+
+  if(pageButton){
+    pageButton.disabled=false;
+    pageButton.textContent=connected?"Reconectar / trocar conta":"Entrar com Instagram";
+    pageButton.classList.toggle("connected",connected);
+  }
+  if(pageStatus){
+    pageStatus.textContent=connected
+      ?"Conta autorizada. O NEXUS já pode usar as permissões concedidas."
+      :"Clique em “Entrar com Instagram” e conclua a autorização na página oficial.";
+    pageStatus.className="provider-line"+(connected?" connected":"");
+  }
+  if(pageChip){
+    pageChip.textContent=connected?"CONECTADO":"PENDENTE";
+    pageChip.classList.toggle("off",!connected);
+  }
+
+  const account=$("#instagram-page-account");
+  const state=$("#instagram-page-state");
+  const type=$("#instagram-page-type");
+  const connectedAt=$("#instagram-page-connected-at");
+  const expiresAt=$("#instagram-page-expires-at");
+  if(account)account.textContent=connected?(handle||connection?.label||"Instagram conectado"):"Nenhuma conta autorizada";
+  if(state)state.textContent=connected?"Autorizada":"Aguardando autorização";
+  if(type)type.textContent=connected?(String(connection?.accountType||"Profissional").replace(/_/g," ")):"—";
+  if(connectedAt)connectedAt.textContent=connected?formatInstagramDate(connection?.connectedAt):"—";
+  if(expiresAt)expiresAt.textContent=connected?formatInstagramDate(connection?.expiresAt):"—";
+
+  const permissionMap={
+    "#ig-permission-basic":"instagram_business_basic",
+    "#ig-permission-publish":"instagram_business_content_publish",
+    "#ig-permission-comments":"instagram_business_manage_comments",
+    "#ig-permission-messages":"instagram_business_manage_messages"
+  };
+  for(const [selector,scope] of Object.entries(permissionMap)){
+    const el=$(selector);
+    if(!el)continue;
+    const granted=connected&&(scopes.length===0||scopes.includes(scope));
+    el.textContent=granted?"Autorizado":"Pendente";
+    el.classList.toggle("connected",granted);
   }
 }
 function renderOnboarding(){
@@ -328,82 +383,132 @@ async function loadConnections(){
 let instagramOauthTimer=null;
 async function refreshPortalClient(){
   try{
-    const r=await fetch("/api/portal/session",{credentials:"same-origin"});
+    const r=await fetch("/api/portal/session",{credentials:"same-origin",headers:sessionAuth?{"x-nexus-session":sessionAuth}:{}});
     if(!r.ok)return null;
-    const c=await r.json();
-    renderClient(c);
-    return c;
+    const client=await r.json();
+    renderClient(client);
+    return client;
   }catch{return null;}
 }
-async function startInstagramConnection(){
-  const button=$("#instagram-connect"),status=$("#instagram-connect-status");
-  if(!button||button.disabled)return;
-  button.disabled=true;
-  button.textContent="Abrindo Instagram…";
-  if(status)status.textContent="";
+function instagramStatusElement(button){
+  const id=String(button?.id||"");
+  if(id==="setup-instagram-connect")return $("#setup-instagram-status");
+  if(id==="instagram-page-connect")return $("#instagram-page-status");
+  return $("#instagram-connect-status");
+}
+function setInstagramButtonsBusy(busy){
+  $$(".instagram-connect-action").forEach(button=>{
+    if(!button)return;
+    if(busy){
+      button.dataset.previousText=button.textContent||"";
+      button.disabled=true;
+      button.textContent="Aguardando autorização…";
+    }else{
+      button.disabled=false;
+      if(button.dataset.previousText)button.textContent=button.dataset.previousText;
+    }
+  });
+}
+async function pollInstagramConnection(status,popup=null){
+  clearInterval(instagramOauthTimer);
+  let tries=0;
+  instagramOauthTimer=setInterval(async()=>{
+    tries++;
+    const client=await refreshPortalClient();
+    const connectionData=await loadConnections();
+    const connected=Boolean(
+      connectionData?.connections?.instagram?.connected
+      || connectionData?.connections?.meta?.connected
+      || client?.onboarding?.instagram===true
+    );
+
+    if(connected){
+      clearInterval(instagramOauthTimer);
+      instagramOauthTimer=null;
+      setInstagramButtonsBusy(false);
+      renderInstagramConnectionState();
+      const handle=String(client?.instagram||currentClient?.instagram||"").trim();
+      if(status)status.textContent=(handle?handle+" ":"")+"conectado com sucesso.";
+      try{if(popup&&!popup.closed)popup.close();}catch{}
+      return;
+    }
+
+    // Important for the Windows app: do NOT stop polling just because the external browser has no opener.
+    if(tries>=200){
+      clearInterval(instagramOauthTimer);
+      instagramOauthTimer=null;
+      setInstagramButtonsBusy(false);
+      renderInstagramConnectionState();
+      if(status)status.textContent="A autorização ainda não foi confirmada. Tente novamente se necessário.";
+    }
+  },1500);
+}
+async function startInstagramConnection(event){
+  const button=event?.currentTarget||event?.target||$("#instagram-connect");
+  const status=instagramStatusElement(button);
+  if(!button)return;
+
+  setInstagramButtonsBusy(true);
+  if(status)status.textContent="Preparando login seguro do Instagram…";
+
   try{
-    const r=await fetch("/api/portal/instagram/start",{credentials:"same-origin"});
+    const r=await fetch("/api/portal/instagram/start",{
+      credentials:"same-origin",
+      headers:sessionAuth?{"x-nexus-session":sessionAuth}:{}
+    });
     const d=await r.json().catch(()=>({}));
     if(!r.ok||!d.url){
       if(d.error==="instagram_nexus_not_configured"){
-        throw new Error("O administrador ainda precisa ativar a conexão central do Instagram.");
+        throw new Error("A conexão central do Instagram ainda não foi configurada pelo administrador.");
       }
-      throw new Error("Não foi possível iniciar a conexão do Instagram.");
+      throw new Error(d.message||"Não foi possível iniciar a conexão do Instagram.");
     }
-    const popup=window.open(d.url,"nexus-instagram-oauth","width=620,height=760");
-    if(!popup)throw new Error("Permita a abertura da janela do Instagram.");
-    if(status)status.textContent="Autorize sua conta na janela do Instagram.";
-    let tries=0;
-    clearInterval(instagramOauthTimer);
-    instagramOauthTimer=setInterval(async()=>{
-      tries++;
-      const c=await refreshPortalClient();
-      const connectionData=await loadConnections();
-      const connected=Boolean(
-        connectionData?.connections?.instagram?.connected
-        || connectionData?.connections?.meta?.connected
-        || c?.onboarding?.instagram===true
-      );
-      if(connected){
-        clearInterval(instagramOauthTimer);
-        instagramOauthTimer=null;
-        const handle=String(c?.instagram||"").trim();
-        if(status)status.textContent=(handle?handle+" ":"")+"conectado com sucesso.";
-        try{popup.close();}catch{}
-        return;
-      }
-      if(tries>120||popup.closed){
-        clearInterval(instagramOauthTimer);
-        instagramOauthTimer=null;
-        button.disabled=false;
-        button.textContent="Conectar Instagram";
-      }
-    },1500);
+
+    let popup=null;
+    try{
+      popup=window.open(d.url,"nexus-instagram-oauth","width=620,height=760");
+    }catch{}
+
+    // In WebView2 the app intentionally opens Instagram in the default browser.
+    // The NEXUS keeps polling its own backend until the OAuth callback confirms the account.
+    if(status)status.textContent="Faça login no Instagram e autorize as permissões. O NEXUS confirmará automaticamente.";
+    await pollInstagramConnection(status,popup);
   }catch(error){
-    button.disabled=false;
-    button.textContent="Conectar Instagram";
-    if(status)status.textContent=error.message;
+    clearInterval(instagramOauthTimer);
+    instagramOauthTimer=null;
+    setInstagramButtonsBusy(false);
+    renderInstagramConnectionState();
+    if(status)status.textContent=error.message||"Não foi possível conectar o Instagram.";
   }
 }
 window.addEventListener("message",event=>{
   if(event.data?.type!=="nexus-instagram-oauth")return;
-  Promise.all([refreshPortalClient(),loadConnections()]).then(([c,d])=>{
-    const status=$("#instagram-connect-status");
+  Promise.all([refreshPortalClient(),loadConnections()]).then(([client,data])=>{
     const connected=Boolean(
-      d?.connections?.instagram?.connected
-      || d?.connections?.meta?.connected
-      || c?.onboarding?.instagram===true
+      data?.connections?.instagram?.connected
+      || data?.connections?.meta?.connected
+      || client?.onboarding?.instagram===true
     );
-    if(connected&&status){
-      const handle=String(c?.instagram||"").trim();
-      status.textContent=(handle?handle+" ":"")+"conectado com sucesso.";
-    }
+    if(!connected)return;
+    clearInterval(instagramOauthTimer);
+    instagramOauthTimer=null;
+    setInstagramButtonsBusy(false);
+    renderInstagramConnectionState();
+    const handle=String(client?.instagram||"").trim();
+    const text=(handle?handle+" ":"")+"conectado com sucesso.";
+    [$("#instagram-connect-status"),$("#setup-instagram-status"),$("#instagram-page-status")].forEach(el=>{if(el)el.textContent=text;});
   });
 });
-const instagramConnectButton=$("#instagram-connect");
-if(instagramConnectButton)instagramConnectButton.addEventListener("click",startInstagramConnection);
-const setupInstagramConnectButton=$("#setup-instagram-connect");
-if(setupInstagramConnectButton)setupInstagramConnectButton.addEventListener("click",startInstagramConnection);
+
+$$(".instagram-connect-action").forEach(button=>button.addEventListener("click",startInstagramConnection));
+const instagramPageRefresh=$("#instagram-page-refresh");
+if(instagramPageRefresh)instagramPageRefresh.addEventListener("click",async()=>{
+  instagramPageRefresh.disabled=true;
+  instagramPageRefresh.textContent="Atualizando…";
+  await Promise.all([refreshPortalClient(),loadConnections()]);
+  instagramPageRefresh.disabled=false;
+  instagramPageRefresh.textContent="Atualizar status";
+});
 
 async function patchOnboarding(payload){const r=await fetch("/api/portal/onboarding",{method:"PATCH",headers:{"x-nexus-session":sessionAuth,"content-type":"application/json"},body:JSON.stringify(payload)});if(!r.ok)throw new Error("Falha ao salvar etapa");renderClient(await r.json());}
 
