@@ -467,6 +467,7 @@ export async function handleMaster(request, env, url) {
     const nextConfig = { ...currentConfig };
     const configKeys = [
       "theme","primaryColor","secondaryColor","odin","postTimes","leads","usage",
+      "openaiDailyTokenLimit",
       "onboarding","setupMode","postingProfile","agentProfile","agentCore","managedInfrastructure"
     ];
     for (const key of configKeys) {
