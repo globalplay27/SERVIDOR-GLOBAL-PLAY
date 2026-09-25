@@ -399,6 +399,10 @@ export async function enqueueVideoProcessing(env, clientId, jobId, patch = {}) {
   const row = await jobRow(env, clientId, jobId);
   if (!row) throw new Error("video_not_found");
 
+  if (row.status === "queued") return { queued: true, id: row.id, status: "queued", reused: true };
+  if (row.status === "processing") return { queued: true, id: row.id, status: "processing", reused: true };
+  if (row.status === "ready") return { queued: false, id: row.id, status: "ready", reused: true };
+
   const settings = { ...parseJson(row.settings_json, {}), ...(patch && typeof patch === "object" ? patch : {}) };
   settings.clipDuration = Math.round(clamp(settings.duration || settings.clipDuration || 30, 10, MAX_CLIP_SECONDS));
   settings.duration = settings.clipDuration;
