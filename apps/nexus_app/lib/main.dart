@@ -585,14 +585,97 @@ class _HomePageState extends State<HomePage> {
     );
 
     if (query == null || query.isEmpty) return;
-    final uri = Uri.https(
-      'www.youtube.com',
-      '/results',
-      {'search_query': '$query trailer oficial dublado português'},
-    );
-    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!ok && mounted) {
-      showMessage(context, 'Não foi possível abrir a busca.', error: true);
+    try {
+      if (mounted) showMessage(context, 'Buscando dentro do NEXUS...');
+      final data = await widget.api.searchTrailers(query);
+      final results = data['results'] is List
+          ? List<dynamic>.from(data['results'] as List)
+          : <dynamic>[];
+      if (!mounted) return;
+      if (results.isEmpty) {
+        showMessage(context, 'Nenhum trailer utilizável foi encontrado.', error: true);
+        return;
+      }
+
+      final selected = await showModalBottomSheet<Map<String, dynamic>>(
+        context: context,
+        isScrollControlled: true,
+        builder: (context) => SafeArea(
+          child: SizedBox(
+            height: MediaQuery.of(context).size.height * .72,
+            child: Column(
+              children: [
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(18, 16, 18, 8),
+                  child: Row(
+                    children: [
+                      Icon(Icons.search),
+                      SizedBox(width: 10),
+                      Text(
+                        'Resultados do NEXUS',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: results.length,
+                    itemBuilder: (context, index) {
+                      final raw = results[index];
+                      if (raw is! Map) return const SizedBox.shrink();
+                      final item = Map<String, dynamic>.from(raw);
+                      final title = (item['title'] ?? 'Trailer').toString();
+                      final year = (item['year'] ?? '').toString();
+                      final channel = (item['trailerName'] ?? '').toString();
+                      return ListTile(
+                        leading: const Icon(Icons.play_circle_outline),
+                        title: Text(title),
+                        subtitle: Text(
+                          [year, channel].where((value) => value.isNotEmpty).join(' · '),
+                        ),
+                        trailing: const Icon(Icons.add_circle_outline),
+                        onTap: () => Navigator.pop(context, item),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      if (selected == null) return;
+
+      final trailerUrl = (selected['trailerUrl'] ?? '').toString();
+      final title = (selected['title'] ?? query).toString();
+      if (trailerUrl.isEmpty) {
+        if (mounted) showMessage(context, 'Esse resultado não possui vídeo importável.', error: true);
+        return;
+      }
+
+      await widget.api.importTrailer(
+        trailerUrl,
+        title: title,
+        settings: const {
+          'requestedClips': 3,
+          'clipDuration': 30,
+          'outputFormat': 'reel',
+          'autoSubtitles': true,
+          'goal': 'viral',
+        },
+      );
+      if (mounted) {
+        showMessage(context, 'Trailer enviado para a biblioteca. O NEXUS vai processar os cortes.');
+      }
+    } catch (e) {
+      if (mounted) {
+        showMessage(
+          context,
+          e is NexusApiException ? e.message : e.toString(),
+          error: true,
+        );
+      }
     }
   }
 
