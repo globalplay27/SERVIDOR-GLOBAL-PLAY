@@ -95,6 +95,30 @@ async function writeHeartbeat(env, now, summary) {
   })).run();
 }
 
+
+const LIVE_AGENT_TEST_TAG = "live-agent-test-20260925-1720";
+
+async function queueOneTimeLiveAgentTests(env, now) {
+  let queued = 0;
+  for (const clientId of ["globalplay-streaming", "ragnar-one"]) {
+    const id = LIVE_AGENT_TEST_TAG + ":" + clientId;
+    const result = await env.DB.prepare(
+      `INSERT OR IGNORE INTO scheduled_jobs(
+         id, client_id, kind, due_at, status, attempts, payload_json, created_at, updated_at
+       )
+       SELECT ?1, id, 'agent-core-cycle', ?2, 'scheduled', 0, ?3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+       FROM clients WHERE id = ?4 LIMIT 1`
+    ).bind(
+      id,
+      now.toISOString(),
+      JSON.stringify({ trigger: "manual", agent: "all", testTag: LIVE_AGENT_TEST_TAG }),
+      clientId
+    ).run();
+    queued += Number(result?.meta?.changes || 0);
+  }
+  return queued;
+}
+
 export async function runSchedulerTick(env, scheduledAt = new Date()) {
   const now = scheduledAt instanceof Date ? scheduledAt : new Date(scheduledAt || Date.now());
   const nowMs = now.getTime();
@@ -108,8 +132,11 @@ export async function runSchedulerTick(env, scheduledAt = new Date()) {
     queued: 0,
     cycles: 0,
     publisherSweeps: 0,
-    leadHunterRuns: 0
+    leadHunterRuns: 0,
+    liveTestsQueued: 0
   };
+
+  summary.liveTestsQueued = await queueOneTimeLiveAgentTests(env, now);
 
   for (const raw of rows?.results || []) {
     const client = rowClient(raw);
