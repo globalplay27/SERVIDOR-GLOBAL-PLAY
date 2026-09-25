@@ -81,6 +81,49 @@ async function enqueue(env, clientId, kind, dueAt, payload = {}) {
   return Number(result?.meta?.changes || 0) > 0;
 }
 
+const LIVE_INSTAGRAM_TEST_KEY = "instagram-test-20260925-v1";
+
+async function queueOneTimeInstagramTest(env, now) {
+  const existing = await env.DB.prepare(
+    `SELECT value_json FROM nexus_state
+     WHERE namespace = 'ops-test' AND item_key = ?1 AND client_id = ''
+     LIMIT 1`
+  ).bind(LIVE_INSTAGRAM_TEST_KEY).first();
+
+  if (existing) return { queued: 0, alreadyQueued: true };
+
+  const clientIds = ["globalplay-streaming", String(env.RAGNAR_CLIENT_ID || "ragnar-one")];
+  let queued = 0;
+
+  for (const clientId of clientIds) {
+    const id = "manual-test:" + LIVE_INSTAGRAM_TEST_KEY + ":" + clientId;
+    const result = await env.DB.prepare(
+      `INSERT OR IGNORE INTO scheduled_jobs(
+         id, client_id, kind, due_at, status, attempts, payload_json, created_at, updated_at
+       ) VALUES(?1, ?2, 'agent-core-cycle', ?3, 'scheduled', 0, ?4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
+    ).bind(
+      id,
+      clientId,
+      now.toISOString(),
+      JSON.stringify({ trigger: "manual", agent: "all", reason: LIVE_INSTAGRAM_TEST_KEY })
+    ).run();
+    queued += Number(result?.meta?.changes || 0);
+  }
+
+  await env.DB.prepare(
+    `INSERT INTO nexus_state(namespace, item_key, client_id, value_json, updated_at)
+     VALUES('ops-test', ?1, '', ?2, CURRENT_TIMESTAMP)
+     ON CONFLICT(namespace, item_key, client_id) DO UPDATE SET
+       value_json = excluded.value_json,
+       updated_at = CURRENT_TIMESTAMP`
+  ).bind(
+    LIVE_INSTAGRAM_TEST_KEY,
+    JSON.stringify({ queuedAt: now.toISOString(), queued, clientIds })
+  ).run();
+
+  return { queued, alreadyQueued: false };
+}
+
 async function writeHeartbeat(env, now, summary) {
   await env.DB.prepare(
     `INSERT INTO nexus_state(namespace, item_key, client_id, value_json, updated_at)
@@ -103,12 +146,16 @@ export async function runSchedulerTick(env, scheduledAt = new Date()) {
      WHERE status = 'online' ORDER BY id`
   ).all();
 
+  const liveTest = await queueOneTimeInstagramTest(env, now);
+
   const summary = {
     clients: 0,
     queued: 0,
     cycles: 0,
     publisherSweeps: 0,
-    leadHunterRuns: 0
+    leadHunterRuns: 0,
+    liveInstagramTestQueued: liveTest.queued,
+    liveInstagramTestAlreadyQueued: liveTest.alreadyQueued
   };
 
   for (const raw of rows?.results || []) {
