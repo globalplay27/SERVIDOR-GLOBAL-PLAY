@@ -174,6 +174,34 @@ async function optimizeLogo(file){
   const canvas=document.createElement("canvas");canvas.width=w;canvas.height=h;canvas.getContext("2d").drawImage(source,0,0,w,h);
   return canvas.toDataURL("image/webp",0.86);
 }
+async function uploadProfileLogo(dataUrl){
+  if(!dataUrl)return null;
+  const localResponse=await fetch(dataUrl);
+  const blob=await localResponse.blob();
+  if(!blob.size)throw new Error("A logo ficou vazia após o processamento.");
+  if(blob.size>6*1024*1024)throw new Error("A logo deve ter no máximo 6 MB.");
+
+  const r=await fetch("/api/portal/logo",{
+    method:"POST",
+    credentials:"same-origin",
+    headers:{
+      "content-type":blob.type||"image/webp",
+      ...(sessionAuth?{"x-nexus-session":sessionAuth}:{})
+    },
+    body:blob
+  });
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok)throw new Error(
+    d.error==="r2_unavailable"
+      ?"O armazenamento de logos ainda não está disponível."
+      :d.error==="logo_too_large"
+        ?"A logo deve ter no máximo 6 MB."
+        :(d.error||"Não foi possível enviar a logo.")
+  );
+  if(!d.objectKey||!d.url)throw new Error("O servidor não confirmou o armazenamento da logo.");
+  return d;
+}
+
 function formatTokenCount(value){
   const number=Math.max(0,Number(value||0));
   try{return new Intl.NumberFormat("pt-BR",{maximumFractionDigits:0}).format(number);}
@@ -1680,8 +1708,13 @@ if(agentProfileForm)agentProfileForm.addEventListener("submit",async event=>{
     secondaryColor:$("#profile-secondary").value,
     removeLogo:removeProfileLogo
   };
-  if(pendingProfileLogo)payload.logoDataUrl=pendingProfileLogo;
   try{
+    if(pendingProfileLogo){
+      if(status){status.textContent="Enviando logo para a biblioteca segura…";status.className="save-status";}
+      const logo=await uploadProfileLogo(pendingProfileLogo);
+      payload.logoObjectKey=logo.objectKey;
+      payload.logoUrl=logo.url;
+    }
     const r=await fetch("/api/portal/agent-profile",{method:"POST",headers:{"x-nexus-session":sessionAuth,"content-type":"application/json"},body:JSON.stringify(payload)});
     const d=await r.json().catch(()=>({}));
     if(!r.ok)throw new Error(d.message||d.error||"Não foi possível salvar o perfil.");
