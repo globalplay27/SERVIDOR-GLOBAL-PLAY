@@ -1022,7 +1022,7 @@ async function moveVideoJob(jobId,folderId){
 }
 
 function videoJobStatus(job){
-  const labels={awaiting_configuration:"AGUARDANDO CONFIGURAÇÃO",queued:"RECEBIDO",uploaded:"RECEBIDO",transcribing:"TRANSCREVENDO",selecting:"ESCOLHENDO CORTES",cutting:"CRIANDO CORTES",ready:"PRONTO PARA REVISÃO",failed:"FALHOU"};
+  const labels={importing:"IMPORTANDO DO YOUTUBE",awaiting_configuration:"AGUARDANDO CONFIGURAÇÃO",queued:"RECEBIDO",processing:"PROCESSANDO",uploaded:"RECEBIDO",transcribing:"TRANSCREVENDO",selecting:"ESCOLHENDO CORTES",cutting:"CRIANDO CORTES",ready:"PRONTO PARA REVISÃO",failed:"FALHOU"};
   return labels[job.status]||String(job.status||"RECEBIDO").toUpperCase();
 }
 function videoApprovalLabel(status){
@@ -1577,8 +1577,8 @@ async function importTrailerVideo(button){
   if(!url||!button)return;
   const original=button.textContent;
   const status=$("#trailer-search-status");
-  button.disabled=true;button.textContent="Enviando…";
-  if(status){status.textContent="O servidor está recebendo o vídeo. Não feche esta tela…";status.className="save-status";}
+  button.disabled=true;button.textContent="Adicionando…";
+  if(status){status.textContent="Adicionando à biblioteca…";status.className="save-status";}
   const payload={
     url,
     contentTitle:title,
@@ -1616,7 +1616,7 @@ async function importTrailerVideo(button){
       latestVideoJobs=[importedJob,...latestVideoJobs.filter(job=>job.id!==importedJob.id)];
       renderVideoJobs({jobs:latestVideoJobs,folders:latestVideoFolders});
     }
-    if(status){status.textContent="Trailer recebido na biblioteca. Iniciando os cortes automaticamente…";status.className="save-status ok";}
+    if(status){status.textContent="Adicionado à biblioteca. O NEXUS está importando o vídeo do YouTube no servidor.";status.className="save-status ok";}
     showView("videos");
     const folderFilter=$("#video-folder-filter");if(folderFilter)folderFilter.value=videoFolderFilter;
     await loadVideoJobs();
