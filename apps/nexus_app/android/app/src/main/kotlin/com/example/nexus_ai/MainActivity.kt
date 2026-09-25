@@ -1,4 +1,4 @@
-package com.example.nexus_ai
+package com.nexusai.app
 
 import android.app.Activity
 import android.content.Intent
