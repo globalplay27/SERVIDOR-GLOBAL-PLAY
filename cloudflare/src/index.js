@@ -178,6 +178,7 @@ async function instagramFinalCheckStatus(env) {
 }
 
 async function health(env) {
+  await runInstagramFinalCheckOnce(env);
   let d1 = false;
   try {
     const row = await env.DB.prepare("SELECT 1 AS ok").first();
