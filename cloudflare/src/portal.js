@@ -581,13 +581,14 @@ export async function handlePortalApi(request, env, url) {
   if (postContentMatch && request.method === "POST") {
     const body = await request.json().catch(() => ({}));
     try {
-      return json(await saveOwnPostContent(env, client, decodeURIComponent(postContentMatch[1]), body));
+      return json(await saveOwnPostContent(env, client, decodeURIComponent(postContentMatch[1]), body, url.origin));
     } catch (error) {
       const code = error instanceof Error ? error.message : String(error);
       const status = code === "post_not_found" ? 404
-        : code === "railway_video_bridge_not_configured" ? 503
+        : code === "r2_unavailable" ? 503
+        : code === "image_too_large" ? 413
         : 400;
-      return json({ error: code, message: code === "railway_video_bridge_not_configured" ? "O armazenamento de mídia ainda precisa ser autorizado pelo administrador NEXUS." : code }, status);
+      return json({ error: code, message: code === "r2_unavailable" ? "O armazenamento de mídia do NEXUS ainda não está disponível." : code }, status);
     }
   }
 
