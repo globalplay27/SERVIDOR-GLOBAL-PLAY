@@ -6,7 +6,7 @@ namespace NexusAIMaster;
 
 public sealed class MainForm : Form
 {
-    private const string NexusMasterUrl = "https://servidor-nexus.diamanteRinode2015.workers.dev/master";
+    private const string NexusMasterUrl = "https://servidor-nexus.diamantehinode2015.workers.dev/master";
     private readonly WebView2 webView = new() { Dock = DockStyle.Fill };
 
     public MainForm()
