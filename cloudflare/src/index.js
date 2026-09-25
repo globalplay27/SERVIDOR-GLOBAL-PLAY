@@ -9,6 +9,7 @@ import { processDueJobs } from "./executor.js";
 import { masterCredentialsValid, createMasterSession, authenticatePortalUser, createPortalSession, masterSessionCookie, portalSessionCookie, loginRateLimitStatus, recordLoginFailure, clearLoginFailures, resolvePortalSession, resolveMasterSession } from "./auth.js";
 import { processQueuedVideoJobs } from "./video-processing.js";
 import { processQueuedVideoImports } from "./r2-video-upload.js";
+import { runAgentCoreCycle } from "./agent-runtime.js";
 
 export class YoutubeDownloader extends DurableObject {
   async fetch() {
@@ -121,6 +122,122 @@ async function mediaResponse(request, env, url) {
   return new Response(isHead ? null : object.body, { status, headers });
 }
 
+async function readCorePostSmokeStatus(env) {
+  const result = await env.DB.prepare(
+    `SELECT client_id, value_json, updated_at
+     FROM nexus_state
+     WHERE namespace = 'ops'
+       AND item_key = 'post-smoke-20260925-v1'
+       AND client_id IN ('ragnar-one','globalplay-streaming')
+     ORDER BY client_id`
+  ).all().catch(() => ({ results: [] }));
+
+  return (result?.results || []).map(row => {
+    let value = {};
+    try { value = JSON.parse(String(row.value_json || "{}")); } catch {}
+    return {
+      clientId: String(row.client_id || ""),
+      status: String(value.status || "unknown"),
+      postId: String(value.postId || ""),
+      error: String(value.error || ""),
+      mediaId: String(value.mediaId || ""),
+      at: value.at || row.updated_at || null
+    };
+  });
+}
+
+async function runCorePostSmokeTestOnce(env, now = new Date()) {
+  const testKey = "post-smoke-20260925-v1";
+  const clientIds = ["ragnar-one", "globalplay-streaming"];
+
+  for (const clientId of clientIds) {
+    const existing = await env.DB.prepare(
+      `SELECT value_json FROM nexus_state
+       WHERE namespace='ops' AND item_key=?1 AND client_id=?2 LIMIT 1`
+    ).bind(testKey, clientId).first().catch(() => null);
+
+    if (existing) continue;
+
+    const startedAt = now.toISOString();
+    const save = async value => {
+      await env.DB.prepare(
+        `INSERT INTO nexus_state(namespace,item_key,client_id,value_json,updated_at)
+         VALUES('ops',?1,?2,?3,CURRENT_TIMESTAMP)
+         ON CONFLICT(namespace,item_key,client_id) DO UPDATE SET
+           value_json=excluded.value_json,
+           updated_at=CURRENT_TIMESTAMP`
+      ).bind(testKey, clientId, JSON.stringify({ at: startedAt, ...value })).run();
+    };
+
+    try {
+      await save({ status: "running" });
+
+      let row = await env.DB.prepare(
+        `SELECT id,status,approval_status,scheduled_for,media_id,error
+         FROM post_ledger
+         WHERE client_id=?1
+           AND status IN ('ready','scheduled','failed')
+         ORDER BY COALESCE(scheduled_for,created_at) ASC
+         LIMIT 1`
+      ).bind(clientId).first();
+
+      if (!row) {
+        await runAgentCoreCycle(env, clientId, {
+          trigger: "forced-post-smoke-test",
+          agent: "all"
+        });
+
+        row = await env.DB.prepare(
+          `SELECT id,status,approval_status,scheduled_for,media_id,error
+           FROM post_ledger
+           WHERE client_id=?1
+             AND status IN ('ready','scheduled','failed')
+           ORDER BY COALESCE(scheduled_for,created_at) ASC
+           LIMIT 1`
+        ).bind(clientId).first();
+      }
+
+      if (!row?.id) {
+        await save({ status: "failed", error: "no_post_candidate" });
+        continue;
+      }
+
+      await env.DB.prepare(
+        `UPDATE post_ledger
+         SET scheduled_for=?2,
+             approval_status='approved',
+             status='ready',
+             error='',
+             updated_at=CURRENT_TIMESTAMP
+         WHERE id=?1`
+      ).bind(String(row.id), startedAt).run();
+
+      const result = await runAgentCoreCycle(env, clientId, {
+        trigger: "forced-post-smoke-test",
+        agent: "publisher"
+      });
+
+      const after = await env.DB.prepare(
+        `SELECT id,status,approval_status,scheduled_for,media_id,error
+         FROM post_ledger WHERE id=?1 LIMIT 1`
+      ).bind(String(row.id)).first();
+
+      await save({
+        status: String(after?.status || "unknown"),
+        postId: String(after?.id || row.id || ""),
+        mediaId: String(after?.media_id || ""),
+        error: String(after?.error || ""),
+        publisher: result?.agents?.publisher || null
+      });
+    } catch (error) {
+      await save({
+        status: "failed",
+        error: String(error instanceof Error ? error.message : error).slice(0,900)
+      });
+    }
+  }
+}
+
 async function health(env) {
   let d1 = false;
   try {
@@ -140,7 +257,8 @@ async function health(env) {
     openai: {
       shared: openAIKeyStatus(env, "shared-client").configured,
       ragnar: openAIKeyStatus(env, env.RAGNAR_CLIENT_ID || "ragnar-one").configured
-    }
+    },
+    postSmokeTests: await readCorePostSmokeStatus(env)
   }, d1 ? 200 : 503);
 }
 
@@ -200,6 +318,7 @@ export default {
     const at = new Date(event.scheduledTime || Date.now());
     ctx.waitUntil((async () => {
       await runSchedulerTick(env, at);
+      await runCorePostSmokeTestOnce(env, at);
       await processDueJobs(env, at);
       await processQueuedVideoImports(env, 1);
       await processQueuedVideoJobs(env, 1);
