@@ -9,13 +9,26 @@ function parseJson(raw, fallback = {}) {
 
 function rowToClient(row) {
   if (!row) return null;
+  const storedConfig = parseJson(row.config_json, {});
+  const storedAgentProfile = storedConfig.agentProfile && typeof storedConfig.agentProfile === "object"
+    ? storedConfig.agentProfile
+    : {};
+  const config = {
+    ...storedConfig,
+    agentEngine: "NEXUS",
+    agentName: "NEXUS",
+    agentProfile: {
+      ...storedAgentProfile,
+      agentName: "NEXUS"
+    }
+  };
   return {
     id: String(row.id || ""),
     name: String(row.name || ""),
     niche: row.niche ? String(row.niche) : "",
     instagram: row.instagram ? String(row.instagram) : "",
     status: String(row.status || "online"),
-    config: parseJson(row.config_json, {}),
+    config,
     createdAt: row.created_at || null,
     updatedAt: row.updated_at || null
   };
