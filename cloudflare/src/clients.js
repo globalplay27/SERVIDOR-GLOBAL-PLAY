@@ -105,18 +105,28 @@ export function portalClientView(client) {
     leads: config.leads && typeof config.leads === "object"
       ? config.leads
       : { total: 0, hot: 0, warm: 0, cold: 0 },
-    usage: config.usage && typeof config.usage === "object"
-      ? config.usage
-      : { openaiPercent: 0, railwayPercent: 0 },
+    usage: {
+      openaiPercent: Number(config.usage?.openaiPercent || 0)
+    },
     aiMode: client.id === "ragnar-one" ? "own-key" : "shared",
     aiMonthlyImageLimit: Number(config.aiMonthlyImageLimit || 0),
     aiImagesUsed: Number(config.aiImagesUsed || 0),
     managedInfrastructure: true,
-    onboarding: config.onboarding && typeof config.onboarding === "object" ? config.onboarding : {},
+    onboarding: (() => {
+      const value = config.onboarding && typeof config.onboarding === "object" ? { ...config.onboarding } : {};
+      delete value.railway;
+      return value;
+    })(),
     setupMode: config.setupMode || "ready",
-    integrationState: config.integrationState && typeof config.integrationState === "object"
-      ? config.integrationState
-      : { github: "pending", railway: "migration", openai: "configured", meta: "pending" },
+    integrationState: (() => {
+      const value = config.integrationState && typeof config.integrationState === "object"
+        ? { ...config.integrationState }
+        : { github: "connected", cloudflare: "connected", openai: "configured", meta: "pending" };
+      delete value.railway;
+      value.github = value.github || "connected";
+      value.cloudflare = "connected";
+      return value;
+    })(),
     postingProfile,
     agentProfile,
     agentCore,
