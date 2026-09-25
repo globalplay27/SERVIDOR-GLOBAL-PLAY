@@ -6,7 +6,7 @@ namespace NexusAIMaster;
 
 public sealed class MainForm : Form
 {
-    private const string NexusMasterUrl = "https://servidor-nexus.diamantehinode2015.workers.dev/master";
+    private const string NexusMasterUrl = "https://servidor-nexus.diamantehinode2015.workers.dev/api/master/access";
     private readonly WebView2 webView = new() { Dock = DockStyle.Fill };
 
     public MainForm()
@@ -41,6 +41,24 @@ public sealed class MainForm : Form
             webView.CoreWebView2.NewWindowRequested += (_, e) =>
             {
                 e.Handled = true;
+                try { Process.Start(new ProcessStartInfo(e.Uri) { UseShellExecute = true }); } catch { }
+            };
+
+            webView.CoreWebView2.NavigationStarting += (_, e) =>
+            {
+                if (!Uri.TryCreate(e.Uri, UriKind.Absolute, out var uri)) return;
+
+                var path = uri.AbsolutePath.ToLowerInvariant();
+                if (path == "/login" || path == "/portal.html" || path.StartsWith("/api/portal/"))
+                {
+                    e.Cancel = true;
+                    webView.CoreWebView2.Navigate(NexusMasterUrl);
+                    return;
+                }
+
+                if (uri.Host.EndsWith("workers.dev", StringComparison.OrdinalIgnoreCase)) return;
+
+                e.Cancel = true;
                 try { Process.Start(new ProcessStartInfo(e.Uri) { UseShellExecute = true }); } catch { }
             };
 
