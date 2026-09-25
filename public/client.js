@@ -11,7 +11,7 @@ function showPortalLogin(message="Sua sessão precisa ser renovada. Entre novame
 }
 
 function nextPostTime(times=[]){if(!Array.isArray(times)||!times.length)return"—";const parts=new Intl.DateTimeFormat("pt-BR",{timeZone:"America/Sao_Paulo",hour:"2-digit",minute:"2-digit",hour12:false}).formatToParts(new Date());const now=Number(parts.find(p=>p.type==="hour")?.value||0)*60+Number(parts.find(p=>p.type==="minute")?.value||0);const sorted=times.map(v=>{const[h,m]=String(v).split(":").map(Number);return{v,m:h*60+m}}).filter(x=>Number.isFinite(x.m)).sort((a,b)=>a.m-b.m);return sorted.find(x=>x.m>now)?.v||sorted[0]?.v||"—";}
-function showView(name){$("[data-view]").forEach(b=>b.classList.toggle("active",b.dataset.view===name));["overview","posts","capture","leads","instagram","videos","trailers","posting","support","setup"].forEach(v=>{const el=$("#view-"+v);if(el)el.hidden=v!==name;});if(name==="support")loadSupportTickets();if(name==="posts")loadClientPosts();if(name==="capture")loadLeadHunter();if(name==="leads")loadClientLeads();if(name==="instagram")loadConnections();if(name==="videos"){ensureBulkVideoScheduler();loadVideoJobs();}if(name==="overview"){loadAgentTeam();loadTokenUsage();}}
+function showView(name){$$("[data-view]").forEach(b=>b.classList.toggle("active",b.dataset.view===name));["overview","posts","capture","leads","instagram","videos","trailers","posting","support","setup"].forEach(v=>{const el=$("#view-"+v);if(el)el.hidden=v!==name;});if(name==="support")loadSupportTickets();if(name==="posts")loadClientPosts();if(name==="capture")loadLeadHunter();if(name==="leads")loadClientLeads();if(name==="instagram")loadConnections();if(name==="videos"){ensureBulkVideoScheduler();loadVideoJobs();}if(name==="overview"){loadAgentTeam();loadTokenUsage();}}
 function onboardingKeys(){return["instagram","creativeProfile"];}
 function setupPercent(){const o=currentClient?.onboarding||{};const keys=onboardingKeys();return Math.round(keys.filter(k=>o[k]).length/keys.length*100);}
 function instagramIsConnected(client=currentClient){
@@ -108,7 +108,7 @@ function renderOnboarding(){
   const progress=$("#setup-progress");if(progress)progress.textContent=pct+"%";
   const banner=$("#setup-banner");if(banner)banner.hidden=true;
   const hero=document.querySelector(".setup-hero-card");if(hero)hero.hidden=true;
-  $(".wizard-step[data-step]").forEach(card=>{const key=card.dataset.step,done=Boolean(o[key]);card.classList.toggle("done",done);const state=card.querySelector(".step-state");if(state)state.textContent=done?"Concluído":"Pendente";});
+  $$(".wizard-step[data-step]").forEach(card=>{const key=card.dataset.step,done=Boolean(o[key]);card.classList.toggle("done",done);const state=card.querySelector(".step-state");if(state)state.textContent=done?"Concluído":"Pendente";});
   const modeNew=$("#mode-new"),modeReady=$("#mode-ready");
   if(modeNew)modeNew.classList.toggle("selected",(currentClient?.setupMode||"ready")==="new");
   if(modeReady)modeReady.classList.toggle("selected",(currentClient?.setupMode||"ready")==="ready");
@@ -1413,7 +1413,7 @@ document.addEventListener("click",event=>{
   const schedule=event.target.closest("[data-video-schedule]");if(schedule){scheduleVideo(schedule);return;}
   const publish=event.target.closest("[data-video-publish]");if(publish){publishVideoNow(publish);return;}
 });
-$$("[data-view]").forEach(b=>b.addEventListener("click",()=>showView(b.dataset.view)));
+$$$("[data-view]").forEach(b=>b.addEventListener("click",()=>showView(b.dataset.view)));
 const refreshClientPosts=$("#refresh-client-posts");if(refreshClientPosts)refreshClientPosts.addEventListener("click",loadClientPosts);
 const refreshClientLeads=$("#refresh-client-leads");if(refreshClientLeads)refreshClientLeads.addEventListener("click",loadClientLeads);
 const leadHunterForm=$("#lead-hunter-form");if(leadHunterForm)leadHunterForm.addEventListener("submit",saveLeadHunterConfig);
