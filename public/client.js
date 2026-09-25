@@ -1100,7 +1100,6 @@ function renderVideoJobs(data={}){
               <option value="30" ${duration==="30"?"selected":""}>30 segundos</option>
               <option value="45" ${duration==="45"?"selected":""}>45 segundos</option>
               <option value="60" ${duration==="60"?"selected":""}>60 segundos</option>
-              <option value="90" ${duration==="90"?"selected":""}>90 segundos</option>
             </select></label>
             <label><span>Quantidade de opções</span><input data-video-job-clips type="number" min="1" max="12" value="${Math.max(1,Math.min(12,Number(job.requestedClips||3)))}"></label>
             <label><span>Formato</span><select data-video-job-format>
@@ -1182,7 +1181,7 @@ async function startVideoProcessing(button){
     endContact:card.querySelector("[data-video-job-end-contact]")?.value?.trim()||""
   };
   const clipCount=Math.max(1,Math.min(12,Number(payload.clips||3)));
-  const duration=Math.max(10,Math.min(90,Number(payload.duration||30)));
+  const duration=Math.max(10,Math.min(60,Number(payload.duration||30)));
   payload.clips=clipCount;payload.duration=duration;
   button.disabled=true;
   const original=button.textContent;
@@ -1510,7 +1509,7 @@ async function importAuthorizedVideo(button,statusTarget=null){
       if(code.includes("video_source_not_direct_media"))throw new Error("Esse link abre uma página, não um arquivo de vídeo. Cole um link direto para MP4, MOV, WEBM ou MKV.");
       if(code.includes("video_url_https_required"))throw new Error("O link precisa começar com https://.");
       if(code.includes("video_source_http_"))throw new Error("O servidor de origem recusou o download do vídeo.");
-      if(code.includes("too_large"))throw new Error("O arquivo ultrapassa o limite de 750 MB.");
+      if(code.includes("too_large"))throw new Error("O arquivo ultrapassa o limite de 100 MB.");
       throw new Error("Não foi possível importar esse arquivo direto.");
     }
     const importedJob=d.job||null;
@@ -1565,7 +1564,7 @@ async function importTrailerVideo(button){
     if(!r.ok){
       const code=String(d.error||"");
       if(r.status===401)throw new Error("Sua sessão precisa ser renovada. Entre novamente e tente uma vez.");
-      if(code.includes("too_large"))throw new Error("O vídeo ultrapassa o limite de 750 MB.");
+      if(code.includes("too_large"))throw new Error("O vídeo ultrapassa o limite de 100 MB.");
       if(code.includes("trailer_download_failed"))throw new Error("A origem recusou o download deste trailer. Tente outro resultado.");
       throw new Error("Não foi possível trazer este vídeo para o servidor.");
     }
@@ -1614,7 +1613,7 @@ async function uploadSingleVideo(file,index,total,settings,progress){
   const failMessage=code=>{
     const value=String(code||"");
     if(value==="r2_unavailable")return"O armazenamento de vídeos do NEXUS ainda não está disponível.";
-    if(value==="video_too_large")return"Vídeo acima do limite de 750 MB.";
+    if(value==="video_too_large")return"Vídeo acima do limite de 100 MB.";
     if(value==="invalid_video_type")return"Formato não aceito. Use MP4, MOV, WEBM ou MKV.";
     if(value==="unauthorized")return"Sua sessão expirou. Entre novamente e tente de novo.";
     return value||"Não foi possível enviar "+file.name;
@@ -1713,8 +1712,8 @@ if(videoUploadForm)videoUploadForm.addEventListener("submit",async event=>{
   event.preventDefault();
   const files=[...(videoFileInput?.files||[])],status=$("#video-upload-status"),button=videoUploadForm.querySelector("button[type=submit]"),progress=$("#video-upload-progress");
   if(!files.length){if(status)status.textContent="Selecione um ou mais vídeos.";return;}
-  const oversized=files.find(file=>file.size>750*1024*1024);
-  if(oversized){if(status)status.textContent=oversized.name+" passa do limite de 750 MB.";return;}
+  const oversized=files.find(file=>file.size>100*1024*1024);
+  if(oversized){if(status)status.textContent=oversized.name+" passa do limite de 100 MB.";return;}
   const settings={
     goal:$("#video-goal").value,
     duration:$("#video-clip-duration").value,
