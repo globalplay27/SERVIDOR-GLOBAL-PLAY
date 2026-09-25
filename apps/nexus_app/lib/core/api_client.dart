@@ -74,9 +74,18 @@ class NexusApiClient {
     }
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      final message = payload is Map
+      var message = payload is Map
           ? (payload['message'] ?? payload['error'] ?? 'Erro no servidor').toString()
           : 'Erro no servidor';
+
+      if (response.statusCode == 401 && message == 'invalid_credentials') {
+        message = 'Usuário ou senha inválidos.';
+      } else if (response.statusCode == 429 || message == 'too_many_login_attempts') {
+        message = 'Muitas tentativas de acesso. Aguarde alguns minutos e tente novamente.';
+      } else if (response.statusCode >= 500 && message == 'Erro no servidor') {
+        message = 'O NEXUS está temporariamente indisponível. Tente novamente.';
+      }
+
       throw NexusApiException(message, response.statusCode);
     }
     return payload;
