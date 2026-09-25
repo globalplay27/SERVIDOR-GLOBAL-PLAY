@@ -64,3 +64,5 @@ Configuração de produção:
 O NEXUS não possui runtime alternativo. Código fica no GitHub e toda execução de produção fica no Cloudflare.
 
 Para detalhes, consulte `ARCHITECTURE.md`.
+
+<!-- deploy-sync: live-post-20260925-1 -->
