@@ -9,6 +9,7 @@ import { processDueJobs } from "./executor.js";
 import { masterCredentialsValid, createMasterSession, authenticatePortalUser, createPortalSession, masterSessionCookie, portalSessionCookie, loginRateLimitStatus, recordLoginFailure, clearLoginFailures, resolvePortalSession, resolveMasterSession } from "./auth.js";
 import { processQueuedVideoJobs } from "./video-processing.js";
 import { processQueuedVideoImports } from "./r2-video-upload.js";
+import { resolveInstagramCredentials } from "./instagram-credentials.js";
 
 export class YoutubeDownloader extends DurableObject {
   async fetch() {
@@ -121,6 +122,61 @@ async function mediaResponse(request, env, url) {
   return new Response(isHead ? null : object.body, { status, headers });
 }
 
+async function runInstagramFinalCheckOnce(env) {
+  const itemKey = "instagram-final-check-20260925-v4";
+  const existing = await env.DB.prepare(
+    "SELECT value_json FROM nexus_state WHERE namespace='ops' AND item_key=?1 AND client_id='' LIMIT 1"
+  ).bind(itemKey).first().catch(() => null);
+  if (existing) return;
+
+  const accounts = [];
+  for (const clientId of ["globalplay-streaming","ragnar-one"]) {
+    try {
+      const credentials = await resolveInstagramCredentials(env, clientId);
+      if (!credentials?.accessToken || !credentials?.igUserId) {
+        accounts.push({clientId,ok:false,status:"missing_secret_pair"});
+        continue;
+      }
+
+      const headers = {
+        authorization:"Bearer " + credentials.accessToken,
+        accept:"application/json",
+        "user-agent":"NEXUS-Instagram-FinalCheck/4.0"
+      };
+      const url = "https://graph.instagram.com/" + encodeURIComponent(credentials.igUserId)
+        + "?fields=" + encodeURIComponent("id,username,media_count");
+      const response = await fetch(url,{headers,signal:AbortSignal.timeout(12000)});
+      const profile = await response.json().catch(()=>({}));
+      accounts.push({
+        clientId,
+        ok:Boolean(response.ok && String(profile?.id||"")===String(credentials.igUserId)),
+        status:response.ok ? "valid" : "rejected",
+        username:String(profile?.username||""),
+        returnedId:String(profile?.id||""),
+        accountIdMatches:String(profile?.id||"")===String(credentials.igUserId),
+        mediaCount:Number(profile?.media_count||0),
+        error:response.ok?"":String(profile?.error?.message||"instagram_profile_failed").slice(0,300)
+      });
+    } catch (error) {
+      accounts.push({clientId,ok:false,status:"check_failed",error:String(error instanceof Error?error.message:error).slice(0,300)});
+    }
+  }
+
+  await env.DB.prepare(
+    "INSERT INTO nexus_state(namespace,item_key,client_id,value_json,updated_at) VALUES('ops',?1,'',?2,CURRENT_TIMESTAMP) ON CONFLICT(namespace,item_key,client_id) DO UPDATE SET value_json=excluded.value_json,updated_at=CURRENT_TIMESTAMP"
+  ).bind(itemKey,JSON.stringify({accounts,checkedAt:new Date().toISOString()})).run();
+}
+
+async function instagramFinalCheckStatus(env) {
+  const row = await env.DB.prepare(
+    "SELECT value_json,updated_at FROM nexus_state WHERE namespace='ops' AND item_key='instagram-final-check-20260925-v4' AND client_id='' LIMIT 1"
+  ).first().catch(()=>null);
+  if (!row) return null;
+  let value={};
+  try { value=JSON.parse(String(row.value_json||"{}")); } catch {}
+  return {...value,updatedAt:row.updated_at||null};
+}
+
 async function health(env) {
   let d1 = false;
   try {
@@ -140,7 +196,8 @@ async function health(env) {
     openai: {
       shared: openAIKeyStatus(env, "shared-client").configured,
       ragnar: openAIKeyStatus(env, env.RAGNAR_CLIENT_ID || "ragnar-one").configured
-    }
+    },
+    instagramFinalCheck: await instagramFinalCheckStatus(env)
   }, d1 ? 200 : 503);
 }
 
@@ -200,6 +257,7 @@ export default {
     const at = new Date(event.scheduledTime || Date.now());
     ctx.waitUntil((async () => {
       await runSchedulerTick(env, at);
+      await runInstagramFinalCheckOnce(env);
       await processDueJobs(env, at);
       await processQueuedVideoImports(env, 1);
       await processQueuedVideoJobs(env, 1);
