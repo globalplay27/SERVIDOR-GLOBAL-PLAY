@@ -1,4 +1,4 @@
-name: Continuous Cloudflare Test
+name: Legacy Branch Cloudflare Test
 
 on:
   workflow_dispatch:
@@ -21,7 +21,7 @@ jobs:
             BODY="$(curl -fsS --max-time 20 "$URL" || true)"
             echo "attempt=$attempt"
             echo "$BODY" | jq '{ok,runtime,releaseMarker,openai}' || true
-            if [ "$(echo "$BODY" | jq -r '.releaseMarker // empty' 2>/dev/null)" = "2026-09-25-continuous-test-3" ]; then
+            if [ "$(echo "$BODY" | jq -r '.releaseMarker // empty' 2>/dev/null)" = "2026-09-25-migration-test-4" ]; then
               echo "DEPLOY_OK"
               exit 0
             fi
