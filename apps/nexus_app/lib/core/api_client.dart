@@ -16,10 +16,14 @@ class NexusApiException implements Exception {
 class NexusApiClient {
   static const baseUrl = 'https://servidor-nexus.diamantehinode2015.workers.dev';
   static const _tokenKey = 'nexus_session_token';
+  static const _masterTokenKey = 'nexus_master_session_token';
+  static const _roleKey = 'nexus_login_role';
 
   final http.Client _http;
   final FlutterSecureStorage _storage;
   String? _token;
+  String? _masterToken;
+  String? _savedRole;
 
   NexusApiClient({
     http.Client? httpClient,
@@ -29,9 +33,13 @@ class NexusApiClient {
 
   Future<void> restoreToken() async {
     _token = await _storage.read(key: _tokenKey);
+    _masterToken = await _storage.read(key: _masterTokenKey);
+    _savedRole = await _storage.read(key: _roleKey);
   }
 
   bool get hasToken => (_token ?? '').isNotEmpty;
+  bool get hasMasterToken => (_masterToken ?? '').isNotEmpty;
+  String? get savedRole => _savedRole;
 
   Map<String, String> _headers({bool jsonBody = false}) {
     final headers = <String, String>{
@@ -79,8 +87,72 @@ class NexusApiClient {
       throw const NexusApiException('Sessão não recebida do servidor.');
     }
     _token = token;
+    _savedRole = 'client';
     await _storage.write(key: _tokenKey, value: token);
+    await _storage.write(key: _roleKey, value: 'client');
     return Map<String, dynamic>.from(client);
+  }
+
+
+  Map<String, String> _masterHeaders({bool jsonBody = false}) {
+    final headers = <String, String>{'accept': 'application/json'};
+    if (jsonBody) headers['content-type'] = 'application/json';
+    if ((_masterToken ?? '').isNotEmpty) {
+      headers['cookie'] = 'nexus_master=${Uri.encodeComponent(_masterToken!)}';
+    }
+    return headers;
+  }
+
+  Future<Map<String, dynamic>> loginMaster(String username, String password) async {
+    final response = await _http.post(
+      Uri.parse('$baseUrl/api/master/desktop-login'),
+      headers: {'accept': 'application/json', 'content-type': 'application/json'},
+      body: jsonEncode({'username': username.trim(), 'password': password}),
+    );
+    final payload = _decode(response);
+    if (payload is! Map) {
+      throw const NexusApiException('Resposta de login do Master inválida.');
+    }
+    final token = (payload['token'] ?? '').toString();
+    if (token.isEmpty) {
+      throw const NexusApiException('Sessão do Master não recebida.');
+    }
+    _masterToken = token;
+    _savedRole = 'master';
+    await _storage.write(key: _masterTokenKey, value: token);
+    await _storage.write(key: _roleKey, value: 'master');
+    return Map<String, dynamic>.from(payload);
+  }
+
+  Future<Map<String, dynamic>> masterStatus() async {
+    final response = await _http.get(
+      Uri.parse('$baseUrl/api/system/status'),
+      headers: _masterHeaders(),
+    );
+    final payload = _decode(response);
+    return payload is Map ? Map<String, dynamic>.from(payload) : <String, dynamic>{};
+  }
+
+  Future<List<dynamic>> masterClients() async {
+    final response = await _http.get(
+      Uri.parse('$baseUrl/api/clients'),
+      headers: _masterHeaders(),
+    );
+    final payload = _decode(response);
+    return payload is List ? List<dynamic>.from(payload) : const [];
+  }
+
+  Future<void> logoutMaster() async {
+    try {
+      await _http.post(
+        Uri.parse('$baseUrl/master-logout'),
+        headers: _masterHeaders(),
+      );
+    } catch (_) {}
+    _masterToken = null;
+    _savedRole = null;
+    await _storage.delete(key: _masterTokenKey);
+    await _storage.delete(key: _roleKey);
   }
 
   Future<Map<String, dynamic>> session() async {
@@ -231,6 +303,8 @@ class NexusApiClient {
       // Clear local access even if the network is unavailable.
     }
     _token = null;
+    if (_savedRole == 'client') _savedRole = null;
     await _storage.delete(key: _tokenKey);
+    await _storage.delete(key: _roleKey);
   }
 }
