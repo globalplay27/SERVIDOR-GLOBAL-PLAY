@@ -9,7 +9,6 @@
     "secondaryColor": "#050807",
     "status": "online",
     "github": "connected",
-    "railway": "connected",
     "openai": "configured",
     "meta": "configured",
     "odin": true,
@@ -25,12 +24,10 @@
       "cold": 0
     },
     "usage": {
-      "openaiPercent": 0,
-      "railwayPercent": 0
+      "openaiPercent": 0
     },
     "onboarding": {
       "github": true,
-      "railway": true,
       "openai": true,
       "instagram": true,
       "facebook": true,
@@ -51,7 +48,8 @@
       "hashtags": "#RagnarOne #Streaming #FutebolAoVivo #FilmesESeries #Entretenimento",
       "avoidTopics": "Promessas irreais, informações não confirmadas e poluição visual"
     },
-    "agentApiUrl": "https://ragnar-agent-production.up.railway.app",
-    "setupMode": "ready"
+    "setupMode": "ready",
+    "runtime": "cloudflare",
+    "infrastructure": "cloudflare"
   }
 ]
