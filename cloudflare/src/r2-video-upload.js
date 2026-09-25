@@ -246,6 +246,179 @@ function fileNameFromRemote(response, finalUrl, fallbackTitle = "") {
   return cleanFileName(String(fallbackTitle || "video"));
 }
 
+
+function youtubeVideoIdFromUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  try {
+    const url = new URL(raw);
+    const host = url.hostname.toLowerCase().replace(/^www\./, "");
+    if (url.protocol !== "https:") return "";
+    if (host === "youtu.be") return url.pathname.split("/").filter(Boolean)[0] || "";
+    if (host !== "youtube.com") return "";
+    if (url.pathname === "/watch") return url.searchParams.get("v") || "";
+    const parts = url.pathname.split("/").filter(Boolean);
+    if (["shorts","embed","live"].includes(parts[0]) && parts[1]) return parts[1];
+  } catch {}
+  return "";
+}
+
+async function invidiousMuxedStream(sourceUrl) {
+  const videoId = youtubeVideoIdFromUrl(sourceUrl);
+  if (!videoId) throw new Error("invalid_trailer_url");
+
+  const instances = [
+    "inv.nadeko.net",
+    "invidious.nerdvpn.de",
+    "yt.chocolatemoo53.com",
+    "invidious.tiekoetter.com"
+  ];
+
+  let lastError = "invidious_unavailable";
+  for (const host of instances) {
+    const base = "https://" + host;
+    try {
+      const api = await fetch(base + "/api/v1/videos/" + encodeURIComponent(videoId) + "?local=1&region=BR", {
+        headers: { accept: "application/json", "user-agent": "NEXUS-AI-Trailer-Resolver/2.0" }
+      });
+      if (!api.ok) {
+        lastError = "invidious_api_" + api.status;
+        continue;
+      }
+
+      const payload = await api.json().catch(() => ({}));
+      const streams = (Array.isArray(payload?.formatStreams) ? payload.formatStreams : [])
+        .filter(item => item?.url)
+        .map(item => {
+          const quality = Number(String(item.qualityLabel || item.quality || "").match(/\d+/)?.[0] || 0);
+          const bytes = Number(item.clength || item.contentLength || 0);
+          const container = String(item.container || "").toLowerCase();
+          return { ...item, quality, bytes, container };
+        })
+        .filter(item => !item.bytes || item.bytes <= MAX_VIDEO_BYTES)
+        .sort((a, b) => {
+          const aMp4 = a.container === "mp4" ? 1 : 0;
+          const bMp4 = b.container === "mp4" ? 1 : 0;
+          const aQuality = a.quality <= 720 ? a.quality : 0;
+          const bQuality = b.quality <= 720 ? b.quality : 0;
+          return (bMp4 - aMp4) || (bQuality - aQuality) || (a.bytes - b.bytes);
+        });
+
+      for (const stream of streams.slice(0, 6)) {
+        try {
+          const mediaUrl = new URL(String(stream.url), base);
+          if (mediaUrl.hostname.toLowerCase() !== host) continue;
+
+          const response = await fetch(mediaUrl.toString(), {
+            headers: {
+              accept: "video/*,*/*;q=0.8",
+              referer: base + "/watch?v=" + encodeURIComponent(videoId),
+              "user-agent": "Mozilla/5.0 NEXUS-AI/2.0"
+            }
+          });
+          if (!response.ok || !response.body) continue;
+
+          const declaredLength = Number(response.headers.get("content-length") || stream.bytes || 0);
+          if (!declaredLength) {
+            try { await response.body.cancel(); } catch {}
+            lastError = "trailer_size_unknown";
+            continue;
+          }
+          if (declaredLength > MAX_VIDEO_BYTES) {
+            try { await response.body.cancel(); } catch {}
+            lastError = "video_too_large";
+            continue;
+          }
+
+          const contentType = String(response.headers.get("content-type") || "").toLowerCase().split(";")[0].trim();
+          const extension = stream.container === "webm" || contentType.includes("webm") ? "webm" : "mp4";
+          return {
+            response,
+            videoId,
+            host,
+            extension,
+            contentType: contentType.startsWith("video/") ? contentType : (extension === "webm" ? "video/webm" : "video/mp4"),
+            size: declaredLength
+          };
+        } catch (error) {
+          lastError = String(error instanceof Error ? error.message : error);
+        }
+      }
+    } catch (error) {
+      lastError = String(error instanceof Error ? error.message : error);
+    }
+  }
+
+  throw new Error("invidious_resolve_failed:" + lastError);
+}
+
+export async function importR2PublicTrailer(env, clientId, input = {}) {
+  if (!env.MEDIA) throw new Error("r2_unavailable");
+
+  const sourceUrl = String(input.url || input.trailerUrl || "").trim();
+  if (!sourceUrl) throw new Error("trailer_url_required");
+
+  const resolved = await invidiousMuxedStream(sourceUrl);
+  const key = videoKeyPrefix(clientId) + crypto.randomUUID() + "." + resolved.extension;
+  const title = String(input.contentTitle || "trailer").trim().slice(0, 160) || "trailer";
+
+  let object;
+  try {
+    object = await env.MEDIA.put(key, resolved.response.body, {
+      httpMetadata: {
+        contentType: resolved.contentType,
+        cacheControl: "private, no-store"
+      },
+      customMetadata: {
+        clientId: String(clientId),
+        originalName: cleanFileName(title + "." + resolved.extension),
+        sourceHost: "youtube.com",
+        sourceVideoId: resolved.videoId,
+        resolver: resolved.host,
+        kind: "video-source"
+      }
+    });
+  } catch {
+    throw new Error("trailer_store_failed");
+  }
+
+  if (!object) throw new Error("trailer_store_failed");
+  if (Number(object.size || resolved.size || 0) > MAX_VIDEO_BYTES) {
+    await env.MEDIA.delete(key).catch(() => {});
+    throw new Error("video_too_large");
+  }
+
+  const settings = normalizeSettings(input, {
+    fileName: title + "." + resolved.extension,
+    contentType: resolved.contentType,
+    size: Number(object.size || resolved.size || 0)
+  });
+  settings.folderId = await validFolderId(env, clientId, settings.folderId);
+  settings.sourceType = "youtube-trailer";
+  settings.sourceUrl = sourceUrl.slice(0, 1200);
+
+  const jobId = "vid_" + crypto.randomUUID().replace(/-/g, "").slice(0, 20);
+  const result = {
+    progress: 100,
+    storage: "r2",
+    objectEtag: object.httpEtag || "",
+    resolver: "invidious",
+    message: "Trailer recebido na biblioteca. Iniciando cortes."
+  };
+
+  try {
+    await env.DB.prepare(
+      `INSERT INTO video_jobs(id,client_id,source_object_key,status,settings_json,result_json,created_at,updated_at)
+       VALUES(?1,?2,?3,'awaiting_configuration',?4,?5,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)`
+    ).bind(jobId, String(clientId), key, JSON.stringify(settings), JSON.stringify(result)).run();
+  } catch (error) {
+    await env.MEDIA.delete(key).catch(() => {});
+    throw error;
+  }
+
+  return { jobId, objectKey: key, etag: object.httpEtag || "", source: "youtube-trailer" };
+}
+
 export async function importR2VideoFromUrl(env, clientId, input = {}) {
   if (!env.MEDIA) throw new Error("r2_unavailable");
 
