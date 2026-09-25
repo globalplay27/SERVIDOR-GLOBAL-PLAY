@@ -1,0 +1,16 @@
+name: Read Worker health now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/read-worker-health-now.yml"
+
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Read health
+        shell: bash
+        run: |
+          curl -fsS --max-time 20 "https://servidor-nexus.diamantehinode2015.workers.dev/health" | jq '{ok,runtime,releaseMarker,openai}'
