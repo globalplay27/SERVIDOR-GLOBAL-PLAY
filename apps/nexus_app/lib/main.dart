@@ -1020,7 +1020,7 @@ class _VideosPageState extends State<VideosPage> {
 
   Future<void> _uploadFromDevice() async {
     if (actionBusy) return;
-    final picked = await FilePicker.platform.pickFiles(
+    final picked = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: const ['mp4', 'mov', 'webm', 'mkv'],
       allowMultiple: false,
