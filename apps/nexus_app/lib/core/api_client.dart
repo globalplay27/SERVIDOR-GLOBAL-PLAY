@@ -272,6 +272,20 @@ class NexusApiClient {
     return uri;
   }
 
+  Future<Map<String, dynamic>> searchTrailers(String query, {String type = 'movie'}) async {
+    final uri = Uri.parse('$baseUrl/api/portal/trailers/search').replace(
+      queryParameters: {
+        'q': query.trim(),
+        'type': type == 'series' ? 'series' : 'movie',
+      },
+    );
+    final response = await _http.get(uri, headers: _headers());
+    final payload = _decode(response);
+    return payload is Map
+        ? Map<String, dynamic>.from(payload)
+        : <String, dynamic>{'results': const []};
+  }
+
   Future<Map<String, dynamic>> videos() async {
     final response = await _http.get(
       Uri.parse('$baseUrl/api/portal/videos'),
