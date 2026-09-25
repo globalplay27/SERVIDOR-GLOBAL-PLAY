@@ -369,7 +369,7 @@ public sealed class MainForm : Form
                 if (path == "/api/master/access" && !authSubmitting)
                 {
                     e.Cancel = true;
-                    BeginInvoke((Action)ShowLogin);
+                    BeginInvoke((Action)(() => ShowLogin()));
                     return;
                 }
 
