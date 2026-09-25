@@ -1,3 +1,5 @@
+import { downloadYoutubeWithContainer } from "./youtube-container.js";
+
 const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
 const DEFAULT_CHUNK_BYTES = 8 * 1024 * 1024;
 
@@ -431,14 +433,19 @@ async function invidiousMuxedStream(sourceUrl) {
   return Promise.any(instances.map(attemptInstance));
 }
 
-async function youtubeMuxedStream(sourceUrl) {
+async function youtubeMuxedStream(env, sourceUrl) {
   try {
-    return await Promise.any([
-      pipedMuxedStream(sourceUrl),
-      invidiousMuxedStream(sourceUrl)
-    ]);
-  } catch {
-    throw new Error("youtube_stream_resolve_failed");
+    return await downloadYoutubeWithContainer(env, sourceUrl);
+  } catch (containerError) {
+    try {
+      return await Promise.any([
+        pipedMuxedStream(sourceUrl),
+        invidiousMuxedStream(sourceUrl)
+      ]);
+    } catch {
+      const code = String(containerError instanceof Error ? containerError.message : containerError);
+      throw new Error(code || "youtube_stream_resolve_failed");
+    }
   }
 }
 
@@ -497,7 +504,7 @@ export async function processR2PublicTrailerImportJob(env, clientId, jobId) {
 
   let key = "";
   try {
-    const resolved = await youtubeMuxedStream(settings.sourceUrl);
+    const resolved = await youtubeMuxedStream(env, settings.sourceUrl);
     await env.DB.prepare(
       "UPDATE video_jobs SET result_json=?3,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2"
     ).bind(
@@ -592,7 +599,7 @@ export async function importR2PublicTrailer(env, clientId, input = {}) {
   const sourceUrl = String(input.url || input.trailerUrl || "").trim();
   if (!sourceUrl) throw new Error("trailer_url_required");
 
-  const resolved = await youtubeMuxedStream(sourceUrl);
+  const resolved = await youtubeMuxedStream(env, sourceUrl);
   const key = videoKeyPrefix(clientId) + crypto.randomUUID() + "." + resolved.extension;
   const title = String(input.contentTitle || "trailer").trim().slice(0, 160) || "trailer";
 
