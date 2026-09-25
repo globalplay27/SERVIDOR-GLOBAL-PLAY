@@ -271,7 +271,8 @@ async function invidiousMuxedStream(sourceUrl) {
     "inv.nadeko.net",
     "invidious.nerdvpn.de",
     "yt.chocolatemoo53.com",
-    "invidious.tiekoetter.com"
+    "invidious.tiekoetter.com",
+    "invidious.f5.si"
   ];
 
   let lastError = "invidious_unavailable";
@@ -279,7 +280,8 @@ async function invidiousMuxedStream(sourceUrl) {
     const base = "https://" + host;
     try {
       const api = await fetch(base + "/api/v1/videos/" + encodeURIComponent(videoId) + "?local=1&region=BR", {
-        headers: { accept: "application/json", "user-agent": "NEXUS-AI-Trailer-Resolver/2.0" }
+        headers: { accept: "application/json", "user-agent": "NEXUS-AI-Trailer-Resolver/2.1" },
+        signal: AbortSignal.timeout(6000)
       });
       if (!api.ok) {
         lastError = "invidious_api_" + api.status;
@@ -299,8 +301,8 @@ async function invidiousMuxedStream(sourceUrl) {
         .sort((a, b) => {
           const aMp4 = a.container === "mp4" ? 1 : 0;
           const bMp4 = b.container === "mp4" ? 1 : 0;
-          const aQuality = a.quality <= 720 ? a.quality : 0;
-          const bQuality = b.quality <= 720 ? b.quality : 0;
+          const aQuality = a.quality <= 480 ? a.quality : 0;
+          const bQuality = b.quality <= 480 ? b.quality : 0;
           return (bMp4 - aMp4) || (bQuality - aQuality) || (a.bytes - b.bytes);
         });
 
@@ -313,8 +315,9 @@ async function invidiousMuxedStream(sourceUrl) {
             headers: {
               accept: "video/*,*/*;q=0.8",
               referer: base + "/watch?v=" + encodeURIComponent(videoId),
-              "user-agent": "Mozilla/5.0 NEXUS-AI/2.0"
-            }
+              "user-agent": "Mozilla/5.0 NEXUS-AI/2.1"
+            },
+            signal: AbortSignal.timeout(30000)
           });
           if (!response.ok || !response.body) continue;
 
@@ -350,6 +353,144 @@ async function invidiousMuxedStream(sourceUrl) {
   }
 
   throw new Error("invidious_resolve_failed:" + lastError);
+}
+
+
+export async function createR2PublicTrailerImportJob(env, clientId, input = {}) {
+  const sourceUrl = String(input.url || input.trailerUrl || "").trim();
+  if (!youtubeVideoIdFromUrl(sourceUrl)) throw new Error("invalid_trailer_url");
+
+  const title = String(input.contentTitle || "video-youtube").trim().slice(0, 160) || "video-youtube";
+  const settings = normalizeSettings(input, {
+    fileName: title + ".mp4",
+    contentType: "video/mp4",
+    size: 0
+  });
+  settings.folderId = await validFolderId(env, clientId, settings.folderId);
+  settings.sourceType = "youtube-public";
+  settings.sourceUrl = sourceUrl.slice(0, 1200);
+  settings.importAttempts = 0;
+
+  const jobId = "vid_" + crypto.randomUUID().replace(/-/g, "").slice(0, 20);
+  const result = {
+    progress: 2,
+    storage: "r2",
+    importAttempts: 0,
+    message: "Importando vídeo do YouTube para a biblioteca.",
+    error: ""
+  };
+
+  await env.DB.prepare(
+    `INSERT INTO video_jobs(id,client_id,source_object_key,status,settings_json,result_json,created_at,updated_at)
+     VALUES(?1,?2,'','importing',?3,?4,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)`
+  ).bind(jobId, String(clientId), JSON.stringify(settings), JSON.stringify(result)).run();
+
+  return { jobId };
+}
+
+export async function processR2PublicTrailerImportJob(env, clientId, jobId) {
+  if (!env.MEDIA) throw new Error("r2_unavailable");
+  const row = await env.DB.prepare(
+    "SELECT id,client_id,status,settings_json,result_json FROM video_jobs WHERE id=?1 AND client_id=?2 LIMIT 1"
+  ).bind(String(jobId), String(clientId)).first();
+  if (!row || String(row.status) !== "importing") return { skipped: true };
+
+  const settings = (() => { try { return JSON.parse(String(row.settings_json || "{}")); } catch { return {}; } })();
+  const result = (() => { try { return JSON.parse(String(row.result_json || "{}")); } catch { return {}; } })();
+  const attempt = Math.max(Number(settings.importAttempts || result.importAttempts || 0), 0) + 1;
+  settings.importAttempts = attempt;
+
+  await env.DB.prepare(
+    "UPDATE video_jobs SET settings_json=?3,result_json=?4,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2"
+  ).bind(
+    row.id,
+    row.client_id,
+    JSON.stringify(settings),
+    JSON.stringify({ ...result, progress: 4, importAttempts: attempt, message: "Baixando vídeo do YouTube · tentativa " + attempt + " de 3.", error: "" })
+  ).run();
+
+  let key = "";
+  try {
+    const resolved = await invidiousMuxedStream(settings.sourceUrl);
+    key = videoKeyPrefix(clientId) + crypto.randomUUID() + "." + resolved.extension;
+
+    const object = await env.MEDIA.put(key, resolved.response.body, {
+      httpMetadata: { contentType: resolved.contentType, cacheControl: "private, no-store" },
+      customMetadata: {
+        clientId: String(clientId),
+        originalName: cleanFileName((settings.contentTitle || "video-youtube") + "." + resolved.extension),
+        sourceHost: "youtube.com",
+        sourceVideoId: resolved.videoId,
+        resolver: resolved.host,
+        kind: "video-source"
+      }
+    });
+    if (!object) throw new Error("trailer_store_failed");
+    if (Number(object.size || resolved.size || 0) > MAX_VIDEO_BYTES) {
+      await env.MEDIA.delete(key).catch(() => {});
+      throw new Error("video_too_large");
+    }
+
+    settings.fileSize = Number(object.size || resolved.size || 0);
+    settings.contentType = resolved.contentType;
+    settings.filename = cleanFileName((settings.contentTitle || "video-youtube") + "." + resolved.extension);
+    settings.displayName = settings.filename;
+
+    await env.DB.prepare(
+      "UPDATE video_jobs SET source_object_key=?3,status='queued',settings_json=?4,result_json=?5,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2"
+    ).bind(
+      row.id,
+      row.client_id,
+      key,
+      JSON.stringify(settings),
+      JSON.stringify({
+        ...result,
+        progress: 5,
+        storage: "r2",
+        objectEtag: object.httpEtag || "",
+        resolver: resolved.host,
+        importAttempts: attempt,
+        message: "Vídeo recebido no R2. Iniciando análise e cortes.",
+        error: ""
+      })
+    ).run();
+    return { ok: true, jobId: row.id };
+  } catch (cause) {
+    if (key) await env.MEDIA.delete(key).catch(() => {});
+    const code = String(cause instanceof Error ? cause.message : cause);
+    const retry = attempt < 3;
+    await env.DB.prepare(
+      "UPDATE video_jobs SET status=?3,settings_json=?4,result_json=?5,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2"
+    ).bind(
+      row.id,
+      row.client_id,
+      retry ? "importing" : "failed",
+      JSON.stringify(settings),
+      JSON.stringify({
+        ...result,
+        progress: retry ? 2 : 0,
+        importAttempts: attempt,
+        message: retry
+          ? "A origem não respondeu. O NEXUS tentará novamente automaticamente."
+          : "Não foi possível importar este vídeo do YouTube após 3 tentativas.",
+        error: code.slice(0, 500)
+      })
+    ).run();
+    return { ok: false, retry, error: code };
+  }
+}
+
+export async function processQueuedVideoImports(env, limit = 1) {
+  if (!env?.DB || !env.MEDIA) return { processed: 0 };
+  const rows = await env.DB.prepare(
+    "SELECT id,client_id FROM video_jobs WHERE status='importing' ORDER BY updated_at ASC LIMIT ?1"
+  ).bind(Math.max(1, Math.min(2, Number(limit || 1)))).all();
+  let processed = 0;
+  for (const row of rows?.results || []) {
+    await processR2PublicTrailerImportJob(env, row.client_id, row.id).catch(() => {});
+    processed += 1;
+  }
+  return { processed };
 }
 
 export async function importR2PublicTrailer(env, clientId, input = {}) {
