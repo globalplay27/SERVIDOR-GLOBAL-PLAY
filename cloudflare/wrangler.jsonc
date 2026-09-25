@@ -15,8 +15,7 @@
   "vars": {
     "APP_NAME": "Servidor Nexus",
     "RAGNAR_CLIENT_ID": "ragnar-one",
-    "CLOUDFLARE_AUTOMATION_ACTIVE": "false",
-    "RAILWAY_VIDEO_BRIDGE_URL": "https://servidor-global-play-production.up.railway.app"
+    "CLOUDFLARE_AUTOMATION_ACTIVE": "true"
   },
   "assets": {
     "directory": "../public",
@@ -36,12 +35,6 @@
       "database_name": "servidor-nexus",
       "database_id": "3d440c4a-8925-4526-8d29-03f9eb227d60",
       "migrations_dir": "migrations"
-    }
-  ],
-  "r2_buckets": [
-    {
-      "binding": "MEDIA",
-      "bucket_name": "servidor-nexus-media"
     }
   ]
 }
