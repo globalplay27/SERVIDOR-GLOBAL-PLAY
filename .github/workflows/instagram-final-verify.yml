@@ -1,0 +1,29 @@
+name: Instagram final verify
+
+on:
+  push:
+    branches: [cloudflare-migration]
+    paths:
+      - ".github/workflows/instagram-final-verify.yml"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Read sanitized final check
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="https://servidor-nexus.diamantehinode2015.workers.dev/health"
+          for attempt in 1 2 3 4; do
+            BODY="$(curl -fsS --max-time 20 "$URL" || true)"
+            if [ -n "$BODY" ]; then
+              echo "$BODY" | jq '{ok,instagramFinalCheck}'
+              if [ "$(echo "$BODY" | jq -r 'if .instagramFinalCheck then 1 else 0 end')" = "1" ]; then
+                exit 0
+              fi
+            fi
+            sleep 10
+          done
+          exit 1
