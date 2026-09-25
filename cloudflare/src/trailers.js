@@ -64,6 +64,59 @@ function normalizeResult(item, kind, fallbackTitle = "") {
   };
 }
 
+
+const PIPED_APIS = [
+  "https://pipedapi.kavin.rocks",
+  "https://pipedapi.leptons.xyz",
+  "https://pipedapi.nosebs.ru",
+  "https://api-piped.mha.fi"
+];
+
+async function pipedSearch(query, kind) {
+  const q = (String(query || "").trim() + " trailer dublado").trim();
+
+  const attempt = async base => {
+    const url = new URL(base + "/search");
+    url.searchParams.set("q", q);
+    url.searchParams.set("filter", "videos");
+    const response = await fetch(url, {
+      headers: { accept: "application/json", "user-agent": "NEXUS-AI/2.2" },
+      signal: AbortSignal.timeout(4500)
+    });
+    if (!response.ok) throw new Error("piped_search_" + response.status);
+    const payload = await response.json().catch(() => ({}));
+    const items = Array.isArray(payload?.items)
+      ? payload.items
+      : Array.isArray(payload?.relatedStreams)
+        ? payload.relatedStreams
+        : Array.isArray(payload?.results) ? payload.results : [];
+
+    const results = items
+      .filter(item => String(item?.type || "stream") === "stream")
+      .slice(0, 8)
+      .map(item => {
+        const rawUrl = String(item?.url || "");
+        const videoId = rawUrl.match(/[?&]v=([A-Za-z0-9_-]{11})/)?.[1] || "";
+        return normalizeResult({
+          id: videoId,
+          title: item?.title || query,
+          year: "",
+          overview: item?.shortDescription || "",
+          posterUrl: String(item?.thumbnail || ""),
+          trailerUrl: videoId ? "https://www.youtube.com/watch?v=" + videoId : "",
+          trailerName: item?.uploaderName || "",
+          official: Boolean(item?.uploaderVerified)
+        }, kind, query);
+      })
+      .filter(item => item.trailerUrl && item.title);
+
+    if (!results.length) throw new Error("piped_search_empty");
+    return { configured: true, source: "piped-youtube", results: results.slice(0, 6) };
+  };
+
+  return Promise.any(PIPED_APIS.map(attempt));
+}
+
 async function tmdbSearch(env, query, kind) {
   const token = String(env.TMDB_API_TOKEN || "").trim();
   const apiKey = String(env.TMDB_API_KEY || "").trim();
@@ -77,7 +130,8 @@ async function tmdbSearch(env, query, kind) {
     }
     if (apiKey) url.searchParams.set("api_key", apiKey);
     const response = await fetch(url, {
-      headers: { accept: "application/json", ...(token ? { authorization: "Bearer " + token } : {}) }
+      headers: { accept: "application/json", ...(token ? { authorization: "Bearer " + token } : {}) },
+      signal: AbortSignal.timeout(4500)
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error("tmdb_http_" + response.status);
@@ -86,39 +140,38 @@ async function tmdbSearch(env, query, kind) {
 
   const search = await get("search/" + kind, { query, include_adult: "false" });
   const base = (Array.isArray(search?.results) ? search.results : []).slice(0, 8);
-  const results = [];
+  const score = video => {
+    const name = String(video?.name || "").toLowerCase();
+    const lang = String(video?.iso_639_1 || "").toLowerCase();
+    const country = String(video?.iso_3166_1 || "").toUpperCase();
+    let value = 0;
+    if (/dublad|portugu[eê]s|pt[- ]?br|brasil/.test(name)) value += 120;
+    if (lang === "pt") value += 100;
+    if (country === "BR") value += 80;
+    if (video?.type === "Trailer") value += 35;
+    if (video?.official === true) value += 30;
+    if (/legendad/.test(name)) value -= 45;
+    if (lang === "en") value -= 80;
+    return value;
+  };
 
-  for (const item of base) {
+  const results = await Promise.all(base.slice(0, 6).map(async item => {
     let videos = [];
     try {
-      let payload = await get(kind + "/" + item.id + "/videos");
-      videos = Array.isArray(payload?.results) ? payload.results : [];
+      const primary = await get(kind + "/" + item.id + "/videos");
+      videos = Array.isArray(primary?.results) ? primary.results : [];
       if (!videos.length) {
-        payload = await get(kind + "/" + item.id + "/videos", {}, "en-US");
-        videos = Array.isArray(payload?.results) ? payload.results : [];
+        const english = await get(kind + "/" + item.id + "/videos", {}, "en-US");
+        videos = Array.isArray(english?.results) ? english.results : [];
       }
     } catch {}
 
     const youtube = videos.filter(video => video?.site === "YouTube");
-    const score = video => {
-      const name = String(video?.name || "").toLowerCase();
-      const lang = String(video?.iso_639_1 || "").toLowerCase();
-      const country = String(video?.iso_3166_1 || "").toUpperCase();
-      let value = 0;
-      if (/dublad|portugu[eê]s|pt[- ]?br|brasil/.test(name)) value += 120;
-      if (lang === "pt") value += 100;
-      if (country === "BR") value += 80;
-      if (video?.type === "Trailer") value += 35;
-      if (video?.official === true) value += 30;
-      if (/legendad/.test(name)) value -= 45;
-      if (lang === "en") value -= 80;
-      return value;
-    };
     const trailer = [...youtube].sort((a, b) => score(b) - score(a))[0] || null;
     const title = String(kind === "tv" ? item.name : item.title || query);
     const date = String(kind === "tv" ? item.first_air_date : item.release_date || "");
 
-    results.push(normalizeResult({
+    return normalizeResult({
       id: item.id,
       title,
       year: date.slice(0, 4),
@@ -127,8 +180,8 @@ async function tmdbSearch(env, query, kind) {
       trailerUrl: trailer?.key ? "https://www.youtube.com/watch?v=" + encodeURIComponent(trailer.key) : "",
       trailerName: trailer?.name || "",
       official: Boolean(trailer?.official)
-    }, kind, query));
-  }
+    }, kind, query);
+  }));
 
   return { configured: true, source: "tmdb", results };
 }
@@ -171,15 +224,20 @@ export async function searchTrailers(env, clientId, query, type = "movie") {
   const kind = String(type || "") === "series" ? "tv" : "movie";
 
   try {
-    const tmdb = await tmdbSearch(env, q, kind);
-    if (tmdb) return tmdb;
+    return await pipedSearch(q, kind);
   } catch {}
 
   try {
-    return await openAISearch(env, clientId, q, kind);
+    const tmdb = await tmdbSearch(env, q, kind);
+    if (tmdb?.results?.some(item => item.trailerUrl)) return tmdb;
+  } catch {}
+
+  try {
+    const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("search_timeout")), 8000));
+    return await Promise.race([openAISearch(env, clientId, q, kind), timeout]);
   } catch (error) {
     const code = String(error instanceof Error ? error.message : error);
-    if (code.includes("openai_not_configured")) {
+    if (code.includes("openai_not_configured") || code.includes("search_timeout")) {
       return { configured: false, source: "unavailable", results: [] };
     }
     throw error;
