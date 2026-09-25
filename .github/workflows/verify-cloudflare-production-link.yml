@@ -1,0 +1,31 @@
+name: Verify Cloudflare production link
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/verify-cloudflare-production-link.yml"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify Worker received main
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="https://servidor-nexus.diamantehinode2015.workers.dev/health"
+          for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            BODY="$(curl -fsS --max-time 20 "$URL" || true)"
+            echo "attempt=$attempt"
+            if [ -n "$BODY" ]; then
+              echo "$BODY" | jq '{ok,runtime,releaseMarker,openai}'
+              if [ "$(echo "$BODY" | jq -r '.releaseMarker // empty')" = "2026-09-25-link-ok-1" ]; then
+                exit 0
+              fi
+            fi
+            sleep 10
+          done
+          exit 1
