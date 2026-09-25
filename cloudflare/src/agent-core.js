@@ -33,7 +33,7 @@ export function normalizeAgentCoreConfig(client) {
       ? (current.approvalRequired === undefined ? false : current.approvalRequired === true)
       : true,
     autoPublish,
-    cycleMinutes: Math.max(15, Math.min(1440, Number(current.cycleMinutes || 60))),
+    cycleMinutes: Math.max(15, Math.min(1440, Number(current.cycleMinutes || 30))),
     modules
   };
 }
