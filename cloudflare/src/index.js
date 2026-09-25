@@ -5,6 +5,7 @@ import { handlePortalApi } from "./portal.js";
 import { handleMaster } from "./master.js";
 import { runSchedulerTick } from "./scheduler.js";
 import { processDueJobs } from "./executor.js";
+import { masterCredentialsValid, createMasterSession, authenticatePortalUser, createPortalSession } from "./auth.js";
 
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
@@ -139,6 +140,48 @@ export default {
     if (url.pathname === "/login" && request.method === "GET") {
       return asset(env, request, "/portal.html");
     }
+
+    if (url.pathname === "/api/auth/login" && request.method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      const username = String(body?.username || "").trim();
+      const password = String(body?.password || "");
+
+      if (!username || !password) {
+        return json({ ok: false, error: "username_and_password_required" }, 400);
+      }
+
+      if (await masterCredentialsValid(env, username, password)) {
+        const session = await createMasterSession(env);
+        return json({
+          ok: true,
+          role: "master",
+          token: session.token,
+          expiresAt: session.expiresAt,
+          cookieName: "nexus_master",
+          entryPath: "/api/master/console"
+        });
+      }
+
+      const clientId = await authenticatePortalUser(env, username, password);
+      if (clientId) {
+        const session = await createPortalSession(env, clientId, {
+          persistent: true,
+          source: "unified-desktop"
+        });
+        return json({
+          ok: true,
+          role: "client",
+          clientId,
+          token: session.token,
+          expiresAt: session.expiresAt,
+          cookieName: "nexus_session",
+          entryPath: "/portal.html?auth=1"
+        });
+      }
+
+      return json({ ok: false, error: "invalid_credentials" }, 401);
+    }
+
 
     const masterResponse = await handleMaster(request, env, url);
     if (masterResponse) return masterResponse;
