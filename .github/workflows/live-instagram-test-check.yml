@@ -1,0 +1,32 @@
+name: Live Instagram test check
+
+on:
+  push:
+    branches: [cloudflare-migration]
+    paths:
+      - ".github/workflows/live-instagram-test-check.yml"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Poll sanitized test result
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="https://servidor-nexus.diamantehinode2015.workers.dev/health"
+          for attempt in 1 2 3 4 5 6 7 8; do
+            BODY="$(curl -fsS --max-time 20 "$URL" || true)"
+            echo "attempt=$attempt"
+            if [ -n "$BODY" ]; then
+              echo "$BODY" | jq '{ok, runtime, openai, liveInstagramTest}'
+              CLAIRE="$(echo "$BODY" | jq -r '.liveInstagramTest.claire.createdAt // empty')"
+              RAGNAR="$(echo "$BODY" | jq -r '.liveInstagramTest.ragnar.createdAt // empty')"
+              if [ -n "$CLAIRE" ] || [ -n "$RAGNAR" ]; then
+                exit 0
+              fi
+            fi
+            sleep 12
+          done
+          exit 1
