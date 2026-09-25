@@ -458,6 +458,12 @@ export async function handlePortalApi(request, env, url, ctx) {
     const body = await request.json().catch(() => ({}));
     try {
       const completed = await completeR2VideoUpload(env, client.id, body);
+      await enqueueVideoProcessing(env, client.id, completed.jobId, {});
+      if (ctx?.waitUntil) {
+        ctx.waitUntil(processVideoJob(env, client.id, completed.jobId).catch(() => {}));
+      } else {
+        await processVideoJob(env, client.id, completed.jobId).catch(() => {});
+      }
       const jobs = await listVideos(env, client.id);
       return json({
         ok: true,
@@ -511,6 +517,12 @@ export async function handlePortalApi(request, env, url, ctx) {
     const body = await request.json().catch(() => ({}));
     try {
       const imported = await importR2VideoFromUrl(env, client.id, body);
+      await enqueueVideoProcessing(env, client.id, imported.jobId, {});
+      if (ctx?.waitUntil) {
+        ctx.waitUntil(processVideoJob(env, client.id, imported.jobId).catch(() => {}));
+      } else {
+        await processVideoJob(env, client.id, imported.jobId).catch(() => {});
+      }
       const jobs = await listVideos(env, client.id);
       return json({
         ok: true,
