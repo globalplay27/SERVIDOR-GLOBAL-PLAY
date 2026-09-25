@@ -1,4 +1,5 @@
 import { openAIResponses } from "./openai.js";
+import { openAIKeyForClient } from "./openai-routing.js";
 import { publishInstagramVideo } from "./publisher.js";
 
 const MAX_MEDIA_SOURCE_BYTES = 100 * 1024 * 1024;
@@ -230,8 +231,10 @@ async function setJob(env, row, status, settings, result) {
   ).bind(row.id, row.client_id, status, JSON.stringify(settings), JSON.stringify(result)).run();
 }
 
-async function transcribeVideo(env, sourceKey, requestedClips) {
-  if (!env.AI) return { segments: [], language: "", windows: 0 };
+async function transcribeVideo(env, clientId, sourceKey, requestedClips) {
+  const apiKey = openAIKeyForClient(env, clientId);
+  if (!apiKey) return { segments: [], language: "", windows: 0 };
+
   const segments = [];
   let language = "";
   let emptyStreak = 0;
@@ -241,6 +244,7 @@ async function transcribeVideo(env, sourceKey, requestedClips) {
     const offset = index * AUDIO_WINDOW_SECONDS;
     const source = await env.MEDIA.get(sourceKey);
     if (!source?.body) throw new Error("video_source_missing");
+
     try {
       const transformed = env.VIDEO_MEDIA.input(source.body).output({
         mode: "audio",
@@ -253,20 +257,44 @@ async function transcribeVideo(env, sourceKey, requestedClips) {
         if (index === 0) throw new Error("video_audio_extract_failed");
         break;
       }
+
       const buffer = await audioResponse.arrayBuffer();
       if (!buffer.byteLength) break;
-      const transcript = await env.AI.run(WHISPER_MODEL, {
-        audio: bytesToBase64(buffer),
-        task: "transcribe",
-        vad_filter: true,
-        condition_on_previous_text: false
+
+      const form = new FormData();
+      form.append("file", new Blob([buffer], { type: "audio/mp4" }), "audio-" + index + ".m4a");
+      form.append("model", "whisper-1");
+      form.append("response_format", "verbose_json");
+      form.append("timestamp_granularities[]", "segment");
+
+      const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+        method: "POST",
+        headers: { authorization: "Bearer " + apiKey },
+        body: form
       });
-      const text = textFromWhisper(transcript);
-      const vtt = vttFromWhisper(transcript);
-      const parsed = parseVtt(vtt, offset);
-      if (parsed.length) segments.push(...parsed);
-      else if (text) segments.push({ start: offset, end: offset + AUDIO_WINDOW_SECONDS, text });
-      language = String(transcript?.language || transcript?.transcription_info?.language || language || "");
+      const transcript = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        if (index === 0) throw new Error("openai_transcription_http_" + response.status);
+        break;
+      }
+
+      const text = cleanText(transcript?.text || "", 16000);
+      const rawSegments = Array.isArray(transcript?.segments) ? transcript.segments : [];
+      if (rawSegments.length) {
+        for (const segment of rawSegments) {
+          const segmentText = cleanText(segment?.text || "", 1200);
+          if (!segmentText) continue;
+          segments.push({
+            start: offset + Number(segment?.start || 0),
+            end: offset + Number(segment?.end || 0),
+            text: segmentText
+          });
+        }
+      } else if (text) {
+        segments.push({ start: offset, end: offset + AUDIO_WINDOW_SECONDS, text });
+      }
+
+      language = String(transcript?.language || language || "");
       if (!text) emptyStreak += 1;
       else emptyStreak = 0;
       if (index > 0 && emptyStreak >= 2) break;
@@ -275,7 +303,12 @@ async function transcribeVideo(env, sourceKey, requestedClips) {
       break;
     }
   }
-  return { segments, language, windows: Math.ceil((segments.at(-1)?.end || 0) / AUDIO_WINDOW_SECONDS) };
+
+  return {
+    segments,
+    language,
+    windows: Math.ceil((segments.at(-1)?.end || 0) / AUDIO_WINDOW_SECONDS)
+  };
 }
 
 async function clearOldClips(env, clientId, jobId) {
@@ -407,7 +440,7 @@ export async function processVideoJob(env, clientId, jobId) {
 
   try {
     const requested = Math.round(clamp(settings.requestedClips || settings.clips || 3, 1, 12));
-    const transcript = await transcribeVideo(env, row.source_object_key, requested);
+    const transcript = await transcribeVideo(env, row.client_id, row.source_object_key, requested);
     await setJob(env, row, "processing", settings, {
       ...baseResult,
       progress: 45,
