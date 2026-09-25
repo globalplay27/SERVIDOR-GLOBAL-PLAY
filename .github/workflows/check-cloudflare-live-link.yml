@@ -1,0 +1,30 @@
+name: Check Cloudflare live link
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/check-cloudflare-live-link.yml"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Check production Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="https://servidor-nexus.diamantehinode2015.workers.dev/health"
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            BODY="$(curl -fsS --max-time 20 "$URL" || true)"
+            echo "attempt=$attempt"
+            echo "$BODY" | jq '{ok,runtime,releaseMarker,openai}' || true
+            if [ "$(echo "$BODY" | jq -r '.releaseMarker // empty' 2>/dev/null)" = "2026-09-25-live-link-test-2" ]; then
+              echo "cloudflare_link_ok=true"
+              exit 0
+            fi
+            sleep 8
+          done
+          echo "cloudflare_link_ok=false"
+          exit 1
