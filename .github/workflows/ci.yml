@@ -2,7 +2,7 @@ name: NEXUS CI
 
 on:
   push:
-    branches: [main, cloudflare-migration]
+    branches: [main, cloudflare-migration, feature/nexus-app-v2-20260924]
   pull_request:
 
 jobs:
