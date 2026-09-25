@@ -95,77 +95,6 @@ async function writeHeartbeat(env, now, summary) {
   })).run();
 }
 
-
-const LIVE_AGENT_TEST_TAG = "live-agent-test-20260925-1720";
-
-async function queueOneTimeLiveAgentTests(env, now) {
-  let queued = 0;
-  for (const clientId of ["globalplay-streaming", "ragnar-one"]) {
-    const id = LIVE_AGENT_TEST_TAG + ":" + clientId;
-    const result = await env.DB.prepare(
-      `INSERT OR IGNORE INTO scheduled_jobs(
-         id, client_id, kind, due_at, status, attempts, payload_json, created_at, updated_at
-       )
-       SELECT ?1, id, 'agent-core-cycle', ?2, 'scheduled', 0, ?3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-       FROM clients WHERE id = ?4 LIMIT 1`
-    ).bind(
-      id,
-      now.toISOString(),
-      JSON.stringify({ trigger: "manual", agent: "all", testTag: LIVE_AGENT_TEST_TAG }),
-      clientId
-    ).run();
-    queued += Number(result?.meta?.changes || 0);
-  }
-  return queued;
-}
-
-
-const LIVE_PUBLISH_ONCE_TAG = "publish-once-20260925-1731";
-
-async function queueOneTimePublishNow(env, now) {
-  let queued = 0;
-  for (const clientId of ["globalplay-streaming", "ragnar-one"]) {
-    const jobId = LIVE_PUBLISH_ONCE_TAG + ":" + clientId;
-    const exists = await env.DB.prepare(
-      "SELECT id FROM scheduled_jobs WHERE id = ?1 LIMIT 1"
-    ).bind(jobId).first();
-    if (exists?.id) continue;
-
-    const candidate = await env.DB.prepare(
-      `SELECT id FROM post_ledger
-       WHERE client_id = ?1
-         AND id LIKE ?2
-         AND status IN ('ready','scheduled','failed')
-       ORDER BY COALESCE(scheduled_for, created_at) ASC
-       LIMIT 1`
-    ).bind(clientId, "agentcore:" + clientId + ":%").first();
-    if (!candidate?.id) continue;
-
-    await env.DB.prepare(
-      `UPDATE post_ledger
-       SET scheduled_for = ?2,
-           status = 'ready',
-           approval_status = 'approved',
-           error = '',
-           updated_at = CURRENT_TIMESTAMP
-       WHERE id = ?1`
-    ).bind(candidate.id, now.toISOString()).run();
-
-    const result = await env.DB.prepare(
-      `INSERT OR IGNORE INTO scheduled_jobs(
-         id, client_id, kind, due_at, status, attempts, payload_json, created_at, updated_at
-       ) VALUES(?1, ?2, 'publisher-sweep', ?3, 'scheduled', 0, ?4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
-    ).bind(
-      jobId,
-      clientId,
-      now.toISOString(),
-      JSON.stringify({ trigger: "manual", source: "standard-content", postId: candidate.id }),
-    ).run();
-    queued += Number(result?.meta?.changes || 0);
-  }
-  return queued;
-}
-
 export async function runSchedulerTick(env, scheduledAt = new Date()) {
   const now = scheduledAt instanceof Date ? scheduledAt : new Date(scheduledAt || Date.now());
   const nowMs = now.getTime();
@@ -179,13 +108,8 @@ export async function runSchedulerTick(env, scheduledAt = new Date()) {
     queued: 0,
     cycles: 0,
     publisherSweeps: 0,
-    leadHunterRuns: 0,
-    liveTestsQueued: 0,
-    publishNowQueued: 0
+    leadHunterRuns: 0
   };
-
-  summary.liveTestsQueued = await queueOneTimeLiveAgentTests(env, now);
-  summary.publishNowQueued = await queueOneTimePublishNow(env, now);
 
   for (const raw of rows?.results || []) {
     const client = rowClient(raw);
