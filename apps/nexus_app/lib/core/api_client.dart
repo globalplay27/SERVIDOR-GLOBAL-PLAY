@@ -65,6 +65,47 @@ class NexusApiClient {
     return headers;
   }
 
+  String _friendlyError(dynamic payload, int statusCode) {
+    final raw = payload is Map
+        ? (payload['message'] ?? payload['error'] ?? 'Erro no servidor').toString()
+        : 'Erro no servidor';
+    const messages = <String, String>{
+      'unauthorized': 'Sua sessão expirou. Entre novamente.',
+      'too_many_login_attempts': 'Muitas tentativas. Aguarde um pouco e tente novamente.',
+      'r2_unavailable': 'A biblioteca de mídia está temporariamente indisponível.',
+      'video_too_large': 'O vídeo ultrapassa o limite de 100 MB.',
+      'video_part_too_large': 'Uma parte do vídeo ficou maior que o limite permitido.',
+      'invalid_video_type': 'Formato não suportado. Use MP4, MOV, WEBM ou MKV.',
+      'video_size_required': 'Não foi possível identificar o tamanho do vídeo.',
+      'video_url_invalid': 'O link do vídeo é inválido.',
+      'video_url_https_required': 'Use um link HTTPS para importar o vídeo.',
+      'video_url_not_allowed': 'Esse endereço de vídeo não pode ser importado.',
+      'video_source_too_many_redirects': 'O link redirecionou vezes demais.',
+      'youtube_stream_resolve_failed': 'Não foi possível obter esse vídeo público agora.',
+      'invalid_trailer_url': 'O trailer selecionado não possui um link válido.',
+      'video_not_found': 'Esse vídeo não existe mais na biblioteca.',
+      'video_source_missing': 'O arquivo original do vídeo não está disponível.',
+      'cloudflare_media_source_too_large': 'O vídeo é grande demais para o processador atual do Cloudflare.',
+      'cloudflare_media_unavailable': 'O processador de vídeo do Cloudflare não está disponível neste momento.',
+      'video_clip_generation_failed': 'Não foi possível gerar cortes utilizáveis desse vídeo.',
+      'clip_not_found': 'Esse corte não existe mais.',
+      'clip_not_approved': 'Aprove o corte antes de publicar.',
+      'clip_already_published': 'Esse corte já foi publicado.',
+      'invalid_schedule': 'Escolha uma data e horário válidos.',
+      'folder_not_found': 'A pasta selecionada não existe mais.',
+      'folder_name_required': 'Informe o nome da pasta.',
+      'default_folder_locked': 'A pasta Meus vídeos não pode ser alterada.',
+    };
+    if (messages.containsKey(raw)) return messages[raw]!;
+    if (raw.startsWith('video_source_http_')) {
+      return 'O servidor de origem recusou o download do vídeo.';
+    }
+    if (statusCode >= 500) {
+      return 'O servidor está temporariamente indisponível. Tente novamente.';
+    }
+    return raw;
+  }
+
   dynamic _decode(http.Response response) {
     dynamic payload;
     try {
@@ -74,13 +115,22 @@ class NexusApiClient {
     }
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      final message = payload is Map
-          ? (payload['message'] ?? payload['error'] ?? 'Erro no servidor').toString()
-          : 'Erro no servidor';
-      throw NexusApiException(message, response.statusCode);
+      throw NexusApiException(
+        _friendlyError(payload, response.statusCode),
+        response.statusCode,
+      );
     }
     return payload;
   }
+
+  Uri absoluteUri(String value) {
+    final raw = value.trim();
+    final parsed = Uri.tryParse(raw);
+    if (parsed != null && parsed.hasScheme) return parsed;
+    return Uri.parse(baseUrl + (raw.startsWith('/') ? raw : '/' + raw));
+  }
+
+  Map<String, String> get mediaHeaders => _headers();
 
   Future<NexusLoginResult> loginUnified(String username, String password) async {
     final response = await _http.post(
