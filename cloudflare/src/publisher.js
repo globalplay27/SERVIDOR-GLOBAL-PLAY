@@ -1,23 +1,4 @@
-import { decryptSecret } from "./secrets.js";
-
-function parseJson(raw, fallback = {}) {
-  try {
-    const value = JSON.parse(String(raw || ""));
-    return value && typeof value === "object" ? value : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-async function metaConnection(env, clientId) {
-  const row = await env.DB.prepare(
-    `SELECT payload_json FROM connections
-     WHERE client_id = ?1 AND provider = 'meta'
-     LIMIT 1`
-  ).bind(String(clientId)).first();
-  if (!row) return null;
-  return parseJson(row.payload_json, {});
-}
+import { resolveInstagramCredentials } from "./instagram-credentials.js";
 
 async function graphRequest(accessToken, pathName, method = "GET", form = null) {
   const endpoint = "https://graph.instagram.com/" + String(pathName || "").replace(/^\/+/, "");
@@ -45,10 +26,8 @@ async function graphRequest(accessToken, pathName, method = "GET", form = null) 
 }
 
 export async function publishInstagramImage(env, clientId, imageUrl, caption = "") {
-  const connection = await metaConnection(env, clientId);
-  const accessToken = connection?.accessToken
-    ? await decryptSecret(env, connection.accessToken).catch(() => "")
-    : "";
+  const connection = await resolveInstagramCredentials(env, clientId);
+  const accessToken = String(connection?.accessToken || "");
   const igUserId = String(connection?.igUserId || "").trim();
 
   if (!accessToken || !igUserId) {
@@ -102,10 +81,8 @@ export async function publishInstagramImage(env, clientId, imageUrl, caption = "
 
 
 export async function publishInstagramVideo(env, clientId, videoUrl, caption = "") {
-  const connection = await metaConnection(env, clientId);
-  const accessToken = connection?.accessToken
-    ? await decryptSecret(env, connection.accessToken).catch(() => "")
-    : "";
+  const connection = await resolveInstagramCredentials(env, clientId);
+  const accessToken = String(connection?.accessToken || "");
   const igUserId = String(connection?.igUserId || "").trim();
 
   if (!accessToken || !igUserId) throw new Error("instagram_not_connected");
