@@ -5,7 +5,8 @@ import { handlePortalApi } from "./portal.js";
 import { handleMaster } from "./master.js";
 import { runSchedulerTick } from "./scheduler.js";
 import { processDueJobs } from "./executor.js";
-import { masterCredentialsValid, createMasterSession, authenticatePortalUser, createPortalSession, masterSessionCookie, portalSessionCookie, loginRateLimitStatus, recordLoginFailure, clearLoginFailures } from "./auth.js";
+import { masterCredentialsValid, createMasterSession, authenticatePortalUser, createPortalSession, masterSessionCookie, portalSessionCookie, loginRateLimitStatus, recordLoginFailure, clearLoginFailures, resolvePortalSession, resolveMasterSession } from "./auth.js";
+import { processQueuedVideoJobs } from "./video-processing.js";
 
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
@@ -47,7 +48,7 @@ async function asset(env, request, pathname) {
   return env.ASSETS.fetch(new Request(target.toString(), request));
 }
 
-async function brandingMedia(env, url) {
+async function mediaResponse(request, env, url) {
   if (!env.MEDIA) return json({ error: "r2_unavailable" }, 503);
 
   let key = "";
@@ -57,20 +58,53 @@ async function brandingMedia(env, url) {
     return json({ error: "invalid_media_path" }, 400);
   }
 
-  const publicMedia = key.startsWith("branding/") || key.startsWith("posts/");
-  if (!publicMedia || key.includes("..") || key.includes("\\")) {
+  if (!key || key.includes("..") || key.includes("\\") || key.startsWith("/")) {
     return json({ error: "not_found" }, 404);
   }
 
-  const object = await env.MEDIA.get(key);
+  const publicMedia = key.startsWith("branding/") || key.startsWith("posts/");
+  const videoMatch = key.match(/^videos\/([^/]+)\//);
+  if (!publicMedia && !videoMatch) return json({ error: "not_found" }, 404);
+
+  if (videoMatch) {
+    const clientId = String(videoMatch[1] || "");
+    const portal = await resolvePortalSession(env, request).catch(() => null);
+    const master = portal ? null : await resolveMasterSession(env, request).catch(() => null);
+    if ((!portal || portal.clientId !== clientId) && !master) {
+      return json({ error: "unauthorized" }, 401);
+    }
+  }
+
+  const isHead = request.method === "HEAD";
+  let object;
+  try {
+    object = isHead
+      ? await env.MEDIA.head(key)
+      : await env.MEDIA.get(key, request.headers.get("range") ? { range: request.headers } : undefined);
+  } catch {
+    return new Response(null, { status: 416, headers: { "accept-ranges": "bytes" } });
+  }
   if (!object) return json({ error: "not_found" }, 404);
 
   const headers = new Headers();
   object.writeHttpMetadata(headers);
   if (object.httpEtag) headers.set("etag", object.httpEtag);
-  headers.set("cache-control", "public, max-age=31536000, immutable");
+  headers.set("accept-ranges", "bytes");
   headers.set("x-content-type-options", "nosniff");
-  return new Response(object.body, { status: 200, headers });
+  headers.set("cache-control", publicMedia ? "public, max-age=31536000, immutable" : "private, no-store");
+
+  let status = 200;
+  if (!isHead && object.range && Number.isFinite(object.range.offset) && Number.isFinite(object.range.length)) {
+    const rangeStart = Number(object.range.offset);
+    const rangeLength = Number(object.range.length);
+    headers.set("content-range", "bytes " + rangeStart + "-" + (rangeStart + rangeLength - 1) + "/" + object.size);
+    headers.set("content-length", String(rangeLength));
+    status = 206;
+  } else if (Number.isFinite(object.size)) {
+    headers.set("content-length", String(object.size));
+  }
+
+  return new Response(isHead ? null : object.body, { status, headers });
 }
 
 async function health(env) {
@@ -85,7 +119,7 @@ async function health(env) {
     ok: d1,
     service: "Servidor Nexus",
     runtime: "cloudflare-workers",
-    migrationMode: true,
+    migrationMode: false,
     database: d1 ? "d1-ready" : "d1-unavailable",
     media: env.MEDIA ? "r2-bound" : "r2-unavailable",
     assets: env.ASSETS ? "bound" : "unavailable",
@@ -153,18 +187,19 @@ export default {
     ctx.waitUntil((async () => {
       await runSchedulerTick(env, at);
       await processDueJobs(env, at);
+      await processQueuedVideoJobs(env, 1);
     })());
   },
 
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
     if (url.pathname === "/" && request.method === "GET") {
       return redirect("/login");
     }
 
-    if (url.pathname.startsWith("/media/") && request.method === "GET") {
-      return brandingMedia(env, url);
+    if (url.pathname.startsWith("/media/") && ["GET","HEAD"].includes(request.method)) {
+      return mediaResponse(request, env, url);
     }
 
 
@@ -230,7 +265,7 @@ export default {
     const masterResponse = await handleMaster(request, env, url);
     if (masterResponse) return masterResponse;
 
-    const portalResponse = await handlePortalApi(request, env, url);
+    const portalResponse = await handlePortalApi(request, env, url, ctx);
     if (portalResponse) return portalResponse;
 
     if (url.pathname === "/health" || url.pathname === "/api/health") {
@@ -274,8 +309,8 @@ export default {
     return json({
       ok: true,
       service: "Servidor Nexus",
-      migrationMode: true,
-      message: "Cloudflare migration runtime is online. Legacy Railway remains untouched until cutover."
+      migrationMode: false,
+      message: "Cloudflare runtime is online and operating independently."
     });
   }
 };
