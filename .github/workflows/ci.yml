@@ -2,23 +2,23 @@ name: NEXUS CI
 
 on:
   push:
-    branches: [main, cloudflare-migration, feature/nexus-app-v2-20260924]
+    branches: [main, cloudflare-migration]
   pull_request:
 
 jobs:
-  syntax:
+  cloudflare:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - name: Check server syntax
-        run: node --check server.js
-      - name: Check intelligence layer syntax
-        run: node --check instagram-intelligence.js
-      - name: Check client syntax
-        run: node --check public/client.js
+
+      - name: Check panel JavaScript
+        run: |
+          node --check public/app.js
+          node --check public/client.js
+
       - name: Check Cloudflare Worker syntax
         shell: bash
         run: |
