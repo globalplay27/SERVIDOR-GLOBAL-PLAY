@@ -66,3 +66,5 @@ O NEXUS não possui runtime alternativo. Código fica no GitHub e toda execuçã
 Para detalhes, consulte `ARCHITECTURE.md`.
 
 <!-- deploy-sync: live-post-20260925-1 -->
+
+<!-- production-sync: growth-30d-v1 -->
