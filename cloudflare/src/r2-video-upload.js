@@ -266,9 +266,13 @@ function youtubeVideoIdFromUrl(value) {
 
 const PIPED_STREAM_APIS = [
   "https://pipedapi.kavin.rocks",
-  "https://pipedapi.leptons.xyz",
-  "https://pipedapi.nosebs.ru",
-  "https://api-piped.mha.fi"
+  "https://pipedapi.tokhmi.xyz",
+  "https://pipedapi.moomoo.me",
+  "https://pipedapi.syncpundit.io",
+  "https://api-piped.mha.fi",
+  "https://piped-api.garudalinux.org",
+  "https://pipedapi.rivo.lol",
+  "https://pipedapi.leptons.xyz"
 ];
 
 
