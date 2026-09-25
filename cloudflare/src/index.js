@@ -121,6 +121,36 @@ async function mediaResponse(request, env, url) {
   return new Response(isHead ? null : object.body, { status, headers });
 }
 
+async function latestManualPublisherResult(env, clientId) {
+  try {
+    const row = await env.DB.prepare(
+      `SELECT status, detail_json, created_at
+       FROM agent_executions
+       WHERE client_id = ?1
+         AND agent = 'PUBLISHER'
+         AND detail_json LIKE '%"trigger":"manual"%'
+       ORDER BY created_at DESC
+       LIMIT 1`
+    ).bind(String(clientId)).first();
+    if (!row) return null;
+    let detail = {};
+    try { detail = JSON.parse(String(row.detail_json || "{}")); } catch {}
+    const metadata = detail?.metadata && typeof detail.metadata === "object" ? detail.metadata : {};
+    return {
+      status: String(row.status || ""),
+      createdAt: row.created_at || null,
+      trigger: String(detail.trigger || ""),
+      message: String(detail.message || ""),
+      published: Number(metadata.published || 0),
+      failed: Number(metadata.failed || 0),
+      awaitingApproval: Number(metadata.awaitingApproval || 0),
+      awaitingMedia: Number(metadata.awaitingMedia || 0)
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function health(env) {
   let d1 = false;
   try {
@@ -129,6 +159,11 @@ async function health(env) {
   } catch {
     d1 = false;
   }
+  const liveInstagramTest = d1 ? {
+    claire: await latestManualPublisherResult(env, "globalplay-streaming"),
+    ragnar: await latestManualPublisherResult(env, env.RAGNAR_CLIENT_ID || "ragnar-one")
+  } : null;
+
   return json({
     ok: d1,
     service: "Servidor Nexus",
@@ -140,7 +175,8 @@ async function health(env) {
     openai: {
       shared: openAIKeyStatus(env, "shared-client").configured,
       ragnar: openAIKeyStatus(env, env.RAGNAR_CLIENT_ID || "ragnar-one").configured
-    }
+    },
+    liveInstagramTest
   }, d1 ? 200 : 503);
 }
 
