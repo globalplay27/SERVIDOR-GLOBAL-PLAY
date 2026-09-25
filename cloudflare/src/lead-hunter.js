@@ -178,7 +178,19 @@ function responseText(data) {
 
 async function qualifyWithAI(env, client, candidates, config) {
   if (!config.aiQualification || !candidates.length) return candidates;
-  const sample = candidates.slice(0,30).map((item,index)=>({index,username:item.instagramUsername,message:item.message,localScore:item.score,localIntent:item.intent}));
+
+  // Modo econômico por padrão: a qualificação local já executou antes deste ponto.
+  // Só usa provedor pago quando o administrador habilita explicitamente.
+  const provider = String(env.NEXUS_AI_PROVIDER || "local-first");
+  if (provider === "local-first" || provider === "local-only") return candidates;
+
+  const sample = candidates.slice(0,30).map((item,index)=>({
+    index,
+    username:item.instagramUsername,
+    message:item.message,
+    localScore:item.score,
+    localIntent:item.intent
+  }));
   const prompt = [
     "Você é ODIN, qualificador de leads do NEXUS AI.",
     "Analise comentários do Instagram para intenção comercial, curiosidade e sinais que podem virar seguidores ou conteúdo.",
@@ -191,28 +203,14 @@ async function qualifyWithAI(env, client, candidates, config) {
 
   let raw = "";
   try {
-    if (env.AI && String(env.NEXUS_AI_PROVIDER || "workers-first") !== "openai-only") {
-      const result = await env.AI.run(
-        String(env.NEXUS_WORKERS_AI_MODEL || "@cf/meta/llama-3.1-8b-instruct-fast"),
-        { prompt, max_tokens: 900 }
-      );
-      raw = String(result?.response || result?.output_text || "").trim();
-    }
+    const result = await openAIResponses(env, client.id, {
+      model:"gpt-5.6-luna",
+      input:prompt,
+      max_output_tokens:900
+    });
+    raw = responseText(result).trim();
   } catch {
-    raw = "";
-  }
-
-  if (!raw) {
-    try {
-      const result = await openAIResponses(env, client.id, {
-        model:"gpt-5.6-luna",
-        input:prompt,
-        max_output_tokens:900
-      });
-      raw = responseText(result).trim();
-    } catch {
-      return candidates;
-    }
+    return candidates;
   }
 
   try {
@@ -223,7 +221,13 @@ async function qualifyWithAI(env, client, candidates, config) {
       const ai=byIndex.get(index);
       if(!ai)return item;
       const score=Math.max(item.score,Math.max(0,Math.min(100,Number(ai.score||0))));
-      return {...item,score,temperature:score>=70?"hot":score>=45?"warm":"cold",intent:String(ai.intent||item.intent||"interação").slice(0,300),needsHuman:ai.needsHuman===true||item.needsHuman};
+      return {
+        ...item,
+        score,
+        temperature:score>=70?"hot":score>=45?"warm":"cold",
+        intent:String(ai.intent||item.intent||"interação").slice(0,300),
+        needsHuman:ai.needsHuman===true||item.needsHuman
+      };
     });
   } catch {
     return candidates;
