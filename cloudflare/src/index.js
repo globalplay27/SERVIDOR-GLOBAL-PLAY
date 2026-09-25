@@ -134,11 +134,13 @@ async function health(env) {
     const jobs = await env.DB.prepare(
       `SELECT id, client_id, status, attempts, last_error, updated_at
        FROM scheduled_jobs
-       WHERE id IN (?1, ?2)
-       ORDER BY client_id`
+       WHERE id IN (?1, ?2, ?3, ?4)
+       ORDER BY id`
     ).bind(
       "live-agent-test-20260925-1720:globalplay-streaming",
-      "live-agent-test-20260925-1720:ragnar-one"
+      "live-agent-test-20260925-1720:ragnar-one",
+      "live-publish-test-20260925-1722:globalplay-streaming",
+      "live-publish-test-20260925-1722:ragnar-one"
     ).all();
 
     const publishers = await env.DB.prepare(
@@ -150,7 +152,30 @@ async function health(env) {
        LIMIT 10`
     ).all();
 
+    const posts = await env.DB.prepare(
+      `SELECT id, client_id, status, media_id, error, payload_json, updated_at
+       FROM post_ledger
+       WHERE client_id IN ('globalplay-streaming','ragnar-one')
+         AND status = 'published'
+       ORDER BY updated_at DESC
+       LIMIT 8`
+    ).all();
+
     liveAgentTest.jobs = jobs?.results || [];
+    liveAgentTest.posts = (posts?.results || []).map(row => {
+      let payload = {};
+      try { payload = JSON.parse(String(row.payload_json || "{}")); } catch {}
+      return {
+        id: row.id,
+        clientId: row.client_id,
+        status: row.status,
+        mediaId: row.media_id || "",
+        permalink: payload.permalink || "",
+        publishedAt: payload.publishedAt || "",
+        updatedAt: row.updated_at,
+        error: row.error || ""
+      };
+    });
     liveAgentTest.publishers = (publishers?.results || []).map(row => {
       let detail = {};
       try { detail = JSON.parse(String(row.detail_json || "{}")); } catch {}
