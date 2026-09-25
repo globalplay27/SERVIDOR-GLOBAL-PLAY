@@ -188,9 +188,35 @@ async function qualifyWithAI(env, client, candidates, config) {
     "Nicho: " + String(client.niche || ""),
     JSON.stringify(sample)
   ].join("\n");
+
+  let raw = "";
   try {
-    const result = await openAIResponses(env, client.id, { model:"gpt-5.6-luna", input:prompt });
-    let raw = responseText(result).trim().replace(/^\x60\x60\x60(?:json)?/i,"").replace(/\x60\x60\x60$/,"").trim();
+    if (env.AI && String(env.NEXUS_AI_PROVIDER || "workers-first") !== "openai-only") {
+      const result = await env.AI.run(
+        String(env.NEXUS_WORKERS_AI_MODEL || "@cf/meta/llama-3.1-8b-instruct-fast"),
+        { prompt, max_tokens: 900 }
+      );
+      raw = String(result?.response || result?.output_text || "").trim();
+    }
+  } catch {
+    raw = "";
+  }
+
+  if (!raw) {
+    try {
+      const result = await openAIResponses(env, client.id, {
+        model:"gpt-5.6-luna",
+        input:prompt,
+        max_output_tokens:900
+      });
+      raw = responseText(result).trim();
+    } catch {
+      return candidates;
+    }
+  }
+
+  try {
+    raw = raw.replace(/^\x60\x60\x60(?:json)?/i,"").replace(/\x60\x60\x60$/,"").trim();
     const parsed = JSON.parse(raw);
     const byIndex = new Map((Array.isArray(parsed?.items)?parsed.items:[]).map(item=>[Number(item.index),item]));
     return candidates.map((item,index)=>{
