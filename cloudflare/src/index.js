@@ -1,3 +1,4 @@
+import { DurableObject } from "cloudflare:workers";
 import { openAIKeyStatus } from "./openai-routing.js";
 import { openAIResponses, tokenUsageToday } from "./openai.js";
 import { getState, putState, deleteState } from "./storage.js";
@@ -8,6 +9,18 @@ import { processDueJobs } from "./executor.js";
 import { masterCredentialsValid, createMasterSession, authenticatePortalUser, createPortalSession, masterSessionCookie, portalSessionCookie, loginRateLimitStatus, recordLoginFailure, clearLoginFailures, resolvePortalSession, resolveMasterSession } from "./auth.js";
 import { processQueuedVideoJobs } from "./video-processing.js";
 import { processQueuedVideoImports } from "./r2-video-upload.js";
+
+export class YoutubeDownloader extends DurableObject {
+  async fetch() {
+    return new Response(JSON.stringify({
+      ok: false,
+      error: "youtube_container_not_enabled"
+    }), {
+      status: 503,
+      headers: { "content-type": "application/json; charset=utf-8" }
+    });
+  }
+}
 
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
