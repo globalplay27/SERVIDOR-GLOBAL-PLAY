@@ -220,13 +220,15 @@ async function loadTokenUsage(){
     if(calls)calls.textContent=Number(d.calls||0)+" chamada"+(Number(d.calls||0)===1?"":"s")+" registrada"+(Number(d.calls||0)===1?"":"s");
     if(bar)bar.style.width=Math.max(0,Math.min(100,Number(d.percent||0)))+"%";
     if(state){
-      state.textContent=d.blocked?"LIMITE ATINGIDO":Number(d.percent||0)>=80?"ATENÇÃO":"DISPONÍVEL";
+      state.textContent=d.quotaExhausted?"SEM CRÉDITO":d.blocked?"LIMITE DIÁRIO":Number(d.percent||0)>=80?"ATENÇÃO":"DISPONÍVEL";
       state.classList.toggle("off",Boolean(d.blocked));
       state.classList.toggle("warning",!d.blocked&&Number(d.percent||0)>=80);
     }
-    if(detail)detail.textContent=d.blocked
-      ?"O limite de hoje foi atingido. Novas chamadas de IA ficam bloqueadas até a virada do dia em São Paulo."
-      :"Uso de hoje: "+Number(d.percent||0)+"% do limite. A contagem reinicia à meia-noite no horário de São Paulo.";
+    if(detail)detail.textContent=d.quotaExhausted
+      ?"A OpenAI informou quota/crédito insuficiente. As tarefas compatíveis continuam pelo Cloudflare Workers AI."
+      :d.blocked
+        ?"O limite diário do NEXUS foi atingido. Novas chamadas pagas ficam bloqueadas até a virada do dia em São Paulo."
+        :"Uso OpenAI hoje: "+Number(d.percent||0)+"% do limite · custo estimado US$ "+Number(d.estimatedCostUsd||0).toFixed(4)+". Tarefas simples usam Cloudflare AI primeiro.";
   }catch{
     if(state){state.textContent="INDISPONÍVEL";state.classList.add("off");}
     if(detail)detail.textContent="Não foi possível sincronizar o consumo de tokens agora.";
@@ -241,8 +243,12 @@ async function providerUsage(){
     const d=await r.json();
     const oa=$("#live-openai"),oad=$("#live-openai-detail"),rw=$("#live-railway"),rwd=$("#live-railway-detail");
     if(d.openai?.connected&&oa){
-      oa.textContent=d.openai.costAvailable?("US$ "+Number(d.openai.cost31dUsd||0).toFixed(2)+" / 31 dias"):"OpenAI conectada";
-      if(oad)oad.textContent=d.openai.costAvailable?"Custo obtido da API da organização.":"Chave do projeto validada.";
+      oa.textContent=d.openai.quotaExhausted?"SEM CRÉDITO":d.openai.costAvailable?("US$ "+Number(d.openai.cost31dUsd||0).toFixed(4)+" hoje"):"OpenAI conectada";
+      if(oad)oad.textContent=d.openai.quotaExhausted
+        ?"Quota/crédito insuficiente detectado. Cloudflare AI permanece como primeira opção nas tarefas compatíveis."
+        :d.openai.costIsEstimate
+          ?"Custo estimado pelos tokens registrados; não é o saldo da conta OpenAI."
+          :"Chave do projeto validada.";
     }
     if(d.railway?.connected&&rw){
       rw.textContent=d.railway.projectCount!=null?(d.railway.projectCount+" projeto(s) autorizado(s)"):"Railway conectada";
