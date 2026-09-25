@@ -914,7 +914,7 @@ class _VideosPageState extends State<VideosPage> {
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<int>(
-                  value: clips.clamp(1, 12),
+                  initialValue: clips.clamp(1, 12),
                   decoration: const InputDecoration(
                     labelText: 'Quantidade de cortes',
                     border: OutlineInputBorder(),
@@ -932,7 +932,7 @@ class _VideosPageState extends State<VideosPage> {
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<int>(
-                  value: const [10, 15, 20, 30, 45, 60, 90].contains(duration)
+                  initialValue: const [10, 15, 20, 30, 45, 60, 90].contains(duration)
                       ? duration
                       : 30,
                   decoration: const InputDecoration(
@@ -953,7 +953,7 @@ class _VideosPageState extends State<VideosPage> {
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
-                  value: format,
+                  initialValue: format,
                   decoration: const InputDecoration(
                     labelText: 'Formato',
                     border: OutlineInputBorder(),
@@ -1605,7 +1605,7 @@ class _VideosPageState extends State<VideosPage> {
       builder: (context) => AlertDialog(
         title: const Text('Intervalo entre postagens'),
         content: DropdownButtonFormField<int>(
-          value: interval,
+          initialValue: interval,
           items: const [
             DropdownMenuItem(value: 30, child: Text('30 minutos')),
             DropdownMenuItem(value: 60, child: Text('1 hora')),
@@ -2079,7 +2079,7 @@ class _VideosPageState extends State<VideosPage> {
           ),
           const SizedBox(height: 10),
           DropdownButtonFormField<String>(
-            value: folderFilter,
+            initialValue: folderFilter,
             decoration: const InputDecoration(
               labelText: 'Pasta',
               border: OutlineInputBorder(),
