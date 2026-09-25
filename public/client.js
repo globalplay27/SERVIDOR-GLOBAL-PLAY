@@ -14,6 +14,40 @@ function nextPostTime(times=[]){if(!Array.isArray(times)||!times.length)return"�
 function showView(name){$$("[data-view]").forEach(b=>b.classList.toggle("active",b.dataset.view===name));["overview","posts","capture","leads","videos","trailers","posting","support","setup"].forEach(v=>{const el=$("#view-"+v);if(el)el.hidden=v!==name;});if(name==="support")loadSupportTickets();if(name==="posts")loadClientPosts();if(name==="capture")loadLeadHunter();if(name==="leads")loadClientLeads();if(name==="videos"){ensureBulkVideoScheduler();loadVideoJobs();}if(name==="overview"){loadAgentTeam();loadTokenUsage();}}
 function onboardingKeys(){return["instagram","creativeProfile"];}
 function setupPercent(){const o=currentClient?.onboarding||{};const keys=onboardingKeys();return Math.round(keys.filter(k=>o[k]).length/keys.length*100);}
+function instagramIsConnected(client=currentClient){
+  const connections=client?.connections||{};
+  return Boolean(
+    connections.instagram?.connected
+    || connections.meta?.connected
+    || client?.onboarding?.instagram===true
+  );
+}
+function renderInstagramConnectionState(){
+  const connected=instagramIsConnected();
+  const handle=String(currentClient?.instagram||"").trim();
+  const card=$("#instagram-card");
+  const igButton=$("#instagram-connect");
+  const igStatus=$("#instagram-connect-status");
+  const setupIg=$("#setup-instagram-connect");
+  const setupStatus=$("#setup-instagram-status");
+
+  if(card)card.textContent=connected?(handle||"Instagram conectado"):"Aguardando conexão";
+  if(igButton){
+    igButton.disabled=connected;
+    igButton.textContent=connected?"Instagram conectado":"Conectar Instagram";
+    igButton.classList.toggle("connected",connected);
+  }
+  if(igStatus)igStatus.textContent=connected?(handle?handle+" autorizado":"Conta autorizada"):"";
+  if(setupIg){
+    setupIg.disabled=connected;
+    setupIg.textContent=connected?"Instagram conectado":"Conectar Instagram";
+    setupIg.classList.toggle("connected",connected);
+  }
+  if(setupStatus){
+    setupStatus.textContent=connected?(handle?handle+" autorizado":"Conta autorizada"):"Aguardando autorização";
+    setupStatus.className="provider-line"+(connected?" connected":"");
+  }
+}
 function renderOnboarding(){
   const o=currentClient?.onboarding||{},pct=setupPercent();
   const progress=$("#setup-progress");if(progress)progress.textContent=pct+"%";
@@ -23,10 +57,7 @@ function renderOnboarding(){
   const modeNew=$("#mode-new"),modeReady=$("#mode-ready");
   if(modeNew)modeNew.classList.toggle("selected",(currentClient?.setupMode||"ready")==="new");
   if(modeReady)modeReady.classList.toggle("selected",(currentClient?.setupMode||"ready")==="ready");
-  const setupIg=$("#setup-instagram-connect"),setupStatus=$("#setup-instagram-status");
-  const connected=Boolean(currentClient?.instagram);
-  if(setupIg){setupIg.disabled=connected;setupIg.textContent=connected?"Instagram conectado":"Conectar Instagram";setupIg.classList.toggle("connected",connected);}
-  if(setupStatus){setupStatus.textContent=connected?(currentClient.instagram+" autorizado"):"Aguardando autorização";setupStatus.className="provider-line"+(connected?" connected":"");}
+  renderInstagramConnectionState();
 }
 function renderConnections(connections={}){
   const labels={github:"github-connection",railway:"railway-connection",openai:"openai-connection"};
@@ -80,7 +111,6 @@ function renderClient(c){
   $("#client-name").textContent=c.name;
   $("#client-meta").textContent=(c.niche||"Outro")+" · ambiente exclusivo";
   $("#next-post").textContent=nextPostTime(c.postTimes);
-  $("#instagram-card").textContent=c.instagram||"Aguardando conexão";
   const aiCard=$("#ai-mode-card"),aiDetail=$("#ai-mode-detail");
   if(aiCard)aiCard.textContent=c.id==="ragnar-one"?"CONTA PRÓPRIA":"NEXUS";
   if(aiDetail)aiDetail.textContent=c.id==="ragnar-one"
@@ -90,14 +120,6 @@ function renderClient(c){
   $("#niche").textContent=c.niche||"Outro";
   $("#agent-status").textContent=online?"Online":"Em configuração";
   $("#post-times").textContent=(c.postTimes||[]).join(" · ")||"—";
-  const igButton=$("#instagram-connect"),igStatus=$("#instagram-connect-status");
-  if(igButton){
-    const connected=Boolean(c.instagram);
-    igButton.disabled=connected;
-    igButton.textContent=connected?"Instagram conectado":"Conectar Instagram";
-    igButton.classList.toggle("connected",connected);
-  }
-  if(igStatus)igStatus.textContent=c.instagram?c.instagram+" autorizado":"";
   populateAgentProfile(c);
   renderOnboarding();
 }
@@ -298,6 +320,7 @@ async function loadConnections(){
     currentClient.onboarding=d.onboarding||currentClient.onboarding||{};
     renderConnections(currentClient.connections);
     renderOnboarding();
+    renderInstagramConnectionState();
     return d;
   }catch{return null;}
 }
@@ -335,10 +358,17 @@ async function startInstagramConnection(){
     instagramOauthTimer=setInterval(async()=>{
       tries++;
       const c=await refreshPortalClient();
-      if(c?.instagram){
+      const connectionData=await loadConnections();
+      const connected=Boolean(
+        connectionData?.connections?.instagram?.connected
+        || connectionData?.connections?.meta?.connected
+        || c?.onboarding?.instagram===true
+      );
+      if(connected){
         clearInterval(instagramOauthTimer);
         instagramOauthTimer=null;
-        if(status)status.textContent=c.instagram+" conectado com sucesso.";
+        const handle=String(c?.instagram||"").trim();
+        if(status)status.textContent=(handle?handle+" ":"")+"conectado com sucesso.";
         try{popup.close();}catch{}
         return;
       }
@@ -357,9 +387,17 @@ async function startInstagramConnection(){
 }
 window.addEventListener("message",event=>{
   if(event.data?.type!=="nexus-instagram-oauth")return;
-  refreshPortalClient().then(c=>{
+  Promise.all([refreshPortalClient(),loadConnections()]).then(([c,d])=>{
     const status=$("#instagram-connect-status");
-    if(c?.instagram&&status)status.textContent=c.instagram+" conectado com sucesso.";
+    const connected=Boolean(
+      d?.connections?.instagram?.connected
+      || d?.connections?.meta?.connected
+      || c?.onboarding?.instagram===true
+    );
+    if(connected&&status){
+      const handle=String(c?.instagram||"").trim();
+      status.textContent=(handle?handle+" ":"")+"conectado com sucesso.";
+    }
   });
 });
 const instagramConnectButton=$("#instagram-connect");
