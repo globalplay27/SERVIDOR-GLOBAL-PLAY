@@ -132,27 +132,34 @@ async function connectionSummary(env, clientId) {
 
   const out = {};
   for (const row of result?.results || []) {
+    const provider = String(row.provider || "");
     const payload = parseJson(row.payload_json, {});
-    out[String(row.provider)] = {
+    const summary = {
       connected: true,
       direct: true,
       source: "cloudflare",
       label: payload?.label || payload?.login || payload?.name || "",
       connectedAt: row.connected_at || row.updated_at || null
     };
+    out[provider] = summary;
+    if (provider === "meta") {
+      // Client-facing alias: the client authorizes Instagram, not the internal provider name.
+      out.instagram = summary;
+    }
   }
 
-  if (!out.openai) {
-    out.openai = {
-      connected: true,
-      direct: false,
-      source: "managed-secret",
-      label: clientId === String(env.RAGNAR_CLIENT_ID || "ragnar-one")
-        ? "OpenAI exclusiva Ragnar"
-        : "OpenAI compartilhada NEXUS",
-      connectedAt: null
-    };
-  }
+  // Infrastructure and provider keys remain server-managed. The client only needs
+  // the Instagram authorization state and a generic AI-managed indicator.
+  out.ai = {
+    connected: true,
+    direct: false,
+    source: "managed",
+    label: clientId === String(env.RAGNAR_CLIENT_ID || "ragnar-one")
+      ? "IA exclusiva do cliente"
+      : "IA gerenciada pelo NEXUS",
+    connectedAt: null
+  };
+
   return out;
 }
 
