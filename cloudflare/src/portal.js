@@ -16,8 +16,8 @@ import { searchTrailers } from "./trailers.js";
 import { AGENT_CORE_MODULES, normalizeAgentCoreConfig, agentCoreState, agentExecutions, saveAgentCoreConfig } from "./agent-core.js";
 import { leadsForClient, leadHunterSummary } from "./leads.js";
 import { leadHunterView, saveLeadHunterConfig, runLeadHunter, discardLead } from "./lead-hunter.js";
-import { createVideoFolder, renameVideoFolder, deleteVideoFolder, patchVideoJob, deleteVideoJob, setClipApproval, adjustClip, selectClip, scheduleClip, bulkScheduleClips } from "./video-library.js";
-import { proxyRailwayVideoRequest, createVideoUploadTicket } from "./railway-video-bridge.js";
+import { createVideoFolder, renameVideoFolder, deleteVideoFolder, patchVideoJob, deleteVideoJob, setClipApproval, selectClip, scheduleClip, bulkScheduleClips } from "./video-library.js";
+import { enqueueVideoProcessing, processVideoJob, regenerateVideoClip, publishVideoClipNow } from "./video-processing.js";
 import { createR2VideoUpload, uploadR2VideoPart, completeR2VideoUpload, abortR2VideoUpload, importR2VideoFromUrl } from "./r2-video-upload.js";
 import { decidePost, requestPostRevision, saveOwnPostContent, publishPostNow } from "./posts.js";
 
@@ -243,31 +243,42 @@ async function listVideos(env, clientId) {
       id: row.id,
       clientId: row.client_id,
       sourceObjectKey: row.source_object_key || "",
+      sourceUrl: row.source_object_key ? "/media/" + row.source_object_key : "",
       status: row.status || "pending",
+      ...resultJson,
       folderId: settings.folderId || "default",
+      displayName: settings.displayName || settings.contentTitle || settings.fileName || "Vídeo",
+      filename: settings.fileName || "",
       contentTitle: settings.contentTitle || "",
       goal: settings.goal || "viral",
       clipDuration: Number(settings.clipDuration || settings.duration || 30),
       requestedClips: Number(settings.requestedClips || settings.clips || 3),
       outputFormat: settings.outputFormat || "reel",
       autoSubtitles: settings.autoSubtitles !== false,
+      endText: settings.endText || "",
+      endContact: settings.endContact || "",
       message: resultJson.message || "",
       error: resultJson.error || "",
       createdAt: row.created_at || null,
       updatedAt: row.updated_at || null,
-      clips: (clipsResult?.results || []).map(clip => ({
-        id: clip.id,
-        sourceObjectKey: clip.source_object_key || "",
-        outputObjectKey: clip.output_object_key || "",
-        status: clip.status || "pending",
-        approvalStatus: clip.approval_status || "pending",
-        publishStatus: clip.publish_status || "draft",
-        scheduledFor: clip.scheduled_for || null,
-        ...parseJson(clip.settings_json, {}),
-        ...parseJson(clip.result_json, {}),
-        createdAt: clip.created_at || null,
-        updatedAt: clip.updated_at || null
-      }))
+      clips: (clipsResult?.results || []).map(clip => {
+        const clipSettings = parseJson(clip.settings_json, {});
+        const clipResult = parseJson(clip.result_json, {});
+        return {
+          id: clip.id,
+          sourceObjectKey: clip.source_object_key || "",
+          outputObjectKey: clip.output_object_key || "",
+          status: clip.status || "pending",
+          approvalStatus: clip.approval_status || "pending",
+          publishStatus: clip.publish_status || "draft",
+          scheduledFor: clip.scheduled_for || null,
+          ...clipSettings,
+          ...clipResult,
+          previewUrl: clipResult.previewUrl || (clip.output_object_key ? "/media/" + clip.output_object_key : ""),
+          createdAt: clip.created_at || null,
+          updatedAt: clip.updated_at || null
+        };
+      })
     });
   }
   return jobs;
@@ -281,7 +292,7 @@ async function patchClientConfig(env, client, patch) {
   return upsertClient(env, { ...client, config });
 }
 
-export async function handlePortalApi(request, env, url) {
+export async function handlePortalApi(request, env, url, ctx) {
   const instagramCallback = await handleInstagramOAuthCallback(env, request, url);
   if (instagramCallback) return instagramCallback;
 
@@ -400,16 +411,6 @@ export async function handlePortalApi(request, env, url) {
   const { session, client } = await sessionClient(request, env);
   if (!session || !client) return json({ error: "unauthorized" }, 401);
 
-  if (url.pathname === "/api/portal/video-upload-ticket" && request.method === "POST") {
-    try {
-      return json({ ok: true, ...(await createVideoUploadTicket(env, client.id)) });
-    } catch (error) {
-      return json({
-        error: error instanceof Error ? error.message : String(error)
-      }, 503);
-    }
-  }
-
   if (url.pathname === "/api/portal/logo" && request.method === "POST") {
     try {
       const logo = await storeProfileLogo(env, client.id, request);
@@ -526,9 +527,6 @@ export async function handlePortalApi(request, env, url) {
     }
   }
 
-  const videoBridgeResponse = await proxyRailwayVideoRequest(request, env, url, client.id);
-  if (videoBridgeResponse) return videoBridgeResponse;
-
   if (url.pathname === "/api/portal/session" && request.method === "GET") {
     return json(
       portalClientView(client),
@@ -545,7 +543,7 @@ export async function handlePortalApi(request, env, url) {
       service: "Servidor Nexus",
       database: "d1",
       media: env.MEDIA ? "r2" : "unavailable",
-      migrationMode: true
+      migrationMode: false
     });
   }
 
@@ -697,6 +695,25 @@ export async function handlePortalApi(request, env, url) {
       folders: await listVideoFolders(env, client.id)
     });
   }
+  const videoProcessMatch = url.pathname.match(/^\/api\/portal\/videos\/([^/]+)\/process$/);
+  if (videoProcessMatch && request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    const jobId = decodeURIComponent(videoProcessMatch[1]);
+    try {
+      await enqueueVideoProcessing(env, client.id, jobId, body);
+      if (ctx?.waitUntil) ctx.waitUntil(processVideoJob(env, client.id, jobId).catch(() => {}));
+      const jobs = await listVideos(env, client.id);
+      return json({ ok: true, job: jobs.find(job => job.id === jobId) || null }, 202);
+    } catch (error) {
+      const code = error instanceof Error ? error.message : String(error);
+      const status = code === "video_not_found" ? 404
+        : code === "cloudflare_media_source_too_large" ? 413
+        : code === "cloudflare_media_unavailable" ? 503
+        : 400;
+      return json({ error: code }, status);
+    }
+  }
+
   if (url.pathname === "/api/portal/videos/bulk-schedule" && request.method === "POST") {
     const body = await request.json().catch(() => ({}));
     try {
@@ -743,7 +760,7 @@ export async function handlePortalApi(request, env, url) {
   if (clipAdjustMatch && request.method === "POST") {
     const body = await request.json().catch(() => ({}));
     try {
-      const clip = await adjustClip(env, client.id, decodeURIComponent(clipAdjustMatch[1]), decodeURIComponent(clipAdjustMatch[2]), body);
+      const clip = await regenerateVideoClip(env, client.id, decodeURIComponent(clipAdjustMatch[1]), decodeURIComponent(clipAdjustMatch[2]), body);
       return json({ ok: true, clip });
     } catch (error) {
       return json({ error: error instanceof Error ? error.message : String(error) }, 400);
@@ -756,6 +773,24 @@ export async function handlePortalApi(request, env, url) {
     try {
       const clip = await selectClip(env, client.id, decodeURIComponent(clipSelectMatch[1]), decodeURIComponent(clipSelectMatch[2]), body.selected);
       return json({ ok: true, clip });
+    } catch (error) {
+      return json({ error: error instanceof Error ? error.message : String(error) }, 400);
+    }
+  }
+
+  const clipPublishMatch = url.pathname.match(/^\/api\/portal\/videos\/([^/]+)\/clips\/([^/]+)\/publish$/);
+  if (clipPublishMatch && request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    try {
+      const published = await publishVideoClipNow(
+        env,
+        client.id,
+        decodeURIComponent(clipPublishMatch[1]),
+        decodeURIComponent(clipPublishMatch[2]),
+        body.caption || "",
+        new URL(request.url).origin
+      );
+      return json({ ok: true, ...published });
     } catch (error) {
       return json({ error: error instanceof Error ? error.message : String(error) }, 400);
     }
