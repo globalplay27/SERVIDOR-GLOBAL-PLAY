@@ -65,6 +65,82 @@ function normalizeResult(item, kind, fallbackTitle = "") {
 }
 
 
+
+function decodeYoutubeText(value) {
+  const raw=String(value||"");
+  try { return JSON.parse('"' + raw.replace(/"/g,'\\\"') + '"'); } catch {}
+  return raw.replace(/\\u0026/g,"&").replace(/\\n/g," ").replace(/\\t/g," ").replace(/\\\//g,"/");
+}
+
+async function youtubeHtmlSearch(query, kind) {
+  const q=String(query||"").trim();
+  if(!q)throw new Error("query_required");
+
+  const url=new URL("https://www.youtube.com/results");
+  url.searchParams.set("search_query",q);
+  url.searchParams.set("hl","pt-BR");
+  url.searchParams.set("gl","BR");
+
+  const response=await fetch(url.toString(),{
+    headers:{
+      accept:"text/html,application/xhtml+xml",
+      "accept-language":"pt-BR,pt;q=0.9,en;q=0.7",
+      "user-agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/153.0.0.0 Safari/537.36",
+      cookie:"CONSENT=YES+cb.20210328-17-p0.en+FX+417"
+    },
+    signal:AbortSignal.timeout(5500)
+  });
+  if(!response.ok)throw new Error("youtube_search_http_"+response.status);
+
+  const html=await response.text();
+  const seen=new Set();
+  const results=[];
+  const idPattern=/"videoId":"([A-Za-z0-9_-]{11})"/g;
+  let match;
+
+  while((match=idPattern.exec(html))&&results.length<12){
+    const videoId=match[1];
+    if(seen.has(videoId))continue;
+    seen.add(videoId);
+
+    const from=Math.max(0,match.index-4500);
+    const to=Math.min(html.length,match.index+6500);
+    const chunk=html.slice(from,to);
+
+    const titleMatch=
+      chunk.match(/"title":\{"runs":\[\{"text":"((?:\\.|[^"])*)"/)
+      || chunk.match(/"title":\{"simpleText":"((?:\\.|[^"])*)"/);
+    const ownerMatch=
+      chunk.match(/"ownerText":\{"runs":\[\{"text":"((?:\\.|[^"])*)"/)
+      || chunk.match(/"longBylineText":\{"runs":\[\{"text":"((?:\\.|[^"])*)"/);
+    const descriptionMatch=
+      chunk.match(/"detailedMetadataSnippets":\[\{"snippetText":\{"runs":\[\{"text":"((?:\\.|[^"])*)"/)
+      || chunk.match(/"descriptionSnippet":\{"runs":\[\{"text":"((?:\\.|[^"])*)"/);
+
+    const title=decodeYoutubeText(titleMatch?.[1]||"").trim();
+    if(!title)continue;
+
+    results.push(normalizeResult({
+      id:videoId,
+      title,
+      year:"",
+      overview:decodeYoutubeText(descriptionMatch?.[1]||""),
+      posterUrl:"https://i.ytimg.com/vi/"+encodeURIComponent(videoId)+"/hqdefault.jpg",
+      trailerUrl:"https://www.youtube.com/watch?v="+encodeURIComponent(videoId),
+      trailerName:decodeYoutubeText(ownerMatch?.[1]||""),
+      official:false
+    },kind,q));
+  }
+
+  const cleaned=results
+    .filter(item=>item.trailerUrl&&item.title)
+    .filter((item,index,all)=>all.findIndex(other=>other.id===item.id)===index)
+    .slice(0,8);
+
+  if(!cleaned.length)throw new Error("youtube_search_empty");
+  return {configured:true,source:"youtube-direct",results:cleaned};
+}
+
 const PIPED_APIS = [
   "https://pipedapi.kavin.rocks",
   "https://pipedapi.leptons.xyz",
@@ -223,7 +299,11 @@ export async function searchTrailers(env, clientId, query, type = "movie") {
   if (!q) throw new Error("query_required");
   const kind = String(type || "") === "series" ? "tv" : "movie";
 
-  const fastSources = [
+  try {
+    return await youtubeHtmlSearch(q, kind);
+  } catch {}
+
+  const fallbackSources = [
     pipedSearch(q, kind),
     tmdbSearch(env, q, kind).then(result => {
       if (!result?.results?.some(item => item.trailerUrl)) throw new Error("tmdb_no_trailer");
@@ -232,11 +312,11 @@ export async function searchTrailers(env, clientId, query, type = "movie") {
   ];
 
   try {
-    return await Promise.any(fastSources);
+    return await Promise.any(fallbackSources);
   } catch {}
 
   try {
-    const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("search_timeout")), 6000));
+    const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("search_timeout")), 5000));
     return await Promise.race([openAISearch(env, clientId, q, kind), timeout]);
   } catch (error) {
     const code = String(error instanceof Error ? error.message : error);
