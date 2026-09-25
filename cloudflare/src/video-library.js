@@ -114,8 +114,25 @@ export async function patchVideoJob(env, clientId, jobId, patch={}) {
 export async function deleteVideoJob(env, clientId, jobId) {
   const row=await videoJob(env,clientId,jobId);
   if(!row)throw new Error("video_not_found");
+
+  const clipRows=await env.DB.prepare(
+    "SELECT source_object_key,output_object_key FROM video_clips WHERE job_id=?1 AND client_id=?2"
+  ).bind(jobId,clientId).all();
+  const prefix="videos/"+String(clientId)+"/";
+  const mediaKeys=[row.source_object_key,...(clipRows?.results||[]).flatMap(item=>[
+    item.source_object_key,
+    item.output_object_key
+  ])]
+    .map(value=>String(value||""))
+    .filter(value=>value.startsWith(prefix)&&!value.includes(".."));
+  const uniqueMediaKeys=[...new Set(mediaKeys)];
+
   await env.DB.prepare("DELETE FROM video_clips WHERE job_id=?1 AND client_id=?2").bind(jobId,clientId).run();
   await env.DB.prepare("DELETE FROM video_jobs WHERE id=?1 AND client_id=?2").bind(jobId,clientId).run();
+
+  if(env.MEDIA&&uniqueMediaKeys.length){
+    await env.MEDIA.delete(uniqueMediaKeys).catch(()=>{});
+  }
   return {deleted:true,id:jobId};
 }
 
