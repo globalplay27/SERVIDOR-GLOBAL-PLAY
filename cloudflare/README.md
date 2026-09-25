@@ -23,6 +23,10 @@ npx wrangler secret put NEXUS_ADMIN_USERNAME
 npx wrangler secret put NEXUS_ADMIN_PASSWORD
 npx wrangler secret put INSTAGRAM_APP_ID
 npx wrangler secret put INSTAGRAM_APP_SECRET
+npx wrangler secret put INSTAGRAM_ACCESS_TOKEN_RAGNAR
+npx wrangler secret put INSTAGRAM_ACCOUNT_ID_RAGNAR
+npx wrangler secret put INSTAGRAM_ACCESS_TOKEN_GLOBALPLAY
+npx wrangler secret put INSTAGRAM_ACCOUNT_ID_GLOBALPLAY
 ```
 
 O OAuth do Instagram grava tokens por cliente no D1 de forma criptografada usando `NEXUS_SECRET_KEY`.
