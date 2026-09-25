@@ -1,4 +1,4 @@
-const MAX_VIDEO_BYTES = 750 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
 const DEFAULT_CHUNK_BYTES = 8 * 1024 * 1024;
 
 function cleanFileName(value) {
