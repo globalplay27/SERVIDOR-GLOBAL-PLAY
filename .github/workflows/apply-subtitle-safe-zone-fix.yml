@@ -1,0 +1,41 @@
+name: Apply subtitle safe-zone fix
+
+on:
+  push:
+    branches:
+      - feature/nexus-app-v2-20260924
+    paths:
+      - scripts/apply-subtitle-safe-zone-fix.mjs
+      - .github/workflows/apply-subtitle-safe-zone-fix.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/nexus-app-v2-20260924
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply subtitle fixes
+        run: node scripts/apply-subtitle-safe-zone-fix.mjs
+      - name: Validate JavaScript syntax
+        run: node --check server.js
+      - name: Commit corrected renderer
+        run: |
+          if git diff --quiet -- server.js; then
+            echo "No server.js changes required"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add server.js
+          git commit -m "fix(video): safe readable subtitles and newline artifact"
+          git push origin HEAD:feature/nexus-app-v2-20260924

@@ -1,5 +1,4 @@
 import { publishInstagramImage } from "./publisher.js";
-import { storeManualPostImage } from "./railway-video-bridge.js";
 
 function parseJson(raw, fallback = {}) {
   try {
@@ -8,6 +7,20 @@ function parseJson(raw, fallback = {}) {
   } catch {
     return fallback;
   }
+}
+
+function decodeBase64Image(encoded) {
+  const binary = atob(String(encoded || ""));
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+function postImageKeyBelongsToClient(key, clientId) {
+  const value = String(key || "");
+  return value.startsWith("posts/" + String(clientId) + "/")
+    && !value.includes("..")
+    && !value.includes("\\");
 }
 
 async function postRow(env, clientId, postId) {
@@ -128,7 +141,7 @@ export async function requestPostRevision(env, client, postId, instructions) {
   };
 }
 
-export async function saveOwnPostContent(env, client, postId, body = {}) {
+export async function saveOwnPostContent(env, client, postId, body = {}, publicOrigin = "") {
   const caption = String(body.caption || "").trim().slice(0, 2200);
   const imageDataUrl = String(body.imageDataUrl || "").trim();
   if (!caption) throw new Error("caption_required");
@@ -142,20 +155,61 @@ export async function saveOwnPostContent(env, client, postId, body = {}) {
   const row = await postRow(env, client.id, postId);
   if (!row) throw new Error("post_not_found");
 
-  const stored = await storeManualPostImage(env, client.id, imageDataUrl);
+  if (!env.MEDIA) throw new Error("r2_unavailable");
+  const extension = match[1] === "jpeg" ? "jpg" : match[1];
+  const contentType = match[1] === "jpeg" ? "image/jpeg" : "image/" + match[1];
+  const bytes = decodeBase64Image(match[2]);
+  if (!bytes.byteLength || bytes.byteLength > 10 * 1024 * 1024) throw new Error("image_too_large");
+
+  const objectKey = "posts/" + String(client.id) + "/" + String(postId) + "/" + crypto.randomUUID() + "." + extension;
+  await env.MEDIA.put(objectKey, bytes, {
+    httpMetadata: {
+      contentType,
+      cacheControl: "public, max-age=31536000, immutable"
+    },
+    customMetadata: {
+      clientId: String(client.id),
+      postId: String(postId),
+      kind: "manual-post-image"
+    }
+  });
+
+  const origin = String(publicOrigin || "").replace(/\/+$/, "");
+  if (!origin) {
+    await env.MEDIA.delete(objectKey).catch(() => {});
+    throw new Error("public_origin_required");
+  }
+
+  const previousObjectKey = String(row.image_object_key || "");
   const payload = {
     ...parseJson(row.payload_json, {}),
-    imageUrl: stored.imageUrl,
+    imageUrl: origin + "/media/" + objectKey,
     source: "client_manual",
     revisionRequest: ""
   };
-  const updated = await updateRow(env, row, {
-    caption,
-    approvalStatus: "approved",
-    status: "ready",
-    error: "",
-    payload
-  });
+
+  let updated;
+  try {
+    updated = await updateRow(env, row, {
+      caption,
+      approvalStatus: "approved",
+      status: "ready",
+      error: "",
+      imageObjectKey: objectKey,
+      payload
+    });
+  } catch (error) {
+    await env.MEDIA.delete(objectKey).catch(() => {});
+    throw error;
+  }
+
+  if (
+    previousObjectKey
+    && previousObjectKey !== objectKey
+    && postImageKeyBelongsToClient(previousObjectKey, client.id)
+  ) {
+    await env.MEDIA.delete(previousObjectKey).catch(() => {});
+  }
   return {
     ok: true,
     message: "Conteúdo manual aprovado e pronto para envio.",

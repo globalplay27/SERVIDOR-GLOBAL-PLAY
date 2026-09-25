@@ -6,7 +6,7 @@ namespace NexusAI;
 
 public sealed class MainForm : Form
 {
-    private const string NexusUrl = "https://servidor-global-play-production.up.railway.app/portal.html?v=22";
+    private const string NexusUrl = "https://servidor-nexus.diamantehinode2015.workers.dev/login";
     private readonly WebView2 webView = new() { Dock = DockStyle.Fill };
 
     public MainForm()
@@ -53,7 +53,7 @@ public sealed class MainForm : Form
             webView.CoreWebView2.NavigationStarting += (_, e) =>
             {
                 if (!Uri.TryCreate(e.Uri, UriKind.Absolute, out var uri)) return;
-                if (uri.Host.EndsWith("railway.app", StringComparison.OrdinalIgnoreCase)) return;
+                if (uri.Host.EndsWith("workers.dev", StringComparison.OrdinalIgnoreCase)) return;
                 if (uri.Host.Equals("painel.ragnarplay.online", StringComparison.OrdinalIgnoreCase)) return;
 
                 e.Cancel = true;

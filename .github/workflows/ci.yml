@@ -2,7 +2,7 @@ name: NEXUS CI
 
 on:
   push:
-    branches: [main, cloudflare-migration]
+    branches: [main, cloudflare-migration, feature/nexus-app-v2-20260924]
   pull_request:
 
 jobs:
@@ -25,3 +25,9 @@ jobs:
           for file in cloudflare/src/*.js; do
             node --check "$file"
           done
+
+      - name: Validate Wrangler bundle
+        working-directory: cloudflare
+        run: |
+          npm install --no-audit --no-fund
+          npm run check

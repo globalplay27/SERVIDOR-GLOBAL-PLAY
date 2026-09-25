@@ -60,6 +60,26 @@ async function videoJob(env, clientId, jobId) {
   ).bind(jobId,clientId).first();
 }
 
+function normalizeLogoPatch(settings, patch) {
+  if(Object.prototype.hasOwnProperty.call(patch,"logoEnabled"))settings.logoEnabled=Boolean(patch.logoEnabled);
+  if(Object.prototype.hasOwnProperty.call(patch,"logoObjectKey"))settings.logoObjectKey=String(patch.logoObjectKey||"").slice(0,500);
+  if(Object.prototype.hasOwnProperty.call(patch,"logoProcessedObjectKey"))settings.logoProcessedObjectKey=String(patch.logoProcessedObjectKey||"").slice(0,500);
+  if(Object.prototype.hasOwnProperty.call(patch,"logoBackgroundRemoved"))settings.logoBackgroundRemoved=Boolean(patch.logoBackgroundRemoved);
+  if(Object.prototype.hasOwnProperty.call(patch,"logoAutoRemoveBackground"))settings.logoAutoRemoveBackground=patch.logoAutoRemoveBackground!==false;
+  if(Object.prototype.hasOwnProperty.call(patch,"logoPosition")){
+    const position=String(patch.logoPosition||"top-right");
+    settings.logoPosition=["top-left","top-right","bottom-left","bottom-right","center"].includes(position)?position:"top-right";
+  }
+  if(Object.prototype.hasOwnProperty.call(patch,"logoScale")){
+    const scale=Number(patch.logoScale||0.18);
+    settings.logoScale=Math.min(0.45,Math.max(0.05,Number.isFinite(scale)?scale:0.18));
+  }
+  if(Object.prototype.hasOwnProperty.call(patch,"logoOpacity")){
+    const opacity=Number(patch.logoOpacity??1);
+    settings.logoOpacity=Math.min(1,Math.max(0.15,Number.isFinite(opacity)?opacity:1));
+  }
+}
+
 export async function patchVideoJob(env, clientId, jobId, patch={}) {
   const row=await videoJob(env,clientId,jobId);
   if(!row)throw new Error("video_not_found");
@@ -84,6 +104,7 @@ export async function patchVideoJob(env, clientId, jobId, patch={}) {
   for(const key of allowed){
     if(Object.prototype.hasOwnProperty.call(patch,key))settings[key]=patch[key];
   }
+  normalizeLogoPatch(settings,patch);
 
   await env.DB.prepare("UPDATE video_jobs SET settings_json=?3,result_json=?4,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2")
     .bind(jobId,clientId,JSON.stringify(settings),JSON.stringify(result)).run();
@@ -93,8 +114,25 @@ export async function patchVideoJob(env, clientId, jobId, patch={}) {
 export async function deleteVideoJob(env, clientId, jobId) {
   const row=await videoJob(env,clientId,jobId);
   if(!row)throw new Error("video_not_found");
+
+  const clipRows=await env.DB.prepare(
+    "SELECT source_object_key,output_object_key FROM video_clips WHERE job_id=?1 AND client_id=?2"
+  ).bind(jobId,clientId).all();
+  const prefix="videos/"+String(clientId)+"/";
+  const mediaKeys=[row.source_object_key,...(clipRows?.results||[]).flatMap(item=>[
+    item.source_object_key,
+    item.output_object_key
+  ])]
+    .map(value=>String(value||""))
+    .filter(value=>value.startsWith(prefix)&&!value.includes(".."));
+  const uniqueMediaKeys=[...new Set(mediaKeys)];
+
   await env.DB.prepare("DELETE FROM video_clips WHERE job_id=?1 AND client_id=?2").bind(jobId,clientId).run();
   await env.DB.prepare("DELETE FROM video_jobs WHERE id=?1 AND client_id=?2").bind(jobId,clientId).run();
+
+  if(env.MEDIA&&uniqueMediaKeys.length){
+    await env.MEDIA.delete(uniqueMediaKeys).catch(()=>{});
+  }
   return {deleted:true,id:jobId};
 }
 
@@ -142,6 +180,7 @@ export async function adjustClip(env, clientId, jobId, clipId, patch={}) {
       else settings[key]=String(value||"").slice(0,key==="caption"?2200:160);
     }
   }
+  normalizeLogoPatch(settings,patch);
   await env.DB.prepare("UPDATE video_clips SET settings_json=?4,result_json=?5,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND job_id=?2 AND client_id=?3")
     .bind(clipId,jobId,clientId,JSON.stringify(settings),JSON.stringify(result)).run();
   return clipView({...row,settings_json:JSON.stringify(settings),result_json:JSON.stringify(result)});

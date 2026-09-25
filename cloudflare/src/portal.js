@@ -14,6 +14,7 @@ import { leadsForClient, leadHunterSummary } from "./leads.js";
 import { leadHunterView, saveLeadHunterConfig, runLeadHunter, discardLead } from "./lead-hunter.js";
 import { createVideoFolder, renameVideoFolder, deleteVideoFolder, patchVideoJob, deleteVideoJob, setClipApproval, adjustClip, selectClip, scheduleClip, bulkScheduleClips } from "./video-library.js";
 import { proxyRailwayVideoRequest, createVideoUploadTicket } from "./railway-video-bridge.js";
+import { createR2VideoUpload, uploadR2VideoPart, completeR2VideoUpload, abortR2VideoUpload, importR2VideoFromUrl } from "./r2-video-upload.js";
 import { decidePost, requestPostRevision, saveOwnPostContent, publishPostNow } from "./posts.js";
 
 function json(data, status = 200, headers = {}) {
@@ -52,6 +53,72 @@ function parseJson(raw, fallback = {}) {
   } catch {
     return fallback;
   }
+}
+
+function profileLogoExtension(contentType) {
+  const type = String(contentType || "").toLowerCase().split(";")[0].trim();
+  if (type === "image/png") return "png";
+  if (type === "image/jpeg") return "jpg";
+  if (type === "image/webp") return "webp";
+  if (type === "image/gif") return "gif";
+  return "";
+}
+
+function profileLogoKeyBelongsToClient(key, clientId) {
+  return String(key || "").startsWith("branding/" + String(clientId) + "/");
+}
+
+async function storeProfileLogo(env, clientId, request) {
+  if (!env.MEDIA) throw new Error("r2_unavailable");
+
+  const contentType = String(request.headers.get("content-type") || "").toLowerCase().split(";")[0].trim();
+  const extension = profileLogoExtension(contentType);
+  if (!extension) throw new Error("invalid_logo_type");
+
+  const declaredSize = Number(request.headers.get("content-length") || 0);
+  const maxBytes = 6 * 1024 * 1024;
+  if (declaredSize > maxBytes) throw new Error("logo_too_large");
+
+  const bytes = await request.arrayBuffer();
+  if (!bytes.byteLength) throw new Error("logo_empty");
+  if (bytes.byteLength > maxBytes) throw new Error("logo_too_large");
+
+  const key = "branding/" + String(clientId) + "/" + crypto.randomUUID() + "." + extension;
+  await env.MEDIA.put(key, bytes, {
+    httpMetadata: {
+      contentType,
+      cacheControl: "public, max-age=31536000, immutable"
+    },
+    customMetadata: {
+      clientId: String(clientId),
+      kind: "profile-logo"
+    }
+  });
+
+  return {
+    objectKey: key,
+    url: "/media/" + key
+  };
+}
+
+async function deleteProfileLogoIfOwned(env, clientId, key) {
+  if (!env.MEDIA || !profileLogoKeyBelongsToClient(key, clientId)) return;
+  await env.MEDIA.delete(String(key)).catch(() => {});
+}
+
+function sanitizedAgentProfilePatch(body) {
+  const source = body && typeof body === "object" ? body : {};
+  const allowed = [
+    "agentName", "brandName", "niche", "audience", "goal", "region",
+    "offer", "services", "differentials", "tone", "cta", "avoidTopics",
+    "notes", "whatsapp", "website", "primaryColor", "secondaryColor",
+    "logoObjectKey", "logoUrl"
+  ];
+  const patch = {};
+  for (const key of allowed) {
+    if (Object.prototype.hasOwnProperty.call(source, key)) patch[key] = source[key];
+  }
+  return patch;
 }
 
 async function connectionSummary(env, clientId) {
@@ -306,6 +373,108 @@ export async function handlePortalApi(request, env, url) {
     }
   }
 
+  if (url.pathname === "/api/portal/logo" && request.method === "POST") {
+    try {
+      const logo = await storeProfileLogo(env, client.id, request);
+      return json({ ok: true, ...logo }, 201);
+    } catch (error) {
+      const code = error instanceof Error ? error.message : String(error);
+      const status = code === "r2_unavailable" ? 503
+        : code === "logo_too_large" ? 413
+        : 400;
+      return json({ error: code }, status);
+    }
+  }
+
+  if (url.pathname === "/api/portal/video-uploads" && request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    try {
+      return json({ ok: true, ...(await createR2VideoUpload(env, client.id, body)) }, 201);
+    } catch (error) {
+      const code = error instanceof Error ? error.message : String(error);
+      const status = code === "r2_unavailable" ? 503
+        : code === "video_too_large" ? 413
+        : 400;
+      return json({ error: code }, status);
+    }
+  }
+
+  if (url.pathname === "/api/portal/video-uploads/part" && request.method === "PUT") {
+    try {
+      const part = await uploadR2VideoPart(env, client.id, request, {
+        key: url.searchParams.get("key"),
+        uploadId: url.searchParams.get("uploadId"),
+        partNumber: url.searchParams.get("partNumber")
+      });
+      return json({ ok: true, ...part });
+    } catch (error) {
+      const code = error instanceof Error ? error.message : String(error);
+      const status = code === "r2_unavailable" ? 503
+        : code === "video_part_too_large" ? 413
+        : 400;
+      return json({ error: code }, status);
+    }
+  }
+
+  if (url.pathname === "/api/portal/video-uploads/complete" && request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    try {
+      const completed = await completeR2VideoUpload(env, client.id, body);
+      const jobs = await listVideos(env, client.id);
+      return json({
+        ok: true,
+        ...completed,
+        job: jobs.find(job => job.id === completed.jobId) || null
+      }, 201);
+    } catch (error) {
+      const code = error instanceof Error ? error.message : String(error);
+      const status = code === "r2_unavailable" ? 503
+        : code === "video_too_large" ? 413
+        : 400;
+      return json({ error: code }, status);
+    }
+  }
+
+  if (url.pathname === "/api/portal/video-uploads" && request.method === "DELETE") {
+    try {
+      return json({
+        ok: true,
+        ...(await abortR2VideoUpload(
+          env,
+          client.id,
+          url.searchParams.get("key"),
+          url.searchParams.get("uploadId")
+        ))
+      });
+    } catch (error) {
+      const code = error instanceof Error ? error.message : String(error);
+      return json({ error: code }, code === "r2_unavailable" ? 503 : 400);
+    }
+  }
+
+  if (
+    (url.pathname === "/api/portal/videos/import" || url.pathname === "/api/portal/videos/import-trailer")
+    && request.method === "POST"
+  ) {
+    const body = await request.json().catch(() => ({}));
+    try {
+      const imported = await importR2VideoFromUrl(env, client.id, body);
+      const jobs = await listVideos(env, client.id);
+      return json({
+        ok: true,
+        ...imported,
+        job: jobs.find(job => job.id === imported.jobId) || null
+      }, 201);
+    } catch (error) {
+      const code = error instanceof Error ? error.message : String(error);
+      const status = code === "r2_unavailable" ? 503
+        : code === "video_too_large" ? 413
+        : code.startsWith("video_source_http_") ? 502
+        : 400;
+      return json({ error: code }, status);
+    }
+  }
+
   const videoBridgeResponse = await proxyRailwayVideoRequest(request, env, url, client.id);
   if (videoBridgeResponse) return videoBridgeResponse;
 
@@ -412,13 +581,14 @@ export async function handlePortalApi(request, env, url) {
   if (postContentMatch && request.method === "POST") {
     const body = await request.json().catch(() => ({}));
     try {
-      return json(await saveOwnPostContent(env, client, decodeURIComponent(postContentMatch[1]), body));
+      return json(await saveOwnPostContent(env, client, decodeURIComponent(postContentMatch[1]), body, url.origin));
     } catch (error) {
       const code = error instanceof Error ? error.message : String(error);
       const status = code === "post_not_found" ? 404
-        : code === "railway_video_bridge_not_configured" ? 503
+        : code === "r2_unavailable" ? 503
+        : code === "image_too_large" ? 413
         : 400;
-      return json({ error: code, message: code === "railway_video_bridge_not_configured" ? "O armazenamento de mídia ainda precisa ser autorizado pelo administrador NEXUS." : code }, status);
+      return json({ error: code, message: code === "r2_unavailable" ? "O armazenamento de mídia do NEXUS ainda não está disponível." : code }, status);
     }
   }
 
@@ -568,9 +738,26 @@ export async function handlePortalApi(request, env, url) {
     const current = client.config?.agentProfile && typeof client.config.agentProfile === "object"
       ? client.config.agentProfile
       : {};
-    const updated = await patchClientConfig(env, client, {
-      agentProfile: { ...current, ...body }
-    });
+    const patch = sanitizedAgentProfilePatch(body);
+    const next = { ...current, ...patch };
+
+    if (body?.removeLogo === true) {
+      await deleteProfileLogoIfOwned(env, client.id, current.logoObjectKey);
+      delete next.logoObjectKey;
+      delete next.logoUrl;
+    } else if (
+      patch.logoObjectKey
+      && patch.logoObjectKey !== current.logoObjectKey
+      && profileLogoKeyBelongsToClient(patch.logoObjectKey, client.id)
+    ) {
+      await deleteProfileLogoIfOwned(env, client.id, current.logoObjectKey);
+    }
+
+    // Never persist base64/data URLs in D1. Logo bytes live in R2 only.
+    delete next.logoDataUrl;
+    next.submittedAt = new Date().toISOString();
+
+    const updated = await patchClientConfig(env, client, { agentProfile: next });
     return json({ ok: true, client: portalClientView(updated) });
   }
 
