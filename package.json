@@ -1,13 +1,11 @@
 {
-  "name": "nexus-ai-agent-central",
-  "version": "1.0.0",
+  "name": "nexus-ai",
+  "version": "2.0.0",
   "private": true,
-  "description": "NEXUS AI — central multiagente para inteligência, automação, conteúdo, leads e operação de Instagram.",
-  "type": "module",
-  "engines": {
-    "node": ">=20"
-  },
+  "description": "NEXUS AI — GitHub source control and Cloudflare runtime.",
   "scripts": {
-    "start": "node server.js"
+    "check": "npm --prefix cloudflare install --no-audit --no-fund && npm --prefix cloudflare run check",
+    "deploy": "npm --prefix cloudflare run deploy",
+    "dev": "npm --prefix cloudflare run dev"
   }
 }
