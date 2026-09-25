@@ -1,0 +1,45 @@
+name: Cloudflare production deploy
+
+on:
+  push:
+    branches: [cloudflare-migration]
+    paths:
+      - ".github/workflows/cloudflare-production-deploy.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Check Cloudflare deploy credentials
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            echo "cloudflare_api_token_configured=false"
+            exit 21
+          fi
+          echo "cloudflare_api_token_configured=true"
+          if [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+            echo "cloudflare_account_id_configured=false"
+          else
+            echo "cloudflare_account_id_configured=true"
+          fi
+      - name: Deploy Worker
+        working-directory: cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npm install --no-audit --no-fund
+          npx wrangler deploy
