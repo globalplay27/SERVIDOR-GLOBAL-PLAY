@@ -7,7 +7,7 @@
   <meta name="application-name" content="NEXUS AI">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <title>NEXUS AI · Portal do Cliente</title>
+  <title>NEXUS AI</title>
   <link rel="icon" href="/assets/nexus-ai-mark.svg" type="image/svg+xml">
   <link rel="manifest" href="/manifest.webmanifest?v=1">
   <link rel="stylesheet" href="/client.css?v=71">
@@ -31,12 +31,12 @@
   <main class="portal-shell">
     <section id="login-view" class="login-card">
       <img class="login-logo" src="/assets/nexus-ai-logo.png?v=3" alt="NEXUS AI">
-      <div class="login-copy"><p class="eyebrow">ACESSO SEGURO</p><h1>Portal do Cliente</h1><p class="muted">Controle seu agente, suas postagens e a configuração inicial em um só lugar.</p></div>
+      <div class="login-copy"><p class="eyebrow">ACESSO SEGURO</p><h1>NEXUS AI</h1><p class="muted">Entre com sua credencial. O sistema identifica automaticamente o seu acesso.</p></div>
       <form id="login-form" action="/portal-login" method="post">
         <label><span>Usuário</span><input id="login-username" name="username" autocomplete="username" required></label>
         <label><span>Senha</span><div class="password-field"><input id="login-password" name="password" type="password" autocomplete="current-password" required><button type="button" id="toggle-login-password" class="password-toggle" aria-label="Mostrar senha" title="Mostrar senha">👁</button></div></label>
         <label class="remember-access"><input id="remember-access" name="remember" type="checkbox" value="1"><span><strong>Lembrar meu acesso</strong><small>Manter este dispositivo conectado por até 30 dias.</small></span></label>
-        <button type="submit">Entrar no portal</button><span id="login-error" role="alert"></span>
+        <button type="submit">Entrar</button><span id="login-error" role="alert"></span>
       </form>
       <div class="login-install">
         <button type="button" class="install-app-button" data-install-app hidden>Instalar NEXUS AI</button>
@@ -55,7 +55,7 @@
         <div class="setup-hero-copy">
           <p class="eyebrow">CONEXÕES DO AGENTE</p>
           <strong>Integrações e serviços</strong>
-          <span>GitHub, Railway, OpenAI e Meta em um único lugar.</span>
+          <span>Instagram e recursos do agente em um único lugar.</span>
         </div>
         <button type="button">Ver conexões</button>
       </section>
