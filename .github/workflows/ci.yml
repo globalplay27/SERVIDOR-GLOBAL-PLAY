@@ -29,5 +29,5 @@ jobs:
       - name: Validate Wrangler bundle
         working-directory: cloudflare
         run: |
-          npm ci
+          npm install --no-audit --no-fund
           npm run check
