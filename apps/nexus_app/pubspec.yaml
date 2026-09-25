@@ -1,7 +1,7 @@
 name: nexus_ai
 publish_to: "none"
 description: NEXUS AI - Android and Windows client
-version: 2.3.0+4
+version: 2.4.0+5
 
 environment:
   sdk: ">=3.4.0 <4.0.0"
