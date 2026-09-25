@@ -181,3 +181,147 @@ export async function completeR2VideoUpload(env, clientId, input = {}) {
 
   return { jobId, objectKey: key, etag: object.httpEtag || "" };
 }
+
+
+function unsafeRemoteVideoHost(hostname) {
+  const host = String(hostname || "").toLowerCase().replace(/^\[|\]$/g, "");
+  if (!host || host === "localhost" || host.endsWith(".localhost") || host.endsWith(".internal")) return true;
+  if (host === "::1" || host.startsWith("fc") || host.startsWith("fd") || host.startsWith("fe80:")) return true;
+  const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!ipv4) return false;
+  const a = Number(ipv4[1]), b = Number(ipv4[2]);
+  return a === 10
+    || a === 127
+    || a === 0
+    || (a === 169 && b === 254)
+    || (a === 172 && b >= 16 && b <= 31)
+    || (a === 192 && b === 168);
+}
+
+async function fetchAuthorizedVideoSource(inputUrl) {
+  let current;
+  try {
+    current = new URL(String(inputUrl || ""));
+  } catch {
+    throw new Error("video_url_invalid");
+  }
+  if (current.protocol !== "https:") throw new Error("video_url_https_required");
+
+  for (let redirects = 0; redirects <= 5; redirects++) {
+    if (unsafeRemoteVideoHost(current.hostname)) throw new Error("video_url_not_allowed");
+    const response = await fetch(current.toString(), {
+      method: "GET",
+      redirect: "manual",
+      headers: {
+        accept: "video/mp4,video/webm,video/quicktime,video/x-matroska,application/octet-stream;q=0.8,*/*;q=0.2"
+      }
+    });
+
+    if ([301, 302, 303, 307, 308].includes(response.status)) {
+      const location = response.headers.get("location");
+      if (!location) throw new Error("video_source_redirect_invalid");
+      current = new URL(location, current);
+      if (current.protocol !== "https:") throw new Error("video_url_https_required");
+      continue;
+    }
+
+    if (!response.ok) throw new Error("video_source_http_" + response.status);
+    return { response, finalUrl: current };
+  }
+  throw new Error("video_source_too_many_redirects");
+}
+
+function fileNameFromRemote(response, finalUrl, fallbackTitle = "") {
+  const disposition = String(response.headers.get("content-disposition") || "");
+  const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+  if (encoded) {
+    try { return cleanFileName(decodeURIComponent(encoded)); } catch {}
+  }
+  const plain = disposition.match(/filename="?([^";]+)"?/i)?.[1];
+  if (plain) return cleanFileName(plain);
+  const pathnameName = String(finalUrl.pathname || "").split("/").filter(Boolean).pop() || "";
+  if (pathnameName) {
+    try { return cleanFileName(decodeURIComponent(pathnameName)); } catch { return cleanFileName(pathnameName); }
+  }
+  return cleanFileName(String(fallbackTitle || "video"));
+}
+
+export async function importR2VideoFromUrl(env, clientId, input = {}) {
+  if (!env.MEDIA) throw new Error("r2_unavailable");
+
+  const { response, finalUrl } = await fetchAuthorizedVideoSource(input.url);
+  const contentType = String(response.headers.get("content-type") || "application/octet-stream")
+    .toLowerCase().split(";")[0].trim();
+  const declaredSize = Number(response.headers.get("content-length") || 0);
+  if (declaredSize > MAX_VIDEO_BYTES) {
+    try { await response.body?.cancel(); } catch {}
+    throw new Error("video_too_large");
+  }
+
+  const fileName = fileNameFromRemote(response, finalUrl, input?.settings?.contentTitle || input?.contentTitle);
+  const extension = extensionForVideo(fileName, contentType);
+  if (!extension) {
+    try { await response.body?.cancel(); } catch {}
+    throw new Error("video_source_not_direct_media");
+  }
+  if (!response.body) throw new Error("video_source_empty");
+
+  const key = videoKeyPrefix(clientId) + crypto.randomUUID() + "." + extension;
+  let object;
+  try {
+    object = await env.MEDIA.put(key, response.body, {
+      httpMetadata: {
+        contentType: contentType || "application/octet-stream",
+        cacheControl: "private, no-store"
+      },
+      customMetadata: {
+        clientId: String(clientId),
+        originalName: fileName.slice(0, 256),
+        sourceHost: String(finalUrl.hostname || "").slice(0, 200),
+        kind: "video-source"
+      }
+    });
+  } catch (error) {
+    throw new Error("video_source_store_failed");
+  }
+  if (!object) throw new Error("video_source_store_failed");
+  if (Number(object.size || 0) > MAX_VIDEO_BYTES) {
+    await env.MEDIA.delete(key).catch(() => {});
+    throw new Error("video_too_large");
+  }
+
+  const settingsInput = {
+    ...(input.settings && typeof input.settings === "object" ? input.settings : {}),
+    ...input
+  };
+  delete settingsInput.url;
+  delete settingsInput.settings;
+
+  const settings = normalizeSettings(settingsInput, {
+    fileName,
+    contentType,
+    size: Number(object.size || declaredSize || 0)
+  });
+  settings.folderId = await validFolderId(env, clientId, settings.folderId);
+  settings.remoteSourceHost = String(finalUrl.hostname || "").slice(0, 200);
+
+  const jobId = "vid_" + crypto.randomUUID().replace(/-/g, "").slice(0, 20);
+  const result = {
+    progress: 100,
+    storage: "r2",
+    objectEtag: object.httpEtag || "",
+    message: "Vídeo importado para a biblioteca. Configure os cortes antes de iniciar."
+  };
+
+  try {
+    await env.DB.prepare(
+      `INSERT INTO video_jobs(id,client_id,source_object_key,status,settings_json,result_json,created_at,updated_at)
+       VALUES(?1,?2,?3,'awaiting_configuration',?4,?5,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)`
+    ).bind(jobId, String(clientId), key, JSON.stringify(settings), JSON.stringify(result)).run();
+  } catch (error) {
+    await env.MEDIA.delete(key).catch(() => {});
+    throw error;
+  }
+
+  return { jobId, objectKey: key, etag: object.httpEtag || "" };
+}
