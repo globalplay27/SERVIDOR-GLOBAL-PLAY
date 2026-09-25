@@ -585,15 +585,26 @@ export async function handlePortalApi(request, env, url, ctx) {
   }
 
   if (url.pathname === "/api/portal/token-usage" && request.method === "GET") {
-    return json({ ok: true, usage: await tokenUsageToday(env, client.id) });
+    const usage = await tokenUsageToday(env, client.id);
+    return json({ ok: true, ...usage, usage });
   }
 
   if (url.pathname === "/api/portal/provider-usage" && request.method === "GET") {
     const usage = await tokenUsageToday(env, client.id);
     return json({
       ok: true,
-      openai: usage,
-      cloudflare: { runtime: "free-plan-compatible", measured: false }
+      openai: {
+        ...usage,
+        connected: usage.connected,
+        costAvailable: true,
+        cost31dUsd: usage.estimatedCostUsd,
+        costIsEstimate: true
+      },
+      cloudflare: {
+        runtime: "workers-ai",
+        connected: Boolean(env.AI),
+        strategy: String(env.NEXUS_AI_PROVIDER || "workers-first")
+      }
     });
   }
 
