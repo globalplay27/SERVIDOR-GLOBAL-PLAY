@@ -225,8 +225,26 @@ class NexusApiClient {
       headers: _headers(),
     );
     final payload = _decode(response);
-    if (payload is Map && payload['connections'] is List) {
-      return List<dynamic>.from(payload['connections'] as List);
+    if (payload is! Map) return const [];
+
+    final value = payload['connections'];
+    if (value is List) {
+      return List<dynamic>.from(value);
+    }
+    if (value is Map) {
+      return value.entries.map((entry) {
+        final details = entry.value;
+        if (details is Map) {
+          return <String, dynamic>{
+            'provider': entry.key.toString(),
+            ...Map<String, dynamic>.from(details),
+          };
+        }
+        return <String, dynamic>{
+          'provider': entry.key.toString(),
+          'connected': details == true,
+        };
+      }).toList(growable: false);
     }
     return const [];
   }
