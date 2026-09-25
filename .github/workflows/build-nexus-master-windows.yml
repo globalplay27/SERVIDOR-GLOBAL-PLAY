@@ -1,11 +1,9 @@
 name: Build NEXUS AI Master Windows Installer
 
+# Legacy rollback build only. The supported Windows app is desktop/NexusAI.Desktop,
+# which opens the unified /login and routes Master/Client automatically.
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - "desktop-master/**"
-      - ".github/workflows/build-nexus-master-windows.yml"
 
 jobs:
   build:
