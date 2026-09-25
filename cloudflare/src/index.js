@@ -10,6 +10,7 @@ import { masterCredentialsValid, createMasterSession, authenticatePortalUser, cr
 import { processQueuedVideoJobs } from "./video-processing.js";
 import { processQueuedVideoImports } from "./r2-video-upload.js";
 import { runAgentCoreCycle } from "./agent-runtime.js";
+import { decryptSecret } from "./secrets.js";
 
 export class YoutubeDownloader extends DurableObject {
   async fetch() {
@@ -127,7 +128,7 @@ async function readCorePostSmokeStatus(env) {
     `SELECT client_id, value_json, updated_at
      FROM nexus_state
      WHERE namespace = 'ops'
-       AND item_key = 'post-smoke-20260925-v1'
+       AND item_key = 'post-smoke-20260925-v2'
        AND client_id IN ('ragnar-one','globalplay-streaming')
      ORDER BY client_id`
   ).all().catch(() => ({ results: [] }));
@@ -141,13 +142,16 @@ async function readCorePostSmokeStatus(env) {
       postId: String(value.postId || ""),
       error: String(value.error || ""),
       mediaId: String(value.mediaId || ""),
+      metaStatus: String(value.metaStatus || ""),
+      mediaPrepared: value.mediaPrepared === true,
+      publisher: value.publisher && typeof value.publisher === "object" ? value.publisher : null,
       at: value.at || row.updated_at || null
     };
   });
 }
 
 async function runCorePostSmokeTestOnce(env, now = new Date()) {
-  const testKey = "post-smoke-20260925-v1";
+  const testKey = "post-smoke-20260925-v2";
   const clientIds = ["ragnar-one", "globalplay-streaming"];
 
   for (const clientId of clientIds) {
@@ -155,7 +159,6 @@ async function runCorePostSmokeTestOnce(env, now = new Date()) {
       `SELECT value_json FROM nexus_state
        WHERE namespace='ops' AND item_key=?1 AND client_id=?2 LIMIT 1`
     ).bind(testKey, clientId).first().catch(() => null);
-
     if (existing) continue;
 
     const startedAt = now.toISOString();
@@ -170,10 +173,105 @@ async function runCorePostSmokeTestOnce(env, now = new Date()) {
     };
 
     try {
-      await save({ status: "running" });
+      await save({ status: "running", metaStatus: "checking" });
+
+      const connection = await env.DB.prepare(
+        `SELECT provider,payload_json,connected_at,updated_at
+         FROM connections
+         WHERE client_id=?1 AND provider IN ('meta','instagram')
+         ORDER BY CASE provider WHEN 'meta' THEN 0 ELSE 1 END
+         LIMIT 1`
+      ).bind(clientId).first();
+
+      if (!connection) {
+        await save({
+          status: "failed",
+          metaStatus: "missing",
+          error: "instagram_not_connected"
+        });
+        continue;
+      }
+
+      let connectionPayload = {};
+      try { connectionPayload = JSON.parse(String(connection.payload_json || "{}")); } catch {}
+
+      const igUserId = String(connectionPayload.igUserId || "").trim();
+      const encryptedToken = String(connectionPayload.accessToken || "");
+      const expiresAt = connectionPayload.expiresAt ? new Date(connectionPayload.expiresAt).getTime() : 0;
+
+      if (!igUserId || !encryptedToken) {
+        await save({
+          status: "failed",
+          metaStatus: "incomplete",
+          error: "instagram_connection_incomplete"
+        });
+        continue;
+      }
+      if (expiresAt && Number.isFinite(expiresAt) && expiresAt <= Date.now()) {
+        await save({
+          status: "failed",
+          metaStatus: "expired",
+          error: "instagram_token_expired"
+        });
+        continue;
+      }
+
+      const accessToken = await decryptSecret(env, encryptedToken).catch(() => "");
+      if (!accessToken) {
+        await save({
+          status: "failed",
+          metaStatus: "decrypt_failed",
+          error: "instagram_token_unreadable"
+        });
+        continue;
+      }
+
+      const mediaUrl = new URL("https://graph.instagram.com/" + encodeURIComponent(igUserId) + "/media");
+      mediaUrl.searchParams.set("fields", "id,media_type,media_url,thumbnail_url");
+      mediaUrl.searchParams.set("limit", "12");
+
+      const mediaResponse = await fetch(mediaUrl.toString(), {
+        headers: {
+          authorization: "Bearer " + accessToken,
+          accept: "application/json",
+          "user-agent": "NEXUS-PostSmoke/2.0"
+        },
+        signal: AbortSignal.timeout(12000)
+      });
+      const mediaPayload = await mediaResponse.json().catch(() => ({}));
+
+      if (!mediaResponse.ok) {
+        const message = String(mediaPayload?.error?.message || ("instagram_media_http_" + mediaResponse.status));
+        await save({
+          status: "failed",
+          metaStatus: "api_failed",
+          error: message.slice(0,900)
+        });
+        continue;
+      }
+
+      const mediaItems = Array.isArray(mediaPayload?.data) ? mediaPayload.data : [];
+      const source = mediaItems
+        .map(item => {
+          const type = String(item?.media_type || "").toUpperCase();
+          const url = type === "VIDEO"
+            ? String(item?.thumbnail_url || "")
+            : String(item?.media_url || item?.thumbnail_url || "");
+          return { type, url };
+        })
+        .find(item => /^https:\/\//i.test(item.url));
+
+      if (!source?.url) {
+        await save({
+          status: "failed",
+          metaStatus: "valid",
+          error: "instagram_no_reusable_media"
+        });
+        continue;
+      }
 
       let row = await env.DB.prepare(
-        `SELECT id,status,approval_status,scheduled_for,media_id,error
+        `SELECT id,status,approval_status,scheduled_for,media_id,error,payload_json
          FROM post_ledger
          WHERE client_id=?1
            AND status IN ('ready','scheduled','failed')
@@ -183,12 +281,12 @@ async function runCorePostSmokeTestOnce(env, now = new Date()) {
 
       if (!row) {
         await runAgentCoreCycle(env, clientId, {
-          trigger: "forced-post-smoke-test",
+          trigger: "forced-post-smoke-test-v2",
           agent: "all"
         });
 
         row = await env.DB.prepare(
-          `SELECT id,status,approval_status,scheduled_for,media_id,error
+          `SELECT id,status,approval_status,scheduled_for,media_id,error,payload_json
            FROM post_ledger
            WHERE client_id=?1
              AND status IN ('ready','scheduled','failed')
@@ -198,9 +296,83 @@ async function runCorePostSmokeTestOnce(env, now = new Date()) {
       }
 
       if (!row?.id) {
-        await save({ status: "failed", error: "no_post_candidate" });
+        await save({
+          status: "failed",
+          metaStatus: "valid",
+          error: "no_post_candidate"
+        });
         continue;
       }
+
+      if (!env.MEDIA) {
+        await save({
+          status: "failed",
+          metaStatus: "valid",
+          error: "r2_unavailable"
+        });
+        continue;
+      }
+
+      const sourceResponse = await fetch(source.url, {
+        headers: {
+          accept: "image/jpeg,image/png,image/webp,image/*;q=0.8,*/*;q=0.2",
+          "user-agent": "NEXUS-PostSmoke/2.0"
+        },
+        signal: AbortSignal.timeout(12000)
+      });
+
+      if (!sourceResponse.ok || !sourceResponse.body) {
+        await save({
+          status: "failed",
+          metaStatus: "valid",
+          error: "instagram_media_download_failed_" + sourceResponse.status
+        });
+        continue;
+      }
+
+      const type = String(sourceResponse.headers.get("content-type") || "").toLowerCase().split(";")[0].trim();
+      if (!type.startsWith("image/")) {
+        await save({
+          status: "failed",
+          metaStatus: "valid",
+          error: "instagram_reusable_media_not_image"
+        });
+        continue;
+      }
+
+      const size = Number(sourceResponse.headers.get("content-length") || 0);
+      if (size > 10 * 1024 * 1024) {
+        await save({
+          status: "failed",
+          metaStatus: "valid",
+          error: "instagram_reusable_media_too_large"
+        });
+        continue;
+      }
+
+      const extension = type.includes("png") ? "png" : type.includes("webp") ? "webp" : "jpg";
+      const objectKey = "posts/" + clientId + "/" + String(row.id) + "/smoke-" + crypto.randomUUID() + "." + extension;
+      await env.MEDIA.put(objectKey, sourceResponse.body, {
+        httpMetadata: {
+          contentType: type || "image/jpeg",
+          cacheControl: "public, max-age=31536000, immutable"
+        },
+        customMetadata: {
+          clientId,
+          postId: String(row.id),
+          kind: "forced-post-smoke-v2"
+        }
+      });
+
+      const origin = String(env.PUBLIC_BASE_URL || "").replace(/\/+$/,"");
+      if (!origin) throw new Error("public_origin_required");
+      const publicImageUrl = origin + "/media/" + objectKey;
+
+      let payload = {};
+      try { payload = JSON.parse(String(row.payload_json || "{}")); } catch {}
+      payload.imageUrl = publicImageUrl;
+      payload.smokeTest = "v2";
+      payload.smokePreparedAt = startedAt;
 
       await env.DB.prepare(
         `UPDATE post_ledger
@@ -208,12 +380,14 @@ async function runCorePostSmokeTestOnce(env, now = new Date()) {
              approval_status='approved',
              status='ready',
              error='',
+             image_object_key=?3,
+             payload_json=?4,
              updated_at=CURRENT_TIMESTAMP
          WHERE id=?1`
-      ).bind(String(row.id), startedAt).run();
+      ).bind(String(row.id), startedAt, objectKey, JSON.stringify(payload)).run();
 
       const result = await runAgentCoreCycle(env, clientId, {
-        trigger: "forced-post-smoke-test",
+        trigger: "forced-post-smoke-test-v2",
         agent: "publisher"
       });
 
@@ -227,16 +401,20 @@ async function runCorePostSmokeTestOnce(env, now = new Date()) {
         postId: String(after?.id || row.id || ""),
         mediaId: String(after?.media_id || ""),
         error: String(after?.error || ""),
+        metaStatus: "valid",
+        mediaPrepared: true,
         publisher: result?.agents?.publisher || null
       });
     } catch (error) {
       await save({
         status: "failed",
+        metaStatus: "unknown",
         error: String(error instanceof Error ? error.message : error).slice(0,900)
       });
     }
   }
 }
+
 
 async function health(env) {
   let d1 = false;
