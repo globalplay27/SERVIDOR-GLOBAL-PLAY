@@ -133,23 +133,19 @@ async function connectionSummary(env, clientId) {
   const out = {};
   for (const row of result?.results || []) {
     const provider = String(row.provider || "");
+    if (provider !== "meta" && provider !== "instagram") continue;
+
     const payload = parseJson(row.payload_json, {});
-    const summary = {
+    out.instagram = {
       connected: true,
       direct: true,
-      source: "cloudflare",
-      label: payload?.label || payload?.login || payload?.name || "",
+      source: "nexus",
+      label: payload?.label || payload?.username || "Instagram conectado",
       connectedAt: row.connected_at || row.updated_at || null
     };
-    out[provider] = summary;
-    if (provider === "meta") {
-      // Client-facing alias: the client authorizes Instagram, not the internal provider name.
-      out.instagram = summary;
-    }
   }
 
-  // Infrastructure and provider keys remain server-managed. The client only needs
-  // the Instagram authorization state and a generic AI-managed indicator.
+  // Do not expose infrastructure providers, credentials or internal topology to clients.
   out.ai = {
     connected: true,
     direct: false,
@@ -761,7 +757,7 @@ export async function handlePortalApi(request, env, url) {
     }
   }
 
-  if (url.pathname === "/api/portal/onboarding" && request.method === "POST") {
+  if (url.pathname === "/api/portal/onboarding" && ["POST","PATCH"].includes(request.method)) {
     const body = await request.json().catch(() => ({}));
     const next = {
       ...(client.config?.onboarding && typeof client.config.onboarding === "object"
