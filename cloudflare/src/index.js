@@ -5,7 +5,7 @@ import { handlePortalApi } from "./portal.js";
 import { handleMaster } from "./master.js";
 import { runSchedulerTick } from "./scheduler.js";
 import { processDueJobs } from "./executor.js";
-import { masterCredentialsValid, createMasterSession, authenticatePortalUser, createPortalSession } from "./auth.js";
+import { masterCredentialsValid, createMasterSession, authenticatePortalUser, createPortalSession, loginRateLimitStatus, recordLoginFailure, clearLoginFailures } from "./auth.js";
 
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
@@ -173,15 +173,26 @@ export default {
     }
 
     if (url.pathname === "/api/auth/login" && request.method === "POST") {
+      const rate = await loginRateLimitStatus(env, request, "login");
+      if (!rate.allowed) {
+        return json(
+          { ok: false, error: "too_many_login_attempts", retryAfter: rate.retryAfter },
+          429,
+          { "retry-after": String(rate.retryAfter) }
+        );
+      }
+
       const body = await request.json().catch(() => ({}));
       const username = String(body?.username || "").trim();
       const password = String(body?.password || "");
 
       if (!username || !password) {
+        await recordLoginFailure(env, request, "login");
         return json({ ok: false, error: "username_and_password_required" }, 400);
       }
 
       if (await masterCredentialsValid(env, username, password)) {
+        await clearLoginFailures(env, request, "login");
         const session = await createMasterSession(env);
         return json({
           ok: true,
@@ -195,6 +206,7 @@ export default {
 
       const clientId = await authenticatePortalUser(env, username, password);
       if (clientId) {
+        await clearLoginFailures(env, request, "login");
         const session = await createPortalSession(env, clientId, {
           persistent: true,
           source: "unified-desktop"
@@ -210,6 +222,7 @@ export default {
         });
       }
 
+      await recordLoginFailure(env, request, "login");
       return json({ ok: false, error: "invalid_credentials" }, 401);
     }
 
