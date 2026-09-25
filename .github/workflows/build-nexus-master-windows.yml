@@ -27,6 +27,19 @@ jobs:
       - name: Publish Windows x64
         run: dotnet publish desktop-master/NexusAI.Master/NexusAI.Master.csproj -c Release -r win-x64 --self-contained true -o desktop-master/publish
 
+      - name: Smoke test Master startup
+        shell: powershell
+        run: |
+          $exe = Resolve-Path "desktop-master/publish/NexusAIMaster.exe"
+          $p = Start-Process -FilePath $exe -PassThru
+          Start-Sleep -Seconds 8
+          if ($p.HasExited) {
+            $log = Join-Path $env:LOCALAPPDATA "NEXUS AI Master\startup.log"
+            if (Test-Path $log) { Get-Content $log }
+            throw "NEXUS AI MASTER exited during startup smoke test with code $($p.ExitCode)."
+          }
+          Stop-Process -Id $p.Id -Force
+
       - name: Install Inno Setup
         shell: powershell
         run: choco install innosetup -y --no-progress
