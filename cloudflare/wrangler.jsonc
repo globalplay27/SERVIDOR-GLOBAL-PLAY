@@ -15,7 +15,8 @@
   "vars": {
     "APP_NAME": "Servidor Nexus",
     "RAGNAR_CLIENT_ID": "ragnar-one",
-    "CLOUDFLARE_AUTOMATION_ACTIVE": "true"
+    "CLOUDFLARE_AUTOMATION_ACTIVE": "true",
+    "PUBLIC_BASE_URL": "https://servidor-nexus.diamantehinode2015.workers.dev"
   },
   "assets": {
     "directory": "../public",
@@ -42,5 +43,11 @@
       "binding": "MEDIA",
       "bucket_name": "servidor-nexus-media"
     }
-  ]
+  ],
+  "media": {
+    "binding": "VIDEO_MEDIA"
+  },
+  "ai": {
+    "binding": "AI"
+  }
 }
