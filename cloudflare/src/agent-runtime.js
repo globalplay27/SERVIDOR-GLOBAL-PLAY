@@ -316,15 +316,65 @@ async function runCreator(env,client,strategy,options) {
 
 async function runPublisher(env,client,options) {
   const startedAt=new Date().toISOString();
+  const config=normalizeAgentCoreConfig(client);
   const rows=await env.DB.prepare(
     "SELECT id,scheduled_for,status,approval_status,caption,payload_json FROM post_ledger WHERE client_id=?1 AND status IN ('ready','scheduled','failed') AND (scheduled_for IS NULL OR scheduled_for<=?2) ORDER BY COALESCE(scheduled_for,created_at) ASC LIMIT 8"
   ).bind(client.id,new Date().toISOString()).all();
-  let published=0,failed=0,awaitingApproval=0,awaitingMedia=0;
+
+  let published=0,failed=0,awaitingApproval=0,awaitingMedia=0,repairedApproval=0,repairedMedia=0;
+  let reusableMedia=null;
+  let reusableIndex=0;
+
+  const ensureReusableMedia=async()=>{
+    if(reusableMedia!==null)return reusableMedia;
+    const snapshot=await instagramSnapshot(env,client).catch(()=>({items:[]}));
+    reusableMedia=(snapshot.items||[])
+      .filter(item=>/^https:\/\//i.test(String(item?.mediaUrl||"")))
+      .sort((a,b)=>(Number(b.likeCount||0)+Number(b.commentsCount||0)*2)-(Number(a.likeCount||0)+Number(a.commentsCount||0)*2));
+    return reusableMedia;
+  };
+
   for(const row of rows?.results||[]){
-    if(String(row.approval_status)!=="approved"){awaitingApproval+=1;continue;}
+    let approval=String(row.approval_status||"pending");
     const payload=parseJson(row.payload_json,{});
-    const imageUrl=String(payload.imageUrl||payload.publicImageUrl||"");
-    if(!imageUrl){awaitingMedia+=1;continue;}
+
+    if(approval!=="approved"&&config.autoPublish&&!config.approvalRequired){
+      await env.DB.prepare(
+        "UPDATE post_ledger SET approval_status='approved',updated_at=CURRENT_TIMESTAMP WHERE id=?1"
+      ).bind(row.id).run();
+      approval="approved";
+      repairedApproval+=1;
+    }
+
+    if(approval!=="approved"){
+      awaitingApproval+=1;
+      continue;
+    }
+
+    let imageUrl=String(payload.imageUrl||payload.publicImageUrl||"");
+    if(!imageUrl&&config.autoPublish&&!config.approvalRequired){
+      const media=await ensureReusableMedia();
+      if(media.length){
+        const candidate=media[reusableIndex%media.length];
+        reusableIndex+=1;
+        imageUrl=await stageOwnInstagramImage(env,client.id,row.id,String(candidate?.mediaUrl||""));
+        if(imageUrl){
+          payload.imageUrl=imageUrl;
+          payload.repairedMediaAt=new Date().toISOString();
+          payload.repairedMediaSource="own-instagram-reuse";
+          await env.DB.prepare(
+            "UPDATE post_ledger SET payload_json=?2,error='',updated_at=CURRENT_TIMESTAMP WHERE id=?1"
+          ).bind(row.id,JSON.stringify(payload)).run();
+          repairedMedia+=1;
+        }
+      }
+    }
+
+    if(!imageUrl){
+      awaitingMedia+=1;
+      continue;
+    }
+
     try{
       await env.DB.prepare("UPDATE post_ledger SET status='publishing',error='',updated_at=CURRENT_TIMESTAMP WHERE id=?1").bind(row.id).run();
       const result=await publishInstagramImage(env,client.id,imageUrl,String(row.caption||""));
@@ -343,13 +393,14 @@ async function runPublisher(env,client,options) {
       failed+=1;
     }
   }
+
   await recordAgentExecution(env,client,"PUBLISHER",{
     function:"queue-sweep",trigger:options.trigger,startedAt,status:failed?"warning":"success",
     model:"local-rules+meta-api",quantity:(rows?.results||[]).length,
     message:published+" publicada(s), "+awaitingApproval+" aguardando aprovação, "+awaitingMedia+" aguardando mídia, "+failed+" falha(s).",
-    metadata:{published,failed,awaitingApproval,awaitingMedia}
+    metadata:{published,failed,awaitingApproval,awaitingMedia,repairedApproval,repairedMedia}
   });
-  return {published,failed,awaitingApproval,awaitingMedia};
+  return {published,failed,awaitingApproval,awaitingMedia,repairedApproval,repairedMedia};
 }
 
 async function runAuditor(env,client,options) {
