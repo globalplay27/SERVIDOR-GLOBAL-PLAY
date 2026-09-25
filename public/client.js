@@ -1572,55 +1572,105 @@ $("#video-rename-folder")?.addEventListener("click",renameCurrentVideoFolder);
 $("#video-delete-folder")?.addEventListener("click",deleteCurrentVideoFolder);
 
 async function uploadSingleVideo(file,index,total,settings,progress){
-  const ticketResponse=await fetch("/api/portal/video-upload-ticket",{
-    method:"POST",
-    credentials:"same-origin",
-    headers:sessionAuth?{"x-nexus-session":sessionAuth}:{}
-  });
-  const ticket=await ticketResponse.json().catch(()=>({}));
-  if(!ticketResponse.ok||!ticket.url){
-    const error=new Error(ticket.error==="railway_video_bridge_not_configured"
-      ?"O processador de vídeo ainda precisa ser autorizado pelo administrador NEXUS."
-      :(ticket.error||"Não foi possível preparar o envio do vídeo."));
-    if(ticketResponse.status===401)error.code="session_expired";
+  const headers={"content-type":"application/json",...(sessionAuth?{"x-nexus-session":sessionAuth}:{})};
+  let upload=null;
+
+  const failMessage=code=>{
+    const value=String(code||"");
+    if(value==="r2_unavailable")return"O armazenamento de vídeos do NEXUS ainda não está disponível.";
+    if(value==="video_too_large")return"Vídeo acima do limite de 750 MB.";
+    if(value==="invalid_video_type")return"Formato não aceito. Use MP4, MOV, WEBM ou MKV.";
+    if(value==="unauthorized")return"Sua sessão expirou. Entre novamente e tente de novo.";
+    return value||"Não foi possível enviar "+file.name;
+  };
+
+  try{
+    const initResponse=await fetch("/api/portal/video-uploads",{
+      method:"POST",
+      credentials:"same-origin",
+      headers,
+      body:JSON.stringify({
+        fileName:file.name,
+        contentType:file.type||"application/octet-stream",
+        size:file.size
+      })
+    });
+    const init=await initResponse.json().catch(()=>({}));
+    if(!initResponse.ok||!init.uploadId||!init.key){
+      const error=new Error(failMessage(init.error));
+      if(initResponse.status===401)error.code="session_expired";
+      throw error;
+    }
+    upload=init;
+
+    const chunkSize=Math.max(5*1024*1024,Math.min(12*1024*1024,Number(init.chunkSize||8*1024*1024)));
+    const parts=[];
+    let partNumber=1;
+
+    for(let offset=0;offset<file.size;offset+=chunkSize,partNumber++){
+      const chunk=file.slice(offset,Math.min(file.size,offset+chunkSize));
+      const part=await new Promise((resolve,reject)=>{
+        const xhr=new XMLHttpRequest();
+        const query="?key="+encodeURIComponent(upload.key)
+          +"&uploadId="+encodeURIComponent(upload.uploadId)
+          +"&partNumber="+partNumber;
+        xhr.open("PUT","/api/portal/video-uploads/part"+query);
+        xhr.withCredentials=true;
+        if(sessionAuth)xhr.setRequestHeader("x-nexus-session",sessionAuth);
+        xhr.setRequestHeader("content-type","application/octet-stream");
+        xhr.upload.onprogress=e=>{
+          if(!e.lengthComputable||!progress)return;
+          const currentBytes=offset+e.loaded;
+          const fileFraction=Math.max(0,Math.min(1,currentBytes/file.size));
+          const pct=Math.round(((index+fileFraction)/total)*100);
+          progress.querySelector("i").style.width=Math.max(2,pct)+"%";
+          progress.querySelector("span").textContent="Enviando "+(index+1)+" de "+total+" · "+pct+"%";
+        };
+        xhr.onload=()=>{
+          let d={};try{d=JSON.parse(xhr.responseText||"{}");}catch{}
+          if(xhr.status>=200&&xhr.status<300&&d.etag){resolve(d);return;}
+          const error=new Error(failMessage(d.error));
+          if(xhr.status===401)error.code="session_expired";
+          reject(error);
+        };
+        xhr.onerror=()=>reject(new Error("Falha de conexão ao enviar "+file.name));
+        xhr.send(chunk);
+      });
+      parts.push({partNumber:Number(part.partNumber||partNumber),etag:String(part.etag)});
+    }
+
+    const completeResponse=await fetch("/api/portal/video-uploads/complete",{
+      method:"POST",
+      credentials:"same-origin",
+      headers,
+      body:JSON.stringify({
+        key:upload.key,
+        uploadId:upload.uploadId,
+        parts,
+        fileName:file.name,
+        contentType:file.type||"application/octet-stream",
+        size:file.size,
+        settings
+      })
+    });
+    const completed=await completeResponse.json().catch(()=>({}));
+    if(!completeResponse.ok){
+      const error=new Error(failMessage(completed.error));
+      if(completeResponse.status===401)error.code="session_expired";
+      throw error;
+    }
+    return completed;
+  }catch(error){
+    if(upload?.key&&upload?.uploadId){
+      const query="?key="+encodeURIComponent(upload.key)+"&uploadId="+encodeURIComponent(upload.uploadId);
+      fetch("/api/portal/video-uploads"+query,{
+        method:"DELETE",
+        credentials:"same-origin",
+        headers:sessionAuth?{"x-nexus-session":sessionAuth}:{}
+      }).catch(()=>{});
+    }
     throw error;
   }
-
-  return new Promise((resolve,reject)=>{
-    const xhr=new XMLHttpRequest();
-    xhr.open("POST",ticket.url);
-    xhr.withCredentials=false;
-    xhr.setRequestHeader("Content-Type",file.type||"application/octet-stream");
-    xhr.setRequestHeader("X-File-Name",encodeURIComponent(file.name));
-    xhr.setRequestHeader("X-Video-Goal",settings.goal);
-    xhr.setRequestHeader("X-Clip-Duration",settings.duration);
-    xhr.setRequestHeader("X-Requested-Clips",settings.clips);
-    xhr.setRequestHeader("X-Output-Format",settings.outputFormat);
-    xhr.setRequestHeader("X-Auto-Subtitles",settings.autoSubtitles?"1":"0");
-    xhr.setRequestHeader("X-Subtitle-Size",settings.subtitleSize);
-    xhr.setRequestHeader("X-Subtitle-Color",settings.subtitleColor);
-    xhr.setRequestHeader("X-Subtitle-Weight",settings.subtitleWeight);
-    xhr.setRequestHeader("X-Subtitle-Bg",settings.subtitleBg);
-    xhr.setRequestHeader("X-Video-Folder",settings.folderId);
-    xhr.setRequestHeader("X-Content-Title",encodeURIComponent(settings.contentTitle||""));
-    xhr.setRequestHeader("X-Video-End-Text",encodeURIComponent(settings.endText||""));
-    xhr.setRequestHeader("X-Video-End-Contact",encodeURIComponent(settings.endContact||""));
-    xhr.upload.onprogress=e=>{
-      if(!e.lengthComputable||!progress)return;
-      const local=e.loaded/e.total;
-      const pct=Math.round(((index+local)/total)*100);
-      progress.querySelector("i").style.width=Math.max(2,pct)+"%";
-      progress.querySelector("span").textContent="Enviando "+(index+1)+" de "+total+" · "+pct+"%";
-    };
-    xhr.onload=()=>{
-      let d={};try{d=JSON.parse(xhr.responseText||"{}");}catch{}
-      if(xhr.status>=200&&xhr.status<300){resolve(d);return;}
-      if(xhr.status===401){const err=new Error("A autorização temporária do envio expirou. Tente enviar novamente.");err.code="upload_ticket_expired";reject(err);return;}
-      reject(new Error(d.error==="video_too_large"?"Vídeo acima do limite de 750 MB.":(d.error||"Não foi possível enviar "+file.name)));
-    };
-    xhr.onerror=()=>reject(new Error("Falha de conexão ao enviar "+file.name));
-    xhr.send(file);
-  });
 }
 const videoUploadForm=$("#video-upload-form");
 if(videoUploadForm)videoUploadForm.addEventListener("submit",async event=>{
