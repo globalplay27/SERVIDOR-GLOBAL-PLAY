@@ -18,7 +18,7 @@ import { leadsForClient, leadHunterSummary } from "./leads.js";
 import { leadHunterView, saveLeadHunterConfig, runLeadHunter, discardLead } from "./lead-hunter.js";
 import { createVideoFolder, renameVideoFolder, deleteVideoFolder, patchVideoJob, deleteVideoJob, setClipApproval, selectClip, scheduleClip, bulkScheduleClips } from "./video-library.js";
 import { enqueueVideoProcessing, processVideoJob, regenerateVideoClip, publishVideoClipNow } from "./video-processing.js";
-import { createR2VideoUpload, uploadR2VideoPart, completeR2VideoUpload, abortR2VideoUpload, importR2VideoFromUrl } from "./r2-video-upload.js";
+import { createR2VideoUpload, uploadR2VideoPart, completeR2VideoUpload, abortR2VideoUpload, importR2VideoFromUrl, importR2PublicTrailer } from "./r2-video-upload.js";
 import { decidePost, requestPostRevision, saveOwnPostContent, publishPostNow } from "./posts.js";
 
 function json(data, status = 200, headers = {}) {
@@ -516,7 +516,9 @@ export async function handlePortalApi(request, env, url, ctx) {
   ) {
     const body = await request.json().catch(() => ({}));
     try {
-      const imported = await importR2VideoFromUrl(env, client.id, body);
+      const imported = url.pathname.endsWith("/import-trailer")
+        ? await importR2PublicTrailer(env, client.id, body)
+        : await importR2VideoFromUrl(env, client.id, body);
       await enqueueVideoProcessing(env, client.id, imported.jobId, {});
       if (ctx?.waitUntil) {
         ctx.waitUntil(processVideoJob(env, client.id, imported.jobId).catch(() => {}));
@@ -534,6 +536,7 @@ export async function handlePortalApi(request, env, url, ctx) {
       const status = code === "r2_unavailable" ? 503
         : code === "video_too_large" ? 413
         : code.startsWith("video_source_http_") ? 502
+        : code.startsWith("invidious_resolve_failed") ? 502
         : 400;
       return json({ error: code }, status);
     }
