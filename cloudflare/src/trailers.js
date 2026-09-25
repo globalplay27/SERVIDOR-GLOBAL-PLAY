@@ -1,0 +1,187 @@
+import { openAIResponses } from "./openai.js";
+
+function outputText(response) {
+  if (typeof response?.output_text === "string") return response.output_text;
+  const parts = [];
+  for (const item of Array.isArray(response?.output) ? response.output : []) {
+    for (const content of Array.isArray(item?.content) ? item.content : []) {
+      if (typeof content?.text === "string") parts.push(content.text);
+    }
+  }
+  return parts.join("\n");
+}
+
+function youtubeUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  try {
+    const url = new URL(raw);
+    const host = url.hostname.toLowerCase().replace(/^www\./, "");
+    if (url.protocol !== "https:") return "";
+    if (host === "youtu.be") {
+      const id = url.pathname.split("/").filter(Boolean)[0] || "";
+      return id ? "https://www.youtube.com/watch?v=" + encodeURIComponent(id) : "";
+    }
+    if (host !== "youtube.com") return "";
+    if (url.pathname === "/watch") {
+      const id = url.searchParams.get("v") || "";
+      return id ? "https://www.youtube.com/watch?v=" + encodeURIComponent(id) : "";
+    }
+    const parts = url.pathname.split("/").filter(Boolean);
+    if (["shorts","embed","live"].includes(parts[0]) && parts[1]) {
+      return "https://www.youtube.com/watch?v=" + encodeURIComponent(parts[1]);
+    }
+  } catch {}
+  return "";
+}
+
+function youtubeThumbnail(url) {
+  try {
+    const id = new URL(youtubeUrl(url)).searchParams.get("v") || "";
+    return id ? "https://i.ytimg.com/vi/" + encodeURIComponent(id) + "/hqdefault.jpg" : "";
+  } catch {
+    return "";
+  }
+}
+
+function normalizeResult(item, kind, fallbackTitle = "") {
+  const trailerUrl = youtubeUrl(item?.trailerUrl);
+  const trailerThumb = youtubeThumbnail(trailerUrl);
+  const poster = String(item?.posterUrl || "").trim();
+  return {
+    id: String(item?.id || ""),
+    type: kind === "tv" ? "series" : "movie",
+    title: String(item?.title || item?.name || fallbackTitle || "").trim().slice(0, 160),
+    year: String(item?.year || item?.release_date || item?.first_air_date || "").slice(0, 4),
+    overview: String(item?.overview || item?.synopsis || "").trim().slice(0, 600),
+    posterUrl: poster || trailerThumb,
+    posterFallbackUrl: trailerThumb,
+    trailerUrl,
+    trailerName: String(item?.trailerName || item?.channel || "").trim().slice(0, 180),
+    official: item?.official === true,
+    downloadable: false,
+    downloadUrl: ""
+  };
+}
+
+async function tmdbSearch(env, query, kind) {
+  const token = String(env.TMDB_API_TOKEN || "").trim();
+  const apiKey = String(env.TMDB_API_KEY || "").trim();
+  if (!token && !apiKey) return null;
+
+  const get = async (pathname, params = {}, language = "pt-BR") => {
+    const url = new URL("https://api.themoviedb.org/3/" + String(pathname).replace(/^\/+/, ""));
+    url.searchParams.set("language", language);
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined && value !== null && value !== "") url.searchParams.set(key, String(value));
+    }
+    if (apiKey) url.searchParams.set("api_key", apiKey);
+    const response = await fetch(url, {
+      headers: { accept: "application/json", ...(token ? { authorization: "Bearer " + token } : {}) }
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error("tmdb_http_" + response.status);
+    return payload;
+  };
+
+  const search = await get("search/" + kind, { query, include_adult: "false" });
+  const base = (Array.isArray(search?.results) ? search.results : []).slice(0, 8);
+  const results = [];
+
+  for (const item of base) {
+    let videos = [];
+    try {
+      let payload = await get(kind + "/" + item.id + "/videos");
+      videos = Array.isArray(payload?.results) ? payload.results : [];
+      if (!videos.length) {
+        payload = await get(kind + "/" + item.id + "/videos", {}, "en-US");
+        videos = Array.isArray(payload?.results) ? payload.results : [];
+      }
+    } catch {}
+
+    const youtube = videos.filter(video => video?.site === "YouTube");
+    const score = video => {
+      const name = String(video?.name || "").toLowerCase();
+      const lang = String(video?.iso_639_1 || "").toLowerCase();
+      const country = String(video?.iso_3166_1 || "").toUpperCase();
+      let value = 0;
+      if (/dublad|portugu[eê]s|pt[- ]?br|brasil/.test(name)) value += 120;
+      if (lang === "pt") value += 100;
+      if (country === "BR") value += 80;
+      if (video?.type === "Trailer") value += 35;
+      if (video?.official === true) value += 30;
+      if (/legendad/.test(name)) value -= 45;
+      if (lang === "en") value -= 80;
+      return value;
+    };
+    const trailer = [...youtube].sort((a, b) => score(b) - score(a))[0] || null;
+    const title = String(kind === "tv" ? item.name : item.title || query);
+    const date = String(kind === "tv" ? item.first_air_date : item.release_date || "");
+
+    results.push(normalizeResult({
+      id: item.id,
+      title,
+      year: date.slice(0, 4),
+      overview: item.overview || "",
+      posterUrl: item.poster_path ? "https://image.tmdb.org/t/p/w342" + item.poster_path : "",
+      trailerUrl: trailer?.key ? "https://www.youtube.com/watch?v=" + encodeURIComponent(trailer.key) : "",
+      trailerName: trailer?.name || "",
+      official: Boolean(trailer?.official)
+    }, kind, query));
+  }
+
+  return { configured: true, source: "tmdb", results };
+}
+
+async function openAISearch(env, clientId, query, kind) {
+  const response = await openAIResponses(env, clientId, {
+    model: "gpt-5.6-luna",
+    tools: [{ type: "web_search" }],
+    instructions: [
+      "Localize trailers oficiais para público brasileiro.",
+      "Priorize áudio dublado em português do Brasil e canais oficiais.",
+      "Nunca invente URL.",
+      "Retorne somente JSON válido e não inclua markdown."
+    ].join(" "),
+    input: [
+      "Pesquise", kind === "tv" ? "a série" : "o filme", JSON.stringify(query) + ".",
+      "Retorne até 6 resultados no formato",
+      '{"results":[{"title":"...","year":"2026","overview":"...","trailerUrl":"https://www.youtube.com/watch?v=...","channel":"...","official":true}]}'
+    ].join(" "),
+    max_output_tokens: 1600
+  });
+
+  const text = outputText(response);
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start < 0 || end <= start) return { configured: false, source: "openai", results: [] };
+
+  let parsed = {};
+  try { parsed = JSON.parse(text.slice(start, end + 1)); } catch {}
+  const results = (Array.isArray(parsed?.results) ? parsed.results : [])
+    .slice(0, 6)
+    .map(item => normalizeResult(item, kind, query))
+    .filter(item => item.title);
+  return { configured: true, source: "openai-web-search", results };
+}
+
+export async function searchTrailers(env, clientId, query, type = "movie") {
+  const q = String(query || "").trim().slice(0, 120);
+  if (!q) throw new Error("query_required");
+  const kind = String(type || "") === "series" ? "tv" : "movie";
+
+  try {
+    const tmdb = await tmdbSearch(env, q, kind);
+    if (tmdb) return tmdb;
+  } catch {}
+
+  try {
+    return await openAISearch(env, clientId, q, kind);
+  } catch (error) {
+    const code = String(error instanceof Error ? error.message : error);
+    if (code.includes("openai_not_configured")) {
+      return { configured: false, source: "unavailable", results: [] };
+    }
+    throw error;
+  }
+}
