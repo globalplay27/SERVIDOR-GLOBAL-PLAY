@@ -65,8 +65,9 @@
         <button type="button" data-view="posts">Postagens</button>
         <button type="button" data-view="capture">Captação</button>
         <button type="button" data-view="leads">Leads</button>
-        <button type="button" data-view="videos">Vídeos</button>
-        <button type="button" data-view="trailers">Trailers</button>
+        <button type="button" data-view="instagram">Instagram</button>
+        <button type="button" data-view="videos" hidden>Vídeos</button>
+        <button type="button" data-view="trailers" hidden>Trailers</button>
         <button type="button" data-view="posting">Perfil do Agente</button>
         <button type="button" data-view="support">Suporte</button>
         <button type="button" class="setup-nav-main" data-view="setup" hidden>Conexões</button>
@@ -134,13 +135,57 @@
             </div>
             <div class="overview-actions">
               <button type="button" data-open-posting>Editar perfil do agente</button>
-              <button type="button" id="instagram-connect" class="managed-instagram-button">Conectar Instagram</button>
+              <button type="button" id="instagram-connect" class="managed-instagram-button instagram-connect-action">Conectar Instagram</button>
               <span id="instagram-connect-status" class="provider-line"></span>
             </div>
           </article>
           <article class="panel nexus-agent-team">
             <div class="panel-heading"><div><p class="eyebrow">EQUIPE DIGITAL</p><h2>Agentes trabalhando agora</h2></div><button type="button" id="refresh-agent-team" class="ghost-action">Atualizar</button></div>
             <div id="client-agent-team" class="client-agent-team"><div class="post-client-empty"><strong>Carregando equipe...</strong><span>Sincronizando RADAR, ESTRATEGISTA, CREATOR, PUBLISHER, AUDITOR e ODIN.</span></div></div>
+          </article>
+        </section>
+      </div>
+
+
+      <div id="view-instagram" class="client-view" hidden>
+        <section class="settings-heading">
+          <div>
+            <p class="eyebrow">INSTAGRAM / META</p>
+            <h1>Autorize sua conta do Instagram</h1>
+            <p class="muted">O cliente faz login diretamente no Instagram e concede as permissões necessárias. A senha do Instagram não é informada nem armazenada pelo NEXUS.</p>
+          </div>
+          <span id="instagram-page-chip" class="status-chip">VERIFICANDO</span>
+        </section>
+
+        <section class="content-grid">
+          <article class="panel settings-panel">
+            <div class="panel-heading">
+              <div><p class="eyebrow">CONTA CONECTADA</p><h2 id="instagram-page-account">Nenhuma conta autorizada</h2></div>
+            </div>
+            <div class="details compact-details">
+              <div><span>Status</span><strong id="instagram-page-state">Aguardando autorização</strong></div>
+              <div><span>Tipo de conta</span><strong id="instagram-page-type">—</strong></div>
+              <div><span>Conectado em</span><strong id="instagram-page-connected-at">—</strong></div>
+              <div><span>Validade da autorização</span><strong id="instagram-page-expires-at">—</strong></div>
+            </div>
+            <div class="overview-actions">
+              <button type="button" id="instagram-page-connect" class="managed-instagram-button instagram-connect-action">Entrar com Instagram</button>
+              <button type="button" id="instagram-page-refresh" class="ghost-action">Atualizar status</button>
+            </div>
+            <span id="instagram-page-status" class="provider-line"></span>
+          </article>
+
+          <article class="panel settings-panel">
+            <div class="panel-heading">
+              <div><p class="eyebrow">PERMISSÕES</p><h2>O que o NEXUS solicita</h2></div>
+            </div>
+            <div class="details compact-details">
+              <div><span>Perfil profissional</span><strong id="ig-permission-basic">Pendente</strong></div>
+              <div><span>Publicar conteúdo</span><strong id="ig-permission-publish">Pendente</strong></div>
+              <div><span>Gerenciar comentários</span><strong id="ig-permission-comments">Pendente</strong></div>
+              <div><span>Gerenciar mensagens</span><strong id="ig-permission-messages">Pendente</strong></div>
+            </div>
+            <p class="muted">A autorização acontece na página oficial do Instagram. Você pode reconectar a qualquer momento para trocar de conta ou renovar as permissões.</p>
           </article>
         </section>
       </div>
@@ -512,7 +557,7 @@
             <div class="step-body">
               <strong>Instagram profissional</strong>
               <span>Autorize a conta profissional que o agente vai analisar, atender e publicar.</span>
-              <div class="step-actions"><button type="button" id="setup-instagram-connect">Conectar Instagram</button></div>
+              <div class="step-actions"><button type="button" id="setup-instagram-connect" class="instagram-connect-action">Conectar Instagram</button></div>
               <small class="provider-line" id="setup-instagram-status">Aguardando autorização</small>
             </div>
             <span class="step-state">Pendente</span>
@@ -546,6 +591,6 @@
       <footer><span>NEXUS AI</span><small>Ambiente seguro · NEXUS AI</small></footer>
     </section>
   </main>
-  <script src="/client.js?v=74" defer></script>
+  <script src="/client.js?v=75" defer></script>
 </body>
 </html>
