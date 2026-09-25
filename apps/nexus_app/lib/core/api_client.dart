@@ -13,6 +13,17 @@ class NexusApiException implements Exception {
   String toString() => message;
 }
 
+class NexusLoginResult {
+  final bool isMaster;
+  final Map<String, dynamic>? client;
+
+  const NexusLoginResult.master()
+      : isMaster = true,
+        client = null;
+
+  const NexusLoginResult.client(this.client) : isMaster = false;
+}
+
 class NexusApiClient {
   static const baseUrl = 'https://servidor-nexus.diamantehinode2015.workers.dev';
   static const _tokenKey = 'nexus_session_token';
@@ -71,26 +82,58 @@ class NexusApiClient {
     return payload;
   }
 
-  Future<Map<String, dynamic>> login(String username, String password) async {
+  Future<NexusLoginResult> loginUnified(String username, String password) async {
     final response = await _http.post(
-      Uri.parse('$baseUrl/api/portal/login'),
-      headers: _headers(jsonBody: true),
+      Uri.parse('$baseUrl/api/auth/login'),
+      headers: {'accept': 'application/json', 'content-type': 'application/json'},
       body: jsonEncode({'username': username.trim(), 'password': password}),
     );
     final payload = _decode(response);
     if (payload is! Map) {
       throw const NexusApiException('Resposta de login inválida.');
     }
+
+    final role = (payload['role'] ?? '').toString();
     final token = (payload['token'] ?? '').toString();
-    final client = payload['client'];
-    if (token.isEmpty || client is! Map) {
+    if (token.isEmpty || (role != 'master' && role != 'client')) {
       throw const NexusApiException('Sessão não recebida do servidor.');
     }
+
+    if (role == 'master') {
+      _token = null;
+      _masterToken = token;
+      _savedRole = 'master';
+      await _storage.delete(key: _tokenKey);
+      await _storage.write(key: _masterTokenKey, value: token);
+      await _storage.write(key: _roleKey, value: 'master');
+      return const NexusLoginResult.master();
+    }
+
+    _masterToken = null;
     _token = token;
     _savedRole = 'client';
+    await _storage.delete(key: _masterTokenKey);
     await _storage.write(key: _tokenKey, value: token);
     await _storage.write(key: _roleKey, value: 'client');
-    return Map<String, dynamic>.from(client);
+
+    try {
+      final clientData = await session();
+      return NexusLoginResult.client(clientData);
+    } catch (_) {
+      _token = null;
+      _savedRole = null;
+      await _storage.delete(key: _tokenKey);
+      await _storage.delete(key: _roleKey);
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> login(String username, String password) async {
+    final result = await loginUnified(username, password);
+    if (result.isMaster || result.client == null) {
+      throw const NexusApiException('Esta credencial pertence ao Master.');
+    }
+    return result.client!;
   }
 
 
