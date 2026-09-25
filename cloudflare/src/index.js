@@ -47,6 +47,31 @@ async function asset(env, request, pathname) {
   return env.ASSETS.fetch(new Request(target.toString(), request));
 }
 
+async function brandingMedia(env, url) {
+  if (!env.MEDIA) return json({ error: "r2_unavailable" }, 503);
+
+  let key = "";
+  try {
+    key = decodeURIComponent(url.pathname.slice("/media/".length));
+  } catch {
+    return json({ error: "invalid_media_path" }, 400);
+  }
+
+  if (!key.startsWith("branding/") || key.includes("..") || key.includes("\\")) {
+    return json({ error: "not_found" }, 404);
+  }
+
+  const object = await env.MEDIA.get(key);
+  if (!object) return json({ error: "not_found" }, 404);
+
+  const headers = new Headers();
+  object.writeHttpMetadata(headers);
+  if (object.httpEtag) headers.set("etag", object.httpEtag);
+  headers.set("cache-control", "public, max-age=31536000, immutable");
+  headers.set("x-content-type-options", "nosniff");
+  return new Response(object.body, { status: 200, headers });
+}
+
 async function health(env) {
   let d1 = false;
   try {
@@ -136,6 +161,11 @@ export default {
     if (url.pathname === "/" && request.method === "GET") {
       return redirect("/login");
     }
+
+    if (url.pathname.startsWith("/media/") && request.method === "GET") {
+      return brandingMedia(env, url);
+    }
+
 
     if (url.pathname === "/login" && request.method === "GET") {
       return asset(env, request, "/portal.html");
