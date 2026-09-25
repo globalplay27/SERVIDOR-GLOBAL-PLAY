@@ -1813,9 +1813,21 @@ async function resumeCookieSession(){
     $("#login-error").textContent="Usuário ou senha inválidos.";
     return;
   }
+  if(params.get("error")==="rate-limit"){
+    $("#login-error").textContent="Muitas tentativas. Aguarde alguns minutos e tente novamente.";
+    return;
+  }
   try{
     const r=await fetch("/api/portal/session",{credentials:"same-origin"});
-    if(r.status===401){showPortalLogin("");return;}
+    if(r.status===401){
+      const master=await fetch("/api/system/status",{credentials:"same-origin"});
+      if(master.ok){
+        location.replace("/api/master/console");
+        return;
+      }
+      showPortalLogin("");
+      return;
+    }
     if(!r.ok)return;
     const c=await r.json();
     $("#login-view").hidden=true;
@@ -1859,8 +1871,6 @@ if(toggleLoginPassword&&loginPassword){
   });
 }
 
-let loginSubmitCommitted=false;
-
 async function hydrateRememberedCredential(){
   const remember=Boolean(rememberAccess?.checked);
   if(!remember||!("credentials" in navigator)||!("PasswordCredential" in window))return;
@@ -1874,28 +1884,73 @@ async function hydrateRememberedCredential(){
 
 if(loginForm){
   loginForm.addEventListener("submit",async event=>{
-    if(loginSubmitCommitted)return;
+    event.preventDefault();
     const remember=Boolean(rememberAccess?.checked);
+    const submit=loginForm.querySelector('button[type="submit"]');
+    const username=String(loginUsername?.value||"").trim();
+    const password=String(loginPassword?.value||"");
+
+    if(!username||!password){
+      $("#login-error").textContent="Informe usuário e senha.";
+      return;
+    }
+
     try{
       if(remember){
         localStorage.setItem("nexus_remember_access","1");
-        localStorage.setItem("nexus_remember_username",String(loginUsername?.value||"").trim());
+        localStorage.setItem("nexus_remember_username",username);
       }else{
         localStorage.removeItem("nexus_remember_access");
         localStorage.removeItem("nexus_remember_username");
       }
     }catch{}
 
-    if(remember && "credentials" in navigator && "PasswordCredential" in window){
-      event.preventDefault();
-      const submit=loginForm.querySelector('button[type="submit"]');
-      if(submit){submit.disabled=true;submit.textContent="Salvando acesso…";}
-      try{
-        const credential=new PasswordCredential(loginForm);
-        await navigator.credentials.store(credential);
-      }catch{}
-      loginSubmitCommitted=true;
-      HTMLFormElement.prototype.submit.call(loginForm);
+    if(submit){submit.disabled=true;submit.textContent="Entrando…";}
+    $("#login-error").textContent="";
+
+    try{
+      if(remember && "credentials" in navigator && "PasswordCredential" in window){
+        try{
+          const credential=new PasswordCredential(loginForm);
+          await navigator.credentials.store(credential);
+        }catch{}
+      }
+
+      const response=await fetch("/api/auth/login",{
+        method:"POST",
+        credentials:"same-origin",
+        headers:{"content-type":"application/json","accept":"application/json"},
+        body:JSON.stringify({username,password})
+      });
+      const payload=await response.json().catch(()=>({}));
+
+      if(response.status===429){
+        const seconds=Number(payload.retryAfter||response.headers.get("retry-after")||0);
+        $("#login-error").textContent=seconds>0
+          ? "Muitas tentativas. Tente novamente em alguns minutos."
+          : "Muitas tentativas. Aguarde e tente novamente.";
+        return;
+      }
+      if(!response.ok){
+        $("#login-error").textContent="Usuário ou senha inválidos.";
+        return;
+      }
+
+      const role=String(payload.role||"");
+      const entryPath=String(payload.entryPath||"");
+      if(role==="master"){
+        location.replace(entryPath||"/api/master/console");
+        return;
+      }
+      if(role==="client"){
+        location.replace(entryPath||"/portal.html?auth=1");
+        return;
+      }
+      $("#login-error").textContent="O servidor não identificou o tipo de acesso.";
+    }catch{
+      $("#login-error").textContent="Não foi possível conectar ao NEXUS AI.";
+    }finally{
+      if(submit){submit.disabled=false;submit.textContent="Entrar";}
     }
   });
 }
