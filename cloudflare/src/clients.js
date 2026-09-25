@@ -112,21 +112,18 @@ export function portalClientView(client) {
     aiMonthlyImageLimit: Number(config.aiMonthlyImageLimit || 0),
     aiImagesUsed: Number(config.aiImagesUsed || 0),
     managedInfrastructure: true,
-    onboarding: (() => {
-      const value = config.onboarding && typeof config.onboarding === "object" ? { ...config.onboarding } : {};
-      delete value.railway;
-      return value;
-    })(),
+    onboarding: {
+      instagram: Boolean(config.onboarding?.instagram),
+      creativeProfile: Boolean(config.onboarding?.creativeProfile),
+      supportRequested: Boolean(config.onboarding?.supportRequested)
+    },
     setupMode: config.setupMode || "ready",
-    integrationState: (() => {
-      const value = config.integrationState && typeof config.integrationState === "object"
-        ? { ...config.integrationState }
-        : { github: "connected", cloudflare: "connected", openai: "configured", meta: "pending" };
-      delete value.railway;
-      value.github = value.github || "connected";
-      value.cloudflare = "connected";
-      return value;
-    })(),
+    integrationState: {
+      github: "connected",
+      cloudflare: "connected",
+      openai: "configured",
+      meta: config.integrationState?.meta || "pending"
+    },
     postingProfile,
     agentProfile,
     agentCore,
