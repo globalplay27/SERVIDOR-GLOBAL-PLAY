@@ -263,6 +263,85 @@ function youtubeVideoIdFromUrl(value) {
   return "";
 }
 
+
+const PIPED_STREAM_APIS = [
+  "https://pipedapi.kavin.rocks",
+  "https://pipedapi.leptons.xyz",
+  "https://pipedapi.nosebs.ru",
+  "https://api-piped.mha.fi"
+];
+
+async function pipedMuxedStream(sourceUrl) {
+  const videoId = youtubeVideoIdFromUrl(sourceUrl);
+  if (!videoId) throw new Error("trailer_video_id_missing");
+
+  const attempt = async base => {
+    const response = await fetch(base + "/streams/" + encodeURIComponent(videoId), {
+      headers: { accept: "application/json", "user-agent": "NEXUS-AI/2.2" },
+      signal: AbortSignal.timeout(6000)
+    });
+    if (!response.ok) throw new Error("piped_streams_" + response.status);
+    const payload = await response.json().catch(() => ({}));
+
+    const streams = (Array.isArray(payload?.videoStreams) ? payload.videoStreams : [])
+      .filter(item => item?.url && item?.videoOnly !== true)
+      .map(item => {
+        const quality = Number(String(item?.quality || "").match(/\d+/)?.[0] || 0);
+        const bytes = Number(item?.contentLength || 0);
+        const mime = String(item?.mimeType || "").toLowerCase();
+        const format = String(item?.format || "").toUpperCase();
+        return { ...item, quality, bytes, mime, format };
+      })
+      .filter(item => item.bytes > 0 && item.bytes <= MAX_VIDEO_BYTES)
+      .sort((a, b) => {
+        const aMp4 = a.mime.includes("mp4") || a.format.includes("MP4") || a.format.includes("MPEG_4") ? 1 : 0;
+        const bMp4 = b.mime.includes("mp4") || b.format.includes("MP4") || b.format.includes("MPEG_4") ? 1 : 0;
+        const aQ = a.quality <= 480 ? a.quality : 0;
+        const bQ = b.quality <= 480 ? b.quality : 0;
+        return (bMp4 - aMp4) || (bQ - aQ) || (a.bytes - b.bytes);
+      });
+
+    for (const stream of streams.slice(0, 6)) {
+      const mediaUrl = new URL(String(stream.url), base);
+      if (mediaUrl.protocol !== "https:") continue;
+      const media = await fetch(mediaUrl.toString(), {
+        headers: { accept: "video/*,*/*;q=0.8", "user-agent": "Mozilla/5.0 NEXUS-AI/2.2" },
+        signal: AbortSignal.timeout(30000)
+      });
+      if (!media.ok || !media.body) continue;
+
+      const declaredLength = Number(media.headers.get("content-length") || stream.bytes || 0);
+      if (!declaredLength || declaredLength > MAX_VIDEO_BYTES) {
+        try { await media.body.cancel(); } catch {}
+        continue;
+      }
+      const contentType = String(media.headers.get("content-type") || stream.mime || "video/mp4")
+        .toLowerCase().split(";")[0].trim();
+      const extension = contentType.includes("webm") ? "webm" : "mp4";
+      return {
+        response: media,
+        videoId,
+        host: new URL(base).hostname,
+        extension,
+        contentType: contentType.startsWith("video/") ? contentType : (extension === "webm" ? "video/webm" : "video/mp4"),
+        size: declaredLength,
+        resolver: "piped"
+      };
+    }
+    throw new Error("piped_no_muxed_stream");
+  };
+
+  return Promise.any(PIPED_STREAM_APIS.map(attempt));
+}
+
+async function youtubeMuxedStream(sourceUrl) {
+  try {
+    return await pipedMuxedStream(sourceUrl);
+  } catch {}
+  const resolved = await youtubeMuxedStream(sourceUrl);
+  return { ...resolved, resolver: "invidious" };
+}
+
 async function invidiousMuxedStream(sourceUrl) {
   const videoId = youtubeVideoIdFromUrl(sourceUrl);
   if (!videoId) throw new Error("invalid_trailer_url");
@@ -373,7 +452,7 @@ export async function createR2PublicTrailerImportJob(env, clientId, input = {}) 
 
   const jobId = "vid_" + crypto.randomUUID().replace(/-/g, "").slice(0, 20);
   const result = {
-    progress: 2,
+    progress: 5,
     storage: "r2",
     importAttempts: 0,
     message: "Importando vídeo do YouTube para a biblioteca.",
@@ -406,12 +485,19 @@ export async function processR2PublicTrailerImportJob(env, clientId, jobId) {
     row.id,
     row.client_id,
     JSON.stringify(settings),
-    JSON.stringify({ ...result, progress: 4, importAttempts: attempt, message: "Baixando vídeo do YouTube · tentativa " + attempt + " de 3.", error: "" })
+    JSON.stringify({ ...result, progress: 10, importAttempts: attempt, message: "Localizando o vídeo no YouTube · tentativa " + attempt + " de 3.", error: "" })
   ).run();
 
   let key = "";
   try {
-    const resolved = await invidiousMuxedStream(settings.sourceUrl);
+    const resolved = await youtubeMuxedStream(settings.sourceUrl);
+    await env.DB.prepare(
+      "UPDATE video_jobs SET result_json=?3,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2"
+    ).bind(
+      row.id,
+      row.client_id,
+      JSON.stringify({ ...result, progress: 35, importAttempts: attempt, message: "Vídeo localizado. Transferindo para o R2.", error: "" })
+    ).run();
     key = videoKeyPrefix(clientId) + crypto.randomUUID() + "." + resolved.extension;
 
     const object = await env.MEDIA.put(key, resolved.response.body, {
@@ -421,7 +507,7 @@ export async function processR2PublicTrailerImportJob(env, clientId, jobId) {
         originalName: cleanFileName((settings.contentTitle || "video-youtube") + "." + resolved.extension),
         sourceHost: "youtube.com",
         sourceVideoId: resolved.videoId,
-        resolver: resolved.host,
+        resolver: resolved.resolver || resolved.host,
         kind: "video-source"
       }
     });
@@ -445,10 +531,10 @@ export async function processR2PublicTrailerImportJob(env, clientId, jobId) {
       JSON.stringify(settings),
       JSON.stringify({
         ...result,
-        progress: 5,
+        progress: 50,
         storage: "r2",
         objectEtag: object.httpEtag || "",
-        resolver: resolved.host,
+        resolver: resolved.resolver || resolved.host,
         importAttempts: attempt,
         message: "Vídeo recebido no R2. Iniciando análise e cortes.",
         error: ""
@@ -468,7 +554,7 @@ export async function processR2PublicTrailerImportJob(env, clientId, jobId) {
       JSON.stringify(settings),
       JSON.stringify({
         ...result,
-        progress: retry ? 2 : 0,
+        progress: retry ? 5 : 0,
         importAttempts: attempt,
         message: retry
           ? "A origem não respondeu. O NEXUS tentará novamente automaticamente."
@@ -499,7 +585,7 @@ export async function importR2PublicTrailer(env, clientId, input = {}) {
   const sourceUrl = String(input.url || input.trailerUrl || "").trim();
   if (!sourceUrl) throw new Error("trailer_url_required");
 
-  const resolved = await invidiousMuxedStream(sourceUrl);
+  const resolved = await youtubeMuxedStream(sourceUrl);
   const key = videoKeyPrefix(clientId) + crypto.randomUUID() + "." + resolved.extension;
   const title = String(input.contentTitle || "trailer").trim().slice(0, 160) || "trailer";
 
