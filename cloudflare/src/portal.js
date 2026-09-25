@@ -1,4 +1,4 @@
-import { decryptSecret } from "./secrets.js";
+import { resolveInstagramCredentials } from "./instagram-credentials.js";
 import {
   authenticatePortalUser,
   createPortalSession,
@@ -127,38 +127,37 @@ function sanitizedAgentProfilePatch(body) {
 }
 
 async function connectionSummary(env, clientId) {
-  const result = await env.DB.prepare(
-    `SELECT provider, payload_json, connected_at, updated_at
-     FROM connections WHERE client_id = ?1 ORDER BY provider`
-  ).bind(String(clientId)).all();
-
+  const connection = await resolveInstagramCredentials(env, clientId);
   const out = {};
-  for (const row of result?.results || []) {
-    const provider = String(row.provider || "");
-    if (provider !== "meta" && provider !== "instagram") continue;
 
-    const payload = parseJson(row.payload_json, {});
-    const token = payload?.accessToken
-      ? await decryptSecret(env, payload.accessToken).catch(() => "")
-      : "";
-    const expiresAt = payload?.expiresAt || null;
-    const expiresMs = expiresAt ? new Date(expiresAt).getTime() : 0;
-    const expired = Boolean(expiresMs && Number.isFinite(expiresMs) && expiresMs <= Date.now());
+  if (connection?.connected) {
     out.instagram = {
-      connected: Boolean(token && !expired && payload?.igUserId),
+      connected: true,
       direct: true,
-      source: "nexus",
-      label: payload?.label || payload?.username || "Instagram",
-      username: payload?.username || "",
-      accountType: payload?.accountType || "",
-      scopes: Array.isArray(payload?.scopes) ? payload.scopes : [],
-      expiresAt,
-      expired,
-      connectedAt: row.connected_at || row.updated_at || null
+      source: connection.source || "nexus",
+      label: connection.label || connection.username || "Instagram conectado",
+      username: connection.username || "",
+      accountType: connection.accountType || "",
+      scopes: Array.isArray(connection.scopes) ? connection.scopes : [],
+      expiresAt: connection.expiresAt || null,
+      expired: Boolean(connection.expired),
+      connectedAt: connection.connectedAt || null
+    };
+  } else {
+    out.instagram = {
+      connected: false,
+      direct: true,
+      source: connection?.source || "none",
+      label: "Instagram",
+      username: "",
+      accountType: "",
+      scopes: [],
+      expiresAt: connection?.expiresAt || null,
+      expired: Boolean(connection?.expired),
+      connectedAt: connection?.connectedAt || null
     };
   }
 
-  // Do not expose infrastructure providers, credentials or internal topology to clients.
   out.ai = {
     connected: true,
     direct: false,
