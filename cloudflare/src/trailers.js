@@ -223,17 +223,20 @@ export async function searchTrailers(env, clientId, query, type = "movie") {
   if (!q) throw new Error("query_required");
   const kind = String(type || "") === "series" ? "tv" : "movie";
 
+  const fastSources = [
+    pipedSearch(q, kind),
+    tmdbSearch(env, q, kind).then(result => {
+      if (!result?.results?.some(item => item.trailerUrl)) throw new Error("tmdb_no_trailer");
+      return result;
+    })
+  ];
+
   try {
-    return await pipedSearch(q, kind);
+    return await Promise.any(fastSources);
   } catch {}
 
   try {
-    const tmdb = await tmdbSearch(env, q, kind);
-    if (tmdb?.results?.some(item => item.trailerUrl)) return tmdb;
-  } catch {}
-
-  try {
-    const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("search_timeout")), 8000));
+    const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("search_timeout")), 6000));
     return await Promise.race([openAISearch(env, clientId, q, kind), timeout]);
   } catch (error) {
     const code = String(error instanceof Error ? error.message : error);
