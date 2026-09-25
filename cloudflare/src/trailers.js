@@ -138,13 +138,13 @@ async function openAISearch(env, clientId, query, kind) {
     model: "gpt-5.6-luna",
     tools: [{ type: "web_search" }],
     instructions: [
-      "Localize trailers oficiais para público brasileiro.",
-      "Priorize áudio dublado em português do Brasil e canais oficiais.",
+      "Localize vídeos públicos do YouTube relacionados ao título pesquisado para público brasileiro.",
+      "Priorize áudio em português do Brasil quando houver, mas não exija canal oficial.",
       "Nunca invente URL.",
       "Retorne somente JSON válido e não inclua markdown."
     ].join(" "),
     input: [
-      "Pesquise", kind === "tv" ? "a série" : "o filme", JSON.stringify(query) + ".",
+      "Pesquise no YouTube vídeos públicos relacionados a", kind === "tv" ? "a série" : "o filme", JSON.stringify(query) + ".",
       "Retorne até 6 resultados no formato",
       '{"results":[{"title":"...","year":"2026","overview":"...","trailerUrl":"https://www.youtube.com/watch?v=...","channel":"...","official":true}]}'
     ].join(" "),
