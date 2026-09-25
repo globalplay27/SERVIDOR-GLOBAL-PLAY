@@ -92,7 +92,7 @@ public sealed class MainForm : Form
 
     public MainForm()
     {
-        Text = "NEXUS AI MASTER";
+        Text = "NEXUS AI MASTER v1.5.0";
         Width = 1420;
         Height = 860;
         MinimumSize = new Size(1040, 700);
@@ -206,7 +206,7 @@ public sealed class MainForm : Form
         );
 
         var secure = NewLabel(
-            "Sessão protegida · NEXUS AI · Cloudflare",
+            "NEXUS AI MASTER v1.5.0 · sessão protegida · Cloudflare",
             8.5F,
             FontStyle.Regular,
             Color.FromArgb(84, 111, 128)
