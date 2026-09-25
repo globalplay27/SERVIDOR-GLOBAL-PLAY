@@ -6,6 +6,7 @@ on:
       - cloudflare-migration
     paths:
       - ".github/workflows/post-smoke-test.yml"
+      - "cloudflare/src/index.js"
   workflow_dispatch:
 
 jobs:
