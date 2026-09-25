@@ -21,12 +21,16 @@ function defaultConfig(client) {
     metaComments: true,
     publicTargets: false,
     aiQualification: true,
-    scanIntervalMinutes: 60,
-    lookbackDays: 7,
-    maxResultsPerRun: 100,
-    minScore: 35,
+    scanIntervalMinutes: 30,
+    lookbackDays: 14,
+    maxResultsPerRun: 150,
+    minScore: 25,
     targets: [],
-    intentTerms: ["quero","teste","testar","preço","preco","valor","assinar","comprar","plano","interesse","como funciona"],
+    intentTerms: [
+      "quero","teste","testar","preço","preco","valor","assinar","comprar","plano","interesse",
+      "como funciona","link","manda","me chama","onde","indica","recomenda","recomendação","recomendacao",
+      "vale a pena","qual","como","tem","funciona"
+    ],
     nicheTerms: [niche].filter(Boolean)
   };
 }
@@ -131,24 +135,35 @@ async function collectMetaComments(env, client, config) {
 function localQualification(candidate, config) {
   const message = String(candidate.message || "").trim();
   const low = message.toLowerCase();
-  let score = 8;
+  let score = 12;
   let intent = "interação";
 
   if (/\bquero\b/.test(low)) { score += 55; intent = "QUERO"; }
-  if (/\b(teste|testar)\b/.test(low)) { score += 28; if(intent==="interação") intent="teste"; }
+  if (/\b(teste|testar)\b/.test(low)) { score += 26; if(intent==="interação") intent="teste"; }
   if (/\b(pre[cç]o|valor|plano|quanto|assinar|comprar)\b/.test(low)) { score += 30; if(intent==="interação") intent="compra/preço"; }
-  if (/\?/.test(message)) score += 8;
+  if (/\b(link|manda|me chama|onde|indica|recomenda|recomendação|recomendacao|vale a pena)\b/.test(low)) {
+    score += 18;
+    if(intent==="interação") intent="curiosidade/recomendação";
+  }
+  if (/\b(como|qual|funciona|tem)\b/.test(low)) {
+    score += 10;
+    if(intent==="interação") intent="dúvida";
+  }
+  if (/\?/.test(message)) score += 12;
+
   const intentMatches = (config.intentTerms || []).filter(term => term && low.includes(String(term).toLowerCase()));
-  score += Math.min(24, intentMatches.length * 7);
+  score += Math.min(28, intentMatches.length * 7);
   const nicheMatches = (config.nicheTerms || []).filter(term => {
     const clean = String(term || "").trim().toLowerCase();
     return clean.length >= 3 && low.includes(clean);
   });
-  score += Math.min(12, nicheMatches.length * 4);
+  score += Math.min(16, nicheMatches.length * 4);
   if (candidate.source === "meta-comment") score += 8;
+
   score = Math.max(0, Math.min(100, score));
-  const temperature = score >= 70 ? "hot" : score >= 45 ? "warm" : "cold";
-  return { ...candidate, score, temperature, intent, needsHuman:temperature==="hot" || /\?/.test(message) };
+  const temperature = score >= 68 ? "hot" : score >= 38 ? "warm" : "cold";
+  const needsHuman = temperature==="hot" || (/\?/.test(message) && score>=38);
+  return { ...candidate, score, temperature, intent, needsHuman };
 }
 
 function responseText(data) {
@@ -166,9 +181,10 @@ async function qualifyWithAI(env, client, candidates, config) {
   const sample = candidates.slice(0,30).map((item,index)=>({index,username:item.instagramUsername,message:item.message,localScore:item.score,localIntent:item.intent}));
   const prompt = [
     "Você é ODIN, qualificador de leads do NEXUS AI.",
-    "Analise comentários do Instagram para intenção comercial real.",
+    "Analise comentários do Instagram para intenção comercial, curiosidade e sinais que podem virar seguidores ou conteúdo.",
     "Retorne SOMENTE JSON válido no formato {\"items\":[{\"index\":0,\"score\":0,\"intent\":\"...\",\"needsHuman\":false}]}",
-    "Score 0-100. QUERO, pedido de preço, teste ou compra devem receber prioridade alta.",
+    "Score 0-100. QUERO, preço, teste, compra, pedido de link, recomendação e perguntas úteis devem receber prioridade.",
+    "Não incentive spam nem contato frio; priorize respostas a interações recebidas.",
     "Nicho: " + String(client.niche || ""),
     JSON.stringify(sample)
   ].join("\n");
