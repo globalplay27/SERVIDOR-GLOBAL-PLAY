@@ -142,6 +142,10 @@ async function connectionSummary(env, clientId) {
       direct: true,
       source: "nexus",
       label: payload?.label || payload?.username || "Instagram conectado",
+      username: payload?.username || "",
+      accountType: payload?.accountType || "",
+      scopes: Array.isArray(payload?.scopes) ? payload.scopes : [],
+      expiresAt: payload?.expiresAt || null,
       connectedAt: row.connected_at || row.updated_at || null
     };
   }
