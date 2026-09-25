@@ -1470,7 +1470,43 @@ const videoFileInput=$("#video-file");
 if(videoFileInput)videoFileInput.addEventListener("change",()=>{
   const files=[...(videoFileInput.files||[])];
   if($("#video-file-name"))$("#video-file-name").textContent=files.length>1?files.length+" vídeos selecionados":files[0]?.name||"MP4, MOV, WEBM ou MKV";
+  if(files.length){
+    const status=$("#video-upload-status");
+    if(status){status.textContent="Vídeo selecionado. Enviando para o servidor e iniciando os cortes…";status.className="save-status";}
+    videoUploadForm?.requestSubmit();
+  }
 });
+
+async function autoStartUploadedVideo(job,settings,status){
+  const jobId=String(job?.id||"").trim();
+  if(!jobId)return null;
+  if(status){status.textContent="Vídeo recebido. Iniciando análise e cortes automaticamente…";status.className="save-status";}
+  const payload={
+    goal:settings?.goal||"viral",
+    duration:Math.max(10,Math.min(60,Number(settings?.duration||30))),
+    clips:Math.max(1,Math.min(12,Number(settings?.clips||3))),
+    outputFormat:settings?.outputFormat||"reel",
+    autoSubtitles:settings?.autoSubtitles!==false,
+    endText:String(settings?.endText||""),
+    endContact:String(settings?.endContact||"")
+  };
+  const r=await fetch("/api/portal/videos/"+encodeURIComponent(jobId)+"/process",{
+    method:"POST",
+    credentials:"same-origin",
+    headers:{"content-type":"application/json",...(sessionAuth?{"x-nexus-session":sessionAuth}:{})},
+    body:JSON.stringify(payload)
+  });
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok)throw new Error(d.message||d.error||"O vídeo chegou, mas não foi possível iniciar os cortes.");
+  if(d.job){
+    latestVideoJobs=[d.job,...latestVideoJobs.filter(item=>item.id!==d.job.id)];
+    renderVideoJobs({jobs:latestVideoJobs,folders:latestVideoFolders});
+  }
+  if(status){status.textContent="Cortes iniciados automaticamente. O NEXUS está analisando o vídeo.";status.className="save-status ok";}
+  setTimeout(()=>loadVideoJobs(),1200);
+  return d.job||job;
+}
+
 async function importAuthorizedVideo(button,statusTarget=null){
   const url=String(button?.dataset.importVideo||"").trim();
   const title=String(button?.dataset.importTitle||"").trim();
@@ -1518,9 +1554,13 @@ async function importAuthorizedVideo(button,statusTarget=null){
       const others=latestVideoJobs.filter(job=>job.id!==importedJob.id);
       renderVideoJobs({jobs:[importedJob,...others],folders:latestVideoFolders});
     }
-    if(status){status.textContent="Vídeo recebido e salvo na biblioteca. Configure os cortes no card antes de iniciar.";status.className="save-status ok";}
     showView("videos");
     const folderFilter=$("#video-folder-filter");if(folderFilter)folderFilter.value=videoFolderFilter;
+    if(importedJob){
+      await autoStartUploadedVideo(importedJob,payload,status);
+    }else{
+      if(status){status.textContent="Vídeo recebido, mas o trabalho de corte não foi criado.";status.className="save-status error";}
+    }
     await loadVideoJobs();
   }catch(error){
     if(status){status.textContent=error.message;status.className="save-status error";}
@@ -1742,9 +1782,10 @@ if(videoUploadForm)videoUploadForm.addEventListener("submit",async event=>{
         latestVideoJobs=[result.job,...latestVideoJobs.filter(job=>job.id!==result.job.id)];
         renderVideoJobs({jobs:latestVideoJobs,folders:latestVideoFolders});
         if(status){
-          status.textContent="Vídeo recebido pelo servidor. Preparando análise e cortes…";
-          status.className="save-status ok";
+          status.textContent="Vídeo recebido pelo servidor. Iniciando análise e cortes…";
+          status.className="save-status";
         }
+        await autoStartUploadedVideo(result.job,settings,status);
       }
     }catch(error){failed++;lastError=error.message;}
   }
@@ -1757,7 +1798,7 @@ if(videoUploadForm)videoUploadForm.addEventListener("submit",async event=>{
     const folderFilter=$("#video-folder-filter");if(folderFilter)folderFilter.value=videoFolderFilter;
   }
   if(status){
-    status.textContent=sent+" vídeo(s) carregado(s) para cortes"+(failed?"; "+failed+" falhou: "+lastError:".");
+    status.textContent=sent+" vídeo(s) enviado(s) e corte(s) iniciado(s)"+(failed?"; "+failed+" falhou: "+lastError:".");
     status.className=failed?"save-status error":"save-status ok";
   }
   if(sent===0&&/sessão expirou/i.test(lastError)){
