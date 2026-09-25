@@ -1,5 +1,5 @@
 import { getClient } from "./clients.js";
-import { decryptSecret } from "./secrets.js";
+import { resolveInstagramCredentials } from "./instagram-credentials.js";
 import { publishInstagramImage } from "./publisher.js";
 import {
   AGENT_CORE_MODULES,
@@ -55,16 +55,9 @@ function postingProfile(client) {
   };
 }
 
-async function metaConnection(env, clientId) {
-  const row = await env.DB.prepare(
-    "SELECT payload_json FROM connections WHERE client_id = ?1 AND provider = 'meta' LIMIT 1"
-  ).bind(clientId).first();
-  return row ? parseJson(row.payload_json, {}) : null;
-}
-
 async function instagramSnapshot(env, client) {
-  const conn = await metaConnection(env, client.id);
-  const token = conn?.accessToken ? await decryptSecret(env, conn.accessToken).catch(()=>"") : "";
+  const conn = await resolveInstagramCredentials(env, client.id);
+  const token = String(conn?.accessToken || "");
   const igUserId = String(conn?.igUserId || "").trim();
   if (!token || !igUserId) {
     return { source:"local", items:[], followersCount:0, mediaCount:0, error:"instagram_not_connected" };
