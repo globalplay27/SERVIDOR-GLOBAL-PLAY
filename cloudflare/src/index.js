@@ -129,10 +129,47 @@ async function health(env) {
   } catch {
     d1 = false;
   }
+  let liveAgentTest = { jobs: [], publishers: [] };
+  try {
+    const jobs = await env.DB.prepare(
+      `SELECT id, client_id, status, attempts, last_error, updated_at
+       FROM scheduled_jobs
+       WHERE id IN (?1, ?2)
+       ORDER BY client_id`
+    ).bind(
+      "live-agent-test-20260925-1720:globalplay-streaming",
+      "live-agent-test-20260925-1720:ragnar-one"
+    ).all();
+
+    const publishers = await env.DB.prepare(
+      `SELECT client_id, status, detail_json, created_at
+       FROM agent_executions
+       WHERE agent = 'PUBLISHER'
+         AND client_id IN ('globalplay-streaming','ragnar-one')
+       ORDER BY created_at DESC
+       LIMIT 10`
+    ).all();
+
+    liveAgentTest.jobs = jobs?.results || [];
+    liveAgentTest.publishers = (publishers?.results || []).map(row => {
+      let detail = {};
+      try { detail = JSON.parse(String(row.detail_json || "{}")); } catch {}
+      return {
+        clientId: row.client_id,
+        status: row.status,
+        createdAt: row.created_at,
+        trigger: detail.trigger || "",
+        message: detail.message || "",
+        metadata: detail.metadata || {}
+      };
+    });
+  } catch (error) {
+    liveAgentTest = { error: String(error?.message || error) };
+  }
+
   return json({
     ok: d1,
     service: "Servidor Nexus",
-    releaseMarker: "2026-09-25-continuous-test-3",
     runtime: "cloudflare-workers",
     migrationMode: false,
     database: d1 ? "d1-ready" : "d1-unavailable",
@@ -141,7 +178,8 @@ async function health(env) {
     openai: {
       shared: openAIKeyStatus(env, "shared-client").configured,
       ragnar: openAIKeyStatus(env, env.RAGNAR_CLIENT_ID || "ragnar-one").configured
-    }
+    },
+    liveAgentTest
   }, d1 ? 200 : 503);
 }
 
