@@ -584,14 +584,67 @@ class _HomePageState extends State<HomePage> {
     );
 
     if (query == null || query.isEmpty) return;
-    final uri = Uri.https(
-      'www.youtube.com',
-      '/results',
-      {'search_query': '$query trailer oficial dublado português'},
-    );
-    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!ok && mounted) {
-      showMessage(context, 'Não foi possível abrir a busca.', error: true);
+
+    try {
+      final data = await widget.api.searchTrailers(query);
+      final raw = data['results'];
+      final results = raw is List ? List<dynamic>.from(raw) : <dynamic>[];
+      if (!mounted) return;
+
+      if (results.isEmpty) {
+        showMessage(context, 'Nenhum trailer encontrado pelo NEXUS.');
+        return;
+      }
+
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Resultados do NEXUS'),
+          content: SizedBox(
+            width: 520,
+            child: ListView.separated(
+              shrinkWrap: true,
+              itemCount: results.length,
+              separatorBuilder: (_, __) => const Divider(),
+              itemBuilder: (context, index) {
+                final item = results[index] is Map
+                    ? Map<String, dynamic>.from(results[index] as Map)
+                    : <String, dynamic>{};
+                final title = (item['title'] ?? 'Trailer').toString();
+                final year = (item['year'] ?? '').toString();
+                final official = item['official'] == true;
+                return ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(
+                    official ? Icons.verified_outlined : Icons.movie_outlined,
+                  ),
+                  title: Text(title),
+                  subtitle: Text(
+                    [
+                      if (year.isNotEmpty) year,
+                      official ? 'Trailer oficial localizado' : 'Trailer localizado',
+                    ].join(' · '),
+                  ),
+                );
+              },
+            ),
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Fechar'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        showMessage(
+          context,
+          e is NexusApiException ? e.message : e.toString(),
+          error: true,
+        );
+      }
     }
   }
 
