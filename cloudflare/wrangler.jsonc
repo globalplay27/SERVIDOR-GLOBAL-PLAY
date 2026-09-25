@@ -46,30 +46,5 @@
   ],
   "media": {
     "binding": "VIDEO_MEDIA"
-  },
-  "containers": [
-    {
-      "class_name": "YoutubeDownloader",
-      "image": "./youtube-downloader/Dockerfile",
-      "max_instances": 1,
-      "instance_type": "lite",
-      "constraints": {
-        "regions": ["SAM"]
-      }
-    }
-  ],
-  "durable_objects": {
-    "bindings": [
-      {
-        "name": "YOUTUBE_DOWNLOADER",
-        "class_name": "YoutubeDownloader"
-      }
-    ]
-  },
-  "migrations": [
-    {
-      "tag": "youtube-downloader-v1",
-      "new_sqlite_classes": ["YoutubeDownloader"]
-    }
-  ]
+  }
 }
