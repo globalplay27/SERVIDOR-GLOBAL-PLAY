@@ -1,0 +1,31 @@
+name: Instagram retest
+
+on:
+  push:
+    branches: [cloudflare-migration]
+    paths:
+      - ".github/workflows/instagram-retest.yml"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Wait for deploy and cron
+        run: sleep 80
+      - name: Read sanitized Instagram retest
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="https://servidor-nexus.diamantehinode2015.workers.dev/health"
+          for attempt in 1 2 3 4 5; do
+            BODY="$(curl -fsS --max-time 20 "$URL" || true)"
+            if [ -n "$BODY" ]; then
+              echo "$BODY" | jq '{ok,instagramRetest}'
+              if [ "$(echo "$BODY" | jq -r 'if .instagramRetest then 1 else 0 end')" = "1" ]; then
+                exit 0
+              fi
+            fi
+            sleep 20
+          done
+          exit 1
