@@ -4,7 +4,10 @@ import {
   resolvePortalSession,
   deletePortalSession,
   portalSessionCookie,
-  clearPortalSessionCookie
+  clearPortalSessionCookie,
+  loginRateLimitStatus,
+  recordLoginFailure,
+  clearLoginFailures
 } from "./auth.js";
 import { getClient, upsertClient, portalClientView } from "./clients.js";
 import { tokenUsageToday } from "./openai.js";
@@ -279,13 +282,27 @@ export async function handlePortalApi(request, env, url) {
   if (instagramCallback) return instagramCallback;
 
   if (url.pathname === "/portal-login" && request.method === "POST") {
+    const rate = await loginRateLimitStatus(env, request, "login");
+    if (!rate.allowed) {
+      return redirect("/portal.html?error=rate-limit&retry=" + encodeURIComponent(String(rate.retryAfter)), {
+        "retry-after": String(rate.retryAfter)
+      });
+    }
+
     const form = await request.formData().catch(() => null);
     const username = String(form?.get("username") || "").trim();
     const password = String(form?.get("password") || "");
     const clientId = await authenticatePortalUser(env, username, password);
-    if (!clientId) return redirect("/portal.html?error=1");
+    if (!clientId) {
+      await recordLoginFailure(env, request, "login");
+      return redirect("/portal.html?error=1");
+    }
     const client = await getClient(env, clientId);
-    if (!client) return redirect("/portal.html?error=1");
+    if (!client) {
+      await recordLoginFailure(env, request, "login");
+      return redirect("/portal.html?error=1");
+    }
+    await clearLoginFailures(env, request, "login");
     const session = await createPortalSession(env, clientId, {
       persistent: true,
       remembered: String(form?.get("remember") || "") === "1",
@@ -297,11 +314,27 @@ export async function handlePortalApi(request, env, url) {
   }
 
   if (url.pathname === "/api/portal/login" && request.method === "POST") {
+    const rate = await loginRateLimitStatus(env, request, "login");
+    if (!rate.allowed) {
+      return json(
+        { error: "too_many_login_attempts", retryAfter: rate.retryAfter },
+        429,
+        { "retry-after": String(rate.retryAfter) }
+      );
+    }
+
     const body = await request.json().catch(() => ({}));
     const clientId = await authenticatePortalUser(env, body.username, body.password);
-    if (!clientId) return json({ error: "unauthorized" }, 401);
+    if (!clientId) {
+      await recordLoginFailure(env, request, "login");
+      return json({ error: "unauthorized" }, 401);
+    }
     const client = await getClient(env, clientId);
-    if (!client) return json({ error: "client_not_found" }, 404);
+    if (!client) {
+      await recordLoginFailure(env, request, "login");
+      return json({ error: "client_not_found" }, 404);
+    }
+    await clearLoginFailures(env, request, "login");
     const session = await createPortalSession(env, clientId, {
       persistent: true,
       source: "cloudflare"
