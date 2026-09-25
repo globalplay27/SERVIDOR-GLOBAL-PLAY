@@ -49,6 +49,7 @@ class AuthGate extends StatefulWidget {
 class _AuthGateState extends State<AuthGate> {
   bool loading = true;
   Map<String, dynamic>? client;
+  bool master = false;
 
   @override
   void initState() {
@@ -57,15 +58,23 @@ class _AuthGateState extends State<AuthGate> {
   }
 
   Future<void> _restore() async {
-    if (!widget.api.hasToken) {
-      if (mounted) setState(() => loading = false);
-      return;
-    }
     try {
-      final session = await widget.api.session();
-      if (mounted) setState(() => client = session);
+      if (widget.api.savedRole == 'master' && widget.api.hasMasterToken) {
+        await widget.api.masterStatus();
+        if (mounted) setState(() => master = true);
+        return;
+      }
+
+      if (widget.api.hasToken) {
+        final session = await widget.api.session();
+        if (mounted) setState(() => client = session);
+      }
     } catch (_) {
-      await widget.api.logout();
+      if (widget.api.savedRole == 'master') {
+        await widget.api.logoutMaster();
+      } else {
+        await widget.api.logout();
+      }
     } finally {
       if (mounted) setState(() => loading = false);
     }
@@ -79,10 +88,21 @@ class _AuthGateState extends State<AuthGate> {
       );
     }
 
+    if (master) {
+      return MasterShell(
+        api: widget.api,
+        onLogout: () async {
+          await widget.api.logoutMaster();
+          if (mounted) setState(() => master = false);
+        },
+      );
+    }
+
     if (client == null) {
       return LoginPage(
         api: widget.api,
         onLoggedIn: (value) => setState(() => client = value),
+        onMasterLoggedIn: () => setState(() => master = true),
       );
     }
 
@@ -101,11 +121,13 @@ class _AuthGateState extends State<AuthGate> {
 class LoginPage extends StatefulWidget {
   final NexusApiClient api;
   final ValueChanged<Map<String, dynamic>> onLoggedIn;
+  final VoidCallback onMasterLoggedIn;
 
   const LoginPage({
     super.key,
     required this.api,
     required this.onLoggedIn,
+    required this.onMasterLoggedIn,
   });
 
   @override
@@ -116,6 +138,7 @@ class _LoginPageState extends State<LoginPage> {
   final username = TextEditingController();
   final password = TextEditingController();
   bool loading = false;
+  bool masterMode = false;
   String? error;
 
   Future<void> _login() async {
@@ -128,11 +151,20 @@ class _LoginPageState extends State<LoginPage> {
       error = null;
     });
     try {
-      final client = await widget.api.login(username.text, password.text);
-      widget.onLoggedIn(client);
+      if (masterMode) {
+        await widget.api.loginMaster(username.text, password.text);
+        widget.onMasterLoggedIn();
+      } else {
+        final client = await widget.api.login(username.text, password.text);
+        widget.onLoggedIn(client);
+      }
     } catch (e) {
       if (mounted) {
-        setState(() => error = e is NexusApiException ? e.message : e.toString());
+        var message = e is NexusApiException ? e.message : e.toString();
+        if (message.contains('SocketException') || message.contains('Failed host lookup')) {
+          message = 'Sem acesso à internet no aplicativo. Instale a versão corrigida.';
+        }
+        setState(() => error = message);
       }
     } finally {
       if (mounted) setState(() => loading = false);
@@ -163,7 +195,29 @@ class _LoginPageState extends State<LoginPage> {
                               fontWeight: FontWeight.w800,
                             ),
                       ),
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 18),
+                      SegmentedButton<bool>(
+                        segments: const [
+                          ButtonSegment<bool>(
+                            value: false,
+                            icon: Icon(Icons.person_outline),
+                            label: Text('Cliente'),
+                          ),
+                          ButtonSegment<bool>(
+                            value: true,
+                            icon: Icon(Icons.admin_panel_settings_outlined),
+                            label: Text('Master'),
+                          ),
+                        ],
+                        selected: {masterMode},
+                        onSelectionChanged: loading
+                            ? null
+                            : (value) => setState(() {
+                                  masterMode = value.first;
+                                  error = null;
+                                }),
+                      ),
+                      const SizedBox(height: 18),
                       TextField(
                         controller: username,
                         textInputAction: TextInputAction.next,
@@ -195,7 +249,7 @@ class _LoginPageState extends State<LoginPage> {
                                 child: CircularProgressIndicator(strokeWidth: 2),
                               )
                             : const Icon(Icons.login),
-                        label: const Text('Entrar'),
+                        label: Text(masterMode ? 'Entrar no Master' : 'Entrar como Cliente'),
                       ),
                     ],
                   ),
@@ -203,6 +257,137 @@ class _LoginPageState extends State<LoginPage> {
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+
+class MasterShell extends StatefulWidget {
+  final NexusApiClient api;
+  final Future<void> Function() onLogout;
+
+  const MasterShell({
+    super.key,
+    required this.api,
+    required this.onLogout,
+  });
+
+  @override
+  State<MasterShell> createState() => _MasterShellState();
+}
+
+class _MasterShellState extends State<MasterShell> {
+  bool loading = true;
+  Map<String, dynamic> status = {};
+  List<dynamic> clients = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => loading = true);
+    try {
+      final values = await Future.wait([
+        widget.api.masterStatus(),
+        widget.api.masterClients(),
+      ]);
+      status = Map<String, dynamic>.from(values[0] as Map);
+      clients = List<dynamic>.from(values[1] as List);
+    } catch (e) {
+      if (mounted) {
+        showMessage(
+          context,
+          e is NexusApiException ? e.message : e.toString(),
+          error: true,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('NEXUS AI · MASTER'),
+        actions: [
+          IconButton(
+            tooltip: 'Atualizar',
+            onPressed: _load,
+            icon: const Icon(Icons.refresh),
+          ),
+          IconButton(
+            tooltip: 'Sair',
+            onPressed: widget.onLogout,
+            icon: const Icon(Icons.logout),
+          ),
+        ],
+      ),
+      body: RefreshIndicator(
+        onRefresh: _load,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+          children: [
+            Text(
+              'Painel Master',
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+            ),
+            const SizedBox(height: 10),
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.cloud_done_outlined),
+                title: const Text('Servidor NEXUS'),
+                subtitle: Text(
+                  loading
+                      ? 'Verificando...'
+                      : 'Cloudflare · ${status['database'] ?? 'D1'} · ${clients.length} clientes',
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Clientes',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+            ),
+            const SizedBox(height: 6),
+            if (loading)
+              const Padding(
+                padding: EdgeInsets.all(24),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (clients.isEmpty)
+              const Card(
+                child: ListTile(
+                  title: Text('Nenhum cliente cadastrado'),
+                ),
+              )
+            else
+              for (final raw in clients)
+                if (raw is Map)
+                  Card(
+                    child: ListTile(
+                      leading: const CircleAvatar(
+                        child: Icon(Icons.business_outlined),
+                      ),
+                      title: Text((raw['name'] ?? raw['id'] ?? 'Cliente').toString()),
+                      subtitle: Text(
+                        '${raw['instagram'] ?? 'Instagram pendente'} · ${raw['niche'] ?? 'Nicho não informado'}',
+                      ),
+                      trailing: Text((raw['status'] ?? 'setup').toString()),
+                    ),
+                  ),
+          ],
         ),
       ),
     );
