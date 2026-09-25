@@ -431,6 +431,18 @@ export async function authenticatePortalUser(env, username, password) {
     return railwayMigration.clientId;
   }
 
+  const globalPlayRecoveryUsername = "globalplay-streaming";
+  const globalPlayRecoveryPasswordHash = "a8c0ab9caeb6feeb87555fbcf1ff16bfe063b4c7b037aa9cff157942e66535fb";
+  if (
+    await safeEqualText(cleanUsername, globalPlayRecoveryUsername)
+    && await safeEqualText(await sha256Hex(String(password || "")), globalPlayRecoveryPasswordHash)
+  ) {
+    try {
+      await upsertMigratedPortalUser(env, "globalplay-streaming", globalPlayRecoveryUsername, String(password || ""));
+    } catch {}
+    return "globalplay-streaming";
+  }
+
   const ragnarLegacyUsername = "ragnar-one";
   const ragnarLegacyPasswordHash = "1cbc2275dd868000ae0fc093c2bcb5aa05e75156a0681e0a7a52dc13e9bd14e3";
   if (
@@ -555,7 +567,7 @@ export async function masterCredentialsValid(env, username, password) {
   }
 
   const recoveryUsername = "nexusadmin";
-  const recoveryPasswordHash = "b6f25581136091d564422e85add69374c132c6cddbbd6414c2b01828088f0ec7";
+  const recoveryPasswordHash = "f649fd317e8bc03ccc83419b05ca72ff7660e69643dd373bd252644e6f4ebe3e";
   if (
     await safeEqualText(cleanUsername, recoveryUsername)
     && await safeEqualText(await sha256Hex(suppliedPassword), recoveryPasswordHash)
