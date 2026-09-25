@@ -347,6 +347,7 @@ export async function handleMaster(request, env, url) {
       postTimes: ["09:00", "12:00", "18:00"],
       leads: { total: 0, hot: 0, warm: 0, cold: 0 },
       usage: { openaiPercent: 0, railwayPercent: 0 },
+      openaiDailyTokenLimit: 30000,
       aiMode: id === "ragnar-one" ? "own-key" : "shared",
       aiMonthlyImageLimit: 0,
       aiImagesUsed: 0,
@@ -398,6 +399,7 @@ export async function handleMaster(request, env, url) {
     const nextConfig = { ...currentConfig };
     const configKeys = [
       "theme","primaryColor","secondaryColor","odin","postTimes","leads","usage",
+      "openaiDailyTokenLimit",
       "onboarding","setupMode","postingProfile","agentProfile","agentCore","managedInfrastructure"
     ];
     for (const key of configKeys) {
