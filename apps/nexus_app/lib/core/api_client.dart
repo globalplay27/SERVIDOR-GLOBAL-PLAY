@@ -322,6 +322,358 @@ class NexusApiClient {
     _decode(response);
   }
 
+  Future<Map<String, dynamic>> searchTrailers(
+    String query, {
+    String type = 'movie',
+  }) async {
+    final uri = Uri.parse(baseUrl + '/api/portal/trailers/search').replace(
+      queryParameters: {
+        'q': query.trim(),
+        'type': type == 'series' ? 'series' : 'movie',
+      },
+    );
+    final response = await _http.get(uri, headers: _headers()).timeout(
+      const Duration(seconds: 25),
+    );
+    final payload = _decode(response);
+    return payload is Map
+        ? Map<String, dynamic>.from(payload)
+        : <String, dynamic>{};
+  }
+
+  Future<Map<String, dynamic>> importVideoFromUrl(
+    String url, {
+    required Map<String, dynamic> settings,
+  }) async {
+    final response = await _http
+        .post(
+          Uri.parse(baseUrl + '/api/portal/videos/import'),
+          headers: _headers(jsonBody: true),
+          body: jsonEncode({...settings, 'url': url.trim()}),
+        )
+        .timeout(const Duration(seconds: 60));
+    final payload = _decode(response);
+    return payload is Map
+        ? Map<String, dynamic>.from(payload)
+        : <String, dynamic>{};
+  }
+
+  Future<Map<String, dynamic>> importTrailer(
+    String trailerUrl, {
+    required String title,
+    Map<String, dynamic> settings = const {},
+  }) async {
+    final response = await _http
+        .post(
+          Uri.parse(baseUrl + '/api/portal/videos/import-trailer'),
+          headers: _headers(jsonBody: true),
+          body: jsonEncode({
+            ...settings,
+            'url': trailerUrl.trim(),
+            'contentTitle': title.trim(),
+          }),
+        )
+        .timeout(const Duration(seconds: 45));
+    final payload = _decode(response);
+    return payload is Map
+        ? Map<String, dynamic>.from(payload)
+        : <String, dynamic>{};
+  }
+
+  Future<Map<String, dynamic>> createVideoUpload({
+    required String fileName,
+    required int size,
+    required String contentType,
+  }) async {
+    final response = await _http
+        .post(
+          Uri.parse(baseUrl + '/api/portal/video-uploads'),
+          headers: _headers(jsonBody: true),
+          body: jsonEncode({
+            'fileName': fileName,
+            'size': size,
+            'contentType': contentType,
+          }),
+        )
+        .timeout(const Duration(seconds: 30));
+    final payload = _decode(response);
+    return payload is Map
+        ? Map<String, dynamic>.from(payload)
+        : <String, dynamic>{};
+  }
+
+  Future<Map<String, dynamic>> uploadVideoPart({
+    required String key,
+    required String uploadId,
+    required int partNumber,
+    required List<int> bytes,
+  }) async {
+    final uri = Uri.parse(baseUrl + '/api/portal/video-uploads/part').replace(
+      queryParameters: {
+        'key': key,
+        'uploadId': uploadId,
+        'partNumber': partNumber.toString(),
+      },
+    );
+    NexusApiException? lastError;
+    for (var attempt = 0; attempt < 3; attempt++) {
+      try {
+        final response = await _http
+            .put(
+              uri,
+              headers: {
+                ..._headers(),
+                'content-type': 'application/octet-stream',
+              },
+              body: bytes,
+            )
+            .timeout(const Duration(seconds: 90));
+        final payload = _decode(response);
+        return payload is Map
+            ? Map<String, dynamic>.from(payload)
+            : <String, dynamic>{};
+      } on NexusApiException catch (error) {
+        lastError = error;
+        if ((error.statusCode ?? 400) < 500) rethrow;
+      }
+      await Future<void>.delayed(Duration(milliseconds: 500 * (attempt + 1)));
+    }
+    throw lastError ?? const NexusApiException('Falha ao enviar uma parte do vídeo.');
+  }
+
+  Future<Map<String, dynamic>> completeVideoUpload({
+    required String key,
+    required String uploadId,
+    required List<Map<String, dynamic>> parts,
+    required int size,
+    required String fileName,
+    required String contentType,
+    required Map<String, dynamic> settings,
+  }) async {
+    final response = await _http
+        .post(
+          Uri.parse(baseUrl + '/api/portal/video-uploads/complete'),
+          headers: _headers(jsonBody: true),
+          body: jsonEncode({
+            'key': key,
+            'uploadId': uploadId,
+            'parts': parts,
+            'size': size,
+            'fileName': fileName,
+            'contentType': contentType,
+            'settings': settings,
+          }),
+        )
+        .timeout(const Duration(seconds: 60));
+    final payload = _decode(response);
+    return payload is Map
+        ? Map<String, dynamic>.from(payload)
+        : <String, dynamic>{};
+  }
+
+  Future<void> abortVideoUpload({
+    required String key,
+    required String uploadId,
+  }) async {
+    final uri = Uri.parse(baseUrl + '/api/portal/video-uploads').replace(
+      queryParameters: {'key': key, 'uploadId': uploadId},
+    );
+    try {
+      final response = await _http
+          .delete(uri, headers: _headers())
+          .timeout(const Duration(seconds: 20));
+      _decode(response);
+    } catch (_) {}
+  }
+
+  Future<Map<String, dynamic>> processVideo(
+    String jobId,
+    Map<String, dynamic> settings,
+  ) async {
+    final path = '/api/portal/videos/' +
+        Uri.encodeComponent(jobId) +
+        '/process';
+    final response = await _http
+        .post(
+          Uri.parse(baseUrl + path),
+          headers: _headers(jsonBody: true),
+          body: jsonEncode(settings),
+        )
+        .timeout(const Duration(seconds: 45));
+    final payload = _decode(response);
+    return payload is Map
+        ? Map<String, dynamic>.from(payload)
+        : <String, dynamic>{};
+  }
+
+  Future<Map<String, dynamic>> setClipApproval(
+    String jobId,
+    String clipId,
+    String status,
+  ) async {
+    final path = '/api/portal/videos/' +
+        Uri.encodeComponent(jobId) +
+        '/clips/' +
+        Uri.encodeComponent(clipId) +
+        '/approval';
+    final response = await _http.post(
+      Uri.parse(baseUrl + path),
+      headers: _headers(jsonBody: true),
+      body: jsonEncode({'status': status}),
+    );
+    final payload = _decode(response);
+    return payload is Map
+        ? Map<String, dynamic>.from(payload)
+        : <String, dynamic>{};
+  }
+
+  Future<Map<String, dynamic>> adjustClip(
+    String jobId,
+    String clipId,
+    Map<String, dynamic> patch,
+  ) async {
+    final path = '/api/portal/videos/' +
+        Uri.encodeComponent(jobId) +
+        '/clips/' +
+        Uri.encodeComponent(clipId) +
+        '/adjust';
+    final response = await _http.post(
+      Uri.parse(baseUrl + path),
+      headers: _headers(jsonBody: true),
+      body: jsonEncode(patch),
+    );
+    final payload = _decode(response);
+    return payload is Map
+        ? Map<String, dynamic>.from(payload)
+        : <String, dynamic>{};
+  }
+
+  Future<Map<String, dynamic>> selectClip(
+    String jobId,
+    String clipId,
+    bool selected,
+  ) async {
+    final path = '/api/portal/videos/' +
+        Uri.encodeComponent(jobId) +
+        '/clips/' +
+        Uri.encodeComponent(clipId) +
+        '/select';
+    final response = await _http.post(
+      Uri.parse(baseUrl + path),
+      headers: _headers(jsonBody: true),
+      body: jsonEncode({'selected': selected}),
+    );
+    final payload = _decode(response);
+    return payload is Map
+        ? Map<String, dynamic>.from(payload)
+        : <String, dynamic>{};
+  }
+
+  Future<Map<String, dynamic>> publishClipNow(
+    String jobId,
+    String clipId, {
+    String caption = '',
+  }) async {
+    final path = '/api/portal/videos/' +
+        Uri.encodeComponent(jobId) +
+        '/clips/' +
+        Uri.encodeComponent(clipId) +
+        '/publish';
+    final response = await _http
+        .post(
+          Uri.parse(baseUrl + path),
+          headers: _headers(jsonBody: true),
+          body: jsonEncode({'caption': caption}),
+        )
+        .timeout(const Duration(seconds: 45));
+    final payload = _decode(response);
+    return payload is Map
+        ? Map<String, dynamic>.from(payload)
+        : <String, dynamic>{};
+  }
+
+  Future<Map<String, dynamic>> scheduleClip(
+    String jobId,
+    String clipId, {
+    required DateTime scheduledFor,
+    String caption = '',
+  }) async {
+    final path = '/api/portal/videos/' +
+        Uri.encodeComponent(jobId) +
+        '/clips/' +
+        Uri.encodeComponent(clipId) +
+        '/schedule';
+    final response = await _http.post(
+      Uri.parse(baseUrl + path),
+      headers: _headers(jsonBody: true),
+      body: jsonEncode({
+        'scheduledFor': scheduledFor.toUtc().toIso8601String(),
+        'caption': caption,
+      }),
+    );
+    final payload = _decode(response);
+    return payload is Map
+        ? Map<String, dynamic>.from(payload)
+        : <String, dynamic>{};
+  }
+
+  Future<Map<String, dynamic>> bulkScheduleClips(
+    List<Map<String, dynamic>> items,
+  ) async {
+    final response = await _http.post(
+      Uri.parse(baseUrl + '/api/portal/videos/bulk-schedule'),
+      headers: _headers(jsonBody: true),
+      body: jsonEncode({'items': items}),
+    );
+    final payload = _decode(response);
+    return payload is Map
+        ? Map<String, dynamic>.from(payload)
+        : <String, dynamic>{};
+  }
+
+  Future<Map<String, dynamic>> createVideoFolder(String name) async {
+    final response = await _http.post(
+      Uri.parse(baseUrl + '/api/portal/video-folders'),
+      headers: _headers(jsonBody: true),
+      body: jsonEncode({'name': name.trim()}),
+    );
+    final payload = _decode(response);
+    return payload is Map
+        ? Map<String, dynamic>.from(payload)
+        : <String, dynamic>{};
+  }
+
+  Future<Map<String, dynamic>> renameVideoFolder(
+    String folderId,
+    String name,
+  ) async {
+    final response = await _http.patch(
+      Uri.parse(
+        baseUrl +
+            '/api/portal/video-folders/' +
+            Uri.encodeComponent(folderId),
+      ),
+      headers: _headers(jsonBody: true),
+      body: jsonEncode({'name': name.trim()}),
+    );
+    final payload = _decode(response);
+    return payload is Map
+        ? Map<String, dynamic>.from(payload)
+        : <String, dynamic>{};
+  }
+
+  Future<void> deleteVideoFolder(String folderId) async {
+    final response = await _http.delete(
+      Uri.parse(
+        baseUrl +
+            '/api/portal/video-folders/' +
+            Uri.encodeComponent(folderId),
+      ),
+      headers: _headers(),
+    );
+    _decode(response);
+  }
+
   Future<List<dynamic>> posts() async {
     final response = await _http.get(
       Uri.parse('$baseUrl/api/portal/posts'),
