@@ -207,6 +207,24 @@ export async function handleMaster(request, env, url) {
     return redirect("/master", { "set-cookie": masterSessionCookie(session.token) });
   }
 
+  if (url.pathname === "/api/master/desktop-login" && request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    const username = String(body?.username || "").trim();
+    const password = String(body?.password || "");
+
+    if (!await masterCredentialsValid(env, username, password)) {
+      return json({ ok: false, error: "invalid_credentials" }, 401);
+    }
+
+    const session = await createMasterSession(env);
+    return json({
+      ok: true,
+      token: session.token,
+      expiresAt: session.expiresAt,
+      consolePath: "/api/master/console"
+    }, 200);
+  }
+
   if (url.pathname === "/master-logout" && request.method === "POST") {
     await deleteMasterSession(env, request).catch(() => {});
     return json({ ok: true }, 200, { "set-cookie": clearMasterSessionCookie() });
