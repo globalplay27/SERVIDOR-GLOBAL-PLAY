@@ -766,8 +766,17 @@ class VideosPage extends StatefulWidget {
 }
 
 class _VideosPageState extends State<VideosPage> {
+  static const int maxVideoBytes = 100 * 1024 * 1024;
+
   bool loading = true;
+  bool actionBusy = false;
+  String busyLabel = '';
+  double? uploadProgress;
   List<dynamic> jobs = [];
+  List<dynamic> folders = [];
+  String folderFilter = '';
+  Timer? poller;
+  final Set<String> selectedClips = <String>{};
 
   @override
   void initState() {
@@ -775,21 +784,585 @@ class _VideosPageState extends State<VideosPage> {
     _load();
   }
 
-  Future<void> _load() async {
-    setState(() => loading = true);
+  @override
+  void dispose() {
+    poller?.cancel();
+    super.dispose();
+  }
+
+  String _errorText(Object error) {
+    if (error is NexusApiException) return error.message;
+    return error.toString().replaceFirst('Exception: ', '');
+  }
+
+  bool _isActiveStatus(String value) {
+    return const {
+      'importing',
+      'queued',
+      'processing',
+      'uploaded',
+      'transcribing',
+      'selecting',
+      'cutting',
+    }.contains(value);
+  }
+
+  String _jobStatus(String value) {
+    const labels = <String, String>{
+      'importing': 'IMPORTANDO',
+      'awaiting_configuration': 'AGUARDANDO CONFIGURAÇÃO',
+      'queued': 'NA FILA',
+      'processing': 'PROCESSANDO',
+      'uploaded': 'RECEBIDO',
+      'transcribing': 'TRANSCREVENDO',
+      'selecting': 'ESCOLHENDO CORTES',
+      'cutting': 'CRIANDO CORTES',
+      'ready': 'PRONTO',
+      'failed': 'FALHOU',
+    };
+    return labels[value] ?? value.toUpperCase();
+  }
+
+  String _clipStatus(Map clip) {
+    final publish = (clip['publishStatus'] ?? 'draft').toString();
+    if (publish == 'published') return 'PUBLICADO';
+    if (publish == 'publishing') return 'PUBLICANDO';
+    if (publish == 'scheduled') return 'AGENDADO';
+    if (publish == 'failed') return 'FALHA NO ENVIO';
+    final approval = (clip['approvalStatus'] ?? 'pending').toString();
+    if (approval == 'approved') return 'APROVADO';
+    if (approval == 'rejected') return 'REPROVADO';
+    return 'AGUARDANDO APROVAÇÃO';
+  }
+
+  String _mimeForName(String name) {
+    final lower = name.toLowerCase();
+    if (lower.endsWith('.mov')) return 'video/quicktime';
+    if (lower.endsWith('.webm')) return 'video/webm';
+    if (lower.endsWith('.mkv')) return 'video/x-matroska';
+    return 'video/mp4';
+  }
+
+  Future<void> _load({bool silent = false}) async {
+    if (!silent && mounted) setState(() => loading = true);
     try {
       final data = await widget.api.videos();
-      jobs = data['jobs'] is List ? List<dynamic>.from(data['jobs'] as List) : [];
+      if (!mounted) return;
+      final nextJobs = data['jobs'] is List
+          ? List<dynamic>.from(data['jobs'] as List)
+          : <dynamic>[];
+      final nextFolders = data['folders'] is List
+          ? List<dynamic>.from(data['folders'] as List)
+          : <dynamic>[];
+      setState(() {
+        jobs = nextJobs;
+        folders = nextFolders;
+      });
+      _schedulePolling();
     } catch (e) {
-      if (mounted) showMessage(context, e.toString(), error: true);
+      if (mounted && !silent) showMessage(context, _errorText(e), error: true);
     } finally {
-      if (mounted) setState(() => loading = false);
+      if (mounted && !silent) setState(() => loading = false);
+    }
+  }
+
+  void _schedulePolling() {
+    poller?.cancel();
+    final active = jobs.any(
+      (raw) => raw is Map && _isActiveStatus((raw['status'] ?? '').toString()),
+    );
+    if (!active) return;
+    poller = Timer(const Duration(seconds: 5), () {
+      if (mounted) _load(silent: true);
+    });
+  }
+
+  Future<Map<String, dynamic>?> _settingsDialog({
+    Map<dynamic, dynamic>? source,
+    String? suggestedTitle,
+  }) async {
+    final title = TextEditingController(
+      text: (source?['contentTitle'] ?? suggestedTitle ?? '').toString(),
+    );
+    final endText = TextEditingController(
+      text: (source?['endText'] ?? '').toString(),
+    );
+    final endContact = TextEditingController(
+      text: (source?['endContact'] ?? '').toString(),
+    );
+    var clips = int.tryParse((source?['requestedClips'] ?? 3).toString()) ?? 3;
+    var duration = int.tryParse((source?['clipDuration'] ?? 30).toString()) ?? 30;
+    var format = (source?['outputFormat'] ?? 'reel').toString();
+    if (!const {'reel', 'feed'}.contains(format)) format = 'reel';
+    var subtitles = source?['autoSubtitles'] != false;
+
+    return showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setLocalState) => AlertDialog(
+          title: const Text('Configurar cortes'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: title,
+                  decoration: const InputDecoration(
+                    labelText: 'Título do conteúdo',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<int>(
+                  value: clips.clamp(1, 12),
+                  decoration: const InputDecoration(
+                    labelText: 'Quantidade de cortes',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: List.generate(
+                    12,
+                    (index) => DropdownMenuItem(
+                      value: index + 1,
+                      child: Text((index + 1).toString()),
+                    ),
+                  ),
+                  onChanged: (value) {
+                    if (value != null) setLocalState(() => clips = value);
+                  },
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<int>(
+                  value: const [10, 15, 20, 30, 45, 60, 90].contains(duration)
+                      ? duration
+                      : 30,
+                  decoration: const InputDecoration(
+                    labelText: 'Duração máxima de cada corte',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: const [10, 15, 20, 30, 45, 60, 90]
+                      .map(
+                        (value) => DropdownMenuItem(
+                          value: value,
+                          child: Text('Até ' + value.toString() + ' segundos'),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) {
+                    if (value != null) setLocalState(() => duration = value);
+                  },
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  value: format,
+                  decoration: const InputDecoration(
+                    labelText: 'Formato',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'reel', child: Text('Vertical 9:16')),
+                    DropdownMenuItem(value: 'feed', child: Text('Feed')),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) setLocalState(() => format = value);
+                  },
+                ),
+                SwitchListTile(
+                  value: subtitles,
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Legendas automáticas'),
+                  subtitle: const Text('Mantém texto dentro da área segura.'),
+                  onChanged: (value) => setLocalState(() => subtitles = value),
+                ),
+                TextField(
+                  controller: endText,
+                  decoration: const InputDecoration(
+                    labelText: 'Frase final opcional',
+                    hintText: 'Ex.: Continua...',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: endContact,
+                  decoration: const InputDecoration(
+                    labelText: 'Contato final opcional',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, <String, dynamic>{
+                'contentTitle': title.text.trim(),
+                'goal': 'viral',
+                'requestedClips': clips,
+                'clips': clips,
+                'clipDuration': duration,
+                'duration': duration,
+                'outputFormat': format,
+                'autoSubtitles': subtitles,
+                'endText': endText.text.trim(),
+                'endContact': endContact.text.trim(),
+              }),
+              child: const Text('Continuar'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _uploadFromDevice() async {
+    if (actionBusy) return;
+    final picked = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['mp4', 'mov', 'webm', 'mkv'],
+      allowMultiple: false,
+      withData: false,
+    );
+    if (picked == null || picked.files.isEmpty) return;
+    final selected = picked.files.single;
+    if (selected.path == null || selected.path!.isEmpty) {
+      if (mounted) {
+        showMessage(
+          context,
+          'O Android não liberou acesso ao arquivo selecionado.',
+          error: true,
+        );
+      }
+      return;
+    }
+
+    final file = File(selected.path!);
+    final size = await file.length();
+    if (size <= 0) {
+      if (mounted) showMessage(context, 'O arquivo está vazio.', error: true);
+      return;
+    }
+    if (size > maxVideoBytes) {
+      if (mounted) {
+        showMessage(context, 'O vídeo ultrapassa o limite de 100 MB.', error: true);
+      }
+      return;
+    }
+
+    final settings = await _settingsDialog(suggestedTitle: selected.name);
+    if (settings == null) return;
+
+    Map<String, dynamic>? upload;
+    RandomAccessFile? reader;
+    try {
+      setState(() {
+        actionBusy = true;
+        busyLabel = 'Enviando vídeo para a biblioteca...';
+        uploadProgress = 0;
+      });
+
+      final contentType = _mimeForName(selected.name);
+      upload = await widget.api.createVideoUpload(
+        fileName: selected.name,
+        size: size,
+        contentType: contentType,
+      );
+      final key = (upload['key'] ?? '').toString();
+      final uploadId = (upload['uploadId'] ?? '').toString();
+      final chunkSize = int.tryParse((upload['chunkSize'] ?? 8388608).toString()) ?? 8388608;
+      if (key.isEmpty || uploadId.isEmpty) {
+        throw const NexusApiException('O servidor não iniciou o envio do vídeo.');
+      }
+
+      reader = await file.open();
+      var offset = 0;
+      var partNumber = 1;
+      final parts = <Map<String, dynamic>>[];
+      while (offset < size) {
+        final remaining = size - offset;
+        final length = remaining < chunkSize ? remaining : chunkSize;
+        await reader.setPosition(offset);
+        final bytes = await reader.read(length);
+        if (bytes.isEmpty) {
+          throw const NexusApiException('Falha ao ler o vídeo selecionado.');
+        }
+        final part = await widget.api.uploadVideoPart(
+          key: key,
+          uploadId: uploadId,
+          partNumber: partNumber,
+          bytes: bytes,
+        );
+        parts.add(<String, dynamic>{
+          'partNumber': part['partNumber'] ?? partNumber,
+          'etag': (part['etag'] ?? '').toString(),
+        });
+        offset += bytes.length;
+        partNumber += 1;
+        if (mounted) {
+          setState(() => uploadProgress = offset / size);
+        }
+      }
+
+      await reader.close();
+      reader = null;
+      await widget.api.completeVideoUpload(
+        key: key,
+        uploadId: uploadId,
+        parts: parts,
+        size: size,
+        fileName: selected.name,
+        contentType: contentType,
+        settings: settings,
+      );
+      if (mounted) {
+        showMessage(
+          context,
+          'Vídeo enviado. O NEXUS começou a analisar os melhores cortes.',
+        );
+      }
+      await _load(silent: true);
+    } catch (e) {
+      if (reader != null) await reader.close();
+      final key = (upload?['key'] ?? '').toString();
+      final uploadId = (upload?['uploadId'] ?? '').toString();
+      if (key.isNotEmpty && uploadId.isNotEmpty) {
+        await widget.api.abortVideoUpload(key: key, uploadId: uploadId);
+      }
+      if (mounted) showMessage(context, _errorText(e), error: true);
+    } finally {
+      if (mounted) {
+        setState(() {
+          actionBusy = false;
+          busyLabel = '';
+          uploadProgress = null;
+        });
+      }
+    }
+  }
+
+  Future<void> _importUrl() async {
+    if (actionBusy) return;
+    final controller = TextEditingController();
+    final url = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Importar vídeo por link'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          keyboardType: TextInputType.url,
+          decoration: const InputDecoration(
+            labelText: 'Link HTTPS direto do vídeo',
+            hintText: 'https://...',
+            border: OutlineInputBorder(),
+          ),
+          onSubmitted: (value) => Navigator.pop(context, value.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('Continuar'),
+          ),
+        ],
+      ),
+    );
+    if (url == null || url.isEmpty) return;
+    final parsed = Uri.tryParse(url);
+    if (parsed == null || parsed.scheme != 'https') {
+      if (mounted) showMessage(context, 'Use um link HTTPS válido.', error: true);
+      return;
+    }
+    final settings = await _settingsDialog();
+    if (settings == null) return;
+
+    try {
+      setState(() {
+        actionBusy = true;
+        busyLabel = 'Importando vídeo para a biblioteca...';
+      });
+      await widget.api.importVideoFromUrl(url, settings: settings);
+      if (mounted) {
+        showMessage(context, 'Vídeo importado. O processamento foi iniciado.');
+      }
+      await _load(silent: true);
+    } catch (e) {
+      if (mounted) showMessage(context, _errorText(e), error: true);
+    } finally {
+      if (mounted) {
+        setState(() {
+          actionBusy = false;
+          busyLabel = '';
+        });
+      }
+    }
+  }
+
+  Future<void> _searchTrailer() async {
+    if (actionBusy) return;
+    final controller = TextEditingController();
+    final query = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Buscar trailer'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'Filme ou série',
+            border: OutlineInputBorder(),
+          ),
+          onSubmitted: (value) => Navigator.pop(context, value.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('Buscar'),
+          ),
+        ],
+      ),
+    );
+    if (query == null || query.isEmpty) return;
+
+    try {
+      setState(() {
+        actionBusy = true;
+        busyLabel = 'Buscando trailers dentro do NEXUS...';
+      });
+      final data = await widget.api.searchTrailers(query);
+      final results = data['results'] is List
+          ? List<dynamic>.from(data['results'] as List)
+          : <dynamic>[];
+      if (!mounted) return;
+      setState(() {
+        actionBusy = false;
+        busyLabel = '';
+      });
+      if (results.isEmpty) {
+        showMessage(context, 'Nenhum trailer utilizável foi encontrado.', error: true);
+        return;
+      }
+
+      final selected = await showModalBottomSheet<Map<String, dynamic>>(
+        context: context,
+        isScrollControlled: true,
+        builder: (context) => SafeArea(
+          child: SizedBox(
+            height: MediaQuery.of(context).size.height * .75,
+            child: Column(
+              children: [
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(18, 16, 18, 8),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Escolha o vídeo',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: results.length,
+                    itemBuilder: (context, index) {
+                      final raw = results[index];
+                      if (raw is! Map) return const SizedBox.shrink();
+                      final item = Map<String, dynamic>.from(raw);
+                      final title = (item['title'] ?? 'Trailer').toString();
+                      final year = (item['year'] ?? '').toString();
+                      final channel = (item['trailerName'] ?? '').toString();
+                      return ListTile(
+                        leading: const Icon(Icons.play_circle_outline),
+                        title: Text(title),
+                        subtitle: Text(
+                          [year, channel].where((value) => value.isNotEmpty).join(' · '),
+                        ),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () => Navigator.pop(context, item),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      if (selected == null) return;
+      final trailerUrl = (selected['trailerUrl'] ?? '').toString();
+      final title = (selected['title'] ?? query).toString();
+      if (trailerUrl.isEmpty) {
+        showMessage(context, 'Esse resultado não possui vídeo importável.', error: true);
+        return;
+      }
+      final settings = await _settingsDialog(suggestedTitle: title);
+      if (settings == null) return;
+
+      setState(() {
+        actionBusy = true;
+        busyLabel = 'Enviando trailer para a biblioteca...';
+      });
+      await widget.api.importTrailer(
+        trailerUrl,
+        title: title,
+        settings: settings,
+      );
+      if (mounted) {
+        showMessage(context, 'Importação iniciada. O status atualiza sozinho.');
+      }
+      await _load(silent: true);
+    } catch (e) {
+      if (mounted) showMessage(context, _errorText(e), error: true);
+    } finally {
+      if (mounted) {
+        setState(() {
+          actionBusy = false;
+          busyLabel = '';
+        });
+      }
+    }
+  }
+
+  Future<void> _configureAndProcess(Map item) async {
+    if (actionBusy) return;
+    final settings = await _settingsDialog(source: item);
+    if (settings == null) return;
+    try {
+      setState(() {
+        actionBusy = true;
+        busyLabel = 'Salvando configuração e iniciando os cortes...';
+      });
+      final jobId = item['id'].toString();
+      await widget.api.updateVideo(jobId, settings);
+      await widget.api.processVideo(jobId, settings);
+      if (mounted) showMessage(context, 'Processamento iniciado.');
+      await _load(silent: true);
+    } catch (e) {
+      if (mounted) showMessage(context, _errorText(e), error: true);
+    } finally {
+      if (mounted) {
+        setState(() {
+          actionBusy = false;
+          busyLabel = '';
+        });
+      }
     }
   }
 
   Future<void> _rename(Map item) async {
-    final settings = item['settings'] is Map ? Map<String, dynamic>.from(item['settings']) : <String, dynamic>{};
-    final controller = TextEditingController(text: (settings['name'] ?? '').toString());
+    final controller = TextEditingController(
+      text: (item['displayName'] ?? item['filename'] ?? '').toString(),
+    );
     final name = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
@@ -800,7 +1373,10 @@ class _VideosPageState extends State<VideosPage> {
           decoration: const InputDecoration(border: OutlineInputBorder()),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
           FilledButton(
             onPressed: () => Navigator.pop(context, controller.text.trim()),
             child: const Text('Salvar'),
@@ -810,11 +1386,14 @@ class _VideosPageState extends State<VideosPage> {
     );
     if (name == null || name.isEmpty) return;
     try {
-      await widget.api.updateVideo(item['id'].toString(), {'name': name});
-      await _load();
+      await widget.api.updateVideo(
+        item['id'].toString(),
+        <String, dynamic>{'displayName': name},
+      );
+      await _load(silent: true);
       if (mounted) showMessage(context, 'Vídeo atualizado.');
     } catch (e) {
-      if (mounted) showMessage(context, e.toString(), error: true);
+      if (mounted) showMessage(context, _errorText(e), error: true);
     }
   }
 
@@ -823,9 +1402,14 @@ class _VideosPageState extends State<VideosPage> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Excluir vídeo?'),
-        content: const Text('O vídeo e os cortes vinculados serão removidos da biblioteca.'),
+        content: const Text(
+          'O vídeo e os cortes vinculados serão removidos da biblioteca. Publicações já enviadas ao Instagram não serão apagadas.',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
             child: const Text('Excluir'),
@@ -836,15 +1420,605 @@ class _VideosPageState extends State<VideosPage> {
     if (confirmed != true) return;
     try {
       await widget.api.deleteVideo(item['id'].toString());
-      await _load();
+      selectedClips.removeWhere(
+        (value) => value.startsWith(item['id'].toString() + '|'),
+      );
+      await _load(silent: true);
       if (mounted) showMessage(context, 'Vídeo excluído.');
     } catch (e) {
-      if (mounted) showMessage(context, e.toString(), error: true);
+      if (mounted) showMessage(context, _errorText(e), error: true);
     }
+  }
+
+  Future<void> _createFolder() async {
+    final controller = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Nova pasta'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'Nome',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('Criar'),
+          ),
+        ],
+      ),
+    );
+    if (name == null || name.isEmpty) return;
+    try {
+      await widget.api.createVideoFolder(name);
+      await _load(silent: true);
+    } catch (e) {
+      if (mounted) showMessage(context, _errorText(e), error: true);
+    }
+  }
+
+  Future<void> _moveVideo(Map item) async {
+    if (folders.isEmpty) return;
+    final folderId = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Mover para'),
+        children: [
+          for (final raw in folders)
+            if (raw is Map)
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(
+                  context,
+                  (raw['id'] ?? 'default').toString(),
+                ),
+                child: Text((raw['name'] ?? 'Meus vídeos').toString()),
+              ),
+        ],
+      ),
+    );
+    if (folderId == null) return;
+    try {
+      await widget.api.updateVideo(
+        item['id'].toString(),
+        <String, dynamic>{'folderId': folderId},
+      );
+      await _load(silent: true);
+    } catch (e) {
+      if (mounted) showMessage(context, _errorText(e), error: true);
+    }
+  }
+
+  Future<void> _approval(Map job, Map clip, String status) async {
+    try {
+      await widget.api.setClipApproval(
+        job['id'].toString(),
+        clip['id'].toString(),
+        status,
+      );
+      await _load(silent: true);
+    } catch (e) {
+      if (mounted) showMessage(context, _errorText(e), error: true);
+    }
+  }
+
+  Future<void> _toggleSelected(Map job, Map clip, bool selected) async {
+    final key = job['id'].toString() + '|' + clip['id'].toString();
+    setState(() {
+      if (selected) {
+        selectedClips.add(key);
+      } else {
+        selectedClips.remove(key);
+      }
+    });
+    try {
+      await widget.api.selectClip(
+        job['id'].toString(),
+        clip['id'].toString(),
+        selected,
+      );
+    } catch (e) {
+      if (mounted) showMessage(context, _errorText(e), error: true);
+    }
+  }
+
+  Future<DateTime?> _pickDateTime({DateTime? initial}) async {
+    final base = initial ?? DateTime.now().add(const Duration(hours: 1));
+    final date = await showDatePicker(
+      context: context,
+      initialDate: base,
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+    if (date == null || !mounted) return null;
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(base),
+    );
+    if (time == null) return null;
+    return DateTime(date.year, date.month, date.day, time.hour, time.minute);
+  }
+
+  Future<void> _schedule(Map job, Map clip) async {
+    final scheduled = await _pickDateTime();
+    if (scheduled == null) return;
+    final caption = TextEditingController(
+      text: (clip['caption'] ?? '').toString(),
+    );
+    if (!mounted) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Agendar corte'),
+        content: TextField(
+          controller: caption,
+          maxLines: 4,
+          decoration: const InputDecoration(
+            labelText: 'Legenda da postagem',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Agendar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await widget.api.scheduleClip(
+        job['id'].toString(),
+        clip['id'].toString(),
+        scheduledFor: scheduled,
+        caption: caption.text.trim(),
+      );
+      selectedClips.remove(
+        job['id'].toString() + '|' + clip['id'].toString(),
+      );
+      await _load(silent: true);
+      if (mounted) showMessage(context, 'Corte agendado.');
+    } catch (e) {
+      if (mounted) showMessage(context, _errorText(e), error: true);
+    }
+  }
+
+  Future<void> _bulkSchedule() async {
+    if (selectedClips.isEmpty) return;
+    final start = await _pickDateTime();
+    if (start == null || !mounted) return;
+    var interval = 60;
+    final value = await showDialog<int>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Intervalo entre postagens'),
+        content: DropdownButtonFormField<int>(
+          value: interval,
+          items: const [
+            DropdownMenuItem(value: 30, child: Text('30 minutos')),
+            DropdownMenuItem(value: 60, child: Text('1 hora')),
+            DropdownMenuItem(value: 120, child: Text('2 horas')),
+            DropdownMenuItem(value: 180, child: Text('3 horas')),
+            DropdownMenuItem(value: 360, child: Text('6 horas')),
+            DropdownMenuItem(value: 1440, child: Text('1 dia')),
+          ],
+          onChanged: (next) {
+            if (next != null) interval = next;
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, interval),
+            child: const Text('Confirmar'),
+          ),
+        ],
+      ),
+    );
+    if (value == null) return;
+
+    final items = <Map<String, dynamic>>[];
+    var index = 0;
+    for (final key in selectedClips) {
+      final parts = key.split('|');
+      if (parts.length != 2) continue;
+      items.add(<String, dynamic>{
+        'jobId': parts[0],
+        'clipId': parts[1],
+        'scheduledFor': start
+            .add(Duration(minutes: value * index))
+            .toUtc()
+            .toIso8601String(),
+      });
+      index += 1;
+    }
+    try {
+      final result = await widget.api.bulkScheduleClips(items);
+      selectedClips.clear();
+      await _load(silent: true);
+      if (mounted) {
+        showMessage(
+          context,
+          (result['scheduled'] ?? 0).toString() + ' corte(s) agendado(s).',
+        );
+      }
+    } catch (e) {
+      if (mounted) showMessage(context, _errorText(e), error: true);
+    }
+  }
+
+  Future<void> _publishNow(Map job, Map clip) async {
+    if ((clip['approvalStatus'] ?? '').toString() != 'approved') {
+      if (mounted) {
+        showMessage(context, 'Aprove o corte antes de publicar.', error: true);
+      }
+      return;
+    }
+    final caption = TextEditingController(
+      text: (clip['caption'] ?? '').toString(),
+    );
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Publicar agora?'),
+        content: TextField(
+          controller: caption,
+          maxLines: 4,
+          decoration: const InputDecoration(
+            labelText: 'Legenda',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Publicar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await widget.api.publishClipNow(
+        job['id'].toString(),
+        clip['id'].toString(),
+        caption: caption.text.trim(),
+      );
+      await _load(silent: true);
+      if (mounted) showMessage(context, 'Corte publicado.');
+    } catch (e) {
+      if (mounted) showMessage(context, _errorText(e), error: true);
+    }
+  }
+
+  Future<void> _adjust(Map job, Map clip) async {
+    final start = TextEditingController(text: (clip['start'] ?? 0).toString());
+    final end = TextEditingController(text: (clip['end'] ?? 30).toString());
+    final title = TextEditingController(text: (clip['title'] ?? '').toString());
+    final caption = TextEditingController(text: (clip['caption'] ?? '').toString());
+    final patch = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Ajustar corte'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: start,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Início em segundos',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: end,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Fim em segundos',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: title,
+                decoration: const InputDecoration(
+                  labelText: 'Título',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: caption,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: 'Legenda',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, <String, dynamic>{
+              'start': double.tryParse(start.text) ?? 0,
+              'end': double.tryParse(end.text) ?? 30,
+              'title': title.text.trim(),
+              'caption': caption.text.trim(),
+            }),
+            child: const Text('Gerar novamente'),
+          ),
+        ],
+      ),
+    );
+    if (patch == null) return;
+    try {
+      setState(() {
+        actionBusy = true;
+        busyLabel = 'Gerando o corte ajustado...';
+      });
+      await widget.api.adjustClip(
+        job['id'].toString(),
+        clip['id'].toString(),
+        patch,
+      );
+      await _load(silent: true);
+      if (mounted) showMessage(context, 'Corte atualizado.');
+    } catch (e) {
+      if (mounted) showMessage(context, _errorText(e), error: true);
+    } finally {
+      if (mounted) {
+        setState(() {
+          actionBusy = false;
+          busyLabel = '';
+        });
+      }
+    }
+  }
+
+  void _preview(Map clip) {
+    final url = (clip['previewUrl'] ?? '').toString();
+    if (url.isEmpty) {
+      showMessage(context, 'Prévia ainda não disponível.', error: true);
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => VideoPreviewPage(
+          api: widget.api,
+          url: url,
+          title: (clip['title'] ?? 'Prévia do corte').toString(),
+        ),
+      ),
+    );
+  }
+
+  Widget _clipCard(Map job, Map clip, int index) {
+    final key = job['id'].toString() + '|' + clip['id'].toString();
+    final selected = selectedClips.contains(key) ||
+        clip['selectedForSchedule'] == true;
+    final preview = (clip['previewUrl'] ?? '').toString();
+    final approval = (clip['approvalStatus'] ?? 'pending').toString();
+    final publish = (clip['publishStatus'] ?? 'draft').toString();
+
+    return Card(
+      margin: const EdgeInsets.fromLTRB(12, 5, 12, 5),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Checkbox(
+                  value: selected,
+                  onChanged: publish == 'published'
+                      ? null
+                      : (value) => _toggleSelected(job, clip, value == true),
+                ),
+                Expanded(
+                  child: Text(
+                    (clip['title'] ?? 'Corte ' + (index + 1).toString()).toString(),
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+                Text(
+                  _clipStatus(clip),
+                  style: Theme.of(context).textTheme.labelSmall,
+                ),
+              ],
+            ),
+            if ((clip['transcript'] ?? '').toString().isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  (clip['transcript'] ?? '').toString(),
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+            if ((clip['scheduledFor'] ?? '').toString().isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text('Agendado: ' + clip['scheduledFor'].toString()),
+              ),
+            Wrap(
+              spacing: 7,
+              runSpacing: 7,
+              children: [
+                if (preview.isNotEmpty)
+                  OutlinedButton.icon(
+                    onPressed: () => _preview(clip),
+                    icon: const Icon(Icons.play_arrow),
+                    label: const Text('Ver'),
+                  ),
+                FilledButton.tonalIcon(
+                  onPressed: () => _approval(job, clip, 'approved'),
+                  icon: Icon(
+                    approval == 'approved'
+                        ? Icons.check_circle
+                        : Icons.check_circle_outline,
+                  ),
+                  label: const Text('Aprovar'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () => _adjust(job, clip),
+                  icon: const Icon(Icons.tune),
+                  label: const Text('Ajustar'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: publish == 'published' ? null : () => _schedule(job, clip),
+                  icon: const Icon(Icons.schedule),
+                  label: const Text('Agendar'),
+                ),
+                FilledButton.icon(
+                  onPressed: publish == 'published' || approval != 'approved'
+                      ? null
+                      : () => _publishNow(job, clip),
+                  icon: const Icon(Icons.send),
+                  label: const Text('Publicar'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _jobCard(Map item) {
+    final status = (item['status'] ?? '').toString();
+    final clips = item['clips'] is List
+        ? List<dynamic>.from(item['clips'] as List)
+        : <dynamic>[];
+    final progress = double.tryParse((item['progress'] ?? '').toString());
+    final message = (item['message'] ?? '').toString();
+    final error = (item['error'] ?? '').toString();
+    final canProcess = status == 'awaiting_configuration' || status == 'failed';
+
+    return Card(
+      child: ExpansionTile(
+        leading: Icon(
+          status == 'ready'
+              ? Icons.video_library
+              : status == 'failed'
+                  ? Icons.error_outline
+                  : Icons.movie_outlined,
+        ),
+        title: Text(
+          (item['displayName'] ?? item['filename'] ?? item['id'] ?? 'Vídeo').toString(),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(_jobStatus(status) + ' · ' + clips.length.toString() + ' corte(s)'),
+            if (message.isNotEmpty)
+              Text(
+                message,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            if (error.isNotEmpty)
+              Text(
+                error,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Colors.redAccent),
+              ),
+            if (progress != null && progress > 0 && progress < 100)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: LinearProgressIndicator(value: progress / 100),
+              ),
+          ],
+        ),
+        trailing: PopupMenuButton<String>(
+          onSelected: (value) {
+            if (value == 'rename') _rename(item);
+            if (value == 'move') _moveVideo(item);
+            if (value == 'delete') _delete(item);
+          },
+          itemBuilder: (context) => const [
+            PopupMenuItem(value: 'rename', child: Text('Renomear')),
+            PopupMenuItem(value: 'move', child: Text('Mover para pasta')),
+            PopupMenuItem(value: 'delete', child: Text('Excluir')),
+          ],
+        ),
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Cortes: ' +
+                        (item['requestedClips'] ?? 3).toString() +
+                        ' · até ' +
+                        (item['clipDuration'] ?? 30).toString() +
+                        's · ' +
+                        (item['outputFormat'] ?? 'reel').toString(),
+                  ),
+                ),
+                if (canProcess)
+                  FilledButton.tonalIcon(
+                    onPressed: () => _configureAndProcess(item),
+                    icon: const Icon(Icons.content_cut),
+                    label: Text(status == 'failed' ? 'Tentar de novo' : 'Fazer cortes'),
+                  ),
+              ],
+            ),
+          ),
+          if (clips.isEmpty)
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 4, 16, 16),
+              child: Text('Os cortes aparecerão aqui quando o processamento terminar.'),
+            )
+          else
+            for (var index = 0; index < clips.length; index++)
+              if (clips[index] is Map)
+                _clipCard(item, clips[index] as Map, index),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final visibleJobs = jobs.where((raw) {
+      if (raw is! Map) return false;
+      if (folderFilter.isEmpty) return true;
+      return (raw['folderId'] ?? 'default').toString() == folderFilter;
+    }).toList();
+
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
@@ -861,52 +2035,180 @@ class _VideosPageState extends State<VideosPage> {
                       ),
                 ),
               ),
-              IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
+              IconButton(
+                tooltip: 'Atualizar',
+                onPressed: actionBusy ? null : _load,
+                icon: const Icon(Icons.refresh),
+              ),
             ],
           ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              FilledButton.icon(
+                onPressed: actionBusy ? null : _uploadFromDevice,
+                icon: const Icon(Icons.upload_file),
+                label: const Text('Enviar do aparelho'),
+              ),
+              FilledButton.tonalIcon(
+                onPressed: actionBusy ? null : _importUrl,
+                icon: const Icon(Icons.link),
+                label: const Text('Importar link'),
+              ),
+              FilledButton.tonalIcon(
+                onPressed: actionBusy ? null : _searchTrailer,
+                icon: const Icon(Icons.search),
+                label: const Text('Buscar trailer'),
+              ),
+              OutlinedButton.icon(
+                onPressed: actionBusy ? null : _createFolder,
+                icon: const Icon(Icons.create_new_folder_outlined),
+                label: const Text('Nova pasta'),
+              ),
+              if (selectedClips.isNotEmpty)
+                FilledButton.icon(
+                  onPressed: actionBusy ? null : _bulkSchedule,
+                  icon: const Icon(Icons.calendar_month),
+                  label: Text(
+                    'Agendar selecionados (' + selectedClips.length.toString() + ')',
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          DropdownButtonFormField<String>(
+            value: folderFilter,
+            decoration: const InputDecoration(
+              labelText: 'Pasta',
+              border: OutlineInputBorder(),
+            ),
+            items: [
+              const DropdownMenuItem(value: '', child: Text('Todas as pastas')),
+              for (final raw in folders)
+                if (raw is Map)
+                  DropdownMenuItem(
+                    value: (raw['id'] ?? 'default').toString(),
+                    child: Text((raw['name'] ?? 'Meus vídeos').toString()),
+                  ),
+            ],
+            onChanged: (value) => setState(() => folderFilter = value ?? ''),
+          ),
+          if (actionBusy) ...[
+            const SizedBox(height: 12),
+            LinearProgressIndicator(value: uploadProgress),
+            const SizedBox(height: 6),
+            Text(busyLabel),
+          ],
+          const SizedBox(height: 10),
           if (loading)
             const Padding(
               padding: EdgeInsets.all(24),
               child: Center(child: CircularProgressIndicator()),
             )
-          else if (jobs.isEmpty)
+          else if (visibleJobs.isEmpty)
             const Card(
               child: ListTile(
                 leading: Icon(Icons.video_library_outlined),
                 title: Text('Biblioteca vazia'),
-                subtitle: Text('Nenhum vídeo registrado no NEXUS ainda.'),
+                subtitle: Text(
+                  'Envie um vídeo do telefone, importe um link ou busque um trailer.',
+                ),
               ),
             )
           else
-            for (final raw in jobs)
-              if (raw is Map)
-                Card(
-                  child: ListTile(
-                    leading: const Icon(Icons.movie_outlined),
-                    title: Text(
-                      ((raw['settings'] is Map ? raw['settings']['name'] : null) ??
-                              raw['id'] ??
-                              'Vídeo')
-                          .toString(),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    subtitle: Text(
-                      'Status: ${raw['status'] ?? '-'} · Cortes: ${raw['clips'] is List ? (raw['clips'] as List).length : 0}',
-                    ),
-                    trailing: PopupMenuButton<String>(
-                      onSelected: (value) {
-                        if (value == 'rename') _rename(raw);
-                        if (value == 'delete') _delete(raw);
-                      },
-                      itemBuilder: (context) => const [
-                        PopupMenuItem(value: 'rename', child: Text('Renomear')),
-                        PopupMenuItem(value: 'delete', child: Text('Excluir')),
-                      ],
-                    ),
+            for (final raw in visibleJobs)
+              if (raw is Map) _jobCard(raw),
+        ],
+      ),
+    );
+  }
+}
+
+class VideoPreviewPage extends StatefulWidget {
+  final NexusApiClient api;
+  final String url;
+  final String title;
+
+  const VideoPreviewPage({
+    super.key,
+    required this.api,
+    required this.url,
+    required this.title,
+  });
+
+  @override
+  State<VideoPreviewPage> createState() => _VideoPreviewPageState();
+}
+
+class _VideoPreviewPageState extends State<VideoPreviewPage> {
+  late final VideoPlayerController controller;
+  Future<void>? initializing;
+
+  @override
+  void initState() {
+    super.initState();
+    controller = VideoPlayerController.networkUrl(
+      widget.api.absoluteUri(widget.url),
+      httpHeaders: widget.api.mediaHeaders,
+    );
+    initializing = controller.initialize().then((_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(widget.title)),
+      body: Center(
+        child: FutureBuilder<void>(
+          future: initializing,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const CircularProgressIndicator();
+            }
+            if (snapshot.hasError || !controller.value.isInitialized) {
+              return const Padding(
+                padding: EdgeInsets.all(24),
+                child: Text('Não foi possível carregar a prévia desse corte.'),
+              );
+            }
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AspectRatio(
+                  aspectRatio: controller.value.aspectRatio == 0
+                      ? 9 / 16
+                      : controller.value.aspectRatio,
+                  child: VideoPlayer(controller),
+                ),
+                const SizedBox(height: 12),
+                IconButton.filled(
+                  onPressed: () {
+                    setState(() {
+                      if (controller.value.isPlaying) {
+                        controller.pause();
+                      } else {
+                        controller.play();
+                      }
+                    });
+                  },
+                  icon: Icon(
+                    controller.value.isPlaying ? Icons.pause : Icons.play_arrow,
                   ),
                 ),
-        ],
+              ],
+            );
+          },
+        ),
       ),
     );
   }
