@@ -1,7 +1,7 @@
 #define MyAppName "NEXUS AI MASTER"
-#define MyAppVersion "1.4.0"
+#define MyAppVersion "1.5.0"
 #define MyAppPublisher "NEXUS AI"
-#define MyAppExeName "NexusAIMaster.exe"
+#define MyAppExeName "NexusAIMaster15.exe"
 
 [Setup]
 AppId={{7C573B30-4DA1-42E7-B8C7-3C2B775772A6}
@@ -32,3 +32,6 @@ Name: "desktopicon"; Description: "Criar atalho na Área de Trabalho"; GroupDesc
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Abrir NEXUS AI MASTER"; Flags: nowait postinstall skipifsilent
+
+[InstallDelete]
+Type: files; Name: "{app}\NexusAIMaster.exe"
