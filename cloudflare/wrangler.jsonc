@@ -17,7 +17,7 @@
     "RAGNAR_CLIENT_ID": "ragnar-one",
     "CLOUDFLARE_AUTOMATION_ACTIVE": "true",
     "PUBLIC_BASE_URL": "https://servidor-nexus.diamantehinode2015.workers.dev",
-    "NEXUS_AI_PROVIDER": "workers-first",
+    "NEXUS_AI_PROVIDER": "local-first",
     "NEXUS_OPENAI_DAILY_TOKEN_LIMIT": "30000",
     "NEXUS_OPENAI_MAX_OUTPUT_TOKENS": "1200"
   },
@@ -41,9 +41,6 @@
       "migrations_dir": "migrations"
     }
   ],
-  "ai": {
-    "binding": "AI"
-  },
   "r2_buckets": [
     {
       "binding": "MEDIA",
