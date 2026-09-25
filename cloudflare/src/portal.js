@@ -1,3 +1,4 @@
+import { decryptSecret } from "./secrets.js";
 import {
   authenticatePortalUser,
   createPortalSession,
@@ -137,15 +138,22 @@ async function connectionSummary(env, clientId) {
     if (provider !== "meta" && provider !== "instagram") continue;
 
     const payload = parseJson(row.payload_json, {});
+    const token = payload?.accessToken
+      ? await decryptSecret(env, payload.accessToken).catch(() => "")
+      : "";
+    const expiresAt = payload?.expiresAt || null;
+    const expiresMs = expiresAt ? new Date(expiresAt).getTime() : 0;
+    const expired = Boolean(expiresMs && Number.isFinite(expiresMs) && expiresMs <= Date.now());
     out.instagram = {
-      connected: true,
+      connected: Boolean(token && !expired && payload?.igUserId),
       direct: true,
       source: "nexus",
-      label: payload?.label || payload?.username || "Instagram conectado",
+      label: payload?.label || payload?.username || "Instagram",
       username: payload?.username || "",
       accountType: payload?.accountType || "",
       scopes: Array.isArray(payload?.scopes) ? payload.scopes : [],
-      expiresAt: payload?.expiresAt || null,
+      expiresAt,
+      expired,
       connectedAt: row.connected_at || row.updated_at || null
     };
   }
