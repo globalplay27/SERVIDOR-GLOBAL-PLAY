@@ -403,7 +403,25 @@ export async function enqueueVideoProcessing(env, clientId, jobId, patch = {}) {
   if (row.status === "processing") return { queued: true, id: row.id, status: "processing", reused: true };
   if (row.status === "ready") return { queued: false, id: row.id, status: "ready", reused: true };
 
-  const settings = { ...parseJson(row.settings_json, {}), ...(patch && typeof patch === "object" ? patch : {}) };
+  const currentSettings = parseJson(row.settings_json, {});
+  if (
+    row.status === "failed"
+    && !String(row.source_object_key || "")
+    && String(currentSettings.sourceType || "").startsWith("youtube")
+    && String(currentSettings.sourceUrl || "")
+  ) {
+    currentSettings.importAttempts = 0;
+    await setJob(env, row, "importing", currentSettings, {
+      ...parseJson(row.result_json, {}),
+      progress: 5,
+      importAttempts: 0,
+      message: "Tentando importar novamente do YouTube.",
+      error: ""
+    });
+    return { queued: false, id: row.id, status: "importing", reused: true };
+  }
+
+  const settings = { ...currentSettings, ...(patch && typeof patch === "object" ? patch : {}) };
   settings.clipDuration = Math.round(clamp(settings.duration || settings.clipDuration || 30, 10, MAX_CLIP_SECONDS));
   settings.duration = settings.clipDuration;
   settings.requestedClips = Math.round(clamp(settings.clips || settings.requestedClips || 3, 1, 12));
@@ -417,7 +435,7 @@ export async function enqueueVideoProcessing(env, clientId, jobId, patch = {}) {
 
   const result = {
     ...parseJson(row.result_json, {}),
-    progress: 5,
+    progress: 55,
     processor: "cloudflare",
     message: "Análise iniciada no Cloudflare. O NEXUS está escolhendo os melhores trechos.",
     error: ""
@@ -438,7 +456,7 @@ export async function processVideoJob(env, clientId, jobId) {
   ).bind(
     row.id,
     row.client_id,
-    JSON.stringify({ ...baseResult, progress: 12, message: "Transcrevendo e analisando o vídeo.", error: "" })
+    JSON.stringify({ ...baseResult, progress: 60, message: "Transcrevendo e analisando o vídeo.", error: "" })
   ).run();
   if (!Number(claimed?.meta?.changes || 0)) return { skipped: true, status: "already_claimed" };
 
@@ -447,7 +465,7 @@ export async function processVideoJob(env, clientId, jobId) {
     const transcript = await transcribeVideo(env, row.client_id, row.source_object_key, requested);
     await setJob(env, row, "processing", settings, {
       ...baseResult,
-      progress: 45,
+      progress: 75,
       detectedLanguage: transcript.language,
       message: "Transcrição concluída. Selecionando os cortes com melhor potencial.",
       error: ""
