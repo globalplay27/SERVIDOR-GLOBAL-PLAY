@@ -19,7 +19,6 @@ function instagramIsConnected(client=currentClient){
   return Boolean(
     connections.instagram?.connected
     || connections.meta?.connected
-    || client?.onboarding?.instagram===true
   );
 }
 function formatInstagramDate(value){
@@ -419,7 +418,6 @@ async function pollInstagramConnection(status,popup=null){
     const connected=Boolean(
       connectionData?.connections?.instagram?.connected
       || connectionData?.connections?.meta?.connected
-      || client?.onboarding?.instagram===true
     );
 
     if(connected){
@@ -487,7 +485,6 @@ window.addEventListener("message",event=>{
     const connected=Boolean(
       data?.connections?.instagram?.connected
       || data?.connections?.meta?.connected
-      || client?.onboarding?.instagram===true
     );
     if(!connected)return;
     clearInterval(instagramOauthTimer);
