@@ -113,23 +113,9 @@ function renderOnboarding(){
   if(modeReady)modeReady.classList.toggle("selected",(currentClient?.setupMode||"ready")==="ready");
   renderInstagramConnectionState();
 }
-function renderConnections(connections={}){
-  const labels={github:"github-connection",railway:"railway-connection",openai:"openai-connection"};
-  for(const [provider,id] of Object.entries(labels)){
-    const item=connections[provider]||{};
-    const el=$("#"+id);
-    if(!el)continue;
-    if(item.direct){
-      el.textContent="Conectado diretamente"+(item.label?" · "+item.label:"");
-      el.className="provider-line connected";
-    }else if(item.connected){
-      el.textContent="Configuração existente no agente";
-      el.className="provider-line legacy";
-    }else{
-      el.textContent="Não conectado diretamente";
-      el.className="provider-line";
-    }
-  }
+function renderConnections(){
+  // Infraestrutura técnica é gerenciada pelo NEXUS no GitHub + Cloudflare.
+  // O cliente só autoriza integrações de negócio, como Instagram.
 }
 
 async function loadAgentTeam(){
@@ -309,23 +295,6 @@ async function loadTokenUsage(){
   }
 }
 
-async function providerUsage(){
-  if(currentClient?.managedInfrastructure)return;
-  try{
-    const r=await fetch("/api/portal/provider-usage",{headers:{"x-nexus-session":sessionAuth}});
-    if(!r.ok)return;
-    const d=await r.json();
-    const oa=$("#live-openai"),oad=$("#live-openai-detail"),rw=$("#live-railway"),rwd=$("#live-railway-detail");
-    if(d.openai?.connected&&oa){
-      oa.textContent=d.openai.costAvailable?("US$ "+Number(d.openai.cost31dUsd||0).toFixed(2)+" / 31 dias"):"OpenAI conectada";
-      if(oad)oad.textContent=d.openai.costAvailable?"Custo obtido da API da organização.":"Chave do projeto validada.";
-    }
-    if(d.railway?.connected&&rw){
-      rw.textContent=d.railway.projectCount!=null?(d.railway.projectCount+" projeto(s) autorizado(s)"):"Railway conectada";
-      if(rwd)rwd.textContent=(d.railway.projects||[]).slice(0,3).map(p=>p.name).filter(Boolean).join(" · ")||"Autorização Railway ativa.";
-    }
-  }catch{}
-}
 
 setInterval(()=>{
   if(currentClient&&!$("#portal-view")?.hidden)loadTokenUsage();
@@ -2020,7 +1989,6 @@ async function resumeCookieSession(){
     runNexusBoot();
     showView("overview");
     liveStatus();
-    providerUsage();
     loadTokenUsage();
     loadConnections();
     loadClientPosts();
