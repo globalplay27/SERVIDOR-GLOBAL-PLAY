@@ -62,9 +62,35 @@ function masterClientView(client) {
     niche: client.niche,
     instagram: client.instagram,
     status: client.status,
-    ...config,
+    theme: config.theme || "nexus",
+    primaryColor: config.primaryColor || "#22c55e",
+    secondaryColor: config.secondaryColor || "#050807",
+    odin: config.odin !== false,
+    postTimes: Array.isArray(config.postTimes) ? config.postTimes : ["09:00","12:00","18:00"],
+    leads: config.leads && typeof config.leads === "object" ? config.leads : { total:0, hot:0, warm:0, cold:0 },
+    usage: { openaiPercent: Number(config.usage?.openaiPercent || 0) },
+    aiMode: client.id === "ragnar-one" ? "own-key" : "shared",
+    aiMonthlyImageLimit: Number(config.aiMonthlyImageLimit || 0),
+    aiImagesUsed: Number(config.aiImagesUsed || 0),
+    managedInfrastructure: true,
+    onboarding: {
+      instagram: Boolean(config.onboarding?.instagram),
+      creativeProfile: Boolean(config.onboarding?.creativeProfile),
+      supportRequested: Boolean(config.onboarding?.supportRequested)
+    },
+    setupMode: config.setupMode || "ready",
+    postingProfile: config.postingProfile && typeof config.postingProfile === "object" ? config.postingProfile : {},
+    agentProfile: config.agentProfile && typeof config.agentProfile === "object" ? config.agentProfile : {},
+    agentCore: config.agentCore && typeof config.agentCore === "object" ? config.agentCore : {},
+    ownerAccount: Boolean(config.ownerAccount),
+    integrationState: {
+      github: "connected",
+      cloudflare: "connected",
+      openai: "configured",
+      meta: config.integrationState?.meta || "pending"
+    },
     runtime: "cloudflare",
-    infrastructure: "Servidor Nexus",
+    infrastructure: "Cloudflare",
     openaiKeySource: client.id === "ragnar-one" ? "ragnar-exclusive" : "shared"
   };
 }
