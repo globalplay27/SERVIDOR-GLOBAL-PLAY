@@ -21,12 +21,17 @@ function parseJson(raw, fallback = {}) {
 export function normalizeAgentCoreConfig(client) {
   const config = client?.config && typeof client.config === "object" ? client.config : {};
   const current = config.agentCore && typeof config.agentCore === "object" ? config.agentCore : {};
-  const autoPublish = current.autoPublish === true;
+  const autonomousClient = ["ragnar-one","globalplay-streaming"].includes(String(client?.id || ""));
+  const autoPublish = current.autoPublish === undefined
+    ? autonomousClient
+    : current.autoPublish === true;
   const modules = {};
   for (const module of AGENT_CORE_MODULES) modules[module.id] = current.modules?.[module.id] !== false;
   return {
     enabled: current.enabled !== false,
-    approvalRequired: autoPublish ? current.approvalRequired === true : true,
+    approvalRequired: autoPublish
+      ? (current.approvalRequired === undefined ? false : current.approvalRequired === true)
+      : true,
     autoPublish,
     cycleMinutes: Math.max(15, Math.min(1440, Number(current.cycleMinutes || 60))),
     modules
