@@ -271,14 +271,15 @@ const PIPED_STREAM_APIS = [
   "https://api-piped.mha.fi"
 ];
 
+
 async function pipedMuxedStream(sourceUrl) {
   const videoId = youtubeVideoIdFromUrl(sourceUrl);
   if (!videoId) throw new Error("trailer_video_id_missing");
 
-  const attempt = async base => {
+  const attemptInstance = async base => {
     const response = await fetch(base + "/streams/" + encodeURIComponent(videoId), {
-      headers: { accept: "application/json", "user-agent": "NEXUS-AI/2.2" },
-      signal: AbortSignal.timeout(6000)
+      headers: { accept: "application/json", "user-agent": "NEXUS-AI/2.3" },
+      signal: AbortSignal.timeout(4000)
     });
     if (!response.ok) throw new Error("piped_streams_" + response.status);
     const payload = await response.json().catch(() => ({}));
@@ -292,29 +293,35 @@ async function pipedMuxedStream(sourceUrl) {
         const format = String(item?.format || "").toUpperCase();
         return { ...item, quality, bytes, mime, format };
       })
-      .filter(item => item.bytes > 0 && item.bytes <= MAX_VIDEO_BYTES)
+      .filter(item => !item.bytes || item.bytes <= MAX_VIDEO_BYTES)
       .sort((a, b) => {
         const aMp4 = a.mime.includes("mp4") || a.format.includes("MP4") || a.format.includes("MPEG_4") ? 1 : 0;
         const bMp4 = b.mime.includes("mp4") || b.format.includes("MP4") || b.format.includes("MPEG_4") ? 1 : 0;
         const aQ = a.quality <= 480 ? a.quality : 0;
         const bQ = b.quality <= 480 ? b.quality : 0;
         return (bMp4 - aMp4) || (bQ - aQ) || (a.bytes - b.bytes);
-      });
+      })
+      .slice(0, 3);
 
-    for (const stream of streams.slice(0, 6)) {
+    if (!streams.length) throw new Error("piped_no_muxed_stream");
+
+    const fetchStream = async stream => {
       const mediaUrl = new URL(String(stream.url), base);
-      if (mediaUrl.protocol !== "https:") continue;
+      if (mediaUrl.protocol !== "https:" || unsafeRemoteVideoHost(mediaUrl.hostname)) {
+        throw new Error("piped_stream_not_allowed");
+      }
       const media = await fetch(mediaUrl.toString(), {
-        headers: { accept: "video/*,*/*;q=0.8", "user-agent": "Mozilla/5.0 NEXUS-AI/2.2" },
-        signal: AbortSignal.timeout(30000)
+        headers: { accept: "video/*,*/*;q=0.8", "user-agent": "Mozilla/5.0 NEXUS-AI/2.3" },
+        signal: AbortSignal.timeout(15000)
       });
-      if (!media.ok || !media.body) continue;
+      if (!media.ok || !media.body) throw new Error("piped_media_" + media.status);
 
       const declaredLength = Number(media.headers.get("content-length") || stream.bytes || 0);
       if (!declaredLength || declaredLength > MAX_VIDEO_BYTES) {
         try { await media.body.cancel(); } catch {}
-        continue;
+        throw new Error(declaredLength > MAX_VIDEO_BYTES ? "video_too_large" : "trailer_size_unknown");
       }
+
       const contentType = String(media.headers.get("content-type") || stream.mime || "video/mp4")
         .toLowerCase().split(";")[0].trim();
       const extension = contentType.includes("webm") ? "webm" : "mp4";
@@ -327,19 +334,12 @@ async function pipedMuxedStream(sourceUrl) {
         size: declaredLength,
         resolver: "piped"
       };
-    }
-    throw new Error("piped_no_muxed_stream");
+    };
+
+    return Promise.any(streams.map(fetchStream));
   };
 
-  return Promise.any(PIPED_STREAM_APIS.map(attempt));
-}
-
-async function youtubeMuxedStream(sourceUrl) {
-  try {
-    return await pipedMuxedStream(sourceUrl);
-  } catch {}
-  const resolved = await youtubeMuxedStream(sourceUrl);
-  return { ...resolved, resolver: "invidious" };
+  return Promise.any(PIPED_STREAM_APIS.map(attemptInstance));
 }
 
 async function invidiousMuxedStream(sourceUrl) {
@@ -350,90 +350,93 @@ async function invidiousMuxedStream(sourceUrl) {
     "inv.nadeko.net",
     "invidious.nerdvpn.de",
     "yt.chocolatemoo53.com",
-    "invidious.tiekoetter.com",
-    "invidious.f5.si"
+    "invidious.tiekoetter.com"
   ];
 
-  let lastError = "invidious_unavailable";
-  for (const host of instances) {
+  const attemptInstance = async host => {
     const base = "https://" + host;
-    try {
-      const api = await fetch(base + "/api/v1/videos/" + encodeURIComponent(videoId) + "?local=1&region=BR", {
-        headers: { accept: "application/json", "user-agent": "NEXUS-AI-Trailer-Resolver/2.1" },
-        signal: AbortSignal.timeout(6000)
+    const api = await fetch(base + "/api/v1/videos/" + encodeURIComponent(videoId) + "?local=1&region=BR", {
+      headers: { accept: "application/json", "user-agent": "NEXUS-AI-Trailer-Resolver/2.3" },
+      signal: AbortSignal.timeout(4000)
+    });
+    if (!api.ok) throw new Error("invidious_api_" + api.status);
+
+    const payload = await api.json().catch(() => ({}));
+    const streams = (Array.isArray(payload?.formatStreams) ? payload.formatStreams : [])
+      .filter(item => item?.url)
+      .map(item => {
+        const quality = Number(String(item.qualityLabel || item.quality || "").match(/\d+/)?.[0] || 0);
+        const bytes = Number(item.clength || item.contentLength || 0);
+        const container = String(item.container || "").toLowerCase();
+        return { ...item, quality, bytes, container };
+      })
+      .filter(item => !item.bytes || item.bytes <= MAX_VIDEO_BYTES)
+      .sort((a, b) => {
+        const aMp4 = a.container === "mp4" ? 1 : 0;
+        const bMp4 = b.container === "mp4" ? 1 : 0;
+        const aQ = a.quality <= 480 ? a.quality : 0;
+        const bQ = b.quality <= 480 ? b.quality : 0;
+        return (bMp4 - aMp4) || (bQ - aQ) || (a.bytes - b.bytes);
+      })
+      .slice(0, 3);
+
+    if (!streams.length) throw new Error("invidious_no_stream");
+
+    const fetchStream = async stream => {
+      const mediaUrl = new URL(String(stream.url), base);
+      const hostName = mediaUrl.hostname.toLowerCase();
+      const allowedHost = hostName === host
+        || hostName.endsWith(".googlevideo.com")
+        || hostName === "googlevideo.com";
+      if (mediaUrl.protocol !== "https:" || !allowedHost || unsafeRemoteVideoHost(hostName)) {
+        throw new Error("invidious_stream_not_allowed");
+      }
+
+      const media = await fetch(mediaUrl.toString(), {
+        headers: {
+          accept: "video/*,*/*;q=0.8",
+          referer: base + "/watch?v=" + encodeURIComponent(videoId),
+          "user-agent": "Mozilla/5.0 NEXUS-AI/2.3"
+        },
+        signal: AbortSignal.timeout(15000)
       });
-      if (!api.ok) {
-        lastError = "invidious_api_" + api.status;
-        continue;
+      if (!media.ok || !media.body) throw new Error("invidious_media_" + media.status);
+
+      const declaredLength = Number(media.headers.get("content-length") || stream.bytes || 0);
+      if (!declaredLength || declaredLength > MAX_VIDEO_BYTES) {
+        try { await media.body.cancel(); } catch {}
+        throw new Error(declaredLength > MAX_VIDEO_BYTES ? "video_too_large" : "trailer_size_unknown");
       }
 
-      const payload = await api.json().catch(() => ({}));
-      const streams = (Array.isArray(payload?.formatStreams) ? payload.formatStreams : [])
-        .filter(item => item?.url)
-        .map(item => {
-          const quality = Number(String(item.qualityLabel || item.quality || "").match(/\d+/)?.[0] || 0);
-          const bytes = Number(item.clength || item.contentLength || 0);
-          const container = String(item.container || "").toLowerCase();
-          return { ...item, quality, bytes, container };
-        })
-        .filter(item => !item.bytes || item.bytes <= MAX_VIDEO_BYTES)
-        .sort((a, b) => {
-          const aMp4 = a.container === "mp4" ? 1 : 0;
-          const bMp4 = b.container === "mp4" ? 1 : 0;
-          const aQuality = a.quality <= 480 ? a.quality : 0;
-          const bQuality = b.quality <= 480 ? b.quality : 0;
-          return (bMp4 - aMp4) || (bQuality - aQuality) || (a.bytes - b.bytes);
-        });
+      const contentType = String(media.headers.get("content-type") || "").toLowerCase().split(";")[0].trim();
+      const extension = stream.container === "webm" || contentType.includes("webm") ? "webm" : "mp4";
+      return {
+        response: media,
+        videoId,
+        host,
+        extension,
+        contentType: contentType.startsWith("video/") ? contentType : (extension === "webm" ? "video/webm" : "video/mp4"),
+        size: declaredLength,
+        resolver: "invidious"
+      };
+    };
 
-      for (const stream of streams.slice(0, 6)) {
-        try {
-          const mediaUrl = new URL(String(stream.url), base);
-          if (mediaUrl.hostname.toLowerCase() !== host) continue;
+    return Promise.any(streams.map(fetchStream));
+  };
 
-          const response = await fetch(mediaUrl.toString(), {
-            headers: {
-              accept: "video/*,*/*;q=0.8",
-              referer: base + "/watch?v=" + encodeURIComponent(videoId),
-              "user-agent": "Mozilla/5.0 NEXUS-AI/2.1"
-            },
-            signal: AbortSignal.timeout(30000)
-          });
-          if (!response.ok || !response.body) continue;
-
-          const declaredLength = Number(response.headers.get("content-length") || stream.bytes || 0);
-          if (!declaredLength) {
-            try { await response.body.cancel(); } catch {}
-            lastError = "trailer_size_unknown";
-            continue;
-          }
-          if (declaredLength > MAX_VIDEO_BYTES) {
-            try { await response.body.cancel(); } catch {}
-            lastError = "video_too_large";
-            continue;
-          }
-
-          const contentType = String(response.headers.get("content-type") || "").toLowerCase().split(";")[0].trim();
-          const extension = stream.container === "webm" || contentType.includes("webm") ? "webm" : "mp4";
-          return {
-            response,
-            videoId,
-            host,
-            extension,
-            contentType: contentType.startsWith("video/") ? contentType : (extension === "webm" ? "video/webm" : "video/mp4"),
-            size: declaredLength
-          };
-        } catch (error) {
-          lastError = String(error instanceof Error ? error.message : error);
-        }
-      }
-    } catch (error) {
-      lastError = String(error instanceof Error ? error.message : error);
-    }
-  }
-
-  throw new Error("invidious_resolve_failed:" + lastError);
+  return Promise.any(instances.map(attemptInstance));
 }
 
+async function youtubeMuxedStream(sourceUrl) {
+  try {
+    return await Promise.any([
+      pipedMuxedStream(sourceUrl),
+      invidiousMuxedStream(sourceUrl)
+    ]);
+  } catch {
+    throw new Error("youtube_stream_resolve_failed");
+  }
+}
 
 export async function createR2PublicTrailerImportJob(env, clientId, input = {}) {
   const sourceUrl = String(input.url || input.trailerUrl || "").trim();
