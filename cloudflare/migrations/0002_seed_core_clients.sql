@@ -5,7 +5,7 @@ VALUES(
   'Streaming',
   '@ragnarplay1',
   'online',
-  '{"runtime":"cloudflare","openaiKeySource":"ragnar-exclusive","agentName":"Ragnar","odin":true,"setupMode":"ready"}'
+  '{"runtime":"cloudflare","openaiKeySource":"ragnar-exclusive","agentName":"NEXUS","agentEngine":"NEXUS","odin":true,"setupMode":"ready"}'
 );
 
 INSERT OR IGNORE INTO clients(id, name, niche, instagram, status, config_json)
@@ -15,5 +15,5 @@ VALUES(
   'Streaming',
   '@globalplay_streaming',
   'online',
-  '{"runtime":"cloudflare","openaiKeySource":"shared","agentName":"Claire","odin":true,"setupMode":"ready","ownerAccount":true}'
+  '{"runtime":"cloudflare","openaiKeySource":"shared","agentName":"NEXUS","agentEngine":"NEXUS","odin":true,"setupMode":"ready","ownerAccount":true}'
 );
