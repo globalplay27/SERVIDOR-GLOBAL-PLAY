@@ -28,23 +28,14 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Generate Android platform
-        working-directory: apps/nexus_app
-        run: flutter create --platforms=android .
-
-      - name: Grant Android internet permission
+      - name: Verify versioned Android platform
         working-directory: apps/nexus_app
         shell: bash
         run: |
-          python - <<'PY'
-          from pathlib import Path
-          p = Path("android/app/src/main/AndroidManifest.xml")
-          s = p.read_text(encoding="utf-8")
-          permission = '<uses-permission android:name="android.permission.INTERNET"/>'
-          if permission not in s:
-              s = s.replace("<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\">", "<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\">\n    " + permission)
-          p.write_text(s, encoding="utf-8")
-          PY
+          test -f android/app/src/main/AndroidManifest.xml
+          test -f android/gradlew
+          test -f android/gradle/wrapper/gradle-wrapper.jar
+          grep -q 'android.permission.INTERNET' android/app/src/main/AndroidManifest.xml
 
       - name: Install dependencies
         working-directory: apps/nexus_app
