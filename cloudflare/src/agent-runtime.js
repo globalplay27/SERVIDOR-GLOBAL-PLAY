@@ -72,7 +72,7 @@ async function instagramSnapshot(env, client) {
 
   const headers = { authorization:"Bearer "+token, accept:"application/json", "user-agent":"NEXUS-AgentCore-Cloudflare/1.0" };
   try {
-    const mediaUrl = "https://graph.instagram.com/" + encodeURIComponent(igUserId) + "/media?fields=" + encodeURIComponent("id,caption,timestamp,media_type,like_count,comments_count,permalink") + "&limit=25";
+    const mediaUrl = "https://graph.instagram.com/" + encodeURIComponent(igUserId) + "/media?fields=" + encodeURIComponent("id,caption,timestamp,media_type,like_count,comments_count,permalink,media_url,thumbnail_url") + "&limit=25";
     const mediaResponse = await fetch(mediaUrl,{headers});
     const mediaPayload = await mediaResponse.json().catch(()=>({}));
     if(!mediaResponse.ok)throw new Error(String(mediaPayload?.error?.message || "instagram_media_"+mediaResponse.status));
@@ -83,7 +83,12 @@ async function instagramSnapshot(env, client) {
       mediaType:String(item.media_type||""),
       likeCount:Math.max(0,Number(item.like_count||0)),
       commentsCount:Math.max(0,Number(item.comments_count||0)),
-      permalink:String(item.permalink||"")
+      permalink:String(item.permalink||""),
+      mediaUrl:String(
+        String(item.media_type||"").toUpperCase()==="VIDEO"
+          ? (item.thumbnail_url||item.media_url||"")
+          : (item.media_url||item.thumbnail_url||"")
+      )
     })) : [];
 
     let followersCount=0, mediaCount=items.length, username=String(conn?.username||"");
@@ -218,6 +223,7 @@ async function runStrategist(env,client,context,options) {
     avoidTopics:profile.avoidTopics,
     radarTerms:Array.isArray(radar.topTerms)?radar.topTerms.slice(0,5):[],
     radarDiagnosis:Array.isArray(radar.diagnosis)?radar.diagnosis.slice(0,5):[],
+    reusableMedia:Array.isArray(radar.reusableMedia)?radar.reusableMedia.slice(0,6):[],
     metrics:{
       published:ledger.filter(x=>x.status==="published").length,
       failed:ledger.filter(x=>x.status==="failed").length,
@@ -233,6 +239,34 @@ async function runStrategist(env,client,context,options) {
   });
   await patchAgentCoreState(env,client.id,{strategy:plan});
   return plan;
+}
+
+
+async function stageOwnInstagramImage(env, clientId, postId, sourceUrl) {
+  const url=String(sourceUrl||"").trim();
+  if(!env.MEDIA||!/^https:\/\//i.test(url))return "";
+  try{
+    const response=await fetch(url,{
+      headers:{accept:"image/jpeg,image/png,image/webp,image/*;q=0.8,*/*;q=0.2","user-agent":"NEXUS-AgentCore-Cloudflare/1.1"},
+      signal:AbortSignal.timeout(8000)
+    });
+    if(!response.ok||!response.body)return "";
+    const type=String(response.headers.get("content-type")||"").toLowerCase().split(";")[0].trim();
+    if(!type.startsWith("image/"))return "";
+    const size=Number(response.headers.get("content-length")||0);
+    if(size>10*1024*1024)return "";
+    const ext=type.includes("png")?"png":type.includes("webp")?"webp":"jpg";
+    const key="posts/"+String(clientId)+"/"+String(postId)+"/auto-"+crypto.randomUUID()+"."+ext;
+    const object=await env.MEDIA.put(key,response.body,{
+      httpMetadata:{contentType:type||"image/jpeg",cacheControl:"public, max-age=31536000, immutable"},
+      customMetadata:{clientId:String(clientId),postId:String(postId),kind:"reused-own-instagram-media"}
+    });
+    if(!object)return "";
+    const origin=String(env.PUBLIC_BASE_URL||"").replace(/\/+$/,"");
+    return origin?origin+"/media/"+key:"";
+  }catch{
+    return "";
+  }
 }
 
 async function runCreator(env,client,strategy,options) {
@@ -253,15 +287,18 @@ async function runCreator(env,client,strategy,options) {
     const tags=String(strategy?.hashtags||"").trim().split(/\s+/).filter(Boolean).slice(0,5).join(" ");
     const caption=[hook,"",theme+". "+String(strategy?.contentFocus||"Conteúdo relevante para o público.")+".","",String(strategy?.cta||'Comente "QUERO" para saber mais'),tags?"":null,tags||null].filter(x=>x!==null).join("\n").slice(0,2200);
     const approval=config.autoPublish&&!config.approvalRequired?"approved":"pending";
+    const reusable=Array.isArray(strategy?.reusableMedia)?strategy.reusableMedia.filter(item=>/^https:\/\//i.test(String(item?.mediaUrl||""))):[];
+    const sourceMediaUrl=String(reusable[index%Math.max(1,reusable.length)]?.mediaUrl||"");
+    const imageUrl=sourceMediaUrl?await stageOwnInstagramImage(env,client.id,id,sourceMediaUrl):"";
     const payload={
       clientName:client.name||client.id,
       instagram:client.instagram||"",
-      imageUrl:"",
+      imageUrl,
       title:theme.slice(0,160),
       source:"agent-core:creator",
       model:"instagram-skill-layer",
       retryCount:0,
-      intelligence:{format:index===0?"reel":index===1?"carousel":"story",skill:index===0?"ig-reel":index===1?"ig-carousel":"ig-story"}
+      intelligence:{format:index===0?"reel":index===1?"carousel":"story",skill:index===0?"ig-reel":index===1?"ig-carousel":"ig-story",mediaSource:imageUrl?"own-instagram-reuse":"missing"}
     };
     await env.DB.prepare(
       "INSERT INTO post_ledger(id,client_id,scheduled_for,scheduled_hour,status,approval_status,media_id,caption,image_object_key,error,cost_usd,payload_json,created_at,updated_at) VALUES(?1,?2,?3,?4,'ready',?5,'',?6,'','',0,?7,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)"
@@ -318,13 +355,14 @@ async function runPublisher(env,client,options) {
 async function runAuditor(env,client,options) {
   const startedAt=new Date().toISOString();
   const [snapshot,ledger]=await Promise.all([instagramSnapshot(env,client),ledgerRows(env,client.id,100)]);
-  const engagements=(snapshot.items||[]).map(item=>({id:item.id,caption:item.caption,mediaType:item.mediaType,engagement:Number(item.likeCount||0)+Number(item.commentsCount||0)*2,permalink:item.permalink}));
+  const engagements=(snapshot.items||[]).map(item=>({id:item.id,caption:item.caption,mediaType:item.mediaType,mediaUrl:item.mediaUrl||"",engagement:Number(item.likeCount||0)+Number(item.commentsCount||0)*2,permalink:item.permalink}));
   const baseline=median(engagements.map(x=>x.engagement));
   const top=[...engagements].sort((a,b)=>b.engagement-a.engagement)[0]||null;
   const output={
     source:snapshot.source,
     baseline,
     topMedia:top,
+    reusableMedia:engagements.filter(item=>/^https:\/\//i.test(item.mediaUrl||"")).sort((a,b)=>b.engagement-a.engagement).slice(0,6),
     published:ledger.filter(x=>x.status==="published").length,
     failed:ledger.filter(x=>x.status==="failed").length,
     feedback:top?"Reaproveitar o mecanismo do conteúdo acima da mediana sem copiar texto ou visual.":"Continuar coletando dados e testando ganchos e formatos.",
