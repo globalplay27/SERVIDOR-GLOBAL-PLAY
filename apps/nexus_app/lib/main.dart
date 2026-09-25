@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 
@@ -1020,15 +1020,30 @@ class _VideosPageState extends State<VideosPage> {
 
   Future<void> _uploadFromDevice() async {
     if (actionBusy) return;
-    final picked = await FilePicker.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const ['mp4', 'mov', 'webm', 'mkv'],
-      allowMultiple: false,
-      withData: false,
-    );
-    if (picked == null || picked.files.isEmpty) return;
-    final selected = picked.files.single;
-    if (selected.path == null || selected.path!.isEmpty) {
+    const picker = MethodChannel('nexus/video_picker');
+    Map<String, dynamic>? selected;
+    try {
+      final raw = await picker.invokeMethod<dynamic>('pickVideo');
+      if (raw == null) return;
+      if (raw is Map) {
+        selected = Map<String, dynamic>.from(raw);
+      }
+    } on PlatformException catch (error) {
+      if (mounted) {
+        showMessage(
+          context,
+          error.message ?? 'Não foi possível abrir os vídeos do aparelho.',
+          error: true,
+        );
+      }
+      return;
+    }
+    if (selected == null) return;
+    final path = (selected['path'] ?? '').toString();
+    final name = (selected['name'] ?? 'video.mp4').toString();
+    final nativeSize = int.tryParse((selected['size'] ?? 0).toString()) ?? 0;
+    final nativeContentType = (selected['contentType'] ?? '').toString();
+    if (path.isEmpty) {
       if (mounted) {
         showMessage(
           context,
@@ -1039,8 +1054,8 @@ class _VideosPageState extends State<VideosPage> {
       return;
     }
 
-    final file = File(selected.path!);
-    final size = await file.length();
+    final file = File(path);
+    final size = nativeSize > 0 ? nativeSize : await file.length();
     if (size <= 0) {
       if (mounted) showMessage(context, 'O arquivo está vazio.', error: true);
       return;
@@ -1052,7 +1067,7 @@ class _VideosPageState extends State<VideosPage> {
       return;
     }
 
-    final settings = await _settingsDialog(suggestedTitle: selected.name);
+    final settings = await _settingsDialog(suggestedTitle: name);
     if (settings == null) return;
 
     Map<String, dynamic>? upload;
@@ -1064,9 +1079,9 @@ class _VideosPageState extends State<VideosPage> {
         uploadProgress = 0;
       });
 
-      final contentType = _mimeForName(selected.name);
+      final contentType = nativeContentType.isNotEmpty ? nativeContentType : _mimeForName(name);
       upload = await widget.api.createVideoUpload(
-        fileName: selected.name,
+        fileName: name,
         size: size,
         contentType: contentType,
       );
@@ -1113,7 +1128,7 @@ class _VideosPageState extends State<VideosPage> {
         uploadId: uploadId,
         parts: parts,
         size: size,
-        fileName: selected.name,
+        fileName: name,
         contentType: contentType,
         settings: settings,
       );
