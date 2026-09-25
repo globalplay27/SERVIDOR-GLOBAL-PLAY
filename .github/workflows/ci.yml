@@ -2,20 +2,32 @@ name: NEXUS CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, cloudflare-migration]
   pull_request:
 
 jobs:
-  syntax:
+  cloudflare:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - name: Check server syntax
-        run: node --check server.js
-      - name: Check intelligence layer syntax
-        run: node --check instagram-intelligence.js
-      - name: Check client syntax
-        run: node --check public/client.js
+
+      - name: Check panel JavaScript
+        run: |
+          node --check public/app.js
+          node --check public/client.js
+
+      - name: Check Cloudflare Worker syntax
+        shell: bash
+        run: |
+          for file in cloudflare/src/*.js; do
+            node --check "$file"
+          done
+
+      - name: Validate Wrangler bundle
+        working-directory: cloudflare
+        run: |
+          npm install --no-audit --no-fund
+          npm run check
