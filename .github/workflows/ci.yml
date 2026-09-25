@@ -25,3 +25,9 @@ jobs:
           for file in cloudflare/src/*.js; do
             node --check "$file"
           done
+
+      - name: Validate Wrangler bundle
+        working-directory: cloudflare
+        run: |
+          npm ci
+          npm run check
