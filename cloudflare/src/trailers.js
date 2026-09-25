@@ -143,9 +143,13 @@ async function youtubeHtmlSearch(query, kind) {
 
 const PIPED_APIS = [
   "https://pipedapi.kavin.rocks",
-  "https://pipedapi.leptons.xyz",
-  "https://pipedapi.nosebs.ru",
-  "https://api-piped.mha.fi"
+  "https://pipedapi.tokhmi.xyz",
+  "https://pipedapi.moomoo.me",
+  "https://pipedapi.syncpundit.io",
+  "https://api-piped.mha.fi",
+  "https://piped-api.garudalinux.org",
+  "https://pipedapi.rivo.lol",
+  "https://pipedapi.leptons.xyz"
 ];
 
 async function pipedSearch(query, kind) {
@@ -299,11 +303,7 @@ export async function searchTrailers(env, clientId, query, type = "movie") {
   if (!q) throw new Error("query_required");
   const kind = String(type || "") === "series" ? "tv" : "movie";
 
-  try {
-    return await youtubeHtmlSearch(q, kind);
-  } catch {}
-
-  const fallbackSources = [
+  const fastSources = [
     pipedSearch(q, kind),
     tmdbSearch(env, q, kind).then(result => {
       if (!result?.results?.some(item => item.trailerUrl)) throw new Error("tmdb_no_trailer");
@@ -312,7 +312,11 @@ export async function searchTrailers(env, clientId, query, type = "movie") {
   ];
 
   try {
-    return await Promise.any(fallbackSources);
+    return await Promise.any(fastSources);
+  } catch {}
+
+  try {
+    return await youtubeHtmlSearch(q, kind);
   } catch {}
 
   try {
