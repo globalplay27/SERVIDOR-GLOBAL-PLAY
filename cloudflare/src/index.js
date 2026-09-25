@@ -9,7 +9,6 @@ import { processDueJobs } from "./executor.js";
 import { masterCredentialsValid, createMasterSession, authenticatePortalUser, createPortalSession, masterSessionCookie, portalSessionCookie, loginRateLimitStatus, recordLoginFailure, clearLoginFailures, resolvePortalSession, resolveMasterSession } from "./auth.js";
 import { processQueuedVideoJobs } from "./video-processing.js";
 import { processQueuedVideoImports } from "./r2-video-upload.js";
-import { resolveInstagramCredentials } from "./instagram-credentials.js";
 
 export class YoutubeDownloader extends DurableObject {
   async fetch() {
@@ -122,99 +121,6 @@ async function mediaResponse(request, env, url) {
   return new Response(isHead ? null : object.body, { status, headers });
 }
 
-async function runInstagramConfigAuditOnce(env) {
-  const itemKey = "instagram-config-audit-20260925-v2";
-  const existing = await env.DB.prepare(
-    "SELECT value_json FROM nexus_state WHERE namespace='ops' AND item_key=?1 AND client_id='' LIMIT 1"
-  ).bind(itemKey).first().catch(() => null);
-  if (existing) return;
-
-  const presence = {
-    INSTAGRAM_APP_ID: Boolean(String(env.INSTAGRAM_APP_ID || "").trim()),
-    INSTAGRAM_APP_SECRET: Boolean(String(env.INSTAGRAM_APP_SECRET || "").trim()),
-    INSTAGRAM_ACCESS_TOKEN_GLOBALPLAY: Boolean(String(env.INSTAGRAM_ACCESS_TOKEN_GLOBALPLAY || "").trim()),
-    INSTAGRAM_ACCOUNT_ID_GLOBALPLAY: Boolean(String(env.INSTAGRAM_ACCOUNT_ID_GLOBALPLAY || "").trim()),
-    INSTAGRAM_ACCESS_TOKEN_RAGNAR: Boolean(String(env.INSTAGRAM_ACCESS_TOKEN_RAGNAR || "").trim()),
-    INSTAGRAM_ACCOUNT_ID_RAGNAR: Boolean(String(env.INSTAGRAM_ACCOUNT_ID_RAGNAR || "").trim())
-  };
-
-  const accounts = [];
-  for (const clientId of ["globalplay-streaming","ragnar-one"]) {
-    try {
-      const credentials = await resolveInstagramCredentials(env, clientId);
-      if (!credentials?.accessToken || !credentials?.igUserId) {
-        accounts.push({
-          clientId,
-          ok:false,
-          status:"missing_secret_pair",
-          source:credentials?.source || "none"
-        });
-        continue;
-      }
-
-      const headers = {
-        authorization:"Bearer " + credentials.accessToken,
-        accept:"application/json",
-        "user-agent":"NEXUS-Instagram-Audit/2.0"
-      };
-      const profileUrl = "https://graph.instagram.com/" + encodeURIComponent(credentials.igUserId)
-        + "?fields=" + encodeURIComponent("id,username,media_count");
-      const response = await fetch(profileUrl,{headers,signal:AbortSignal.timeout(12000)});
-      const payload = await response.json().catch(()=>({}));
-
-      if (!response.ok) {
-        accounts.push({
-          clientId,
-          ok:false,
-          status:"token_or_account_rejected",
-          source:credentials.source,
-          httpStatus:response.status,
-          error:String(payload?.error?.message || "instagram_profile_failed").slice(0,300)
-        });
-        continue;
-      }
-
-      accounts.push({
-        clientId,
-        ok:true,
-        status:"valid",
-        source:credentials.source,
-        username:String(payload?.username || ""),
-        returnedId:String(payload?.id || ""),
-        accountIdMatches:String(payload?.id || "") === String(credentials.igUserId),
-        mediaCount:Number(payload?.media_count || 0)
-      });
-    } catch (error) {
-      accounts.push({
-        clientId,
-        ok:false,
-        status:"check_failed",
-        error:String(error instanceof Error ? error.message : error).slice(0,300)
-      });
-    }
-  }
-
-  const value = {
-    presence,
-    accounts,
-    checkedAt:new Date().toISOString()
-  };
-
-  await env.DB.prepare(
-    "INSERT INTO nexus_state(namespace,item_key,client_id,value_json,updated_at) VALUES('ops',?1,'',?2,CURRENT_TIMESTAMP) ON CONFLICT(namespace,item_key,client_id) DO UPDATE SET value_json=excluded.value_json,updated_at=CURRENT_TIMESTAMP"
-  ).bind(itemKey,JSON.stringify(value)).run();
-}
-
-async function instagramConfigAuditStatus(env) {
-  const row = await env.DB.prepare(
-    "SELECT value_json,updated_at FROM nexus_state WHERE namespace='ops' AND item_key='instagram-config-audit-20260925-v2' AND client_id='' LIMIT 1"
-  ).first().catch(()=>null);
-  if (!row) return null;
-  let value={};
-  try { value=JSON.parse(String(row.value_json || "{}")); } catch {}
-  return { ...value, updatedAt:row.updated_at || null };
-}
-
 async function health(env) {
   let d1 = false;
   try {
@@ -234,8 +140,7 @@ async function health(env) {
     openai: {
       shared: openAIKeyStatus(env, "shared-client").configured,
       ragnar: openAIKeyStatus(env, env.RAGNAR_CLIENT_ID || "ragnar-one").configured
-    },
-    instagramConfigAudit: await instagramConfigAuditStatus(env)
+    }
   }, d1 ? 200 : 503);
 }
 
@@ -295,7 +200,6 @@ export default {
     const at = new Date(event.scheduledTime || Date.now());
     ctx.waitUntil((async () => {
       await runSchedulerTick(env, at);
-      await runInstagramConfigAuditOnce(env);
       await processDueJobs(env, at);
       await processQueuedVideoImports(env, 1);
       await processQueuedVideoJobs(env, 1);
