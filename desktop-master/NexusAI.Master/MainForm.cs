@@ -37,10 +37,16 @@ public sealed class MainForm : Form
 
     private readonly CheckBox savePasswordCheck = new()
     {
-        Text = "Salvar senha neste computador",
-        AutoSize = true,
+        Text = "Salvar senha",
+        Appearance = Appearance.Button,
+        AutoSize = false,
+        Width = 170,
+        Height = 34,
+        TextAlign = ContentAlignment.MiddleCenter,
+        FlatStyle = FlatStyle.Flat,
+        BackColor = Color.FromArgb(18, 31, 43),
         ForeColor = Color.Gainsboro,
-        Font = new Font("Segoe UI", 10F)
+        Font = new Font("Segoe UI Semibold", 9.5F)
     };
 
     private readonly Button loginButton = new()
@@ -133,6 +139,14 @@ public sealed class MainForm : Form
         passwordBox.Location = new Point(70, 215);
         passwordBox.Height = 38;
         savePasswordCheck.Location = new Point(70, 267);
+        savePasswordCheck.FlatAppearance.BorderColor = Color.FromArgb(55, 105, 130);
+        savePasswordCheck.CheckedChanged += (_, _) =>
+        {
+            savePasswordCheck.Text = savePasswordCheck.Checked ? "✓ Salvar senha" : "Salvar senha";
+            savePasswordCheck.BackColor = savePasswordCheck.Checked
+                ? Color.FromArgb(0, 86, 120)
+                : Color.FromArgb(18, 31, 43);
+        };
         loginButton.Location = new Point(70, 305);
         statusLabel.Location = new Point(30, 352);
 
