@@ -7,6 +7,7 @@ import { runSchedulerTick } from "./scheduler.js";
 import { processDueJobs } from "./executor.js";
 import { masterCredentialsValid, createMasterSession, authenticatePortalUser, createPortalSession, masterSessionCookie, portalSessionCookie, loginRateLimitStatus, recordLoginFailure, clearLoginFailures, resolvePortalSession, resolveMasterSession } from "./auth.js";
 import { processQueuedVideoJobs } from "./video-processing.js";
+import { processQueuedVideoImports } from "./r2-video-upload.js";
 
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
@@ -187,6 +188,7 @@ export default {
     ctx.waitUntil((async () => {
       await runSchedulerTick(env, at);
       await processDueJobs(env, at);
+      await processQueuedVideoImports(env, 1);
       await processQueuedVideoJobs(env, 1);
     })());
   },
