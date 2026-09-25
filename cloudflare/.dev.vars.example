@@ -1,0 +1,23 @@
+# Copie para .dev.vars somente para desenvolvimento local.
+# Nunca versione valores reais.
+
+OPENAI_API_KEY_SHARED=
+OPENAI_API_KEY_RAGNAR=
+
+NEXUS_SECRET_KEY=
+NEXUS_ADMIN_USERNAME=
+NEXUS_ADMIN_PASSWORD=
+
+INSTAGRAM_APP_ID=
+INSTAGRAM_APP_SECRET=
+
+# Contas principais do NEXUS — configure como Secrets no Cloudflare.
+INSTAGRAM_ACCESS_TOKEN_RAGNAR=
+INSTAGRAM_ACCOUNT_ID_RAGNAR=
+INSTAGRAM_ACCESS_TOKEN_GLOBALPLAY=
+INSTAGRAM_ACCOUNT_ID_GLOBALPLAY=
+
+# Fallback opcional do primeiro portal.
+CLIENT_PORTAL_CLIENT_ID=ragnar-one
+CLIENT_PORTAL_USERNAME=
+CLIENT_PORTAL_PASSWORD=
