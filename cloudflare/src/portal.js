@@ -54,6 +54,72 @@ function parseJson(raw, fallback = {}) {
   }
 }
 
+function profileLogoExtension(contentType) {
+  const type = String(contentType || "").toLowerCase().split(";")[0].trim();
+  if (type === "image/png") return "png";
+  if (type === "image/jpeg") return "jpg";
+  if (type === "image/webp") return "webp";
+  if (type === "image/gif") return "gif";
+  return "";
+}
+
+function profileLogoKeyBelongsToClient(key, clientId) {
+  return String(key || "").startsWith("branding/" + String(clientId) + "/");
+}
+
+async function storeProfileLogo(env, clientId, request) {
+  if (!env.MEDIA) throw new Error("r2_unavailable");
+
+  const contentType = String(request.headers.get("content-type") || "").toLowerCase().split(";")[0].trim();
+  const extension = profileLogoExtension(contentType);
+  if (!extension) throw new Error("invalid_logo_type");
+
+  const declaredSize = Number(request.headers.get("content-length") || 0);
+  const maxBytes = 6 * 1024 * 1024;
+  if (declaredSize > maxBytes) throw new Error("logo_too_large");
+
+  const bytes = await request.arrayBuffer();
+  if (!bytes.byteLength) throw new Error("logo_empty");
+  if (bytes.byteLength > maxBytes) throw new Error("logo_too_large");
+
+  const key = "branding/" + String(clientId) + "/" + crypto.randomUUID() + "." + extension;
+  await env.MEDIA.put(key, bytes, {
+    httpMetadata: {
+      contentType,
+      cacheControl: "public, max-age=31536000, immutable"
+    },
+    customMetadata: {
+      clientId: String(clientId),
+      kind: "profile-logo"
+    }
+  });
+
+  return {
+    objectKey: key,
+    url: "/media/" + key
+  };
+}
+
+async function deleteProfileLogoIfOwned(env, clientId, key) {
+  if (!env.MEDIA || !profileLogoKeyBelongsToClient(key, clientId)) return;
+  await env.MEDIA.delete(String(key)).catch(() => {});
+}
+
+function sanitizedAgentProfilePatch(body) {
+  const source = body && typeof body === "object" ? body : {};
+  const allowed = [
+    "agentName", "brandName", "niche", "audience", "goal", "region",
+    "offer", "services", "differentials", "tone", "cta", "avoidTopics",
+    "notes", "whatsapp", "website", "primaryColor", "secondaryColor",
+    "logoObjectKey", "logoUrl"
+  ];
+  const patch = {};
+  for (const key of allowed) {
+    if (Object.prototype.hasOwnProperty.call(source, key)) patch[key] = source[key];
+  }
+  return patch;
+}
+
 async function connectionSummary(env, clientId) {
   const result = await env.DB.prepare(
     `SELECT provider, payload_json, connected_at, updated_at
@@ -303,6 +369,19 @@ export async function handlePortalApi(request, env, url) {
       return json({
         error: error instanceof Error ? error.message : String(error)
       }, 503);
+    }
+  }
+
+  if (url.pathname === "/api/portal/logo" && request.method === "POST") {
+    try {
+      const logo = await storeProfileLogo(env, client.id, request);
+      return json({ ok: true, ...logo }, 201);
+    } catch (error) {
+      const code = error instanceof Error ? error.message : String(error);
+      const status = code === "r2_unavailable" ? 503
+        : code === "logo_too_large" ? 413
+        : 400;
+      return json({ error: code }, status);
     }
   }
 
@@ -568,9 +647,26 @@ export async function handlePortalApi(request, env, url) {
     const current = client.config?.agentProfile && typeof client.config.agentProfile === "object"
       ? client.config.agentProfile
       : {};
-    const updated = await patchClientConfig(env, client, {
-      agentProfile: { ...current, ...body }
-    });
+    const patch = sanitizedAgentProfilePatch(body);
+    const next = { ...current, ...patch };
+
+    if (body?.removeLogo === true) {
+      await deleteProfileLogoIfOwned(env, client.id, current.logoObjectKey);
+      delete next.logoObjectKey;
+      delete next.logoUrl;
+    } else if (
+      patch.logoObjectKey
+      && patch.logoObjectKey !== current.logoObjectKey
+      && profileLogoKeyBelongsToClient(patch.logoObjectKey, client.id)
+    ) {
+      await deleteProfileLogoIfOwned(env, client.id, current.logoObjectKey);
+    }
+
+    // Never persist base64/data URLs in D1. Logo bytes live in R2 only.
+    delete next.logoDataUrl;
+    next.submittedAt = new Date().toISOString();
+
+    const updated = await patchClientConfig(env, client, { agentProfile: next });
     return json({ ok: true, client: portalClientView(updated) });
   }
 
