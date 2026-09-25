@@ -1404,7 +1404,7 @@ async function searchTrailers(event){
     if(status){
       const directCount=rows.filter(item=>item.downloadable&&item.downloadUrl).length;
       status.textContent=d.configured
-        ?(directCount?"Resultados encontrados · "+directCount+" arquivo(s) autorizado(s) para importação.":"Resultados encontrados. Abra o trailer oficial ou use “Adicionar à biblioteca” para enviar seu próprio vídeo ao NEXUS.")
+        ?(directCount?"Resultados encontrados · "+directCount+" arquivo(s) autorizado(s) para importação.":"Resultados encontrados. O trailer oficial serve como referência. Use “Usar título na biblioteca” e depois envie o arquivo de vídeo ou um link HTTPS direto autorizado.")
         :"A pesquisa interna não respondeu. Tente novamente.";
       status.className=directCount?"save-status ok":"save-status";
     }
@@ -1418,7 +1418,7 @@ async function searchTrailers(event){
       const badge=item.trailerUrl?(item.official?"TRAILER OFICIAL":"TRAILER ENCONTRADO"):"TRAILER INDISPONÍVEL";
       const cutterAction=item.downloadable&&item.downloadUrl
         ?'<button type="button" class="trailer-import trailer-primary-action" data-import-video="'+escapeSupport(item.downloadUrl)+'" data-import-title="'+escapeSupport(item.title||"")+'">Enviar para biblioteca</button>'
-        :'<button type="button" class="trailer-import trailer-primary-action" data-use-trailer-title="'+escapeSupport(item.title||"")+'">Adicionar à biblioteca</button>';
+        :'<button type="button" class="trailer-import trailer-primary-action" data-use-trailer-title="'+escapeSupport(item.title||"")+'">Usar título na biblioteca</button>';
       return '<article class="trailer-card">'
         +(item.posterUrl?'<img class="trailer-poster" data-trailer-poster="1" data-fallback="'+escapeSupport(item.posterFallbackUrl||"")+'" data-title="'+escapeSupport(item.title||"")+'" loading="lazy" referrerpolicy="no-referrer" src="'+escapeSupport(item.posterUrl)+'" alt="Imagem de '+escapeSupport(item.title)+'">':'<div class="trailer-poster-empty">'+escapeSupport((item.title||"NEXUS").slice(0,18))+'</div>')
         +'<div class="trailer-card-copy"><span>'+escapeSupport(item.type==="series"?"SÉRIE":"FILME")+' · '+escapeSupport(item.year||"—")+'</span>'
@@ -1451,11 +1451,11 @@ async function searchTrailers(event){
       const status=$("#video-upload-status");
       if(status){
         status.textContent=title
-          ?"Título preparado. Para enviar sem baixar no PC, cole abaixo um link HTTPS direto do arquivo de vídeo. O NEXUS baixa no servidor e coloca na biblioteca."
+          ?"Título preparado. Agora envie o arquivo de vídeo em “Selecionar vídeo” ou cole um link HTTPS direto autorizado. Só depois que o vídeo entrar na biblioteca o botão “Criar cortes agora” será liberado."
           :"";
         status.className="save-status";
       }
-      setTimeout(()=>$("#video-remote-url")?.focus(),80);
+      setTimeout(()=>{const picker=$("#video-file");const remote=$("#video-remote-url");if(remote)remote.focus();picker?.closest?.(".video-drop-zone")?.scrollIntoView?.({behavior:"smooth",block:"center"});},80);
     }));
     root.querySelectorAll("[data-import-video]").forEach(button=>button.addEventListener("click",()=>importAuthorizedVideo(button)));
     root.querySelectorAll("[data-import-trailer]").forEach(button=>button.addEventListener("click",()=>importTrailerVideo(button)));
