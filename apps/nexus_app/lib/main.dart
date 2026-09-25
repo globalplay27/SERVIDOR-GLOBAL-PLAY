@@ -526,11 +526,15 @@ class _HomePageState extends State<HomePage> {
 
   bool get instagramConnected {
     for (final item in connections) {
-      if (item is Map && item['provider']?.toString().toLowerCase() == 'instagram') {
+      if (item is! Map) continue;
+      final provider = item['provider']?.toString().toLowerCase() ?? '';
+      final connected = item['connected'] == true;
+      if ((provider == 'instagram' || provider == 'meta') && connected) {
         return true;
       }
     }
-    return (widget.client['instagram'] ?? '').toString().isNotEmpty;
+    final onboarding = widget.client['onboarding'];
+    return onboarding is Map && onboarding['instagram'] == true;
   }
 
   Future<void> _connectInstagram() async {
