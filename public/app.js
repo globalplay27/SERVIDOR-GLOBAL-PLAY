@@ -24,7 +24,7 @@ function render() {
   const clients = state.clients;
   const online = clients.filter(client => client.status === "online").length;
   const totals = state.leadData?.summary || { total:0, hot:0, warm:0, cold:0, needsHuman:0 };
-  const alerts = clients.filter(client => Math.max(client.usage?.openaiPercent || 0, client.usage?.railwayPercent || 0) >= 80).length;
+  const alerts = clients.filter(client => Number(client.usage?.openaiPercent || 0) >= 80).length;
   $("#metric-clients").textContent = clients.length;
   $("#metric-online").textContent = online;
   $("#metric-leads").textContent = totals.total;
@@ -53,7 +53,7 @@ function render() {
     const remove = (!ragnar && !client.ownerAccount)
       ? `<button type="button" class="small-danger" data-delete-client="${escapeHtml(client.id)}" data-client-name="${escapeHtml(client.name)}">Excluir</button>`
       : "";
-    const action = `<div class="client-action-stack"><button type="button" class="small-primary" data-assume-client="${escapeHtml(client.id)}">Assumir painel</button>${remove}${protect}</div>`;
+    const action = `<div class="client-action-stack"><button type="button" class="small-primary" data-assume-client="${escapeHtml(client.id)}">Assumir painel</button><button type="button" class="small-primary" data-portal-access="${escapeHtml(client.id)}" data-client-name="${escapeHtml(client.name)}">Definir acesso</button>${remove}${protect}</div>`;
     return `<tr><td><strong>${escapeHtml(client.name)}</strong><br><small>${escapeHtml(client.niche || "Outro")}</small></td><td>${badge(client.status === "online" ? "ONLINE" : "SETUP", client.status === "online")}</td><td>${escapeHtml(client.instagram || "Aguardando conexão")}</td><td>${client.odin ? badge("ATIVO") : badge("DESLIGADO", false)}</td><td>${(client.postTimes || []).join(" · ") || "—"}</td><td><strong>${mode}</strong>${extra}</td><td>${action}</td></tr>`;
   }).join("");
   renderAgentProfiles();
@@ -155,7 +155,7 @@ function renderClientPortal(client) {
   const ragnar = client.id === "ragnar-one";
   const mode = ragnar ? "Conta OpenAI própria" : "NEXUS sem imagem paga";
   const aiDetail = ragnar ? "isolada do NEXUS central" : "geração paga de imagens desativada";
-  $("#portal-usage").innerHTML = `<div class="usage-row"><div><span>Modo de IA</span><strong>${mode}</strong></div><small>${aiDetail}</small></div><div class="usage-row"><div><span>Infraestrutura</span><strong>Gerenciada pelo NEXUS</strong></div><small>GitHub e Railway não são exigidos do cliente.</small></div>`;
+  $("#portal-usage").innerHTML = `<div class="usage-row"><div><span>Modo de IA</span><strong>${mode}</strong></div><small>${aiDetail}</small></div><div class="usage-row"><div><span>Infraestrutura</span><strong>Gerenciada pelo NEXUS</strong></div><small>GitHub e Cloudflare são gerenciados centralmente pelo NEXUS.</small></div>`;
 }
 
 function escapeHtml(value) { const el = document.createElement("span"); el.textContent = String(value); return el.innerHTML; }
@@ -489,15 +489,17 @@ async function loadIntegrations() {
     const items = [
       {
         name: "GitHub Core",
-        detail: status.githubConfigured ? "Código central conectado" : "Configuração administrativa opcional",
-        label: status.githubConfigured ? "CONECTADO" : "OPCIONAL",
-        ready: Boolean(status.githubConfigured)
+        detail: status.sourceControl === "github" ? "Código-fonte e CI centralizados no GitHub" : "Origem de código não confirmada",
+        label: status.sourceControl === "github" ? "CONECTADO" : "PENDENTE",
+        ready: status.sourceControl === "github"
       },
       {
-        name: "Railway Core",
-        detail: status.railwayConfigured ? "Hospedagem central operacional" : "Integração pendente",
-        label: status.railwayConfigured ? "CONECTADO" : "PENDENTE",
-        ready: Boolean(status.railwayConfigured)
+        name: "Cloudflare Core",
+        detail: status.runtime === "cloudflare-workers" && status.database === "d1"
+          ? "Worker, D1 e R2 operando no núcleo NEXUS"
+          : "Infraestrutura Cloudflare indisponível",
+        label: status.runtime === "cloudflare-workers" && status.database === "d1" ? "CONECTADO" : "PENDENTE",
+        ready: status.runtime === "cloudflare-workers" && status.database === "d1"
       },
       {
         name: "Meta / Instagram",
@@ -564,6 +566,26 @@ $("#refresh").addEventListener("click", load);
 $("#portal-client").addEventListener("change", event => { state.portalClientId = event.target.value; renderPortalSelector(); });
 const masterLeadFilter=$("#master-lead-client-filter");if(masterLeadFilter)masterLeadFilter.addEventListener("change",event=>{state.leadClientFilter=event.target.value||"";renderMasterLeads();});
 const assumeSelected=$("#assume-selected-client");if(assumeSelected)assumeSelected.addEventListener("click",()=>{if(state.portalClientId)assumeClient(state.portalClientId);});
+const portalAccessDialog=$("#portal-access-dialog");
+const portalAccessForm=$("#portal-access-form");
+const closePortalAccess=()=>{if(portalAccessDialog?.open)portalAccessDialog.close();};
+$("#portal-access-close")?.addEventListener("click",closePortalAccess);
+$("#portal-access-cancel")?.addEventListener("click",closePortalAccess);
+portalAccessForm?.addEventListener("submit",async event=>{
+  event.preventDefault();
+  const clientId=$("#portal-access-client-id")?.value||"";
+  const username=$("#portal-access-username")?.value?.trim()||"";
+  const password=$("#portal-access-password")?.value||"";
+  const status=$("#portal-access-status");
+  if(status)status.textContent="Salvando…";
+  try{
+    await api("/api/migration/portal-user",{method:"POST",body:JSON.stringify({clientId,username,password})});
+    if(status)status.textContent="Acesso salvo.";
+    setTimeout(()=>closePortalAccess(),500);
+  }catch(error){
+    if(status)status.textContent=error.message||"Não foi possível salvar o acesso.";
+  }
+});
 const postClientFilter = $("#post-client-filter");
 if (postClientFilter) postClientFilter.addEventListener("change", event => {
   state.postClientFilter = event.target.value || "";
@@ -610,6 +632,18 @@ document.addEventListener("click", async event => {
   const runAgentButton=event.target.closest("[data-run-agent]");
   if(runAgentButton){await runAgentCore(runAgentButton.dataset.runAgent||"all",runAgentButton);return;}
   const assumeButton=event.target.closest("[data-assume-client]");if(assumeButton){assumeClient(assumeButton.dataset.assumeClient);return;}
+  const accessButton=event.target.closest("[data-portal-access]");
+  if(accessButton){
+    const clientId=accessButton.dataset.portalAccess||"";
+    const clientName=accessButton.dataset.clientName||clientId;
+    $("#portal-access-client-id").value=clientId;
+    $("#portal-access-title").textContent="Acesso de "+clientName;
+    $("#portal-access-username").value=clientId==="ragnar-one"?"ragnar.one":clientId.replace(/-/g,".");
+    $("#portal-access-password").value="";
+    $("#portal-access-status").textContent="";
+    portalAccessDialog?.showModal();
+    return;
+  }
   const deleteButton = event.target.closest("[data-delete-client]");
   if (deleteButton) {
     const clientId = deleteButton.dataset.deleteClient;

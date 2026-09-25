@@ -203,7 +203,7 @@
       <section id="onboarding" class="view">
         <div class="panel form-panel compact-create">
           <div class="panel-head">
-            <div><p class="eyebrow">CADASTRO EXPRESSO</p><h2>Novo cliente NEXUS</h2><p class="muted">O cliente não cria GitHub, Railway, Cloudflare ou OpenAI. Você cria o acesso e ele autoriza apenas o Instagram.</p></div>
+            <div><p class="eyebrow">CADASTRO EXPRESSO</p><h2>Novo cliente NEXUS</h2><p class="muted">GitHub e Cloudflare são gerenciados pelo NEXUS. Você cria o acesso e o cliente autoriza apenas o Instagram.</p></div>
             <span class="managed-chip">INFRA GERENCIADA</span>
           </div>
           <form id="client-form">
@@ -278,6 +278,22 @@
       </section>
     </main>
   </div>
-  <script src="/app.js?v=15" defer></script>
+  <dialog id="portal-access-dialog" class="nexus-dialog">
+    <form id="portal-access-form" method="dialog">
+      <div class="dialog-head">
+        <div><p class="eyebrow">ACESSO DO CLIENTE</p><h2 id="portal-access-title">Definir acesso</h2></div>
+        <button type="button" id="portal-access-close" class="icon-btn" aria-label="Fechar">×</button>
+      </div>
+      <input type="hidden" id="portal-access-client-id">
+      <label>Usuário<input id="portal-access-username" autocomplete="username" required></label>
+      <label>Senha<input id="portal-access-password" type="password" autocomplete="new-password" minlength="8" required></label>
+      <div class="dialog-actions">
+        <button type="button" id="portal-access-cancel" class="ghost">Cancelar</button>
+        <button type="submit" class="primary">Salvar acesso</button>
+      </div>
+      <span id="portal-access-status" class="form-status"></span>
+    </form>
+  </dialog>
+  <script src="/app.js?v=17" defer></script>
 </body>
 </html>

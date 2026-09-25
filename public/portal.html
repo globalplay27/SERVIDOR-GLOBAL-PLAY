@@ -7,10 +7,10 @@
   <meta name="application-name" content="NEXUS AI">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <title>NEXUS AI · Portal do Cliente</title>
+  <title>NEXUS AI</title>
   <link rel="icon" href="/assets/nexus-ai-mark.svg" type="image/svg+xml">
   <link rel="manifest" href="/manifest.webmanifest?v=1">
-  <link rel="stylesheet" href="/client.css?v=70">
+  <link rel="stylesheet" href="/client.css?v=71">
 </head>
 <body>
   <div id="nexus-boot" class="nexus-boot" hidden>
@@ -31,12 +31,12 @@
   <main class="portal-shell">
     <section id="login-view" class="login-card">
       <img class="login-logo" src="/assets/nexus-ai-logo.png?v=3" alt="NEXUS AI">
-      <div class="login-copy"><p class="eyebrow">ACESSO SEGURO</p><h1>Portal do Cliente</h1><p class="muted">Controle seu agente, suas postagens e a configuração inicial em um só lugar.</p></div>
+      <div class="login-copy"><p class="eyebrow">ACESSO SEGURO</p><h1>NEXUS AI</h1><p class="muted">Entre com sua credencial. O sistema identifica automaticamente o seu acesso.</p></div>
       <form id="login-form" action="/portal-login" method="post">
         <label><span>Usuário</span><input id="login-username" name="username" autocomplete="username" required></label>
         <label><span>Senha</span><div class="password-field"><input id="login-password" name="password" type="password" autocomplete="current-password" required><button type="button" id="toggle-login-password" class="password-toggle" aria-label="Mostrar senha" title="Mostrar senha">👁</button></div></label>
         <label class="remember-access"><input id="remember-access" name="remember" type="checkbox" value="1"><span><strong>Lembrar meu acesso</strong><small>Manter este dispositivo conectado por até 30 dias.</small></span></label>
-        <button type="submit">Entrar no portal</button><span id="login-error" role="alert"></span>
+        <button type="submit">Entrar</button><span id="login-error" role="alert"></span>
       </form>
       <div class="login-install">
         <button type="button" class="install-app-button" data-install-app hidden>Instalar NEXUS AI</button>
@@ -55,7 +55,7 @@
         <div class="setup-hero-copy">
           <p class="eyebrow">CONEXÕES DO AGENTE</p>
           <strong>Integrações e serviços</strong>
-          <span>GitHub, Railway, OpenAI e Meta em um único lugar.</span>
+          <span>Instagram e recursos do agente em um único lugar.</span>
         </div>
         <button type="button">Ver conexões</button>
       </section>
@@ -65,8 +65,9 @@
         <button type="button" data-view="posts">Postagens</button>
         <button type="button" data-view="capture">Captação</button>
         <button type="button" data-view="leads">Leads</button>
-        <button type="button" data-view="videos">Vídeos</button>
-        <button type="button" data-view="trailers">Trailers</button>
+        <button type="button" data-view="instagram">Instagram</button>
+        <button type="button" data-view="videos" hidden>Vídeos</button>
+        <button type="button" data-view="trailers" hidden>Trailers</button>
         <button type="button" data-view="posting">Perfil do Agente</button>
         <button type="button" data-view="support">Suporte</button>
         <button type="button" class="setup-nav-main" data-view="setup" hidden>Conexões</button>
@@ -134,13 +135,57 @@
             </div>
             <div class="overview-actions">
               <button type="button" data-open-posting>Editar perfil do agente</button>
-              <button type="button" id="instagram-connect" class="managed-instagram-button">Conectar Instagram</button>
+              <button type="button" id="instagram-connect" class="managed-instagram-button instagram-connect-action">Conectar Instagram</button>
               <span id="instagram-connect-status" class="provider-line"></span>
             </div>
           </article>
           <article class="panel nexus-agent-team">
             <div class="panel-heading"><div><p class="eyebrow">EQUIPE DIGITAL</p><h2>Agentes trabalhando agora</h2></div><button type="button" id="refresh-agent-team" class="ghost-action">Atualizar</button></div>
             <div id="client-agent-team" class="client-agent-team"><div class="post-client-empty"><strong>Carregando equipe...</strong><span>Sincronizando RADAR, ESTRATEGISTA, CREATOR, PUBLISHER, AUDITOR e ODIN.</span></div></div>
+          </article>
+        </section>
+      </div>
+
+
+      <div id="view-instagram" class="client-view" hidden>
+        <section class="settings-heading">
+          <div>
+            <p class="eyebrow">INSTAGRAM / META</p>
+            <h1>Autorize sua conta do Instagram</h1>
+            <p class="muted">O cliente faz login diretamente no Instagram e concede as permissões necessárias. A senha do Instagram não é informada nem armazenada pelo NEXUS.</p>
+          </div>
+          <span id="instagram-page-chip" class="status-chip">VERIFICANDO</span>
+        </section>
+
+        <section class="content-grid">
+          <article class="panel settings-panel">
+            <div class="panel-heading">
+              <div><p class="eyebrow">CONTA CONECTADA</p><h2 id="instagram-page-account">Nenhuma conta autorizada</h2></div>
+            </div>
+            <div class="details compact-details">
+              <div><span>Status</span><strong id="instagram-page-state">Aguardando autorização</strong></div>
+              <div><span>Tipo de conta</span><strong id="instagram-page-type">—</strong></div>
+              <div><span>Conectado em</span><strong id="instagram-page-connected-at">—</strong></div>
+              <div><span>Validade da autorização</span><strong id="instagram-page-expires-at">—</strong></div>
+            </div>
+            <div class="overview-actions">
+              <button type="button" id="instagram-page-connect" class="managed-instagram-button instagram-connect-action">Entrar com Instagram</button>
+              <button type="button" id="instagram-page-refresh" class="ghost-action">Atualizar status</button>
+            </div>
+            <span id="instagram-page-status" class="provider-line"></span>
+          </article>
+
+          <article class="panel settings-panel">
+            <div class="panel-heading">
+              <div><p class="eyebrow">PERMISSÕES</p><h2>O que o NEXUS solicita</h2></div>
+            </div>
+            <div class="details compact-details">
+              <div><span>Perfil profissional</span><strong id="ig-permission-basic">Pendente</strong></div>
+              <div><span>Publicar conteúdo</span><strong id="ig-permission-publish">Pendente</strong></div>
+              <div><span>Gerenciar comentários</span><strong id="ig-permission-comments">Pendente</strong></div>
+              <div><span>Gerenciar mensagens</span><strong id="ig-permission-messages">Pendente</strong></div>
+            </div>
+            <p class="muted">A autorização acontece na página oficial do Instagram. Você pode reconectar a qualquer momento para trocar de conta ou renovar as permissões.</p>
           </article>
         </section>
       </div>
@@ -282,10 +327,21 @@
           <article class="panel settings-panel">
             <p class="eyebrow">NOVO VÍDEO</p><h2>Enviar para cortes</h2>
             <form id="video-upload-form" class="video-upload-form">
+              <div class="video-remote-import">
+                <div class="video-remote-copy">
+                  <span>Enviar direto por link</span>
+                  <small>Cole um link HTTPS que aponte diretamente para um arquivo MP4, MOV, WEBM ou MKV autorizado. O NEXUS baixa no servidor e coloca na biblioteca sem abrir nenhuma pasta do Windows.</small>
+                </div>
+                <div class="video-remote-row">
+                  <input id="video-remote-url" type="url" inputmode="url" autocomplete="off" placeholder="https://site.com/video.mp4">
+                  <button type="button" id="video-remote-import" class="ghost-action">Importar link</button>
+                </div>
+              </div>
+              <div class="video-upload-divider"><span>ou envie um arquivo do computador</span></div>
               <label class="video-dropzone">
                 <span>Selecionar vídeo</span>
                 <strong id="video-file-name">MP4, MOV, WEBM ou MKV</strong>
-                <small>Até 750 MB nesta primeira versão.</small>
+                <small>Até 100 MB nesta primeira versão.</small>
                 <input id="video-file" type="file" accept="video/mp4,video/quicktime,video/webm,video/x-matroska,.mkv,.m4v" hidden multiple>
               </label>
               <div class="video-options">
@@ -331,7 +387,7 @@
           <div>
             <p class="eyebrow">NEXUS TRAILER FINDER</p>
             <h1>Filmes e séries</h1>
-            <p class="muted">Pesquise pelo título. Toque em “Enviar para biblioteca”: o servidor recebe o vídeo sem baixar no seu computador. Depois, na Biblioteca, você escolhe o tipo, o tempo e a quantidade de cortes antes de iniciar.</p>
+            <p class="muted">Pesquise pelo título e abra o trailer oficial. Quando o resultado não tiver um arquivo de vídeo direto autorizado, use “Usar título na biblioteca” e depois envie o vídeo ou informe um link HTTPS direto. O NEXUS só libera os cortes depois que o arquivo realmente entra na Biblioteca.</p>
           </div>
           <span id="trailer-search-status" class="save-status"></span>
         </section>
@@ -476,48 +532,65 @@
       </div>
 
       <div id="view-setup" class="client-view" hidden>
-        <section class="settings-heading"><div><p class="eyebrow">CENTRAL DE CONEXÕES</p><h1>Serviços do agente</h1><p class="muted">Confira e conecte os serviços usados pela automação.</p></div><div class="progress-pill"><strong id="setup-progress">0%</strong><span>concluído</span></div></section>
-
-        <section class="setup-choice setup-choice-secondary">
-          <button type="button" id="mode-new"><strong>Estou começando do zero</strong><span>Quero seguir o passo a passo completo.</span></button>
-          <button type="button" id="mode-ready"><strong>Já tenho minhas contas</strong><span>Quero conferir conexões e ir para a instalação.</span></button>
+        <section class="settings-heading">
+          <div>
+            <p class="eyebrow">CONFIGURAÇÃO NEXUS</p>
+            <h1>Seu agente</h1>
+            <p class="muted">A infraestrutura técnica é gerenciada pelo NEXUS. Você só precisa autorizar o Instagram e definir o perfil do agente.</p>
+          </div>
+          <div class="progress-pill"><strong id="setup-progress">0%</strong><span>concluído</span></div>
         </section>
 
         <section class="wizard-list">
-          <article class="wizard-step" data-step="github"><div class="step-number">1</div><div class="step-body"><strong>GitHub</strong><span>Crie sua conta e depois conecte ao NEXUS AI. Nunca informe sua senha do GitHub aqui.</span><div class="step-actions"><a target="_blank" rel="noopener" href="https://github.com/signup">Criar conta</a><button type="button" data-connect="github">Conectar GitHub</button></div><small class="provider-line" id="github-connection">Não conectado diretamente</small></div><span class="step-state">Pendente</span></article>
-          <article class="wizard-step" data-step="railway"><div class="step-number">2</div><div class="step-body"><strong>Railway</strong><span>Crie sua conta e autorize o NEXUS AI. A conexão usa a tela oficial de autorização do Railway.</span><div class="step-actions"><a target="_blank" rel="noopener" href="https://railway.com/">Criar / acessar conta</a><button type="button" data-connect="railway">Conectar Railway</button></div><small class="provider-line" id="railway-connection">Não conectado diretamente</small></div><span class="step-state">Pendente</span></article>
-          <article class="wizard-step" data-step="openai"><div class="step-number">3</div><div class="step-body"><strong>OpenAI API</strong><span>Conecte uma chave do projeto. Para custo no dashboard, você pode adicionar também uma chave administrativa com permissão adequada.</span><div class="step-actions"><a target="_blank" rel="noopener" href="https://platform.openai.com/">Abrir OpenAI</a><button type="button" data-connect="openai">Conectar OpenAI</button></div><small class="provider-line" id="openai-connection">Não conectado diretamente</small></div><span class="step-state">Pendente</span></article>
-          <article class="wizard-step" data-step="facebook"><div class="step-number">4</div><div class="step-body"><strong>Facebook / Meta</strong><span>Prepare a conta profissional ligada ao Instagram.</span><div class="step-actions"><a target="_blank" rel="noopener" href="https://www.facebook.com/">Abrir Facebook</a><button type="button" data-complete="facebook">Já concluí</button></div></div><span class="step-state">Pendente</span></article>
-          <article class="wizard-step" data-step="instagram"><div class="step-number">5</div><div class="step-body"><strong>Instagram profissional</strong><span>Conta que o agente vai atender e publicar.</span><div class="step-actions"><a target="_blank" rel="noopener" href="https://www.instagram.com/">Abrir Instagram</a><button type="button" data-complete="instagram">Já concluí</button></div></div><span class="step-state">Pendente</span></article>
-          <article class="wizard-step" data-step="metaApp"><div class="step-number">6</div><div class="step-body"><strong>Aplicativo Meta</strong><span>Crie o aplicativo que autoriza mensagens, comentários e publicação.</span><div class="step-actions"><a target="_blank" rel="noopener" href="https://developers.facebook.com/apps/">Abrir Meta for Developers</a><button type="button" data-complete="metaApp">Já concluí</button></div></div><span class="step-state">Pendente</span></article>
-          <article class="wizard-step" data-step="creativeProfile"><div class="step-number">7</div><div class="step-body"><strong>Configurar estilo das postagens</strong><span>Escolha nicho, público, cores, horários, CTA e temas.</span><div class="step-actions"><button type="button" data-open-posting>Configurar agora</button><button type="button" data-complete="creativeProfile">Já concluí</button></div></div><span class="step-state">Pendente</span></article>
-          <article class="wizard-step support-step" data-step="supportRequested"><div class="step-number">8</div><div class="step-body"><strong>Solicitar instalação final</strong><span>Quando as contas estiverem prontas, o suporte conclui tokens, permissões e teste final.</span><div class="step-actions"><button type="button" id="request-support">Solicitar instalação</button></div></div><span class="step-state">Pendente</span></article>
+          <article class="wizard-step done">
+            <div class="step-number">1</div>
+            <div class="step-body">
+              <strong>Infraestrutura NEXUS</strong>
+              <span>Infraestrutura, banco de dados, automação e IA são administrados centralmente. Nenhuma credencial técnica é exigida do cliente.</span>
+              <small class="provider-line connected">Gerenciada pelo NEXUS</small>
+            </div>
+            <span class="step-state">Concluído</span>
+          </article>
+
+          <article class="wizard-step" data-step="instagram">
+            <div class="step-number">2</div>
+            <div class="step-body">
+              <strong>Instagram profissional</strong>
+              <span>Autorize a conta profissional que o agente vai analisar, atender e publicar.</span>
+              <div class="step-actions"><button type="button" id="setup-instagram-connect" class="instagram-connect-action">Conectar Instagram</button></div>
+              <small class="provider-line" id="setup-instagram-status">Aguardando autorização</small>
+            </div>
+            <span class="step-state">Pendente</span>
+          </article>
+
+          <article class="wizard-step" data-step="creativeProfile">
+            <div class="step-number">3</div>
+            <div class="step-body">
+              <strong>Perfil do agente</strong>
+              <span>Defina nicho, público, identidade visual, horários, CTA, tom e temas das postagens.</span>
+              <div class="step-actions">
+                <button type="button" data-open-posting>Configurar perfil</button>
+                <button type="button" data-complete="creativeProfile">Marcar como concluído</button>
+              </div>
+            </div>
+            <span class="step-state">Pendente</span>
+          </article>
+
+          <article class="wizard-step support-step">
+            <div class="step-number">4</div>
+            <div class="step-body">
+              <strong>Precisa de ajuda?</strong>
+              <span>Abra um chamado pelo próprio NEXUS. O cliente não precisa configurar a infraestrutura manualmente.</span>
+              <div class="step-actions"><button type="button" id="request-support">Abrir suporte</button></div>
+            </div>
+            <span class="step-state">NEXUS</span>
+          </article>
         </section>
       </div>
 
-      <div id="connection-modal" class="connection-modal" hidden>
-        <div class="connection-dialog">
-          <div class="connection-dialog-head"><div><p class="eyebrow">CONEXÃO SEGURA</p><h2 id="connection-title">Conectar</h2></div><button type="button" id="connection-close">×</button></div>
-          <p id="connection-help" class="muted"></p>
-          <form id="connection-form">
-            <div id="github-fields" class="connection-fields" hidden>
-              <label><span>Token de acesso GitHub</span><input id="github-token" type="password" autocomplete="off" placeholder="github_pat_..."></label>
-              <small>Use um token de acesso do GitHub. Ele será validado e armazenado criptografado.</small>
-            </div>
-            <div id="openai-fields" class="connection-fields" hidden>
-              <label><span>Chave da API do projeto</span><input id="openai-key" type="password" autocomplete="off" placeholder="sk-..."></label>
-              <label><span>Chave administrativa para custos (opcional)</span><input id="openai-admin-key" type="password" autocomplete="off" placeholder="Opcional"></label>
-              <small>A chave administrativa é opcional e só é necessária para os dados de custo que exigem esse nível de acesso.</small>
-            </div>
-            <span id="connection-error" class="connection-error"></span>
-            <button type="submit" class="connection-submit">Validar e conectar</button>
-          </form>
-        </div>
-      </div>
-
-      <footer><span>NEXUS AI</span><small>Client Portal · ambiente exclusivo</small></footer>
+      <footer><span>NEXUS AI</span><small>Ambiente seguro · NEXUS AI</small></footer>
     </section>
   </main>
-  <script src="/client.js?v=70" defer></script>
+  <script src="/client.js?v=79" defer></script>
 </body>
 </html>

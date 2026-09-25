@@ -11,32 +11,111 @@ function showPortalLogin(message="Sua sessão precisa ser renovada. Entre novame
 }
 
 function nextPostTime(times=[]){if(!Array.isArray(times)||!times.length)return"—";const parts=new Intl.DateTimeFormat("pt-BR",{timeZone:"America/Sao_Paulo",hour:"2-digit",minute:"2-digit",hour12:false}).formatToParts(new Date());const now=Number(parts.find(p=>p.type==="hour")?.value||0)*60+Number(parts.find(p=>p.type==="minute")?.value||0);const sorted=times.map(v=>{const[h,m]=String(v).split(":").map(Number);return{v,m:h*60+m}}).filter(x=>Number.isFinite(x.m)).sort((a,b)=>a.m-b.m);return sorted.find(x=>x.m>now)?.v||sorted[0]?.v||"—";}
-function clientHasVideoTools(client=currentClient){const niche=String(client?.niche||"").trim().toLowerCase();return niche.includes("streaming")||niche.includes("iptv");}
-function showView(name){if((name==="videos"||name==="trailers")&&!clientHasVideoTools())name="overview";$$("[data-view]").forEach(b=>b.classList.toggle("active",b.dataset.view===name));["overview","posts","capture","leads","videos","trailers","posting","support","setup"].forEach(v=>{const el=$("#view-"+v);if(el)el.hidden=v!==name;});if(name==="support")loadSupportTickets();if(name==="posts")loadClientPosts();if(name==="capture")loadLeadHunter();if(name==="leads")loadClientLeads();if(name==="videos"){ensureBulkVideoScheduler();loadVideoJobs();}if(name==="overview"){loadAgentTeam();loadTokenUsage();}}
-function onboardingKeys(){return["github","railway","openai","facebook","instagram","metaApp","creativeProfile","supportRequested"];}
+function showView(name){$$("[data-view]").forEach(b=>b.classList.toggle("active",b.dataset.view===name));["overview","posts","capture","leads","instagram","videos","trailers","posting","support","setup"].forEach(v=>{const el=$("#view-"+v);if(el)el.hidden=v!==name;});if(name==="support")loadSupportTickets();if(name==="posts")loadClientPosts();if(name==="capture")loadLeadHunter();if(name==="leads")loadClientLeads();if(name==="instagram")loadConnections();if(name==="videos"){ensureBulkVideoScheduler();loadVideoJobs();}if(name==="overview"){loadAgentTeam();loadTokenUsage();}}
+function onboardingKeys(){return["instagram","creativeProfile"];}
 function setupPercent(){const o=currentClient?.onboarding||{};const keys=onboardingKeys();return Math.round(keys.filter(k=>o[k]).length/keys.length*100);}
-function renderOnboarding(){
-  const o=currentClient?.onboarding||{},pct=setupPercent();$("#setup-progress").textContent=pct+"%";$("#setup-banner").hidden=true;const hero=document.querySelector(".setup-hero-card");if(hero)hero.hidden=true;
-  $$(".wizard-step").forEach(card=>{const key=card.dataset.step,done=Boolean(o[key]);card.classList.toggle("done",done);const state=card.querySelector(".step-state");if(state)state.textContent=done?"Concluído":"Pendente";});
-  $("#mode-new").classList.toggle("selected",(currentClient?.setupMode||"ready")==="new");$("#mode-ready").classList.toggle("selected",(currentClient?.setupMode||"ready")==="ready");
+function instagramIsConnected(client=currentClient){
+  const connections=client?.connections||{};
+  return Boolean(
+    connections.instagram?.connected
+    || connections.meta?.connected
+  );
 }
-function renderConnections(connections={}){
-  const labels={github:"github-connection",railway:"railway-connection",openai:"openai-connection"};
-  for(const [provider,id] of Object.entries(labels)){
-    const item=connections[provider]||{};
-    const el=$("#"+id);
-    if(!el)continue;
-    if(item.direct){
-      el.textContent="Conectado diretamente"+(item.label?" · "+item.label:"");
-      el.className="provider-line connected";
-    }else if(item.connected){
-      el.textContent="Configuração existente no agente";
-      el.className="provider-line legacy";
-    }else{
-      el.textContent="Não conectado diretamente";
-      el.className="provider-line";
-    }
+function formatInstagramDate(value){
+  if(!value)return "—";
+  try{
+    return new Intl.DateTimeFormat("pt-BR",{timeZone:"America/Sao_Paulo",dateStyle:"short",timeStyle:"short"}).format(new Date(value));
+  }catch{return "—";}
+}
+function renderInstagramConnectionState(){
+  const connected=instagramIsConnected();
+  const connection=currentClient?.connections?.instagram||currentClient?.connections?.meta||{};
+  const handle=String(currentClient?.instagram||connection?.label||"").trim();
+  const scopes=Array.isArray(connection?.scopes)?connection.scopes:[];
+
+  const card=$("#instagram-card");
+  const igButton=$("#instagram-connect");
+  const igStatus=$("#instagram-connect-status");
+  const setupIg=$("#setup-instagram-connect");
+  const setupStatus=$("#setup-instagram-status");
+  const pageButton=$("#instagram-page-connect");
+  const pageStatus=$("#instagram-page-status");
+  const pageChip=$("#instagram-page-chip");
+
+  if(card)card.textContent=connected?(handle||"Instagram conectado"):"Aguardando conexão";
+
+  if(igButton){
+    igButton.disabled=connected;
+    igButton.textContent=connected?"Instagram conectado":"Conectar Instagram";
+    igButton.classList.toggle("connected",connected);
   }
+  if(igStatus)igStatus.textContent=connected?(handle?handle+" autorizado":"Conta autorizada"):"";
+
+  if(setupIg){
+    setupIg.disabled=connected;
+    setupIg.textContent=connected?"Instagram conectado":"Conectar Instagram";
+    setupIg.classList.toggle("connected",connected);
+  }
+  if(setupStatus){
+    setupStatus.textContent=connected?(handle?handle+" autorizado":"Conta autorizada"):"Aguardando autorização";
+    setupStatus.className="provider-line"+(connected?" connected":"");
+  }
+
+  if(pageButton){
+    pageButton.disabled=false;
+    pageButton.textContent=connected?"Reconectar / trocar conta":"Entrar com Instagram";
+    pageButton.classList.toggle("connected",connected);
+  }
+  if(pageStatus){
+    pageStatus.textContent=connected
+      ?"Conta autorizada. O NEXUS já pode usar as permissões concedidas."
+      :"Clique em “Entrar com Instagram” e conclua a autorização na página oficial.";
+    pageStatus.className="provider-line"+(connected?" connected":"");
+  }
+  if(pageChip){
+    pageChip.textContent=connected?"CONECTADO":"PENDENTE";
+    pageChip.classList.toggle("off",!connected);
+  }
+
+  const account=$("#instagram-page-account");
+  const state=$("#instagram-page-state");
+  const type=$("#instagram-page-type");
+  const connectedAt=$("#instagram-page-connected-at");
+  const expiresAt=$("#instagram-page-expires-at");
+  if(account)account.textContent=connected?(handle||connection?.label||"Instagram conectado"):"Nenhuma conta autorizada";
+  if(state)state.textContent=connected?"Autorizada":"Aguardando autorização";
+  if(type)type.textContent=connected?(String(connection?.accountType||"Profissional").replace(/_/g," ")):"—";
+  if(connectedAt)connectedAt.textContent=connected?formatInstagramDate(connection?.connectedAt):"—";
+  if(expiresAt)expiresAt.textContent=connected?formatInstagramDate(connection?.expiresAt):"—";
+
+  const permissionMap={
+    "#ig-permission-basic":"instagram_business_basic",
+    "#ig-permission-publish":"instagram_business_content_publish",
+    "#ig-permission-comments":"instagram_business_manage_comments",
+    "#ig-permission-messages":"instagram_business_manage_messages"
+  };
+  for(const [selector,scope] of Object.entries(permissionMap)){
+    const el=$(selector);
+    if(!el)continue;
+    const granted=connected&&(scopes.length===0||scopes.includes(scope));
+    el.textContent=granted?"Autorizado":"Pendente";
+    el.classList.toggle("connected",granted);
+  }
+}
+function renderOnboarding(){
+  const o=currentClient?.onboarding||{},pct=setupPercent();
+  const progress=$("#setup-progress");if(progress)progress.textContent=pct+"%";
+  const banner=$("#setup-banner");if(banner)banner.hidden=true;
+  const hero=document.querySelector(".setup-hero-card");if(hero)hero.hidden=true;
+  $$(".wizard-step[data-step]").forEach(card=>{const key=card.dataset.step,done=Boolean(o[key]);card.classList.toggle("done",done);const state=card.querySelector(".step-state");if(state)state.textContent=done?"Concluído":"Pendente";});
+  const modeNew=$("#mode-new"),modeReady=$("#mode-ready");
+  if(modeNew)modeNew.classList.toggle("selected",(currentClient?.setupMode||"ready")==="new");
+  if(modeReady)modeReady.classList.toggle("selected",(currentClient?.setupMode||"ready")==="ready");
+  renderInstagramConnectionState();
+}
+function renderConnections(){
+  // Infraestrutura técnica é gerenciada pelo NEXUS no GitHub + Cloudflare.
+  // O cliente só autoriza integrações de negócio, como Instagram.
 }
 
 async function loadAgentTeam(){
@@ -65,13 +144,6 @@ async function loadAgentTeam(){
 
 function renderClient(c){
   currentClient=c;
-  const videoTools=clientHasVideoTools(c);
-  ["videos","trailers"].forEach(view=>{
-    const button=document.querySelector('[data-view="'+view+'"]');
-    const panel=document.querySelector('#view-'+view);
-    if(button)button.hidden=!videoTools;
-    if(panel&&!videoTools)panel.hidden=true;
-  });
   renderConnections(c.connections||{});
   const online=c.status==="online";
   const coreState=$("#core-agent-state");
@@ -79,7 +151,6 @@ function renderClient(c){
   $("#client-name").textContent=c.name;
   $("#client-meta").textContent=(c.niche||"Outro")+" · ambiente exclusivo";
   $("#next-post").textContent=nextPostTime(c.postTimes);
-  $("#instagram-card").textContent=c.instagram||"Aguardando conexão";
   const aiCard=$("#ai-mode-card"),aiDetail=$("#ai-mode-detail");
   if(aiCard)aiCard.textContent=c.id==="ragnar-one"?"CONTA PRÓPRIA":"NEXUS";
   if(aiDetail)aiDetail.textContent=c.id==="ragnar-one"
@@ -89,14 +160,6 @@ function renderClient(c){
   $("#niche").textContent=c.niche||"Outro";
   $("#agent-status").textContent=online?"Online":"Em configuração";
   $("#post-times").textContent=(c.postTimes||[]).join(" · ")||"—";
-  const igButton=$("#instagram-connect"),igStatus=$("#instagram-connect-status");
-  if(igButton){
-    const connected=Boolean(c.instagram);
-    igButton.disabled=connected;
-    igButton.textContent=connected?"Instagram conectado":"Conectar Instagram";
-    igButton.classList.toggle("connected",connected);
-  }
-  if(igStatus)igStatus.textContent=c.instagram?c.instagram+" autorizado":"";
   populateAgentProfile(c);
   renderOnboarding();
 }
@@ -173,6 +236,34 @@ async function optimizeLogo(file){
   const canvas=document.createElement("canvas");canvas.width=w;canvas.height=h;canvas.getContext("2d").drawImage(source,0,0,w,h);
   return canvas.toDataURL("image/webp",0.86);
 }
+async function uploadProfileLogo(dataUrl){
+  if(!dataUrl)return null;
+  const localResponse=await fetch(dataUrl);
+  const blob=await localResponse.blob();
+  if(!blob.size)throw new Error("A logo ficou vazia após o processamento.");
+  if(blob.size>6*1024*1024)throw new Error("A logo deve ter no máximo 6 MB.");
+
+  const r=await fetch("/api/portal/logo",{
+    method:"POST",
+    credentials:"same-origin",
+    headers:{
+      "content-type":blob.type||"image/webp",
+      ...(sessionAuth?{"x-nexus-session":sessionAuth}:{})
+    },
+    body:blob
+  });
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok)throw new Error(
+    d.error==="r2_unavailable"
+      ?"O armazenamento de logos ainda não está disponível."
+      :d.error==="logo_too_large"
+        ?"A logo deve ter no máximo 6 MB."
+        :(d.error||"Não foi possível enviar a logo.")
+  );
+  if(!d.objectKey||!d.url)throw new Error("O servidor não confirmou o armazenamento da logo.");
+  return d;
+}
+
 function formatTokenCount(value){
   const number=Math.max(0,Number(value||0));
   try{return new Intl.NumberFormat("pt-BR",{maximumFractionDigits:0}).format(number);}
@@ -204,23 +295,6 @@ async function loadTokenUsage(){
   }
 }
 
-async function providerUsage(){
-  if(currentClient?.managedInfrastructure)return;
-  try{
-    const r=await fetch("/api/portal/provider-usage",{headers:{"x-nexus-session":sessionAuth}});
-    if(!r.ok)return;
-    const d=await r.json();
-    const oa=$("#live-openai"),oad=$("#live-openai-detail"),rw=$("#live-railway"),rwd=$("#live-railway-detail");
-    if(d.openai?.connected&&oa){
-      oa.textContent=d.openai.costAvailable?("US$ "+Number(d.openai.cost31dUsd||0).toFixed(2)+" / 31 dias"):"OpenAI conectada";
-      if(oad)oad.textContent=d.openai.costAvailable?"Custo obtido da API da organização.":"Chave do projeto validada.";
-    }
-    if(d.railway?.connected&&rw){
-      rw.textContent=d.railway.projectCount!=null?(d.railway.projectCount+" projeto(s) autorizado(s)"):"Railway conectada";
-      if(rwd)rwd.textContent=(d.railway.projects||[]).slice(0,3).map(p=>p.name).filter(Boolean).join(" · ")||"Autorização Railway ativa.";
-    }
-  }catch{}
-}
 
 setInterval(()=>{
   if(currentClient&&!$("#portal-view")?.hidden)loadTokenUsage();
@@ -269,112 +343,138 @@ async function loadConnections(){
     currentClient.onboarding=d.onboarding||currentClient.onboarding||{};
     renderConnections(currentClient.connections);
     renderOnboarding();
+    renderInstagramConnectionState();
     return d;
   }catch{return null;}
-}
-
-let connectionProvider="";
-function openConnectionModal(provider){
-  connectionProvider=provider;
-  $("#connection-error").textContent="";
-  $("#github-fields").hidden=provider!=="github";
-  $("#openai-fields").hidden=provider!=="openai";
-  $("#connection-title").textContent=provider==="github"?"Conectar GitHub":"Conectar OpenAI";
-  $("#connection-help").textContent=provider==="github"
-    ?"Cole um token de acesso do GitHub. Não use sua senha."
-    :"Cole a chave da API do projeto. A chave administrativa para custos é opcional.";
-  $("#connection-modal").hidden=false;
-}
-function closeConnectionModal(){
-  $("#connection-modal").hidden=true;connectionProvider="";
-  $("#github-token").value="";$("#openai-key").value="";$("#openai-admin-key").value="";
-  $("#connection-error").textContent="";
-}
-async function startRailwayConnection(){
-  const button=$('[data-connect="railway"]');
-  button.disabled=true;button.textContent="Abrindo autorização…";
-  try{
-    const r=await fetch("/api/oauth/railway/start",{headers:{"x-nexus-session":sessionAuth}});
-    const d=await r.json();
-    if(!r.ok||!d.url)throw new Error("Não foi possível iniciar a conexão Railway.");
-    const popup=window.open(d.url,"nexus-railway-oauth","width=720,height=760");
-    let tries=0;
-    const timer=setInterval(async()=>{
-      tries++;
-      const status=await loadConnections();
-      if(status?.connections?.railway?.direct||tries>90||popup?.closed){
-        clearInterval(timer);
-        button.disabled=false;button.textContent="Conectar Railway";
-        if(status?.connections?.railway?.direct){await providerUsage();}
-      }
-    },1500);
-  }catch(error){
-    button.disabled=false;button.textContent="Conectar Railway";alert(error.message);
-  }
 }
 
 let instagramOauthTimer=null;
 async function refreshPortalClient(){
   try{
-    const r=await fetch("/api/portal/session",{credentials:"same-origin"});
+    const r=await fetch("/api/portal/session",{credentials:"same-origin",headers:sessionAuth?{"x-nexus-session":sessionAuth}:{}});
     if(!r.ok)return null;
-    const c=await r.json();
-    renderClient(c);
-    return c;
+    const client=await r.json();
+    renderClient(client);
+    return client;
   }catch{return null;}
 }
-async function startInstagramConnection(){
-  const button=$("#instagram-connect"),status=$("#instagram-connect-status");
-  if(!button||button.disabled)return;
-  button.disabled=true;
-  button.textContent="Abrindo Instagram…";
-  if(status)status.textContent="";
+function instagramStatusElement(button){
+  const id=String(button?.id||"");
+  if(id==="setup-instagram-connect")return $("#setup-instagram-status");
+  if(id==="instagram-page-connect")return $("#instagram-page-status");
+  return $("#instagram-connect-status");
+}
+function setInstagramButtonsBusy(busy){
+  $$(".instagram-connect-action").forEach(button=>{
+    if(!button)return;
+    if(busy){
+      button.dataset.previousText=button.textContent||"";
+      button.disabled=true;
+      button.textContent="Aguardando autorização…";
+    }else{
+      button.disabled=false;
+      if(button.dataset.previousText)button.textContent=button.dataset.previousText;
+    }
+  });
+}
+async function pollInstagramConnection(status,popup=null){
+  clearInterval(instagramOauthTimer);
+  let tries=0;
+  instagramOauthTimer=setInterval(async()=>{
+    tries++;
+    const client=await refreshPortalClient();
+    const connectionData=await loadConnections();
+    const connected=Boolean(
+      connectionData?.connections?.instagram?.connected
+      || connectionData?.connections?.meta?.connected
+    );
+
+    if(connected){
+      clearInterval(instagramOauthTimer);
+      instagramOauthTimer=null;
+      setInstagramButtonsBusy(false);
+      renderInstagramConnectionState();
+      const handle=String(client?.instagram||currentClient?.instagram||"").trim();
+      if(status)status.textContent=(handle?handle+" ":"")+"conectado com sucesso.";
+      try{if(popup&&!popup.closed)popup.close();}catch{}
+      return;
+    }
+
+    // Important for the Windows app: do NOT stop polling just because the external browser has no opener.
+    if(tries>=200){
+      clearInterval(instagramOauthTimer);
+      instagramOauthTimer=null;
+      setInstagramButtonsBusy(false);
+      renderInstagramConnectionState();
+      if(status)status.textContent="A autorização ainda não foi confirmada. Tente novamente se necessário.";
+    }
+  },1500);
+}
+async function startInstagramConnection(event){
+  const button=event?.currentTarget||event?.target||$("#instagram-connect");
+  const status=instagramStatusElement(button);
+  if(!button)return;
+
+  setInstagramButtonsBusy(true);
+  if(status)status.textContent="Preparando login seguro do Instagram…";
+
   try{
-    const r=await fetch("/api/portal/instagram/start",{credentials:"same-origin"});
+    const r=await fetch("/api/portal/instagram/start",{
+      credentials:"same-origin",
+      headers:sessionAuth?{"x-nexus-session":sessionAuth}:{}
+    });
     const d=await r.json().catch(()=>({}));
     if(!r.ok||!d.url){
       if(d.error==="instagram_nexus_not_configured"){
-        throw new Error("O administrador ainda precisa ativar a conexão central do Instagram.");
+        throw new Error("A conexão central do Instagram ainda não foi configurada pelo administrador.");
       }
-      throw new Error("Não foi possível iniciar a conexão do Instagram.");
+      throw new Error(d.message||"Não foi possível iniciar a conexão do Instagram.");
     }
-    const popup=window.open(d.url,"nexus-instagram-oauth","width=620,height=760");
-    if(!popup)throw new Error("Permita a abertura da janela do Instagram.");
-    if(status)status.textContent="Autorize sua conta na janela do Instagram.";
-    let tries=0;
-    clearInterval(instagramOauthTimer);
-    instagramOauthTimer=setInterval(async()=>{
-      tries++;
-      const c=await refreshPortalClient();
-      if(c?.instagram){
-        clearInterval(instagramOauthTimer);
-        instagramOauthTimer=null;
-        if(status)status.textContent=c.instagram+" conectado com sucesso.";
-        try{popup.close();}catch{}
-        return;
-      }
-      if(tries>120||popup.closed){
-        clearInterval(instagramOauthTimer);
-        instagramOauthTimer=null;
-        button.disabled=false;
-        button.textContent="Conectar Instagram";
-      }
-    },1500);
+
+    let popup=null;
+    try{
+      popup=window.open(d.url,"nexus-instagram-oauth","width=620,height=760");
+    }catch{}
+
+    // In WebView2 the app intentionally opens Instagram in the default browser.
+    // The NEXUS keeps polling its own backend until the OAuth callback confirms the account.
+    if(status)status.textContent="Faça login no Instagram e autorize as permissões. O NEXUS confirmará automaticamente.";
+    await pollInstagramConnection(status,popup);
   }catch(error){
-    button.disabled=false;
-    button.textContent="Conectar Instagram";
-    if(status)status.textContent=error.message;
+    clearInterval(instagramOauthTimer);
+    instagramOauthTimer=null;
+    setInstagramButtonsBusy(false);
+    renderInstagramConnectionState();
+    if(status)status.textContent=error.message||"Não foi possível conectar o Instagram.";
   }
 }
 window.addEventListener("message",event=>{
   if(event.data?.type!=="nexus-instagram-oauth")return;
-  refreshPortalClient().then(c=>{
-    const status=$("#instagram-connect-status");
-    if(c?.instagram&&status)status.textContent=c.instagram+" conectado com sucesso.";
+  Promise.all([refreshPortalClient(),loadConnections()]).then(([client,data])=>{
+    const connected=Boolean(
+      data?.connections?.instagram?.connected
+      || data?.connections?.meta?.connected
+    );
+    if(!connected)return;
+    clearInterval(instagramOauthTimer);
+    instagramOauthTimer=null;
+    setInstagramButtonsBusy(false);
+    renderInstagramConnectionState();
+    const handle=String(client?.instagram||"").trim();
+    const text=(handle?handle+" ":"")+"conectado com sucesso.";
+    [$("#instagram-connect-status"),$("#setup-instagram-status"),$("#instagram-page-status")].forEach(el=>{if(el)el.textContent=text;});
   });
 });
-const instagramConnectButton=$("#instagram-connect");
-if(instagramConnectButton)instagramConnectButton.addEventListener("click",startInstagramConnection);
+
+$$(".instagram-connect-action").forEach(button=>button.addEventListener("click",startInstagramConnection));
+const instagramPageRefresh=$("#instagram-page-refresh");
+if(instagramPageRefresh)instagramPageRefresh.addEventListener("click",async()=>{
+  instagramPageRefresh.disabled=true;
+  instagramPageRefresh.textContent="Atualizando…";
+  await Promise.all([refreshPortalClient(),loadConnections()]);
+  instagramPageRefresh.disabled=false;
+  instagramPageRefresh.textContent="Atualizar status";
+});
 
 async function patchOnboarding(payload){const r=await fetch("/api/portal/onboarding",{method:"PATCH",headers:{"x-nexus-session":sessionAuth,"content-type":"application/json"},body:JSON.stringify(payload)});if(!r.ok)throw new Error("Falha ao salvar etapa");renderClient(await r.json());}
 
@@ -993,7 +1093,7 @@ async function moveVideoJob(jobId,folderId){
 }
 
 function videoJobStatus(job){
-  const labels={awaiting_configuration:"AGUARDANDO CONFIGURAÇÃO",queued:"RECEBIDO",uploaded:"RECEBIDO",transcribing:"TRANSCREVENDO",selecting:"ESCOLHENDO CORTES",cutting:"CRIANDO CORTES",ready:"PRONTO PARA REVISÃO",failed:"FALHOU"};
+  const labels={importing:"IMPORTANDO DO YOUTUBE",awaiting_configuration:"AGUARDANDO CONFIGURAÇÃO",queued:"RECEBIDO",processing:"PROCESSANDO",uploaded:"RECEBIDO",transcribing:"TRANSCREVENDO",selecting:"ESCOLHENDO CORTES",cutting:"CRIANDO CORTES",ready:"PRONTO PARA REVISÃO",failed:"FALHOU"};
   return labels[job.status]||String(job.status||"RECEBIDO").toUpperCase();
 }
 function videoApprovalLabel(status){
@@ -1037,6 +1137,7 @@ function renderVideoJobs(data={}){
   }
   root.innerHTML=visibleJobs.map(job=>{
     const clips=Array.isArray(job.clips)?job.clips:[];
+    const needsReimport=job.status==="failed"&&!job.sourceObjectKey;
     const folderOptions=latestVideoFolders.map(folder=>`<option value="${escapeSupport(folder.id)}" ${(job.folderId||"default")===folder.id?"selected":""}>${escapeSupport(folder.name)}</option>`).join("");
     const header=`<article class="video-job-card video-job-expanded" data-video-job="${escapeSupport(job.id)}">
       <div class="video-job-head">
@@ -1056,7 +1157,7 @@ function renderVideoJobs(data={}){
         const goal=job.goal||"viral",duration=String(job.clipDuration||30),format=job.outputFormat||"reel";
         return header+`<div class="video-cutter-config">
           <div class="video-cutter-config-head">
-            <div><strong>${job.status==="failed"?"Ajuste e tente novamente":"Configure os cortes antes de iniciar"}</strong><span>Escolha o tipo de corte, o tempo e quantas opções você quer. O NEXUS só começa depois da sua confirmação.</span></div>
+            <div><strong>${needsReimport?"Importação falhou":job.status==="failed"?"Ajuste e tente novamente":"Configure os cortes antes de iniciar"}</strong><span>Escolha o tipo de corte, o tempo e quantas opções você quer. O NEXUS só começa depois da sua confirmação.</span></div>
           </div>
           <div class="video-cutter-config-grid">
             <label><span>Tipo de corte</span><select data-video-job-goal>
@@ -1071,7 +1172,6 @@ function renderVideoJobs(data={}){
               <option value="30" ${duration==="30"?"selected":""}>30 segundos</option>
               <option value="45" ${duration==="45"?"selected":""}>45 segundos</option>
               <option value="60" ${duration==="60"?"selected":""}>60 segundos</option>
-              <option value="90" ${duration==="90"?"selected":""}>90 segundos</option>
             </select></label>
             <label><span>Quantidade de opções</span><input data-video-job-clips type="number" min="1" max="12" value="${Math.max(1,Math.min(12,Number(job.requestedClips||3)))}"></label>
             <label><span>Formato</span><select data-video-job-format>
@@ -1084,7 +1184,7 @@ function renderVideoJobs(data={}){
             <label><span>Contato / CTA final (opcional)</span><input data-video-job-end-contact maxlength="90" value="${escapeSupport(job.endContact||"")}" placeholder="Ex.: WhatsApp..."></label>
           </div>
           ${job.status==="failed"&&job.message?`<p class="video-config-error">${escapeSupport(job.message)}</p>`:""}
-          <button type="button" class="connection-submit video-start-processing" data-video-start-processing="${escapeSupport(job.id)}">${job.status==="failed"?"Tentar gerar cortes novamente":"Criar cortes agora"}</button>
+          <button type="button" class="connection-submit video-start-processing" data-video-start-processing="${escapeSupport(job.id)}">${needsReimport?"Tentar importar novamente":job.status==="failed"?"Tentar gerar cortes novamente":"Criar cortes agora"}</button>
           <div class="client-post-response" data-video-job-response></div>
         </div></article>`;
       }
@@ -1153,7 +1253,7 @@ async function startVideoProcessing(button){
     endContact:card.querySelector("[data-video-job-end-contact]")?.value?.trim()||""
   };
   const clipCount=Math.max(1,Math.min(12,Number(payload.clips||3)));
-  const duration=Math.max(10,Math.min(90,Number(payload.duration||30)));
+  const duration=Math.max(10,Math.min(60,Number(payload.duration||30)));
   payload.clips=clipCount;payload.duration=duration;
   button.disabled=true;
   const original=button.textContent;
@@ -1279,7 +1379,7 @@ document.addEventListener("click",event=>{
   const schedule=event.target.closest("[data-video-schedule]");if(schedule){scheduleVideo(schedule);return;}
   const publish=event.target.closest("[data-video-publish]");if(publish){publishVideoNow(publish);return;}
 });
-$$("[data-view]").forEach(b=>b.addEventListener("click",()=>showView(b.dataset.view)));
+$$$("[data-view]").forEach(b=>b.addEventListener("click",()=>showView(b.dataset.view)));
 const refreshClientPosts=$("#refresh-client-posts");if(refreshClientPosts)refreshClientPosts.addEventListener("click",loadClientPosts);
 const refreshClientLeads=$("#refresh-client-leads");if(refreshClientLeads)refreshClientLeads.addEventListener("click",loadClientLeads);
 const leadHunterForm=$("#lead-hunter-form");if(leadHunterForm)leadHunterForm.addEventListener("submit",saveLeadHunterConfig);
@@ -1324,28 +1424,7 @@ if(profileLogoRemove)profileLogoRemove.addEventListener("click",()=>{
   pendingProfileLogo=null;removeProfileLogo=true;showStoredProfileLogo("");$("#profile-logo-file").value="";
 });
 $$("[data-complete]").forEach(b=>b.addEventListener("click",async()=>{b.disabled=true;try{await patchOnboarding({[b.dataset.complete]:true});}finally{b.disabled=false;}}));
-$$("[data-connect]").forEach(b=>b.addEventListener("click",()=>{const provider=b.dataset.connect;if(provider==="railway")startRailwayConnection();else openConnectionModal(provider);}));
-$("#connection-close").addEventListener("click",closeConnectionModal);
-$("#connection-modal").addEventListener("click",event=>{if(event.target===$("#connection-modal"))closeConnectionModal();});
-$("#connection-form").addEventListener("submit",async event=>{
-  event.preventDefault();
-  const error=$("#connection-error"),submit=event.currentTarget.querySelector(".connection-submit");
-  error.textContent="";submit.disabled=true;submit.textContent="Validando…";
-  try{
-    let endpoint,payload;
-    if(connectionProvider==="github"){
-      endpoint="/api/portal/connect/github";payload={token:$("#github-token").value};
-    }else if(connectionProvider==="openai"){
-      endpoint="/api/portal/connect/openai";payload={apiKey:$("#openai-key").value,adminKey:$("#openai-admin-key").value};
-    }else throw new Error("Conexão inválida.");
-    const r=await fetch(endpoint,{method:"POST",headers:{"x-nexus-session":sessionAuth,"content-type":"application/json"},body:JSON.stringify(payload)});
-    const d=await r.json();
-    if(!r.ok)throw new Error(d.error==="github_auth_failed"?"Token do GitHub não foi aceito.":d.error==="openai_auth_failed"?"A chave da OpenAI não foi aceita.":d.error==="openai_admin_auth_failed"?"A chave administrativa da OpenAI não foi aceita.":"Não foi possível conectar.");
-    renderClient(d);closeConnectionModal();await providerUsage();
-  }catch(err){error.textContent=err.message;}
-  finally{submit.disabled=false;submit.textContent="Validar e conectar";}
-});
-$("#mode-new").addEventListener("click",()=>patchOnboarding({setupMode:"new"}));$("#mode-ready").addEventListener("click",()=>patchOnboarding({setupMode:"ready"}));
+const modeNewButton=$("#mode-new"),modeReadyButton=$("#mode-ready");if(modeNewButton)modeNewButton.addEventListener("click",()=>patchOnboarding({setupMode:"new"}));if(modeReadyButton)modeReadyButton.addEventListener("click",()=>patchOnboarding({setupMode:"ready"}));
 const legacySupportButton=$("#request-support");
 if(legacySupportButton)legacySupportButton.addEventListener("click",()=>showView("support"));
 
@@ -1375,14 +1454,14 @@ async function searchTrailers(event){
   const status=$("#trailer-search-status"),root=$("#trailer-results");
   if(!query){if(status)status.textContent="Digite o nome do filme ou série.";return;}
   if(status){status.textContent="Pesquisando…";status.className="save-status";}
-  if(root)root.innerHTML='<div class="post-client-empty"><strong>Pesquisando</strong><span>Localizando a obra e o trailer oficial…</span></div>';
+  if(root)root.innerHTML='<div class="post-client-empty"><strong>Pesquisando no YouTube</strong><span>Buscando os melhores resultados. Isso deve levar apenas alguns segundos…</span></div>';
   try{
-    let r=await fetch("/api/portal/trailers/search?q="+encodeURIComponent(query)+"&type="+encodeURIComponent(type),{credentials:"same-origin",headers:sessionAuth?{"x-nexus-session":sessionAuth}:{}});
+    let r=await fetch("/api/portal/trailers/search?q="+encodeURIComponent(query)+"&type="+encodeURIComponent(type),{credentials:"same-origin",headers:sessionAuth?{"x-nexus-session":sessionAuth}:{},signal:AbortSignal.timeout(15000)});
     let d=await r.json().catch(()=>({}));
     if(r.status===401){
       const sessionCheck=await fetch("/api/portal/session",{credentials:"same-origin",headers:sessionAuth?{"x-nexus-session":sessionAuth}:{}});
       if(sessionCheck.ok){
-        r=await fetch("/api/portal/trailers/search?q="+encodeURIComponent(query)+"&type="+encodeURIComponent(type),{credentials:"same-origin",headers:sessionAuth?{"x-nexus-session":sessionAuth}:{}});
+        r=await fetch("/api/portal/trailers/search?q="+encodeURIComponent(query)+"&type="+encodeURIComponent(type),{credentials:"same-origin",headers:sessionAuth?{"x-nexus-session":sessionAuth}:{},signal:AbortSignal.timeout(15000)});
         d=await r.json().catch(()=>({}));
       }
     }
@@ -1395,9 +1474,9 @@ async function searchTrailers(event){
     if(!r.ok)throw new Error(d.message||d.error||"Falha na pesquisa.");
     const rows=Array.isArray(d.results)?d.results:[];
     if(status){
-      const directCount=rows.filter(item=>(item.downloadable&&item.downloadUrl)||item.trailerUrl).length;
+      const directCount=rows.filter(item=>item.downloadable&&item.downloadUrl).length;
       status.textContent=d.configured
-        ?(directCount?"Resultados encontrados · "+directCount+" pronto(s) para enviar direto para a biblioteca.":"Resultados encontrados, mas sem vídeo disponível para importação.")
+        ?(directCount?"Resultados encontrados · "+directCount+" arquivo(s) autorizado(s) para importação.":"Resultados encontrados. Clique em “Adicionar à biblioteca” para o NEXUS trazer o trailer e iniciar os cortes automaticamente.")
         :"A pesquisa interna não respondeu. Tente novamente.";
       status.className=directCount?"save-status ok":"save-status";
     }
@@ -1410,10 +1489,10 @@ async function searchTrailers(event){
       const link=item.trailerUrl||"";
       const badge=item.trailerUrl?(item.official?"TRAILER OFICIAL":"TRAILER ENCONTRADO"):"TRAILER INDISPONÍVEL";
       const cutterAction=item.downloadable&&item.downloadUrl
-        ?'<button type="button" class="trailer-import trailer-primary-action" data-import-video="'+escapeSupport(item.downloadUrl)+'" data-import-title="'+escapeSupport(item.title||"")+'">Enviar para biblioteca</button>'
-        :(item.trailerUrl
-          ?'<button type="button" class="trailer-import trailer-primary-action" data-import-trailer="'+escapeSupport(item.trailerUrl)+'" data-import-title="'+escapeSupport(item.title||"")+'">Enviar para biblioteca</button>'
-          :'<span class="trailer-open unavailable">VÍDEO INDISPONÍVEL</span>');
+        ?'<button type="button" class="trailer-import trailer-primary-action" data-import-video="'+escapeSupport(item.downloadUrl)+'" data-import-title="'+escapeSupport(item.title||"")+'">Adicionar à biblioteca</button>'
+        :(link
+          ?'<button type="button" class="trailer-import trailer-primary-action" data-import-trailer="'+escapeSupport(link)+'" data-import-title="'+escapeSupport(item.title||"")+'">Adicionar à biblioteca</button>'
+          :'<button type="button" class="trailer-import trailer-primary-action" data-use-trailer-title="'+escapeSupport(item.title||"")+'">Usar título na biblioteca</button>');
       return '<article class="trailer-card">'
         +(item.posterUrl?'<img class="trailer-poster" data-trailer-poster="1" data-fallback="'+escapeSupport(item.posterFallbackUrl||"")+'" data-title="'+escapeSupport(item.title||"")+'" loading="lazy" referrerpolicy="no-referrer" src="'+escapeSupport(item.posterUrl)+'" alt="Imagem de '+escapeSupport(item.title)+'">':'<div class="trailer-poster-empty">'+escapeSupport((item.title||"NEXUS").slice(0,18))+'</div>')
         +'<div class="trailer-card-copy"><span>'+escapeSupport(item.type==="series"?"SÉRIE":"FILME")+' · '+escapeSupport(item.year||"—")+'</span>'
@@ -1436,12 +1515,29 @@ async function searchTrailers(event){
         img.replaceWith(empty);
       });
     });
+    root.querySelectorAll("[data-use-trailer-title]").forEach(button=>button.addEventListener("click",()=>{
+      const title=String(button.dataset.useTrailerTitle||"").trim();
+      const input=$("#video-content-title");
+      if(input)input.value=title;
+      videoFolderFilter="default";
+      showView("videos");
+      const folderFilter=$("#video-folder-filter");if(folderFilter)folderFilter.value="default";
+      const status=$("#video-upload-status");
+      if(status){
+        status.textContent=title
+          ?"Título preparado. Agora envie o arquivo de vídeo em “Selecionar vídeo” ou cole um link HTTPS direto autorizado. Só depois que o vídeo entrar na biblioteca o botão “Criar cortes agora” será liberado."
+          :"";
+        status.className="save-status";
+      }
+      setTimeout(()=>{const picker=$("#video-file");const remote=$("#video-remote-url");if(remote)remote.focus();picker?.closest?.(".video-drop-zone")?.scrollIntoView?.({behavior:"smooth",block:"center"});},80);
+    }));
     root.querySelectorAll("[data-import-video]").forEach(button=>button.addEventListener("click",()=>importAuthorizedVideo(button)));
     root.querySelectorAll("[data-import-trailer]").forEach(button=>button.addEventListener("click",()=>importTrailerVideo(button)));
 
   }catch(error){
-    if(status){status.textContent=error.message;status.className="save-status error";}
-    if(root)root.innerHTML='<div class="post-client-empty"><strong>Não foi possível pesquisar</strong><span>'+escapeSupport(error.message)+'</span></div>';
+    const message=(error?.name==="TimeoutError"||String(error?.message||"").toLowerCase().includes("timeout"))?"A busca demorou demais. Tente novamente.":error.message;
+    if(status){status.textContent=message;status.className="save-status error";}
+    if(root)root.innerHTML='<div class="post-client-empty"><strong>Não foi possível pesquisar</strong><span>'+escapeSupport(message)+'</span></div>';
   }
 }
 
@@ -1449,7 +1545,43 @@ const videoFileInput=$("#video-file");
 if(videoFileInput)videoFileInput.addEventListener("change",()=>{
   const files=[...(videoFileInput.files||[])];
   if($("#video-file-name"))$("#video-file-name").textContent=files.length>1?files.length+" vídeos selecionados":files[0]?.name||"MP4, MOV, WEBM ou MKV";
+  if(files.length){
+    const status=$("#video-upload-status");
+    if(status){status.textContent="Vídeo selecionado. Enviando para o servidor e iniciando os cortes…";status.className="save-status";}
+    videoUploadForm?.requestSubmit();
+  }
 });
+
+async function autoStartUploadedVideo(job,settings,status){
+  const jobId=String(job?.id||"").trim();
+  if(!jobId)return null;
+  if(status){status.textContent="Vídeo recebido. Iniciando análise e cortes automaticamente…";status.className="save-status";}
+  const payload={
+    goal:settings?.goal||"viral",
+    duration:Math.max(10,Math.min(60,Number(settings?.duration||30))),
+    clips:Math.max(1,Math.min(12,Number(settings?.clips||3))),
+    outputFormat:settings?.outputFormat||"reel",
+    autoSubtitles:settings?.autoSubtitles!==false,
+    endText:String(settings?.endText||""),
+    endContact:String(settings?.endContact||"")
+  };
+  const r=await fetch("/api/portal/videos/"+encodeURIComponent(jobId)+"/process",{
+    method:"POST",
+    credentials:"same-origin",
+    headers:{"content-type":"application/json",...(sessionAuth?{"x-nexus-session":sessionAuth}:{})},
+    body:JSON.stringify(payload)
+  });
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok)throw new Error(d.message||d.error||"O vídeo chegou, mas não foi possível iniciar os cortes.");
+  if(d.job){
+    latestVideoJobs=[d.job,...latestVideoJobs.filter(item=>item.id!==d.job.id)];
+    renderVideoJobs({jobs:latestVideoJobs,folders:latestVideoFolders});
+  }
+  if(status){status.textContent="Cortes iniciados automaticamente. O NEXUS está analisando o vídeo.";status.className="save-status ok";}
+  setTimeout(()=>loadVideoJobs(),1200);
+  return d.job||job;
+}
+
 async function importAuthorizedVideo(button,statusTarget=null){
   const url=String(button?.dataset.importVideo||"").trim();
   const title=String(button?.dataset.importTitle||"").trim();
@@ -1488,7 +1620,7 @@ async function importAuthorizedVideo(button,statusTarget=null){
       if(code.includes("video_source_not_direct_media"))throw new Error("Esse link abre uma página, não um arquivo de vídeo. Cole um link direto para MP4, MOV, WEBM ou MKV.");
       if(code.includes("video_url_https_required"))throw new Error("O link precisa começar com https://.");
       if(code.includes("video_source_http_"))throw new Error("O servidor de origem recusou o download do vídeo.");
-      if(code.includes("too_large"))throw new Error("O arquivo ultrapassa o limite de 750 MB.");
+      if(code.includes("too_large"))throw new Error("O arquivo ultrapassa o limite de 100 MB.");
       throw new Error("Não foi possível importar esse arquivo direto.");
     }
     const importedJob=d.job||null;
@@ -1497,9 +1629,13 @@ async function importAuthorizedVideo(button,statusTarget=null){
       const others=latestVideoJobs.filter(job=>job.id!==importedJob.id);
       renderVideoJobs({jobs:[importedJob,...others],folders:latestVideoFolders});
     }
-    if(status){status.textContent="Vídeo recebido e salvo na biblioteca. Configure os cortes no card antes de iniciar.";status.className="save-status ok";}
     showView("videos");
     const folderFilter=$("#video-folder-filter");if(folderFilter)folderFilter.value=videoFolderFilter;
+    if(importedJob){
+      await autoStartUploadedVideo(importedJob,payload,status);
+    }else{
+      if(status){status.textContent="Vídeo recebido, mas o trabalho de corte não foi criado.";status.className="save-status error";}
+    }
     await loadVideoJobs();
   }catch(error){
     if(status){status.textContent=error.message;status.className="save-status error";}
@@ -1514,8 +1650,8 @@ async function importTrailerVideo(button){
   if(!url||!button)return;
   const original=button.textContent;
   const status=$("#trailer-search-status");
-  button.disabled=true;button.textContent="Enviando…";
-  if(status){status.textContent="Enviando o vídeo selecionado para a biblioteca…";status.className="save-status";}
+  button.disabled=true;button.textContent="Adicionando…";
+  if(status){status.textContent="Adicionando à biblioteca…";status.className="save-status";}
   const payload={
     url,
     contentTitle:title,
@@ -1543,8 +1679,8 @@ async function importTrailerVideo(button){
     if(!r.ok){
       const code=String(d.error||"");
       if(r.status===401)throw new Error("Sua sessão precisa ser renovada. Entre novamente e tente uma vez.");
-      if(code.includes("too_large"))throw new Error("O vídeo ultrapassa o limite de 750 MB.");
-      if(code.includes("trailer_download_failed"))throw new Error("Não foi possível resolver este trailer agora. Tente outro resultado.");
+      if(code.includes("too_large"))throw new Error("O vídeo ultrapassa o limite de 100 MB.");
+      if(code.includes("trailer_download_failed"))throw new Error("A origem recusou o download deste trailer. Tente outro resultado.");
       throw new Error("Não foi possível trazer este vídeo para o servidor.");
     }
     const importedJob=d.job||null;
@@ -1553,7 +1689,7 @@ async function importTrailerVideo(button){
       latestVideoJobs=[importedJob,...latestVideoJobs.filter(job=>job.id!==importedJob.id)];
       renderVideoJobs({jobs:latestVideoJobs,folders:latestVideoFolders});
     }
-    if(status){status.textContent="Vídeo recebido e salvo na biblioteca. Agora escolha o tipo, o tempo e a quantidade de cortes antes de iniciar.";status.className="save-status ok";}
+    if(status){status.textContent="Adicionado à biblioteca. O NEXUS está importando o vídeo do YouTube no servidor.";status.className="save-status ok";}
     showView("videos");
     const folderFilter=$("#video-folder-filter");if(folderFilter)folderFilter.value=videoFolderFilter;
     await loadVideoJobs();
@@ -1564,56 +1700,135 @@ async function importTrailerVideo(button){
   }
 }
 
+const videoRemoteImportButton=$("#video-remote-import");
+if(videoRemoteImportButton)videoRemoteImportButton.addEventListener("click",async()=>{
+  const input=$("#video-remote-url");
+  const status=$("#video-upload-status");
+  const url=String(input?.value||"").trim();
+  if(!url){
+    if(status){status.textContent="Cole um link HTTPS direto do arquivo de vídeo.";status.className="save-status error";}
+    input?.focus();
+    return;
+  }
+  videoRemoteImportButton.dataset.importVideo=url;
+  videoRemoteImportButton.dataset.importTitle=$("#video-content-title")?.value?.trim()||"";
+  await importAuthorizedVideo(videoRemoteImportButton,status);
+});
+
+
 $("#video-folder-filter")?.addEventListener("change",event=>{videoFolderFilter=event.target.value||"";renderVideoJobs({jobs:latestVideoJobs,folders:latestVideoFolders});});
 $("#video-create-folder")?.addEventListener("click",createVideoFolder);
 $("#video-rename-folder")?.addEventListener("click",renameCurrentVideoFolder);
 $("#video-delete-folder")?.addEventListener("click",deleteCurrentVideoFolder);
 
-function uploadSingleVideo(file,index,total,settings,progress){
-  return new Promise((resolve,reject)=>{
-    const xhr=new XMLHttpRequest();
-    xhr.open("POST","/api/portal/videos");
-    xhr.withCredentials=true;
-    if(sessionAuth)xhr.setRequestHeader("X-Nexus-Session",sessionAuth);
-    xhr.setRequestHeader("Content-Type",file.type||"application/octet-stream");
-    xhr.setRequestHeader("X-File-Name",encodeURIComponent(file.name));
-    xhr.setRequestHeader("X-Video-Goal",settings.goal);
-    xhr.setRequestHeader("X-Clip-Duration",settings.duration);
-    xhr.setRequestHeader("X-Requested-Clips",settings.clips);
-    xhr.setRequestHeader("X-Output-Format",settings.outputFormat);
-    xhr.setRequestHeader("X-Auto-Subtitles",settings.autoSubtitles?"1":"0");
-    xhr.setRequestHeader("X-Subtitle-Size",settings.subtitleSize);
-    xhr.setRequestHeader("X-Subtitle-Color",settings.subtitleColor);
-    xhr.setRequestHeader("X-Subtitle-Weight",settings.subtitleWeight);
-    xhr.setRequestHeader("X-Subtitle-Bg",settings.subtitleBg);
-    xhr.setRequestHeader("X-Video-Folder",settings.folderId);
-    xhr.setRequestHeader("X-Content-Title",encodeURIComponent(settings.contentTitle||""));
-    xhr.setRequestHeader("X-Video-End-Text",encodeURIComponent(settings.endText||""));
-    xhr.setRequestHeader("X-Video-End-Contact",encodeURIComponent(settings.endContact||""));
-    xhr.upload.onprogress=e=>{
-      if(!e.lengthComputable||!progress)return;
-      const local=e.loaded/e.total;
-      const pct=Math.round(((index+local)/total)*100);
-      progress.querySelector("i").style.width=Math.max(2,pct)+"%";
-      progress.querySelector("span").textContent="Enviando "+(index+1)+" de "+total+" · "+pct+"%";
-    };
-    xhr.onload=()=>{
-      let d={};try{d=JSON.parse(xhr.responseText||"{}");}catch{}
-      if(xhr.status>=200&&xhr.status<300){resolve(d);return;}
-      if(xhr.status===401){const err=new Error("Sua sessão expirou. Entre novamente no portal e o vídeo continuará selecionado.");err.code="session_expired";reject(err);return;}
-      reject(new Error(d.error==="video_too_large"?"Vídeo acima do limite de 750 MB.":(d.error||"Não foi possível enviar "+file.name)));
-    };
-    xhr.onerror=()=>reject(new Error("Falha de conexão ao enviar "+file.name));
-    xhr.send(file);
-  });
+async function uploadSingleVideo(file,index,total,settings,progress){
+  const headers={"content-type":"application/json",...(sessionAuth?{"x-nexus-session":sessionAuth}:{})};
+  let upload=null;
+
+  const failMessage=code=>{
+    const value=String(code||"");
+    if(value==="r2_unavailable")return"O armazenamento de vídeos do NEXUS ainda não está disponível.";
+    if(value==="video_too_large")return"Vídeo acima do limite de 100 MB.";
+    if(value==="invalid_video_type")return"Formato não aceito. Use MP4, MOV, WEBM ou MKV.";
+    if(value==="unauthorized")return"Sua sessão expirou. Entre novamente e tente de novo.";
+    return value||"Não foi possível enviar "+file.name;
+  };
+
+  try{
+    const initResponse=await fetch("/api/portal/video-uploads",{
+      method:"POST",
+      credentials:"same-origin",
+      headers,
+      body:JSON.stringify({
+        fileName:file.name,
+        contentType:file.type||"application/octet-stream",
+        size:file.size
+      })
+    });
+    const init=await initResponse.json().catch(()=>({}));
+    if(!initResponse.ok||!init.uploadId||!init.key){
+      const error=new Error(failMessage(init.error));
+      if(initResponse.status===401)error.code="session_expired";
+      throw error;
+    }
+    upload=init;
+
+    const chunkSize=Math.max(5*1024*1024,Math.min(12*1024*1024,Number(init.chunkSize||8*1024*1024)));
+    const parts=[];
+    let partNumber=1;
+
+    for(let offset=0;offset<file.size;offset+=chunkSize,partNumber++){
+      const chunk=file.slice(offset,Math.min(file.size,offset+chunkSize));
+      const part=await new Promise((resolve,reject)=>{
+        const xhr=new XMLHttpRequest();
+        const query="?key="+encodeURIComponent(upload.key)
+          +"&uploadId="+encodeURIComponent(upload.uploadId)
+          +"&partNumber="+partNumber;
+        xhr.open("PUT","/api/portal/video-uploads/part"+query);
+        xhr.withCredentials=true;
+        if(sessionAuth)xhr.setRequestHeader("x-nexus-session",sessionAuth);
+        xhr.setRequestHeader("content-type","application/octet-stream");
+        xhr.upload.onprogress=e=>{
+          if(!e.lengthComputable||!progress)return;
+          const currentBytes=offset+e.loaded;
+          const fileFraction=Math.max(0,Math.min(1,currentBytes/file.size));
+          const pct=Math.round(((index+fileFraction)/total)*100);
+          progress.querySelector("i").style.width=Math.max(2,pct)+"%";
+          progress.querySelector("span").textContent="Enviando "+(index+1)+" de "+total+" · "+pct+"%";
+        };
+        xhr.onload=()=>{
+          let d={};try{d=JSON.parse(xhr.responseText||"{}");}catch{}
+          if(xhr.status>=200&&xhr.status<300&&d.etag){resolve(d);return;}
+          const error=new Error(failMessage(d.error));
+          if(xhr.status===401)error.code="session_expired";
+          reject(error);
+        };
+        xhr.onerror=()=>reject(new Error("Falha de conexão ao enviar "+file.name));
+        xhr.send(chunk);
+      });
+      parts.push({partNumber:Number(part.partNumber||partNumber),etag:String(part.etag)});
+    }
+
+    const completeResponse=await fetch("/api/portal/video-uploads/complete",{
+      method:"POST",
+      credentials:"same-origin",
+      headers,
+      body:JSON.stringify({
+        key:upload.key,
+        uploadId:upload.uploadId,
+        parts,
+        fileName:file.name,
+        contentType:file.type||"application/octet-stream",
+        size:file.size,
+        settings
+      })
+    });
+    const completed=await completeResponse.json().catch(()=>({}));
+    if(!completeResponse.ok){
+      const error=new Error(failMessage(completed.error));
+      if(completeResponse.status===401)error.code="session_expired";
+      throw error;
+    }
+    return completed;
+  }catch(error){
+    if(upload?.key&&upload?.uploadId){
+      const query="?key="+encodeURIComponent(upload.key)+"&uploadId="+encodeURIComponent(upload.uploadId);
+      fetch("/api/portal/video-uploads"+query,{
+        method:"DELETE",
+        credentials:"same-origin",
+        headers:sessionAuth?{"x-nexus-session":sessionAuth}:{}
+      }).catch(()=>{});
+    }
+    throw error;
+  }
 }
 const videoUploadForm=$("#video-upload-form");
 if(videoUploadForm)videoUploadForm.addEventListener("submit",async event=>{
   event.preventDefault();
   const files=[...(videoFileInput?.files||[])],status=$("#video-upload-status"),button=videoUploadForm.querySelector("button[type=submit]"),progress=$("#video-upload-progress");
   if(!files.length){if(status)status.textContent="Selecione um ou mais vídeos.";return;}
-  const oversized=files.find(file=>file.size>750*1024*1024);
-  if(oversized){if(status)status.textContent=oversized.name+" passa do limite de 750 MB.";return;}
+  const oversized=files.find(file=>file.size>100*1024*1024);
+  if(oversized){if(status)status.textContent=oversized.name+" passa do limite de 100 MB.";return;}
   const settings={
     goal:$("#video-goal").value,
     duration:$("#video-clip-duration").value,
@@ -1642,9 +1857,10 @@ if(videoUploadForm)videoUploadForm.addEventListener("submit",async event=>{
         latestVideoJobs=[result.job,...latestVideoJobs.filter(job=>job.id!==result.job.id)];
         renderVideoJobs({jobs:latestVideoJobs,folders:latestVideoFolders});
         if(status){
-          status.textContent="Vídeo recebido pelo servidor. Preparando análise e cortes…";
-          status.className="save-status ok";
+          status.textContent="Vídeo recebido pelo servidor. Iniciando análise e cortes…";
+          status.className="save-status";
         }
+        await autoStartUploadedVideo(result.job,settings,status);
       }
     }catch(error){failed++;lastError=error.message;}
   }
@@ -1657,7 +1873,7 @@ if(videoUploadForm)videoUploadForm.addEventListener("submit",async event=>{
     const folderFilter=$("#video-folder-filter");if(folderFilter)folderFilter.value=videoFolderFilter;
   }
   if(status){
-    status.textContent=sent+" vídeo(s) carregado(s) para cortes"+(failed?"; "+failed+" falhou: "+lastError:".");
+    status.textContent=sent+" vídeo(s) enviado(s) e corte(s) iniciado(s)"+(failed?"; "+failed+" falhou: "+lastError:".");
     status.className=failed?"save-status error":"save-status ok";
   }
   if(sent===0&&/sessão expirou/i.test(lastError)){
@@ -1693,8 +1909,13 @@ if(agentProfileForm)agentProfileForm.addEventListener("submit",async event=>{
     secondaryColor:$("#profile-secondary").value,
     removeLogo:removeProfileLogo
   };
-  if(pendingProfileLogo)payload.logoDataUrl=pendingProfileLogo;
   try{
+    if(pendingProfileLogo){
+      if(status){status.textContent="Enviando logo para a biblioteca segura…";status.className="save-status";}
+      const logo=await uploadProfileLogo(pendingProfileLogo);
+      payload.logoObjectKey=logo.objectKey;
+      payload.logoUrl=logo.url;
+    }
     const r=await fetch("/api/portal/agent-profile",{method:"POST",headers:{"x-nexus-session":sessionAuth,"content-type":"application/json"},body:JSON.stringify(payload)});
     const d=await r.json().catch(()=>({}));
     if(!r.ok)throw new Error(d.message||d.error||"Não foi possível salvar o perfil.");
@@ -1743,9 +1964,21 @@ async function resumeCookieSession(){
     $("#login-error").textContent="Usuário ou senha inválidos.";
     return;
   }
+  if(params.get("error")==="rate-limit"){
+    $("#login-error").textContent="Muitas tentativas. Aguarde alguns minutos e tente novamente.";
+    return;
+  }
   try{
     const r=await fetch("/api/portal/session",{credentials:"same-origin"});
-    if(r.status===401){showPortalLogin("");return;}
+    if(r.status===401){
+      const master=await fetch("/api/system/status",{credentials:"same-origin"});
+      if(master.ok){
+        location.replace("/api/master/console");
+        return;
+      }
+      showPortalLogin("");
+      return;
+    }
     if(!r.ok)return;
     const c=await r.json();
     $("#login-view").hidden=true;
@@ -1756,7 +1989,6 @@ async function resumeCookieSession(){
     runNexusBoot();
     showView("overview");
     liveStatus();
-    providerUsage();
     loadTokenUsage();
     loadConnections();
     loadClientPosts();
@@ -1789,8 +2021,6 @@ if(toggleLoginPassword&&loginPassword){
   });
 }
 
-let loginSubmitCommitted=false;
-
 async function hydrateRememberedCredential(){
   const remember=Boolean(rememberAccess?.checked);
   if(!remember||!("credentials" in navigator)||!("PasswordCredential" in window))return;
@@ -1804,28 +2034,73 @@ async function hydrateRememberedCredential(){
 
 if(loginForm){
   loginForm.addEventListener("submit",async event=>{
-    if(loginSubmitCommitted)return;
+    event.preventDefault();
     const remember=Boolean(rememberAccess?.checked);
+    const submit=loginForm.querySelector('button[type="submit"]');
+    const username=String(loginUsername?.value||"").trim();
+    const password=String(loginPassword?.value||"");
+
+    if(!username||!password){
+      $("#login-error").textContent="Informe usuário e senha.";
+      return;
+    }
+
     try{
       if(remember){
         localStorage.setItem("nexus_remember_access","1");
-        localStorage.setItem("nexus_remember_username",String(loginUsername?.value||"").trim());
+        localStorage.setItem("nexus_remember_username",username);
       }else{
         localStorage.removeItem("nexus_remember_access");
         localStorage.removeItem("nexus_remember_username");
       }
     }catch{}
 
-    if(remember && "credentials" in navigator && "PasswordCredential" in window){
-      event.preventDefault();
-      const submit=loginForm.querySelector('button[type="submit"]');
-      if(submit){submit.disabled=true;submit.textContent="Salvando acesso…";}
-      try{
-        const credential=new PasswordCredential(loginForm);
-        await navigator.credentials.store(credential);
-      }catch{}
-      loginSubmitCommitted=true;
-      HTMLFormElement.prototype.submit.call(loginForm);
+    if(submit){submit.disabled=true;submit.textContent="Entrando…";}
+    $("#login-error").textContent="";
+
+    try{
+      if(remember && "credentials" in navigator && "PasswordCredential" in window){
+        try{
+          const credential=new PasswordCredential(loginForm);
+          await navigator.credentials.store(credential);
+        }catch{}
+      }
+
+      const response=await fetch("/api/auth/login",{
+        method:"POST",
+        credentials:"same-origin",
+        headers:{"content-type":"application/json","accept":"application/json"},
+        body:JSON.stringify({username,password})
+      });
+      const payload=await response.json().catch(()=>({}));
+
+      if(response.status===429){
+        const seconds=Number(payload.retryAfter||response.headers.get("retry-after")||0);
+        $("#login-error").textContent=seconds>0
+          ? "Muitas tentativas. Tente novamente em alguns minutos."
+          : "Muitas tentativas. Aguarde e tente novamente.";
+        return;
+      }
+      if(!response.ok){
+        $("#login-error").textContent="Usuário ou senha inválidos.";
+        return;
+      }
+
+      const role=String(payload.role||"");
+      const entryPath=String(payload.entryPath||"");
+      if(role==="master"){
+        location.replace(entryPath||"/api/master/console");
+        return;
+      }
+      if(role==="client"){
+        location.replace(entryPath||"/portal.html?auth=1");
+        return;
+      }
+      $("#login-error").textContent="O servidor não identificou o tipo de acesso.";
+    }catch{
+      $("#login-error").textContent="Não foi possível conectar ao NEXUS AI.";
+    }finally{
+      if(submit){submit.disabled=false;submit.textContent="Entrar";}
     }
   });
 }
@@ -1843,7 +2118,7 @@ setInterval(()=>{
   const typing=active&&view.contains(active)&&["INPUT","TEXTAREA","SELECT"].includes(active.tagName);
   const playing=videoPlaybackActive();
   if(!editing&&!scheduling&&!typing&&!playing)loadVideoJobs();
-},12000);
+},5000);
 
 
 /* ===== NEXUS installable app ===== */
@@ -1872,5 +2147,14 @@ if(window.matchMedia("(display-mode: standalone)").matches){
   setInstallButtonsVisible(false);
 }
 if("serviceWorker" in navigator){
-  window.addEventListener("load",()=>navigator.serviceWorker.register("/sw.js").catch(()=>{}));
+  window.addEventListener("load",async()=>{
+    try{
+      const registrations=await navigator.serviceWorker.getRegistrations();
+      await Promise.all(registrations.map(registration=>registration.unregister()));
+    }catch{}
+    try{
+      const keys=await caches.keys();
+      await Promise.all(keys.map(key=>caches.delete(key)));
+    }catch{}
+  });
 }

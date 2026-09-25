@@ -1,0 +1,50 @@
+{
+  // deploy-refresh: 2026-09-25-r2-media-bindings-ready
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "servidor-nexus",
+  "main": "src/index.js",
+  "compatibility_date": "2026-09-24",
+  "compatibility_flags": ["nodejs_compat"],
+  "keep_vars": true,
+  "observability": {
+    "enabled": true
+  },
+  "triggers": {
+    "crons": ["* * * * *"]
+  },
+  "vars": {
+    "APP_NAME": "Servidor Nexus",
+    "RAGNAR_CLIENT_ID": "ragnar-one",
+    "CLOUDFLARE_AUTOMATION_ACTIVE": "true",
+    "PUBLIC_BASE_URL": "https://servidor-nexus.diamantehinode2015.workers.dev"
+  },
+  "assets": {
+    "directory": "../public",
+    "binding": "ASSETS",
+    "run_worker_first": [
+      "/",
+      "/login",
+      "/master*",
+      "/portal-login",
+      "/api/*",
+      "/index.html"
+    ]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "servidor-nexus",
+      "database_id": "3d440c4a-8925-4526-8d29-03f9eb227d60",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "MEDIA",
+      "bucket_name": "servidor-nexus-media"
+    }
+  ],
+  "media": {
+    "binding": "VIDEO_MEDIA"
+  }
+}
