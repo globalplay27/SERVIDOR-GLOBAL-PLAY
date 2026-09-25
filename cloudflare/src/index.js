@@ -9,7 +9,6 @@ import { processDueJobs } from "./executor.js";
 import { masterCredentialsValid, createMasterSession, authenticatePortalUser, createPortalSession, masterSessionCookie, portalSessionCookie, loginRateLimitStatus, recordLoginFailure, clearLoginFailures, resolvePortalSession, resolveMasterSession } from "./auth.js";
 import { processQueuedVideoJobs } from "./video-processing.js";
 import { processQueuedVideoImports } from "./r2-video-upload.js";
-import { resolveInstagramCredentials } from "./instagram-credentials.js";
 
 export class YoutubeDownloader extends DurableObject {
   async fetch() {
@@ -122,88 +121,6 @@ async function mediaResponse(request, env, url) {
   return new Response(isHead ? null : object.body, { status, headers });
 }
 
-async function runInstagramSecretValidationOnce(env) {
-  const key = "instagram-secret-check-20260925-v1";
-  const clients = ["globalplay-streaming", "ragnar-one"];
-
-  for (const clientId of clients) {
-    const existing = await env.DB.prepare(
-      "SELECT value_json FROM nexus_state WHERE namespace='ops' AND item_key=?1 AND client_id=?2 LIMIT 1"
-    ).bind(key, clientId).first().catch(() => null);
-    if (existing) continue;
-
-    const save = async value => {
-      await env.DB.prepare(
-        "INSERT INTO nexus_state(namespace,item_key,client_id,value_json,updated_at) VALUES('ops',?1,?2,?3,CURRENT_TIMESTAMP) ON CONFLICT(namespace,item_key,client_id) DO UPDATE SET value_json=excluded.value_json,updated_at=CURRENT_TIMESTAMP"
-      ).bind(key, clientId, JSON.stringify(value)).run();
-    };
-
-    try {
-      const credentials = await resolveInstagramCredentials(env, clientId);
-      if (!credentials?.accessToken || !credentials?.igUserId) {
-        await save({ ok:false, status:"missing_secret_pair", source:credentials?.source||"none" });
-        continue;
-      }
-
-      const headers = {
-        authorization: "Bearer " + credentials.accessToken,
-        accept: "application/json",
-        "user-agent": "NEXUS-Instagram-Secret-Check/1.0"
-      };
-
-      const profileUrl = "https://graph.instagram.com/" + encodeURIComponent(credentials.igUserId)
-        + "?fields=" + encodeURIComponent("id,username,media_count");
-      const profileResponse = await fetch(profileUrl, { headers, signal: AbortSignal.timeout(12000) });
-      const profile = await profileResponse.json().catch(() => ({}));
-
-      if (!profileResponse.ok) {
-        await save({
-          ok:false,
-          status:"token_or_account_rejected",
-          source:credentials.source,
-          httpStatus:profileResponse.status,
-          error:String(profile?.error?.message || "instagram_profile_failed").slice(0,300)
-        });
-        continue;
-      }
-
-      const mediaUrl = "https://graph.instagram.com/" + encodeURIComponent(credentials.igUserId)
-        + "/media?fields=" + encodeURIComponent("id") + "&limit=1";
-      const mediaResponse = await fetch(mediaUrl, { headers, signal: AbortSignal.timeout(12000) });
-      const media = await mediaResponse.json().catch(() => ({}));
-
-      await save({
-        ok:Boolean(profileResponse.ok && mediaResponse.ok),
-        status:mediaResponse.ok ? "valid" : "profile_valid_media_failed",
-        source:credentials.source,
-        username:String(profile?.username || ""),
-        returnedId:String(profile?.id || ""),
-        accountIdMatches:String(profile?.id || "") === String(credentials.igUserId),
-        mediaAccessible:Boolean(mediaResponse.ok),
-        mediaCount:Number(profile?.media_count || 0),
-        error:mediaResponse.ok ? "" : String(media?.error?.message || "instagram_media_failed").slice(0,300)
-      });
-    } catch (error) {
-      await save({
-        ok:false,
-        status:"check_failed",
-        error:String(error instanceof Error ? error.message : error).slice(0,300)
-      });
-    }
-  }
-}
-
-async function instagramSecretValidationStatus(env) {
-  const result = await env.DB.prepare(
-    "SELECT client_id,value_json,updated_at FROM nexus_state WHERE namespace='ops' AND item_key='instagram-secret-check-20260925-v1' ORDER BY client_id"
-  ).all().catch(() => ({ results: [] }));
-  return (result?.results || []).map(row => {
-    let value={};
-    try { value=JSON.parse(String(row.value_json||"{}")); } catch {}
-    return { clientId:String(row.client_id||""), ...value, updatedAt:row.updated_at||null };
-  });
-}
-
 async function health(env) {
   let d1 = false;
   try {
@@ -223,8 +140,7 @@ async function health(env) {
     openai: {
       shared: openAIKeyStatus(env, "shared-client").configured,
       ragnar: openAIKeyStatus(env, env.RAGNAR_CLIENT_ID || "ragnar-one").configured
-    },
-    instagramSecretCheck: await instagramSecretValidationStatus(env)
+    }
   }, d1 ? 200 : 503);
 }
 
@@ -284,7 +200,6 @@ export default {
     const at = new Date(event.scheduledTime || Date.now());
     ctx.waitUntil((async () => {
       await runSchedulerTick(env, at);
-      await runInstagramSecretValidationOnce(env);
       await processDueJobs(env, at);
       await processQueuedVideoImports(env, 1);
       await processQueuedVideoJobs(env, 1);
