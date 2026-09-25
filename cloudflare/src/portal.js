@@ -14,6 +14,7 @@ import { leadsForClient, leadHunterSummary } from "./leads.js";
 import { leadHunterView, saveLeadHunterConfig, runLeadHunter, discardLead } from "./lead-hunter.js";
 import { createVideoFolder, renameVideoFolder, deleteVideoFolder, patchVideoJob, deleteVideoJob, setClipApproval, adjustClip, selectClip, scheduleClip, bulkScheduleClips } from "./video-library.js";
 import { proxyRailwayVideoRequest, createVideoUploadTicket } from "./railway-video-bridge.js";
+import { createR2VideoUpload, uploadR2VideoPart, completeR2VideoUpload, abortR2VideoUpload } from "./r2-video-upload.js";
 import { decidePost, requestPostRevision, saveOwnPostContent, publishPostNow } from "./posts.js";
 
 function json(data, status = 200, headers = {}) {
@@ -382,6 +383,72 @@ export async function handlePortalApi(request, env, url) {
         : code === "logo_too_large" ? 413
         : 400;
       return json({ error: code }, status);
+    }
+  }
+
+  if (url.pathname === "/api/portal/video-uploads" && request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    try {
+      return json({ ok: true, ...(await createR2VideoUpload(env, client.id, body)) }, 201);
+    } catch (error) {
+      const code = error instanceof Error ? error.message : String(error);
+      const status = code === "r2_unavailable" ? 503
+        : code === "video_too_large" ? 413
+        : 400;
+      return json({ error: code }, status);
+    }
+  }
+
+  if (url.pathname === "/api/portal/video-uploads/part" && request.method === "PUT") {
+    try {
+      const part = await uploadR2VideoPart(env, client.id, request, {
+        key: url.searchParams.get("key"),
+        uploadId: url.searchParams.get("uploadId"),
+        partNumber: url.searchParams.get("partNumber")
+      });
+      return json({ ok: true, ...part });
+    } catch (error) {
+      const code = error instanceof Error ? error.message : String(error);
+      const status = code === "r2_unavailable" ? 503
+        : code === "video_part_too_large" ? 413
+        : 400;
+      return json({ error: code }, status);
+    }
+  }
+
+  if (url.pathname === "/api/portal/video-uploads/complete" && request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    try {
+      const completed = await completeR2VideoUpload(env, client.id, body);
+      const jobs = await listVideos(env, client.id);
+      return json({
+        ok: true,
+        ...completed,
+        job: jobs.find(job => job.id === completed.jobId) || null
+      }, 201);
+    } catch (error) {
+      const code = error instanceof Error ? error.message : String(error);
+      const status = code === "r2_unavailable" ? 503
+        : code === "video_too_large" ? 413
+        : 400;
+      return json({ error: code }, status);
+    }
+  }
+
+  if (url.pathname === "/api/portal/video-uploads" && request.method === "DELETE") {
+    try {
+      return json({
+        ok: true,
+        ...(await abortR2VideoUpload(
+          env,
+          client.id,
+          url.searchParams.get("key"),
+          url.searchParams.get("uploadId")
+        ))
+      });
+    } catch (error) {
+      const code = error instanceof Error ? error.message : String(error);
+      return json({ error: code }, code === "r2_unavailable" ? 503 : 400);
     }
   }
 
