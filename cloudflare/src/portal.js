@@ -469,7 +469,7 @@ export async function handlePortalApi(request, env, url, ctx) {
         ok: true,
         ...completed,
         job: jobs.find(job => job.id === completed.jobId) || null
-      }, isTrailerImport ? 202 : 201);
+      }, 201);
     } catch (error) {
       const code = error instanceof Error ? error.message : String(error);
       const status = code === "r2_unavailable" ? 503
@@ -533,7 +533,7 @@ export async function handlePortalApi(request, env, url, ctx) {
         ok: true,
         ...imported,
         job: jobs.find(job => job.id === imported.jobId) || null
-      }, 201);
+      }, isTrailerImport ? 202 : 201);
     } catch (error) {
       const code = error instanceof Error ? error.message : String(error);
       const status = code === "r2_unavailable" ? 503
