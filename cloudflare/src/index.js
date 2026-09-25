@@ -57,7 +57,8 @@ async function brandingMedia(env, url) {
     return json({ error: "invalid_media_path" }, 400);
   }
 
-  if (!key.startsWith("branding/") || key.includes("..") || key.includes("\\")) {
+  const publicMedia = key.startsWith("branding/") || key.startsWith("posts/");
+  if (!publicMedia || key.includes("..") || key.includes("\\")) {
     return json({ error: "not_found" }, 404);
   }
 
