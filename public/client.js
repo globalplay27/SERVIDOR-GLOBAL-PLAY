@@ -1066,6 +1066,7 @@ function renderVideoJobs(data={}){
   }
   root.innerHTML=visibleJobs.map(job=>{
     const clips=Array.isArray(job.clips)?job.clips:[];
+    const needsReimport=job.status==="failed"&&!job.sourceObjectKey;
     const folderOptions=latestVideoFolders.map(folder=>`<option value="${escapeSupport(folder.id)}" ${(job.folderId||"default")===folder.id?"selected":""}>${escapeSupport(folder.name)}</option>`).join("");
     const header=`<article class="video-job-card video-job-expanded" data-video-job="${escapeSupport(job.id)}">
       <div class="video-job-head">
@@ -1085,7 +1086,7 @@ function renderVideoJobs(data={}){
         const goal=job.goal||"viral",duration=String(job.clipDuration||30),format=job.outputFormat||"reel";
         return header+`<div class="video-cutter-config">
           <div class="video-cutter-config-head">
-            <div><strong>${job.status==="failed"?"Ajuste e tente novamente":"Configure os cortes antes de iniciar"}</strong><span>Escolha o tipo de corte, o tempo e quantas opções você quer. O NEXUS só começa depois da sua confirmação.</span></div>
+            <div><strong>${needsReimport?"Importação falhou":job.status==="failed"?"Ajuste e tente novamente":"Configure os cortes antes de iniciar"}</strong><span>Escolha o tipo de corte, o tempo e quantas opções você quer. O NEXUS só começa depois da sua confirmação.</span></div>
           </div>
           <div class="video-cutter-config-grid">
             <label><span>Tipo de corte</span><select data-video-job-goal>
@@ -1112,7 +1113,7 @@ function renderVideoJobs(data={}){
             <label><span>Contato / CTA final (opcional)</span><input data-video-job-end-contact maxlength="90" value="${escapeSupport(job.endContact||"")}" placeholder="Ex.: WhatsApp..."></label>
           </div>
           ${job.status==="failed"&&job.message?`<p class="video-config-error">${escapeSupport(job.message)}</p>`:""}
-          <button type="button" class="connection-submit video-start-processing" data-video-start-processing="${escapeSupport(job.id)}">${job.status==="failed"?"Tentar gerar cortes novamente":"Criar cortes agora"}</button>
+          <button type="button" class="connection-submit video-start-processing" data-video-start-processing="${escapeSupport(job.id)}">${needsReimport?"Tentar importar novamente":job.status==="failed"?"Tentar gerar cortes novamente":"Criar cortes agora"}</button>
           <div class="client-post-response" data-video-job-response></div>
         </div></article>`;
       }
@@ -1382,14 +1383,14 @@ async function searchTrailers(event){
   const status=$("#trailer-search-status"),root=$("#trailer-results");
   if(!query){if(status)status.textContent="Digite o nome do filme ou série.";return;}
   if(status){status.textContent="Pesquisando…";status.className="save-status";}
-  if(root)root.innerHTML='<div class="post-client-empty"><strong>Pesquisando</strong><span>Localizando a obra e o trailer oficial…</span></div>';
+  if(root)root.innerHTML='<div class="post-client-empty"><strong>Pesquisando no YouTube</strong><span>Buscando os melhores resultados. Isso deve levar apenas alguns segundos…</span></div>';
   try{
-    let r=await fetch("/api/portal/trailers/search?q="+encodeURIComponent(query)+"&type="+encodeURIComponent(type),{credentials:"same-origin",headers:sessionAuth?{"x-nexus-session":sessionAuth}:{}});
+    let r=await fetch("/api/portal/trailers/search?q="+encodeURIComponent(query)+"&type="+encodeURIComponent(type),{credentials:"same-origin",headers:sessionAuth?{"x-nexus-session":sessionAuth}:{},signal:AbortSignal.timeout(15000)});
     let d=await r.json().catch(()=>({}));
     if(r.status===401){
       const sessionCheck=await fetch("/api/portal/session",{credentials:"same-origin",headers:sessionAuth?{"x-nexus-session":sessionAuth}:{}});
       if(sessionCheck.ok){
-        r=await fetch("/api/portal/trailers/search?q="+encodeURIComponent(query)+"&type="+encodeURIComponent(type),{credentials:"same-origin",headers:sessionAuth?{"x-nexus-session":sessionAuth}:{}});
+        r=await fetch("/api/portal/trailers/search?q="+encodeURIComponent(query)+"&type="+encodeURIComponent(type),{credentials:"same-origin",headers:sessionAuth?{"x-nexus-session":sessionAuth}:{},signal:AbortSignal.timeout(15000)});
         d=await r.json().catch(()=>({}));
       }
     }
@@ -1463,8 +1464,9 @@ async function searchTrailers(event){
     root.querySelectorAll("[data-import-trailer]").forEach(button=>button.addEventListener("click",()=>importTrailerVideo(button)));
 
   }catch(error){
-    if(status){status.textContent=error.message;status.className="save-status error";}
-    if(root)root.innerHTML='<div class="post-client-empty"><strong>Não foi possível pesquisar</strong><span>'+escapeSupport(error.message)+'</span></div>';
+    const message=(error?.name==="TimeoutError"||String(error?.message||"").toLowerCase().includes("timeout"))?"A busca demorou demais. Tente novamente.":error.message;
+    if(status){status.textContent=message;status.className="save-status error";}
+    if(root)root.innerHTML='<div class="post-client-empty"><strong>Não foi possível pesquisar</strong><span>'+escapeSupport(message)+'</span></div>';
   }
 }
 
@@ -2046,7 +2048,7 @@ setInterval(()=>{
   const typing=active&&view.contains(active)&&["INPUT","TEXTAREA","SELECT"].includes(active.tagName);
   const playing=videoPlaybackActive();
   if(!editing&&!scheduling&&!typing&&!playing)loadVideoJobs();
-},12000);
+},5000);
 
 
 /* ===== NEXUS installable app ===== */
