@@ -24,7 +24,7 @@ function render() {
   const clients = state.clients;
   const online = clients.filter(client => client.status === "online").length;
   const totals = state.leadData?.summary || { total:0, hot:0, warm:0, cold:0, needsHuman:0 };
-  const alerts = clients.filter(client => Math.max(client.usage?.openaiPercent || 0, client.usage?.railwayPercent || 0) >= 80).length;
+  const alerts = clients.filter(client => Number(client.usage?.openaiPercent || 0) >= 80).length;
   $("#metric-clients").textContent = clients.length;
   $("#metric-online").textContent = online;
   $("#metric-leads").textContent = totals.total;
@@ -155,7 +155,7 @@ function renderClientPortal(client) {
   const ragnar = client.id === "ragnar-one";
   const mode = ragnar ? "Conta OpenAI própria" : "NEXUS sem imagem paga";
   const aiDetail = ragnar ? "isolada do NEXUS central" : "geração paga de imagens desativada";
-  $("#portal-usage").innerHTML = `<div class="usage-row"><div><span>Modo de IA</span><strong>${mode}</strong></div><small>${aiDetail}</small></div><div class="usage-row"><div><span>Infraestrutura</span><strong>Gerenciada pelo NEXUS</strong></div><small>GitHub e Railway não são exigidos do cliente.</small></div>`;
+  $("#portal-usage").innerHTML = `<div class="usage-row"><div><span>Modo de IA</span><strong>${mode}</strong></div><small>${aiDetail}</small></div><div class="usage-row"><div><span>Infraestrutura</span><strong>Gerenciada pelo NEXUS</strong></div><small>GitHub e Cloudflare são gerenciados centralmente pelo NEXUS.</small></div>`;
 }
 
 function escapeHtml(value) { const el = document.createElement("span"); el.textContent = String(value); return el.innerHTML; }
@@ -489,15 +489,17 @@ async function loadIntegrations() {
     const items = [
       {
         name: "GitHub Core",
-        detail: status.githubConfigured ? "Código central conectado" : "Configuração administrativa opcional",
-        label: status.githubConfigured ? "CONECTADO" : "OPCIONAL",
-        ready: Boolean(status.githubConfigured)
+        detail: status.sourceControl === "github" ? "Código-fonte e CI centralizados no GitHub" : "Origem de código não confirmada",
+        label: status.sourceControl === "github" ? "CONECTADO" : "PENDENTE",
+        ready: status.sourceControl === "github"
       },
       {
-        name: "Railway Core",
-        detail: status.railwayConfigured ? "Hospedagem central operacional" : "Integração pendente",
-        label: status.railwayConfigured ? "CONECTADO" : "PENDENTE",
-        ready: Boolean(status.railwayConfigured)
+        name: "Cloudflare Core",
+        detail: status.runtime === "cloudflare-workers" && status.database === "d1"
+          ? "Worker, D1 e R2 operando no núcleo NEXUS"
+          : "Infraestrutura Cloudflare indisponível",
+        label: status.runtime === "cloudflare-workers" && status.database === "d1" ? "CONECTADO" : "PENDENTE",
+        ready: status.runtime === "cloudflare-workers" && status.database === "d1"
       },
       {
         name: "Meta / Instagram",
