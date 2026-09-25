@@ -147,7 +147,10 @@ export async function processDueJobs(env, scheduledAt = new Date()) {
 
     try {
       if (job.kind === "publisher-sweep") {
-        await runPublisherSweep(env, job.client_id, now);
+        await runAgentCoreCycle(env, job.client_id, {
+          trigger: "publisher-sweep",
+          agent: "publisher"
+        });
         await publishScheduledVideoClips(env, job.client_id, now);
         await updateJob(env, job.id, "completed", attempts);
         summary.completed += 1;
