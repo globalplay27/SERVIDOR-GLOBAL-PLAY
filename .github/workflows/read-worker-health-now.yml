@@ -14,3 +14,5 @@ jobs:
         shell: bash
         run: |
           curl -fsS --max-time 20 "https://servidor-nexus.diamantehinode2015.workers.dev/health" | jq '{ok,runtime,openai,liveAgentTest}'
+
+# probe-refresh: final-agent-check
