@@ -1403,9 +1403,9 @@ async function searchTrailers(event){
     if(!r.ok)throw new Error(d.message||d.error||"Falha na pesquisa.");
     const rows=Array.isArray(d.results)?d.results:[];
     if(status){
-      const directCount=rows.filter(item=>(item.downloadable&&item.downloadUrl)||item.trailerUrl).length;
+      const directCount=rows.filter(item=>item.downloadable&&item.downloadUrl).length;
       status.textContent=d.configured
-        ?(directCount?"Resultados encontrados · "+directCount+" pronto(s) para enviar direto ao servidor.":"Resultados encontrados, mas sem vídeo disponível para importação.")
+        ?(directCount?"Resultados encontrados · "+directCount+" arquivo(s) autorizado(s) para importação.":"Resultados encontrados. A importação só é liberada quando existe um arquivo de vídeo direto e autorizado.")
         :"A pesquisa interna não respondeu. Tente novamente.";
       status.className=directCount?"save-status ok":"save-status";
     }
@@ -1419,9 +1419,7 @@ async function searchTrailers(event){
       const badge=item.trailerUrl?(item.official?"TRAILER OFICIAL":"TRAILER ENCONTRADO"):"TRAILER INDISPONÍVEL";
       const cutterAction=item.downloadable&&item.downloadUrl
         ?'<button type="button" class="trailer-import trailer-primary-action" data-import-video="'+escapeSupport(item.downloadUrl)+'" data-import-title="'+escapeSupport(item.title||"")+'">Enviar para biblioteca</button>'
-        :(item.trailerUrl
-          ?'<button type="button" class="trailer-import trailer-primary-action" data-import-trailer="'+escapeSupport(item.trailerUrl)+'" data-import-title="'+escapeSupport(item.title||"")+'">Enviar para biblioteca</button>'
-          :'<span class="trailer-open unavailable">VÍDEO INDISPONÍVEL</span>');
+        :'<span class="trailer-open unavailable">IMPORTAÇÃO DIRETA INDISPONÍVEL</span>';
       return '<article class="trailer-card">'
         +(item.posterUrl?'<img class="trailer-poster" data-trailer-poster="1" data-fallback="'+escapeSupport(item.posterFallbackUrl||"")+'" data-title="'+escapeSupport(item.title||"")+'" loading="lazy" referrerpolicy="no-referrer" src="'+escapeSupport(item.posterUrl)+'" alt="Imagem de '+escapeSupport(item.title)+'">':'<div class="trailer-poster-empty">'+escapeSupport((item.title||"NEXUS").slice(0,18))+'</div>')
         +'<div class="trailer-card-copy"><span>'+escapeSupport(item.type==="series"?"SÉRIE":"FILME")+' · '+escapeSupport(item.year||"—")+'</span>'
