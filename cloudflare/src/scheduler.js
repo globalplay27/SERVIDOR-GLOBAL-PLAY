@@ -25,7 +25,7 @@ function agentCoreConfig(client) {
     enabled: current.enabled !== false,
     autoPublish: current.autoPublish === true,
     approvalRequired: current.autoPublish === true ? current.approvalRequired === true : true,
-    cycleMinutes: Math.max(15, Math.min(1440, Number(current.cycleMinutes || 60))),
+    cycleMinutes: Math.max(15, Math.min(1440, Number(current.cycleMinutes || 30))),
     modules
   };
 }
