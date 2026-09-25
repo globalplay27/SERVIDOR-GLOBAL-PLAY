@@ -14,7 +14,7 @@ import { leadsForClient, leadHunterSummary } from "./leads.js";
 import { leadHunterView, saveLeadHunterConfig, runLeadHunter, discardLead } from "./lead-hunter.js";
 import { createVideoFolder, renameVideoFolder, deleteVideoFolder, patchVideoJob, deleteVideoJob, setClipApproval, adjustClip, selectClip, scheduleClip, bulkScheduleClips } from "./video-library.js";
 import { proxyRailwayVideoRequest, createVideoUploadTicket } from "./railway-video-bridge.js";
-import { createR2VideoUpload, uploadR2VideoPart, completeR2VideoUpload, abortR2VideoUpload } from "./r2-video-upload.js";
+import { createR2VideoUpload, uploadR2VideoPart, completeR2VideoUpload, abortR2VideoUpload, importR2VideoFromUrl } from "./r2-video-upload.js";
 import { decidePost, requestPostRevision, saveOwnPostContent, publishPostNow } from "./posts.js";
 
 function json(data, status = 200, headers = {}) {
@@ -449,6 +449,29 @@ export async function handlePortalApi(request, env, url) {
     } catch (error) {
       const code = error instanceof Error ? error.message : String(error);
       return json({ error: code }, code === "r2_unavailable" ? 503 : 400);
+    }
+  }
+
+  if (
+    (url.pathname === "/api/portal/videos/import" || url.pathname === "/api/portal/videos/import-trailer")
+    && request.method === "POST"
+  ) {
+    const body = await request.json().catch(() => ({}));
+    try {
+      const imported = await importR2VideoFromUrl(env, client.id, body);
+      const jobs = await listVideos(env, client.id);
+      return json({
+        ok: true,
+        ...imported,
+        job: jobs.find(job => job.id === imported.jobId) || null
+      }, 201);
+    } catch (error) {
+      const code = error instanceof Error ? error.message : String(error);
+      const status = code === "r2_unavailable" ? 503
+        : code === "video_too_large" ? 413
+        : code.startsWith("video_source_http_") ? 502
+        : 400;
+      return json({ error: code }, status);
     }
   }
 
