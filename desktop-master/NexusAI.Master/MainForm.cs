@@ -205,14 +205,14 @@ public sealed class MainForm : Form
                 if (path == "/login" || path == "/portal.html" || path.StartsWith("/api/portal/"))
                 {
                     e.Cancel = true;
-                    BeginInvoke(ShowLogin);
+                    BeginInvoke((Action)ShowLogin);
                     return;
                 }
 
                 if (path == "/api/master/access" && webView.Visible)
                 {
                     e.Cancel = true;
-                    BeginInvoke(ShowLogin);
+                    BeginInvoke((Action)ShowLogin);
                     return;
                 }
 
