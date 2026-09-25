@@ -5,7 +5,7 @@ import { handlePortalApi } from "./portal.js";
 import { handleMaster } from "./master.js";
 import { runSchedulerTick } from "./scheduler.js";
 import { processDueJobs } from "./executor.js";
-import { masterCredentialsValid, createMasterSession, authenticatePortalUser, createPortalSession, loginRateLimitStatus, recordLoginFailure, clearLoginFailures } from "./auth.js";
+import { masterCredentialsValid, createMasterSession, authenticatePortalUser, createPortalSession, masterSessionCookie, portalSessionCookie, loginRateLimitStatus, recordLoginFailure, clearLoginFailures } from "./auth.js";
 
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
@@ -201,7 +201,7 @@ export default {
           expiresAt: session.expiresAt,
           cookieName: "nexus_master",
           entryPath: "/api/master/console"
-        });
+        }, 200, { "set-cookie": masterSessionCookie(session.token) });
       }
 
       const clientId = await authenticatePortalUser(env, username, password);
@@ -219,7 +219,7 @@ export default {
           expiresAt: session.expiresAt,
           cookieName: "nexus_session",
           entryPath: "/portal.html?auth=1"
-        });
+        }, 200, { "set-cookie": portalSessionCookie(session.token) });
       }
 
       await recordLoginFailure(env, request, "login");
