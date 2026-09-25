@@ -13,9 +13,6 @@
     "d1:migrations:apply:local": "wrangler d1 migrations apply servidor-nexus --local"
   },
   "devDependencies": {
-    "wrangler": "^4.68.0"
-  },
-  "dependencies": {
-    "@cloudflare/containers": "^0.3.7"
+    "wrangler": "^4.45.0"
   }
 }
