@@ -1,4 +1,4 @@
-name: Read Worker health now
+name: Read live agent test status
 
 on:
   push:
@@ -13,4 +13,4 @@ jobs:
       - name: Read health
         shell: bash
         run: |
-          curl -fsS --max-time 20 "https://servidor-nexus.diamantehinode2015.workers.dev/health" | jq '{ok,runtime,releaseMarker,openai}'
+          curl -fsS --max-time 20 "https://servidor-nexus.diamantehinode2015.workers.dev/health" | jq '{ok,runtime,openai,liveAgentTest}'
