@@ -178,7 +178,7 @@ export default {
     })());
   },
 
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
     if (url.pathname === "/" && request.method === "GET") {
@@ -259,7 +259,7 @@ export default {
     const masterResponse = await handleMaster(request, env, url);
     if (masterResponse) return masterResponse;
 
-    const portalResponse = await handlePortalApi(request, env, url);
+    const portalResponse = await handlePortalApi(request, env, url, ctx);
     if (portalResponse) return portalResponse;
 
     if (url.pathname === "/health" || url.pathname === "/api/health") {
