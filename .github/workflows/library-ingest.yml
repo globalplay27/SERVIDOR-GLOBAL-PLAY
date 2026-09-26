@@ -19,6 +19,7 @@ jobs:
       CALLBACK_TOKEN: ${{ github.event.client_payload.callback_token }}
       CONTENT_TITLE: ${{ github.event.client_payload.title }}
       NEXUS_INGEST_BASE_URL: https://servidor-nexus.diamantehinode2015.workers.dev
+      YOUTUBE_COOKIES_B64: ${{ secrets.YOUTUBE_COOKIES_B64 }}
     steps:
       - name: Install yt-dlp, PO-token provider and ffmpeg
         shell: bash
@@ -41,8 +42,15 @@ jobs:
         run: |
           set -euo pipefail
           rm -f /tmp/nexus-video.*
+          COOKIE_ARGS=()
+          if [ -n "${YOUTUBE_COOKIES_B64:-}" ]; then
+            printf '%s' "$YOUTUBE_COOKIES_B64" | base64 -d > /tmp/youtube-cookies.txt
+            chmod 600 /tmp/youtube-cookies.txt
+            COOKIE_ARGS=(--cookies /tmp/youtube-cookies.txt)
+          fi
           set +e
           yt-dlp \
+            "${COOKIE_ARGS[@]}" \
             --no-playlist \
             --js-runtimes node \
             --extractor-args "youtube:player_client=mweb,web_embedded,android_vr" \
@@ -58,6 +66,7 @@ jobs:
           if [ "$RC" -ne 0 ]; then
             rm -f /tmp/nexus-video.*
             yt-dlp \
+              "${COOKIE_ARGS[@]}" \
               --no-playlist \
               --js-runtimes node \
               --extractor-args "youtube:player_client=mweb,web_safari,android_vr" \
