@@ -249,16 +249,22 @@
             <article><span>Orçamento NEXUS</span><strong id="openai-month-budget">—</strong><small>teto mensal definido por você</small></article>
             <article><span>Restante no orçamento</span><strong id="openai-budget-remaining">—</strong><small id="openai-budget-note">aguardando configuração</small></article>
           </div>
-          <form id="openai-master-form" class="openai-master-form openai-master-form-five">
-            <label>Chave API do projeto NEXUS<input name="apiKey" type="password" autocomplete="off" placeholder="sk-... · deixe vazio para manter a atual"></label>
-            <label>Admin API Key<input name="adminKey" type="password" autocomplete="off" placeholder="Chave administrativa para consultar gastos"></label>
-            <label>Crédito / saldo atual (US$)<input name="currentBalanceUsd" type="number" min="0" step="0.01" placeholder="Ex.: 25.00"></label>
+          <div class="integration" style="margin-bottom:14px">
+            <div><strong>Chave central da API</strong><small>Protegida como segredo no Cloudflare Worker · clientes NEXUS usam a conta central</small></div>
+            <span class="badge">PROTEGIDA</span>
+          </div>
+          <div class="integration" style="margin-bottom:14px">
+            <div><strong>Ragnar One</strong><small>Usa uma chave OpenAI própria e permanece separado do saldo central</small></div>
+            <span class="badge">SEPARADO</span>
+          </div>
+          <form id="openai-master-form" class="openai-master-form">
+            <label>Crédito / saldo de referência (US$)<input name="currentBalanceUsd" type="number" min="0" step="0.01" placeholder="Ex.: 25.00"></label>
             <label>Orçamento mensal NEXUS (US$)<input name="monthlyBudgetUsd" type="number" min="0.01" step="0.01" placeholder="Ex.: 50.00"></label>
-            <button class="primary" type="submit">Salvar controle OpenAI</button>
+            <button class="primary" type="submit">Salvar controle financeiro</button>
             <span id="openai-master-message" class="form-status"></span>
           </form>
 
-          <p class="disclaimer">O gasto total em dólares vem da OpenAI quando a Admin API Key estiver conectada. A geração paga de imagens para clientes está desativada. Esta integração permanece disponível para recursos de texto, análise e vídeo que utilizem a API.</p>
+          <p class="disclaimer">As chaves da API ficam protegidas na Cloudflare e não aparecem no painel. O saldo de referência e o orçamento são controles administrativos do NEXUS. A geração paga de imagens para clientes continua desativada.</p>
         </div>
 
         <div class="panel master-instagram-panel">
@@ -294,6 +300,6 @@
       <span id="portal-access-status" class="form-status"></span>
     </form>
   </dialog>
-  <script src="/app.js?v=17" defer></script>
+  <script src="/app.js?v=18" defer></script>
 </body>
 </html>
