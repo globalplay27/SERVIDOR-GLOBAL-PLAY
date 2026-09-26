@@ -504,6 +504,7 @@ export async function handlePortalApi(request, env, url, ctx = null) {
     cacheUrl.searchParams.set("client", String(client.id));
     cacheUrl.searchParams.set("type", type);
     cacheUrl.searchParams.set("q", query.toLowerCase());
+    cacheUrl.searchParams.set("official", "v2");
     const cacheKey = new Request(cacheUrl.toString(), { method: "GET" });
 
     try {
