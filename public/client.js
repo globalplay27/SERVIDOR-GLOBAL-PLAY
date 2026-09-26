@@ -7,6 +7,15 @@ function portalFetch(url, options={}){
   return fetch(url,{...options,credentials:"same-origin",headers});
 }
 
+async function portalSessionIsAlive(){
+  try{
+    const r=await portalFetch("/api/portal/session",{cache:"no-store"});
+    return r.ok;
+  }catch{
+    return false;
+  }
+}
+
 function showPortalLogin(message="Sua sessão precisa ser renovada. Entre novamente uma vez para manter o painel conectado."){
   sessionAuth=null;
   currentClient=null;
@@ -967,7 +976,7 @@ async function createVideoFolder(){
   const name=input?.value?.trim()||"";
   if(!name){if(status)status.textContent="Digite o nome da nova pasta.";return;}
   try{
-    const r=await fetch("/api/portal/video-folders",{method:"POST",headers:{"content-type":"application/json",...(sessionAuth?{"x-nexus-session":sessionAuth}:{})},credentials:"same-origin",body:JSON.stringify({name})});
+    const r=await portalFetch("/api/portal/video-folders",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name})});
     const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||"Não foi possível criar a pasta.");
     latestVideoFolders=d.folders||latestVideoFolders;if(input)input.value="";syncVideoFolderControls();
     if(status){status.textContent="Pasta criada.";status.className="save-status ok";}
@@ -980,7 +989,7 @@ async function renameCurrentVideoFolder(){
   if(!name)return;
   const status=$("#video-upload-status");
   try{
-    const r=await fetch("/api/portal/video-folders/"+encodeURIComponent(videoFolderFilter),{method:"PATCH",headers:{"content-type":"application/json",...(sessionAuth?{"x-nexus-session":sessionAuth}:{})},credentials:"same-origin",body:JSON.stringify({name})});
+    const r=await portalFetch("/api/portal/video-folders/"+encodeURIComponent(videoFolderFilter),{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({name})});
     const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||"Não foi possível renomear a pasta.");
     latestVideoFolders=d.folders||latestVideoFolders;syncVideoFolderControls();renderVideoJobs({jobs:latestVideoJobs,folders:latestVideoFolders});
     if(status){status.textContent="Pasta renomeada.";status.className="save-status ok";}
@@ -991,14 +1000,14 @@ async function deleteCurrentVideoFolder(){
   if(!confirm("Excluir esta pasta? Os vídeos serão movidos para Meus vídeos."))return;
   const status=$("#video-upload-status"),folderId=videoFolderFilter;
   try{
-    const r=await fetch("/api/portal/video-folders/"+encodeURIComponent(folderId),{method:"DELETE",credentials:"same-origin",headers:sessionAuth?{"x-nexus-session":sessionAuth}:{}});
+    const r=await portalFetch("/api/portal/video-folders/"+encodeURIComponent(folderId),{method:"DELETE"});
     const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||"Não foi possível excluir a pasta.");
     videoFolderFilter="";latestVideoFolders=d.folders||latestVideoFolders;await loadVideoJobs();
     if(status){status.textContent="Pasta excluída. Os vídeos foram movidos para Meus vídeos.";status.className="save-status ok";}
   }catch(error){if(status){status.textContent=error.message;status.className="save-status error";}}
 }
 async function updateVideoMeta(jobId,payload){
-  const r=await fetch("/api/portal/videos/"+encodeURIComponent(jobId),{method:"PATCH",headers:{"content-type":"application/json",...(sessionAuth?{"x-nexus-session":sessionAuth}:{})},credentials:"same-origin",body:JSON.stringify(payload)});
+  const r=await portalFetch("/api/portal/videos/"+encodeURIComponent(jobId),{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify(payload)});
   const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||"Não foi possível atualizar o vídeo.");
   return d;
 }
@@ -1011,7 +1020,7 @@ async function deleteVideoJob(jobId){
   const job=latestVideoJobs.find(item=>item.id===jobId);if(!job)return;
   if(!confirm('Excluir "'+(job.displayName||job.filename)+'" da biblioteca? Isso apaga o arquivo e os cortes do NEXUS, mas não remove algo que já foi publicado no Instagram.'))return;
   try{
-    const r=await fetch("/api/portal/videos/"+encodeURIComponent(jobId),{method:"DELETE",credentials:"same-origin",headers:sessionAuth?{"x-nexus-session":sessionAuth}:{}});
+    const r=await portalFetch("/api/portal/videos/"+encodeURIComponent(jobId),{method:"DELETE"});
     const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.message||d.error||"Não foi possível excluir o vídeo.");
     for(const key of [...bulkVideoSelection])if(key.startsWith(jobId+"|"))bulkVideoSelection.delete(key);
     await loadVideoJobs();
@@ -1158,17 +1167,20 @@ function renderVideoJobs(data={}){
   renderBulkVideoScheduler();
 }
 async function loadVideoJobs(){
+  const root=$("#client-video-jobs");
   try{
-    const r=await portalFetch("/api/portal/videos");
-    if(r.status===401){
-      const sessionCheck=await portalFetch("/api/portal/session");
-      if(!sessionCheck.ok){showPortalLogin();return;}
-      throw new Error("A biblioteca de vídeos não respondeu, mas sua sessão continua ativa.");
+    const r=await portalFetch("/api/portal/videos",{cache:"no-store"});
+    if(r.status===401||r.status===403){
+      if(!(await portalSessionIsAlive())){showPortalLogin();return;}
+      throw new Error("A biblioteca de vídeos está indisponível, mas sua sessão continua ativa.");
     }
-    if(!r.ok)throw new Error();
+    if(!r.ok){
+      const d=await r.json().catch(()=>({}));
+      throw new Error(d.message||d.error||"Não foi possível carregar seus vídeos agora.");
+    }
     renderVideoJobs(await r.json());
-  }catch{
-    const root=$("#client-video-jobs");if(root)root.innerHTML='<p class="muted">Não foi possível carregar seus vídeos agora.</p>';
+  }catch(error){
+    if(root)root.innerHTML='<div class="post-client-empty"><strong>Biblioteca temporariamente indisponível</strong><span>'+escapeSupport(error?.message||"Não foi possível carregar seus vídeos agora.")+'</span></div>';
   }
 }
 async function startVideoProcessing(button){
@@ -1391,18 +1403,12 @@ async function searchTrailers(event){
   try{
     let r=await portalFetch("/api/portal/trailers/search?q="+encodeURIComponent(query)+"&type="+encodeURIComponent(type));
     let d=await r.json().catch(()=>({}));
-    if(r.status===401){
-      const sessionCheck=await fetch("/api/portal/session",{credentials:"same-origin",headers:sessionAuth?{"x-nexus-session":sessionAuth}:{}});
-      if(sessionCheck.ok){
-        r=await portalFetch("/api/portal/trailers/search?q="+encodeURIComponent(query)+"&type="+encodeURIComponent(type));
-        d=await r.json().catch(()=>({}));
+    if(r.status===401||r.status===403){
+      if(!(await portalSessionIsAlive())){
+        showPortalLogin("Sua sessão expirou. Entre novamente para continuar.");
+        return;
       }
-    }
-    if(r.status===401){
-      if(status){status.textContent="Sua sessão expirou. Entre novamente no painel.";status.className="save-status error";}
-      if(root)root.innerHTML='<div class="post-client-empty"><strong>Sessão expirada</strong><span>Por segurança, faça login novamente para continuar a pesquisa.</span><button type="button" id="trailer-login-again" class="ghost-action">Entrar novamente</button></div>';
-      $("#trailer-login-again")?.addEventListener("click",()=>{location.href="/portal.html?v=55";});
-      return;
+      throw new Error("O serviço de trailers não autorizou a consulta, mas sua sessão do NEXUS continua ativa.");
     }
     if(!r.ok)throw new Error(d.message||d.error||"Falha na pesquisa.");
     const rows=Array.isArray(d.results)?d.results:[];
