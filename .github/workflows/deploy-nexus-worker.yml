@@ -24,21 +24,37 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Validate Cloudflare credentials
+      - name: Validate Cloudflare token
         shell: bash
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -euo pipefail
           if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
             echo "::error::Missing repository/environment secret CLOUDFLARE_API_TOKEN"
             exit 2
           fi
-          if [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
-            echo "::error::Missing repository/environment secret CLOUDFLARE_ACCOUNT_ID"
-            exit 2
-          fi
+
+      - name: Discover Cloudflare Account ID
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          response=$(curl -fsS             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             -H "Content-Type: application/json"             "https://api.cloudflare.com/client/v4/accounts?per_page=50")
+          account_id=$(node -e '
+            const d=JSON.parse(process.argv[1]);
+            if(!d.success) process.exit(2);
+            const rows=Array.isArray(d.result)?d.result:[];
+            if(rows.length!==1){
+              console.error("Expected exactly one accessible Cloudflare account, found "+rows.length);
+              process.exit(3);
+            }
+            process.stdout.write(rows[0].id);
+          ' "$response")
+          test -n "$account_id"
+          echo "CLOUDFLARE_ACCOUNT_ID=$account_id" >> "$GITHUB_ENV"
+          echo "Cloudflare account discovered successfully."
 
       - name: Install dependencies
         working-directory: cloudflare
@@ -48,12 +64,12 @@ jobs:
         working-directory: cloudflare
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
         run: npm run check
 
       - name: Deploy NEXUS Worker
         working-directory: cloudflare
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
         run: npx wrangler deploy
