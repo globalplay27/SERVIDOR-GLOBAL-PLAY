@@ -135,7 +135,9 @@
             <div class="overview-actions">
               <button type="button" data-open-posting>Editar perfil do agente</button>
               <button type="button" id="instagram-connect" class="managed-instagram-button">Conectar Instagram</button>
+              <button type="button" id="instagram-test" class="ghost-action">Testar conexão</button>
               <span id="instagram-connect-status" class="provider-line"></span>
+              <small class="provider-line">Conta pessoal: use “Testar conexão”. Para automação e publicação, altere o Instagram para Profissional (Comercial ou Criador).</small>
             </div>
           </article>
           <article class="panel nexus-agent-team">
@@ -510,10 +512,13 @@
           <article class="wizard-step" data-step="instagram">
             <div class="step-number">2</div>
             <div class="step-body">
-              <strong>Instagram profissional</strong>
-              <span>Autorize a conta profissional que o agente vai analisar, atender e publicar.</span>
-              <div class="step-actions"><button type="button" id="setup-instagram-connect">Conectar Instagram</button></div>
-              <small class="provider-line" id="setup-instagram-status">Aguardando autorização</small>
+              <strong>Instagram</strong>
+              <span>Você pode testar o fluxo com uma conta pessoal. Para conectar de verdade, publicar e automatizar, a conta precisa ser Profissional (Comercial ou Criador).</span>
+              <div class="step-actions">
+                <button type="button" id="setup-instagram-test">Testar conexão</button>
+                <button type="button" id="setup-instagram-connect">Conectar Instagram profissional</button>
+              </div>
+              <small class="provider-line" id="setup-instagram-status">Aguardando teste ou autorização</small>
             </div>
             <span class="step-state">Pendente</span>
           </article>
@@ -546,6 +551,6 @@
       <footer><span>NEXUS AI</span><small>Client Portal · ambiente exclusivo</small></footer>
     </section>
   </main>
-  <script src="/client.js?v=71" defer></script>
+  <script src="/client.js?v=72" defer></script>
 </body>
 </html>
