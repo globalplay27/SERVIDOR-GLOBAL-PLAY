@@ -574,7 +574,7 @@ footer span{color:#a8c8d7!important}
 .trailer-card-copy{display:flex;flex-direction:column;gap:7px;min-width:0}
 .trailer-card-copy>span{font-size:11px;color:var(--muted,#8fa2af);letter-spacing:.07em}
 .trailer-card-copy>strong{font-size:16px}
-.trailer-card-copy p{margin:0;color:var(--muted,#8fa2af);font-size:12px;line-height:1.45;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+.trailer-card-copy p{margin:0;color:var(--muted,#8fa2af);font-size:12px;line-height:1.55;white-space:normal;overflow:visible}
 .trailer-open{margin-top:auto;display:inline-flex;align-items:center;justify-content:center;min-height:38px;padding:8px 12px;border-radius:10px;text-decoration:none;font-weight:800;border:1px solid rgba(93,211,255,.35);background:rgba(30,154,220,.12);color:#dff7ff}
 @media(max-width:760px){.trailer-search-form{grid-template-columns:1fr}.trailer-card{grid-template-columns:90px 1fr}.trailer-card img,.trailer-poster-empty{width:90px;height:135px}.client-agent-worker{grid-template-columns:1fr}}
 
