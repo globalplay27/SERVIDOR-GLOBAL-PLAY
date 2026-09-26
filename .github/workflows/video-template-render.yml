@@ -80,6 +80,7 @@ jobs:
         run: |
           set -euo pipefail
           SRC_DUR="$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 /tmp/source.mp4 | head -n1)"
+          export SRC_DUR
           RENDER_DUR="$(python - <<'PY'
           import os
           try: src=float(os.environ.get("SRC_DUR","30") or 30)
@@ -107,8 +108,6 @@ jobs:
               -map "[outv]" -map 0:a? -c:v libx264 -preset veryfast -crf 24 -c:a aac -b:a 128k -pix_fmt yuv420p -movflags +faststart /tmp/rendered.mp4
           fi
           test -s /tmp/rendered.mp4
-        env:
-          SRC_DUR: ${{ env.SRC_DUR }}
 
       - name: Upload rendered video to NEXUS
         shell: bash
