@@ -25,6 +25,7 @@ import { getClient } from "./clients.js";
 import { publishPostNow } from "./posts.js";
 import { runSchedulerTick } from "./scheduler.js";
 import { processDueJobs } from "./executor.js";
+import { processQueuedVideoImports } from "./r2-video-upload.js";
 import { masterCredentialsValid, createMasterSession, authenticatePortalUser, createPortalSession, masterSessionCookie, portalSessionCookie, upsertMasterUser } from "./auth.js";
 
 function json(data, status = 200, headers = {}) {
@@ -173,6 +174,7 @@ export default {
     ctx.waitUntil((async () => {
       await runSchedulerTick(env, at);
       await processDueJobs(env, at);
+      await processQueuedVideoImports(env, 2);
     })());
   },
 
