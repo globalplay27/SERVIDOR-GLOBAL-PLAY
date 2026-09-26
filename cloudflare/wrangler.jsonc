@@ -52,5 +52,13 @@
       "binding": "MEDIA",
       "bucket_name": "servidor-nexus-media"
     }
+  ],
+  "migrations": [
+    {
+      "tag": "youtube-downloader-v2-remove",
+      "deleted_classes": [
+        "YouTubeDownloader"
+      ]
+    }
   ]
 }
