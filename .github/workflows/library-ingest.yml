@@ -1,0 +1,93 @@
+name: NEXUS Library Ingest
+
+on:
+  repository_dispatch:
+    types: [library-ingest]
+
+concurrency:
+  group: nexus-library-ingest-${{ github.event.client_payload.job_id }}
+  cancel-in-progress: false
+
+jobs:
+  download:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SOURCE_URL: ${{ github.event.client_payload.source_url }}
+      JOB_ID: ${{ github.event.client_payload.job_id }}
+      CLIENT_ID: ${{ github.event.client_payload.client_id }}
+      CALLBACK_TOKEN: ${{ github.event.client_payload.callback_token }}
+      CONTENT_TITLE: ${{ github.event.client_payload.title }}
+      NEXUS_INGEST_BASE_URL: https://servidor-nexus.diamantehinode2015.workers.dev
+    steps:
+      - name: Install yt-dlp and ffmpeg
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade yt-dlp
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+
+      - name: Download public YouTube video
+        id: download
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f /tmp/nexus-video.*
+          yt-dlp \
+            --no-playlist \
+            --socket-timeout 30 \
+            --retries 3 \
+            --fragment-retries 3 \
+            --max-filesize 90M \
+            --merge-output-format mp4 \
+            -f "bv*[height<=480]+ba/b[height<=480]/best[height<=480]" \
+            -o "/tmp/nexus-video.%(ext)s" \
+            "$SOURCE_URL"
+
+          FILE="$(find /tmp -maxdepth 1 -type f -name 'nexus-video.*' | head -n 1)"
+          if [ -z "$FILE" ] || [ ! -s "$FILE" ]; then
+            echo "::error::yt-dlp did not produce a video file"
+            exit 20
+          fi
+
+          SIZE="$(stat -c%s "$FILE")"
+          if [ "$SIZE" -gt 99614720 ]; then
+            echo "::error::Downloaded file exceeds 95 MiB ingest limit"
+            exit 21
+          fi
+
+          MIME="$(file --mime-type -b "$FILE" 2>/dev/null || true)"
+          if [ -z "$MIME" ]; then MIME="video/mp4"; fi
+          echo "file=$FILE" >> "$GITHUB_OUTPUT"
+          echo "mime=$MIME" >> "$GITHUB_OUTPUT"
+
+      - name: Stream video into NEXUS R2
+        id: upload
+        shell: bash
+        env:
+          VIDEO_FILE: ${{ steps.download.outputs.file }}
+          VIDEO_MIME: ${{ steps.download.outputs.mime }}
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --retry 2 --retry-all-errors \
+            -X PUT "$NEXUS_INGEST_BASE_URL/api/internal/video-ingest/upload" \
+            -H "x-nexus-job-id: $JOB_ID" \
+            -H "x-nexus-client-id: $CLIENT_ID" \
+            -H "x-nexus-callback-token: $CALLBACK_TOKEN" \
+            -H "x-nexus-file-name: $(basename "$VIDEO_FILE")" \
+            -H "content-type: $VIDEO_MIME" \
+            --data-binary "@$VIDEO_FILE"
+
+      - name: Report ingest failure
+        if: failure()
+        continue-on-error: true
+        shell: bash
+        run: |
+          curl --silent --show-error \
+            -X POST "$NEXUS_INGEST_BASE_URL/api/internal/video-ingest/fail" \
+            -H "x-nexus-job-id: $JOB_ID" \
+            -H "x-nexus-client-id: $CLIENT_ID" \
+            -H "x-nexus-callback-token: $CALLBACK_TOKEN" \
+            -H "content-type: application/json" \
+            --data '{"error":"github_action_download_or_upload_failed"}'
