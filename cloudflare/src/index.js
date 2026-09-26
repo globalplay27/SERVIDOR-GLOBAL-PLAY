@@ -8,7 +8,7 @@ import { runSchedulerTick } from "./scheduler.js";
 import { processDueJobs } from "./executor.js";
 import { masterCredentialsValid, createMasterSession, authenticatePortalUser, createPortalSession, masterSessionCookie, portalSessionCookie, loginRateLimitStatus, recordLoginFailure, clearLoginFailures, resolvePortalSession, resolveMasterSession } from "./auth.js";
 import { processQueuedVideoJobs } from "./video-processing.js";
-import { processQueuedVideoImports } from "./r2-video-upload.js";
+import { processQueuedVideoImports, completeGithubVideoIngest, failGithubVideoIngest } from "./r2-video-upload.js";
 
 export class YoutubeDownloader extends DurableObject {
   async fetch() {
@@ -277,6 +277,35 @@ export default {
       return json({ ok: false, error: "invalid_credentials" }, 401);
     }
 
+
+    if (url.pathname === "/api/internal/video-ingest/upload" && request.method === "PUT") {
+      const jobId = String(request.headers.get("x-nexus-job-id") || "");
+      const clientId = String(request.headers.get("x-nexus-client-id") || "");
+      const callbackToken = String(request.headers.get("x-nexus-callback-token") || "");
+      if (!jobId || !clientId || !callbackToken) return json({ error: "ingest_headers_required" }, 400);
+      try {
+        const completed = await completeGithubVideoIngest(env, clientId, jobId, request, callbackToken);
+        if (ctx?.waitUntil) ctx.waitUntil(processVideoJob(env, clientId, jobId).catch(() => {}));
+        return json(completed, 201);
+      } catch (error) {
+        const code = error instanceof Error ? error.message : String(error);
+        return json({ error: code }, code === "invalid_ingest_callback_token" ? 401 : code === "video_too_large" ? 413 : 400);
+      }
+    }
+
+    if (url.pathname === "/api/internal/video-ingest/fail" && request.method === "POST") {
+      const jobId = String(request.headers.get("x-nexus-job-id") || "");
+      const clientId = String(request.headers.get("x-nexus-client-id") || "");
+      const callbackToken = String(request.headers.get("x-nexus-callback-token") || "");
+      const body = await request.json().catch(() => ({}));
+      if (!jobId || !clientId || !callbackToken) return json({ error: "ingest_headers_required" }, 400);
+      try {
+        return json(await failGithubVideoIngest(env, clientId, jobId, callbackToken, body?.error));
+      } catch (error) {
+        const code = error instanceof Error ? error.message : String(error);
+        return json({ error: code }, code === "invalid_ingest_callback_token" ? 401 : 400);
+      }
+    }
 
     const masterResponse = await handleMaster(request, env, url);
     if (masterResponse) return masterResponse;
