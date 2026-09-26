@@ -3,10 +3,17 @@ import { getClient, listClients, upsertClient } from "./clients.js";
 export const AGENT_CORE_MODULES = Object.freeze([
   { id: "radar", name: "RADAR", skills: ["ig-viral","ig-audit","ig-profile","lead-hunter"] },
   { id: "estrategista", name: "ESTRATEGISTA", skills: ["ig-plan"] },
+  { id: "pesquisador", name: "PESQUISADOR", skills: ["trend-research","niche-signals","content-opportunities"] },
+  { id: "analista", name: "ANALISTA", skills: ["performance-analysis","viral-score","funnel-metrics"] },
   { id: "creator", name: "CREATOR", skills: ["ig-reel","ig-caption","ig-carousel","ig-story","ig-repurpose"] },
+  { id: "copy-chief", name: "COPY CHIEF", skills: ["hook-review","cta-review","caption-quality"] },
+  { id: "designer", name: "DESIGNER", skills: ["visual-direction","creative-consistency","media-readiness"] },
+  { id: "video", name: "VIDEO", skills: ["reel-structure","video-adaptation","short-form"] },
   { id: "publisher", name: "PUBLISHER", skills: ["delivery","schedule","meta-publish"] },
+  { id: "odin", name: "ODIN", skills: ["ig-comment","ig-reply","ig-dm","lead-scoring"] },
+  { id: "suporte", name: "SUPORTE", skills: ["operational-health","integration-issues","incident-triage"] },
   { id: "auditor", name: "AUDITOR", skills: ["ig-human","ig-audit"] },
-  { id: "odin", name: "ODIN", skills: ["ig-comment","ig-reply","ig-dm","lead-scoring"] }
+  { id: "growth", name: "GROWTH", skills: ["growth-experiments","scale-winners","follower-velocity"] }
 ]);
 
 function parseJson(raw, fallback = {}) {
