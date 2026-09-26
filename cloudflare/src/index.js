@@ -1,22 +1,3 @@
-export { YouTubeDownloader } from "./youtube-container.js";
-export class YoutubeDownloader {
-  constructor(state, env) {
-    this.state = state;
-    this.env = env;
-  }
-
-  async fetch() {
-    return new Response(JSON.stringify({
-      ok: false,
-      error: "legacy_youtube_downloader_disabled",
-      service: "Servidor Nexus"
-    }), {
-      status: 410,
-      headers: { "content-type": "application/json; charset=utf-8" }
-    });
-  }
-}
-
 import { openAIKeyStatus } from "./openai-routing.js";
 import { openAIResponses, tokenUsageToday } from "./openai.js";
 import { getState, putState, deleteState } from "./storage.js";
@@ -27,6 +8,7 @@ import { publishPostNow } from "./posts.js";
 import { runSchedulerTick } from "./scheduler.js";
 import { processDueJobs } from "./executor.js";
 import { processQueuedVideoImports } from "./r2-video-upload.js";
+import { handleGitHubVideoIngestCallback } from "./github-video-ingest.js";
 import { masterCredentialsValid, createMasterSession, authenticatePortalUser, createPortalSession, masterSessionCookie, portalSessionCookie, upsertMasterUser } from "./auth.js";
 
 function json(data, status = 200, headers = {}) {
@@ -256,6 +238,9 @@ export default {
       return json({ ok: false, error: "invalid_credentials" }, 401);
     }
 
+
+    const ingestResponse = await handleGitHubVideoIngestCallback(request, env, url);
+    if (ingestResponse) return ingestResponse;
 
     const masterResponse = await handleMaster(request, env, url);
     if (masterResponse) return masterResponse;
