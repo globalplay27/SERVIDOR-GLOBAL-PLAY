@@ -139,7 +139,7 @@ jobs:
             -H "x-nexus-client-id: $CLIENT_ID" \
             -H "x-nexus-callback-token: $CALLBACK_TOKEN" \
             -H "content-type: video/mp4" \
-            --data-binary "@/tmp/rendered-base.mp4"
+            --data-binary "@/tmp/rendered.mp4"
 
       - name: Report render failure
         if: failure()
