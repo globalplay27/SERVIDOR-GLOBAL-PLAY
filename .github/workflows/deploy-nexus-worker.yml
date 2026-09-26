@@ -63,13 +63,17 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -euo pipefail
-          echo "=== WORKERS ==="
-          curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts" | node -e '
-            let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);for(const x of (j.result||[])) console.log(x.id||x.name||JSON.stringify(x));});
-          '
-          echo "=== D1 ==="
-          curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database?per_page=100" | node -e '
-            let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);for(const x of (j.result||[])) console.log((x.name||"")+"|"+(x.uuid||x.id||""));});
+          echo "=== GLOBALPLAY WORKER SETTINGS ==="
+          curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/globalplay-site/settings" | node -e '
+            let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{
+              const j=JSON.parse(s); if(!j.success){console.error(JSON.stringify(j.errors||j));process.exit(2);}
+              const r=j.result||{};
+              console.log(JSON.stringify({
+                bindings:(r.bindings||[]).map(b=>({name:b.name,type:b.type,id:b.id||b.namespace_id||b.bucket_name||null})),
+                compatibility_date:r.compatibility_date||null,
+                compatibility_flags:r.compatibility_flags||[]
+              },null,2));
+            });
           '
 
       - name: Install dependencies
