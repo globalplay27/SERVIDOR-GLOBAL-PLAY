@@ -1,5 +1,5 @@
 {
-  // deploy-refresh: 2026-09-26-client-instagram-test
+  // deploy-refresh: 2026-09-26-client-session-tabs
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "servidor-nexus",
   "main": "src/index.js",
