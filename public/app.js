@@ -2,6 +2,15 @@ const state = { clients: [], auth: sessionStorage.getItem("nexus-auth"), portalC
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
 
+async function assumeClient(clientId) {
+  try {
+    const result = await api("/api/clients/" + encodeURIComponent(clientId) + "/assume", { method: "POST" });
+    location.assign(result.entryPath);
+  } catch (error) {
+    alert("Não foi possível abrir o painel do cliente: " + error.message);
+  }
+}
+
 function api(path, options = {}) {
   const headers = { "content-type": "application/json", ...(options.headers || {}) };
   return fetch(path, { ...options, headers, credentials: "same-origin" }).then(async response => {

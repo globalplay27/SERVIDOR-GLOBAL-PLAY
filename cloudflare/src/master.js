@@ -1,6 +1,8 @@
 import {
   masterCredentialsValid,
   createMasterSession,
+  createPortalSession,
+  portalSessionCookie,
   resolveMasterSession,
   deleteMasterSession,
   masterSessionCookie,
@@ -452,6 +454,16 @@ export async function handleMaster(request, env, url) {
 
   if (url.pathname === "/api/clients" && request.method === "GET") {
     return json((await listClients(env)).map(masterClientView));
+  }
+
+  const assumeMatch = url.pathname.match(/^\/api\/clients\/([^/]+)\/assume$/);
+  if (assumeMatch && request.method === "POST") {
+    const clientId = decodeURIComponent(assumeMatch[1]);
+    if (!await getClient(env, clientId)) return json({ error: "client_not_found" }, 404);
+    const session = await createPortalSession(env, clientId, { source: "master-assume" });
+    return json({ ok: true, entryPath: "/portal.html?auth=1" }, 200, {
+      "set-cookie": portalSessionCookie(session.token)
+    });
   }
 
   if (url.pathname === "/api/clients" && request.method === "POST") {
