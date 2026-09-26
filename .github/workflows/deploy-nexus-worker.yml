@@ -108,7 +108,7 @@ jobs:
           python - <<'PY'
           import json, os, requests
           account = os.environ["CLOUDFLARE_ACCOUNT_ID"]
-          token = os.environ["CLOUDFLARE_API_TOKEN"]
+          token = os.environ["CLOUDFLARE_API_TOKEN"].strip()
           url = f"https://api.cloudflare.com/client/v4/accounts/{account}/workers/scripts/globalplay-site/content"
           with open("src/index.js", "rb") as fh:
               files = [
