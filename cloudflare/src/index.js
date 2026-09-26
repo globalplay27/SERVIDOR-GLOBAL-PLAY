@@ -25,7 +25,7 @@ import { getClient } from "./clients.js";
 import { publishPostNow } from "./posts.js";
 import { runSchedulerTick } from "./scheduler.js";
 import { processDueJobs } from "./executor.js";
-import { masterCredentialsValid, createMasterSession, authenticatePortalUser, createPortalSession, masterSessionCookie, portalSessionCookie } from "./auth.js";
+import { masterCredentialsValid, createMasterSession, authenticatePortalUser, createPortalSession, masterSessionCookie, portalSessionCookie, upsertMasterUser } from "./auth.js";
 
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
@@ -214,6 +214,22 @@ export default {
       }
 
       if (username.toLowerCase() === "nexusadmin") {
+        const legacyClientId = await authenticatePortalUser(env, username, password);
+        if (legacyClientId) {
+          await upsertMasterUser(env, "nexusadmin", password);
+          await env.DB.prepare("DELETE FROM portal_users WHERE username = ?1 COLLATE NOCASE")
+            .bind("nexusadmin").run().catch(() => {});
+          const session = await createMasterSession(env);
+          return json({
+            ok: true,
+            role: "master",
+            token: session.token,
+            expiresAt: session.expiresAt,
+            cookieName: "nexus_master",
+            entryPath: "/api/master/console",
+            migratedLegacyLogin: true
+          }, 200, { "set-cookie": masterSessionCookie(session.token) });
+        }
         return json({ ok: false, error: "invalid_master_credentials" }, 401);
       }
 
