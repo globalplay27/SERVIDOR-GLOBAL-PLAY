@@ -228,8 +228,31 @@ async function openAIMasterSummary(env) {
     month: "2-digit"
   }).format(new Date());
 
-  const monthRows = usage.filter(row => String(row.dayKey || "").startsWith(monthPrefix));
-  const monthTokens = monthRows.reduce((sum, row) => sum + Number(row.usedTokens || 0), 0);
+  const todayKey = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(new Date());
+
+  const ragnarId = String(env.RAGNAR_CLIENT_ID || "ragnar-one");
+  const nexusRows = usage.filter(row => String(row.clientId || "") !== ragnarId);
+  const ragnarRows = usage.filter(row => String(row.clientId || "") === ragnarId);
+
+  const nexusTodayTokens = nexusRows
+    .filter(row => String(row.dayKey || "") === todayKey)
+    .reduce((sum, row) => sum + Number(row.usedTokens || 0), 0);
+  const nexusMonthTokens = nexusRows
+    .filter(row => String(row.dayKey || "").startsWith(monthPrefix))
+    .reduce((sum, row) => sum + Number(row.usedTokens || 0), 0);
+  const ragnarTodayTokens = ragnarRows
+    .filter(row => String(row.dayKey || "") === todayKey)
+    .reduce((sum, row) => sum + Number(row.usedTokens || 0), 0);
+  const ragnarMonthTokens = ragnarRows
+    .filter(row => String(row.dayKey || "").startsWith(monthPrefix))
+    .reduce((sum, row) => sum + Number(row.usedTokens || 0), 0);
+
+  const monthTokens = nexusMonthTokens + ragnarMonthTokens;
   const monthCostUsd = null;
   const budgetRemainingUsd = monthlyBudgetUsd == null || monthCostUsd == null
     ? null
@@ -254,6 +277,10 @@ async function openAIMasterSummary(env) {
     budgetPercent,
     monthCostUsd,
     monthTokens,
+    nexusTodayTokens,
+    nexusMonthTokens,
+    ragnarTodayTokens,
+    ragnarMonthTokens,
     usage
   };
 }
@@ -411,7 +438,9 @@ export async function handleMaster(request, env, url) {
       ok: true,
       service: "Servidor Nexus",
       runtime: "cloudflare-workers",
-      migrationMode: true,
+      migrationMode: false,
+      githubConfigured: true,
+      githubRepository: "globalplay27/SERVIDOR-GLOBAL-PLAY",
       database: "d1",
       media: env.MEDIA ? "r2-bound" : "r2-unavailable",
       counts: {
