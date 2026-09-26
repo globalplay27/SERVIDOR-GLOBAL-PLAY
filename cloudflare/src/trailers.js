@@ -279,8 +279,15 @@ async function tmdbSearch(env, query, kind) {
     } catch {}
 
     const youtube = videos.filter(video => video?.site === "YouTube");
-    const officialTrailers = youtube.filter(video => video?.type === "Trailer" && video?.official === true);
-    const trailer = [...officialTrailers].sort((a, b) => score(b) - score(a))[0] || null;
+    const officialPtBrTrailers = youtube.filter(video => {
+      const name = String(video?.name || "").toLowerCase();
+      const lang = String(video?.iso_639_1 || "").toLowerCase();
+      const country = String(video?.iso_3166_1 || "").toUpperCase();
+      const dubbedSignal = /dublad|portugu[eê]s|pt[- ]?br|brasil/.test(name) || lang === "pt" || country === "BR";
+      const rejectedSignal = /legendad|teaser|clip|featurette|making of|bastidor|entrevista|review|reaction|fan edit/.test(name);
+      return video?.type === "Trailer" && video?.official === true && dubbedSignal && !rejectedSignal;
+    });
+    const trailer = [...officialPtBrTrailers].sort((a, b) => score(b) - score(a))[0] || null;
     const title = String(kind === "tv" ? item.name : item.title || query);
     const date = String(kind === "tv" ? item.first_air_date : item.release_date || "");
 
