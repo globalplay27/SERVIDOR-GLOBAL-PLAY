@@ -275,7 +275,7 @@ async function patchClientConfig(env, client, patch) {
   return upsertClient(env, { ...client, config });
 }
 
-export async function handlePortalApi(request, env, url) {
+export async function handlePortalApi(request, env, url, ctx = null) {
   const instagramCallback = await handleInstagramOAuthCallback(env, request, url);
   if (instagramCallback) return instagramCallback;
 
