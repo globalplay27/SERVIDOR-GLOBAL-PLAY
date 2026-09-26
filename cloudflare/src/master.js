@@ -128,7 +128,9 @@ button{width:100%;margin-top:12px;padding:14px;border:0;border-radius:10px;backg
 async function asset(env, request, pathname) {
   if (!env.ASSETS) return new Response("Static assets binding unavailable", { status: 503 });
   const target = new URL(request.url);
-  target.pathname = pathname;
+  // The asset binding canonicalizes /index.html to /. Fetch the canonical
+  // asset directly so that redirect never sends the browser back to login.
+  target.pathname = pathname === "/index.html" ? "/" : pathname;
   target.search = "";
   return env.ASSETS.fetch(new Request(target.toString(), request));
 }
