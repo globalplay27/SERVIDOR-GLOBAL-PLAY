@@ -479,8 +479,10 @@ export async function createPortalSession(env, clientId, payload = {}) {
 }
 
 function portalTokenFromRequest(request) {
+  const headerToken = String(request.headers.get("x-nexus-session") || "").trim();
+  if (headerToken) return headerToken;
   const cookies = parseCookies(request);
-  return String(cookies.nexus_session || request.headers.get("x-nexus-session") || "").trim();
+  return String(cookies.nexus_session || "").trim();
 }
 
 export async function resolvePortalSession(env, request) {
