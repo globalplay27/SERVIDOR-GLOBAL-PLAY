@@ -1,4 +1,4 @@
-import { dispatchYouTubeImport } from "./youtube-container.js";
+import { dispatchPendingGitHubVideoImports } from "./github-video-ingest.js";
 const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
 const DEFAULT_CHUNK_BYTES = 8 * 1024 * 1024;
 
@@ -457,6 +457,9 @@ export async function createR2PublicTrailerImportJob(env, clientId, input = {}) 
   settings.sourceType = "youtube-public";
   settings.sourceUrl = sourceUrl.slice(0, 1200);
   settings.importAttempts = 0;
+  settings.githubIngestToken = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
+  settings.githubDispatchAttempts = 0;
+  settings.githubDispatchState = "pending";
 
   const jobId = "vid_" + crypto.randomUUID().replace(/-/g, "").slice(0, 20);
   const result = {
@@ -575,28 +578,7 @@ export async function processR2PublicTrailerImportJob(env, clientId, jobId) {
 }
 
 export async function processQueuedVideoImports(env, limit = 1) {
-  if (!env?.DB || !env.YOUTUBE_DOWNLOADER) return { processed: 0 };
-  const rows = await env.DB.prepare(
-    "SELECT id,client_id,settings_json FROM video_jobs WHERE status='importing' ORDER BY updated_at ASC LIMIT ?1"
-  ).bind(Math.max(1, Math.min(2, Number(limit || 1)))).all();
-
-  let processed = 0;
-  for (const row of rows?.results || []) {
-    const settings = (() => {
-      try { return JSON.parse(String(row.settings_json || "{}")); } catch { return {}; }
-    })();
-    const sourceUrl = String(settings.sourceUrl || "").trim();
-    if (!sourceUrl) continue;
-    await dispatchYouTubeImport(
-      env,
-      row.client_id,
-      row.id,
-      sourceUrl,
-      String(settings.contentTitle || settings.displayName || "trailer")
-    ).catch(() => {});
-    processed += 1;
-  }
-  return { processed };
+  return dispatchPendingGitHubVideoImports(env, limit);
 }
 
 export async function importR2PublicTrailer(env, clientId, input = {}) {
