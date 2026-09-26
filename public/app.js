@@ -510,13 +510,9 @@ async function loadIntegrations() {
 
     const openaiState = $("#openai-master-state");
     if (openaiState) {
-      openaiState.textContent = openai.apiConnected && openai.billingConnected
+      openaiState.textContent = openai.apiConnected
         ? "CENTRAL ATIVA"
-        : openai.apiConnected
-          ? "API ATIVA · CUSTOS PENDENTES"
-          : openai.billingConnected
-            ? "CUSTOS ATIVOS · API PENDENTE"
-            : "NÃO CONECTADA";
+        : "NÃO CONECTADA";
       openaiState.classList.toggle("off", !openai.connected);
     }
     const money = value => Number.isFinite(Number(value)) ? "US$ " + Number(value).toFixed(2) : "—";
@@ -737,9 +733,7 @@ if(openaiMasterForm)openaiMasterForm.addEventListener("submit",async event=>{
   const data=Object.fromEntries(new FormData(form));
   try{
     await api("/api/master/openai",{method:"POST",body:JSON.stringify(data)});
-    form.querySelector('input[name="apiKey"]').value="";
-    form.querySelector('input[name="adminKey"]').value="";
-    if(message)message.textContent="Controle OpenAI NEXUS atualizado.";
+    if(message)message.textContent="Controle financeiro OpenAI NEXUS atualizado.";
     await loadIntegrations();
   }catch(error){
     if(message)message.textContent="Não foi possível conectar: "+error.message;
