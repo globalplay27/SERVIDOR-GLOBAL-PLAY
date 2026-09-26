@@ -173,7 +173,7 @@ async function pipedSearch(query, kind) {
 
     const results = items
       .filter(item => String(item?.type || "stream") === "stream")
-      .slice(0, 8)
+      .slice(0, 4)
       .map(item => {
         const rawUrl = String(item?.url || "");
         const videoId = rawUrl.match(/[?&]v=([A-Za-z0-9_-]{11})/)?.[1] || "";
@@ -219,7 +219,7 @@ async function tmdbSearch(env, query, kind) {
   };
 
   const search = await get("search/" + kind, { query, include_adult: "false" });
-  const base = (Array.isArray(search?.results) ? search.results : []).slice(0, 8);
+  const base = (Array.isArray(search?.results) ? search.results : []).slice(0, 4);
   const score = video => {
     const name = String(video?.name || "").toLowerCase();
     const lang = String(video?.iso_639_1 || "").toLowerCase();
@@ -313,7 +313,7 @@ export async function searchTrailers(env, clientId, query, type = "movie") {
         source: "tmdb-catalog",
         results: rows
           .filter(item => item.type === (kind === "tv" ? "series" : "movie"))
-          .slice(0, 8)
+          .slice(0, 4)
       };
     }
   } catch {}
@@ -339,11 +339,11 @@ export async function searchTrailers(env, clientId, query, type = "movie") {
       input: [
         "Tipo solicitado:", kind === "tv" ? "SÉRIE" : "FILME",
         "Consulta:", JSON.stringify(q),
-        "Retorne no máximo 8 obras realmente correspondentes.",
+        "Retorne no máximo 4 obras realmente correspondentes.",
         "Formato obrigatório:",
         '{"results":[{"title":"Título da obra","year":"2024","overview":"Sinopse completa em português.","posterUrl":"","trailerUrl":"https://www.youtube.com/watch?v=...","channel":"Canal","official":true}]}'
       ].join("\n"),
-      max_output_tokens: 2400
+      max_output_tokens: 1200
     });
 
     const text = outputText(response);
@@ -352,7 +352,7 @@ export async function searchTrailers(env, clientId, query, type = "movie") {
     if (a >= 0 && b > a) {
       const parsed = JSON.parse(text.slice(a, b + 1));
       const results = (Array.isArray(parsed?.results) ? parsed.results : [])
-        .slice(0, 8)
+        .slice(0, 4)
         .map(item => normalizeResult(item, kind, q))
         .filter(item => item.title && item.type === (kind === "tv" ? "series" : "movie"));
 
