@@ -1,5 +1,5 @@
 {
-  // deploy-refresh: 2026-09-26-youtube-library-import-restored
+  // deploy-refresh: 2026-09-26-strict-movie-series-catalog
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "servidor-nexus",
   "main": "src/index.js",
