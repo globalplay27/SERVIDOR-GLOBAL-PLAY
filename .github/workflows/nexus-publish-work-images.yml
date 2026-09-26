@@ -1,4 +1,4 @@
-name: Nexus publish Work test images
+name: Nexus publish Work test images # retry existing secrets
 
 on:
   push:
