@@ -11,7 +11,7 @@ on:
 
 concurrency:
   group: nexus-worker-production
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   deploy:
