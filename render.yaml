@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: nexus-youtube-downloader
+    runtime: docker
+    dockerfilePath: ./services/youtube-downloader/Dockerfile
+    dockerContext: ./services/youtube-downloader
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: NEXUS_DOWNLOADER_SECRET
+        generateValue: true
+      - key: MAX_VIDEO_MB
+        value: "95"
