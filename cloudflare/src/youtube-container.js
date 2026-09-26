@@ -1,4 +1,4 @@
-import { Container, ContainerProxy, getContainer } from "@cloudflare/containers";
+import { Container, getContainer } from "@cloudflare/containers";
 
 function parseJson(raw, fallback = {}) {
   try {
@@ -119,7 +119,6 @@ YouTubeDownloader.outboundByHost = {
   }
 };
 
-export { ContainerProxy };
 
 export async function dispatchYouTubeImport(env, clientId, jobId, sourceUrl, title = "trailer") {
   if (!env.YOUTUBE_DOWNLOADER) throw new Error("youtube_container_unavailable");
