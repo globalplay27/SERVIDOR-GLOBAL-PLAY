@@ -1,3 +1,19 @@
+class DisabledYouTubeDownloader {
+  async fetch() {
+    return new Response(JSON.stringify({
+      ok: false,
+      error: "youtube_downloader_disabled",
+      service: "Servidor Nexus"
+    }), {
+      status: 410,
+      headers: { "content-type": "application/json; charset=utf-8" }
+    });
+  }
+}
+
+export class YoutubeDownloader extends DisabledYouTubeDownloader {}
+export class YouTubeDownloader extends DisabledYouTubeDownloader {}
+
 import { openAIKeyStatus } from "./openai-routing.js";
 import { openAIResponses, tokenUsageToday } from "./openai.js";
 import { getState, putState, deleteState } from "./storage.js";
