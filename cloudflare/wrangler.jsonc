@@ -1,5 +1,5 @@
 {
-  // deploy-refresh: 2026-09-26-fast-search-library-import-v2
+  // deploy-refresh: 2026-09-26-trailer-search-budget-bypass
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "servidor-nexus",
   "main": "src/index.js",
