@@ -11,6 +11,7 @@ import { tokenUsageToday } from "./openai.js";
 import { startInstagramOAuth, handleInstagramOAuthCallback } from "./instagram.js";
 import { searchTrailers } from "./trailers.js";
 import { dispatchGitHubVideoIngest } from "./github-video-ingest.js";
+import { startGitHubVideoRender } from "./github-video-render.js";
 import { AGENT_CORE_MODULES, normalizeAgentCoreConfig, agentCoreState, agentExecutions, saveAgentCoreConfig } from "./agent-core.js";
 import { leadsForClient, leadHunterSummary } from "./leads.js";
 import { leadHunterView, saveLeadHunterConfig, runLeadHunter, discardLead } from "./lead-hunter.js";
@@ -772,6 +773,47 @@ export async function handlePortalApi(request, env, url, ctx = null) {
       const code = error instanceof Error ? error.message : String(error);
       return json({ error: code }, code === "video_not_found" ? 404 : 400);
     }
+  }
+
+  const videoProcessMatch = url.pathname.match(/^\/api\/portal\/videos\/([^/]+)\/process$/);
+  if (videoProcessMatch && request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    try {
+      const jobId = decodeURIComponent(videoProcessMatch[1]);
+      await patchVideoJob(env, client.id, jobId, {
+        goal: body.goal,
+        clipDuration: body.duration,
+        requestedClips: body.clips,
+        outputFormat: body.outputFormat,
+        autoSubtitles: body.autoSubtitles,
+        endText: body.endText,
+        endContact: body.endContact,
+        editStyle: body.editStyle || "cinematic-card-v1"
+      });
+      await startGitHubVideoRender(env, client.id, jobId, body);
+      const jobs = await listVideos(env, client.id);
+      return json({ ok: true, job: jobs.find(job => job.id === jobId) || null }, 202);
+    } catch (error) {
+      const code = error instanceof Error ? error.message : String(error);
+      return json({ error: code, message: code }, code === "video_not_found" ? 404 : 400);
+    }
+  }
+
+  const clipMediaMatch = url.pathname.match(/^\/api\/portal\/videos\/([^/]+)\/clips\/([^/]+)\/media$/);
+  if (clipMediaMatch && request.method === "GET") {
+    const jobId = decodeURIComponent(clipMediaMatch[1]);
+    const clipId = decodeURIComponent(clipMediaMatch[2]);
+    const clip = await env.DB.prepare(
+      "SELECT output_object_key FROM video_clips WHERE id=?1 AND job_id=?2 AND client_id=?3 LIMIT 1"
+    ).bind(clipId, jobId, client.id).first();
+    if (!clip?.output_object_key || !env.MEDIA) return json({ error: "clip_not_found" }, 404);
+    const object = await env.MEDIA.get(String(clip.output_object_key));
+    if (!object) return json({ error: "clip_not_found" }, 404);
+    const headers = new Headers();
+    object.writeHttpMetadata(headers);
+    headers.set("cache-control", "private, no-store");
+    if (object.httpEtag) headers.set("etag", object.httpEtag);
+    return new Response(object.body, { status: 200, headers });
   }
 
   const clipApprovalMatch = url.pathname.match(/^\/api\/portal\/videos\/([^/]+)\/clips\/([^/]+)\/approval$/);
