@@ -1,0 +1,30 @@
+name: Create Global Play D1
+
+on:
+  push:
+    branches:
+      - feature/nexus-app-v2-20260924
+    paths:
+      - ".github/workflows/create-globalplay-d1.yml"
+
+jobs:
+  create:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create D1 database if missing
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          response=$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts?per_page=50")
+          account_id=$(node -e 'const d=JSON.parse(process.argv[1]); const r=d.result||[]; if(!d.success||r.length!==1)process.exit(2); process.stdout.write(r[0].id)' "$response")
+          create=$(curl -sS -X POST             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             -H "Content-Type: application/json"             --data '{"name":"globalplay-site-db"}'             "https://api.cloudflare.com/client/v4/accounts/$account_id/d1/database")
+          echo "$create" > create.json
+          node -e '
+            const d=require("./create.json");
+            if(!d.success){console.error(JSON.stringify(d.errors||d));process.exit(2);}
+            const r=d.result||{};
+            console.log("CREATED="+(r.uuid||r.id||""));
+            console.log("NAME="+(r.name||""));
+          '
