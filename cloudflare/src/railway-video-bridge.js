@@ -12,11 +12,9 @@ export function videoBridgeConfigured(env) {
 
 function isBridgePath(pathname) {
   const path = String(pathname || "");
-  return path === "/api/portal/videos"
-    || path.startsWith("/api/portal/videos/")
-    || path === "/api/portal/video-folders"
-    || path.startsWith("/api/portal/video-folders/")
-    || path.startsWith("/api/portal/trailers/");
+  // Video library, folders, uploads and clip management are native Cloudflare/D1/R2 routes now.
+  // Only trailer discovery still uses the compatibility bridge until its provider is migrated.
+  return path.startsWith("/api/portal/trailers/");
 }
 
 function isDirectBinaryUpload(request, url) {
@@ -135,6 +133,20 @@ export async function proxyRailwayVideoRequest(request, env, url, clientId) {
   }
 
   const response = await fetch(target.toString(), init);
+  if (response.status === 401 || response.status === 403) {
+    return new Response(JSON.stringify({
+      ok: false,
+      error: "trailer_provider_auth_failed",
+      message: "O provedor de trailers não autorizou a consulta. Sua sessão NEXUS continua ativa."
+    }), {
+      status: 502,
+      headers: {
+        "content-type": "application/json; charset=utf-8",
+        "cache-control": "no-store",
+        "x-nexus-video-runtime": "compatibility-bridge"
+      }
+    });
+  }
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
