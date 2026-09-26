@@ -15,7 +15,7 @@ import { leadsForClient, leadHunterSummary } from "./leads.js";
 import { leadHunterView, saveLeadHunterConfig, runLeadHunter, discardLead } from "./lead-hunter.js";
 import { createVideoFolder, renameVideoFolder, deleteVideoFolder, patchVideoJob, deleteVideoJob, setClipApproval, adjustClip, selectClip, scheduleClip, bulkScheduleClips } from "./video-library.js";
 import { proxyRailwayVideoRequest, createVideoUploadTicket } from "./railway-video-bridge.js";
-import { createR2VideoUpload, uploadR2VideoPart, completeR2VideoUpload, abortR2VideoUpload, importR2VideoFromUrl } from "./r2-video-upload.js";
+import { createR2VideoUpload, uploadR2VideoPart, completeR2VideoUpload, abortR2VideoUpload, importR2VideoFromUrl, createR2PublicTrailerImportJob, processR2PublicTrailerImportJob } from "./r2-video-upload.js";
 import { decidePost, requestPostRevision, saveOwnPostContent, publishPostNow } from "./posts.js";
 
 function json(data, status = 200, headers = {}) {
@@ -459,18 +459,31 @@ export async function handlePortalApi(request, env, url) {
   ) {
     const body = await request.json().catch(() => ({}));
     try {
-      const imported = await importR2VideoFromUrl(env, client.id, body);
+      const isTrailerImport = url.pathname.endsWith("/import-trailer");
+      const imported = isTrailerImport
+        ? await createR2PublicTrailerImportJob(env, client.id, body)
+        : await importR2VideoFromUrl(env, client.id, body);
+
+      if (isTrailerImport) {
+        if (ctx?.waitUntil) {
+          ctx.waitUntil(processR2PublicTrailerImportJob(env, client.id, imported.jobId).catch(() => {}));
+        } else {
+          processR2PublicTrailerImportJob(env, client.id, imported.jobId).catch(() => {});
+        }
+      }
+
       const jobs = await listVideos(env, client.id);
       return json({
         ok: true,
         ...imported,
         job: jobs.find(job => job.id === imported.jobId) || null
-      }, 201);
+      }, isTrailerImport ? 202 : 201);
     } catch (error) {
       const code = error instanceof Error ? error.message : String(error);
       const status = code === "r2_unavailable" ? 503
         : code === "video_too_large" ? 413
         : code.startsWith("video_source_http_") ? 502
+        : code.startsWith("invidious_resolve_failed") ? 502
         : 400;
       return json({ error: code }, status);
     }
