@@ -34,8 +34,11 @@ jobs:
         run: |
           set -euo pipefail
           rm -f /tmp/nexus-video.*
+          set +e
           yt-dlp \
             --no-playlist \
+            --js-runtimes node \
+            --extractor-args "youtube:player_client=web_embedded,android_vr;player_skip=webpage" \
             --socket-timeout 30 \
             --retries 3 \
             --fragment-retries 3 \
@@ -44,6 +47,25 @@ jobs:
             -f "bv*[height<=480]+ba/b[height<=480]/best[height<=480]" \
             -o "/tmp/nexus-video.%(ext)s" \
             "$SOURCE_URL"
+          RC=$?
+          if [ "$RC" -ne 0 ]; then
+            rm -f /tmp/nexus-video.*
+            yt-dlp \
+              --no-playlist \
+              --js-runtimes node \
+              --extractor-args "youtube:player_client=web_embedded,android_vr,default" \
+              --socket-timeout 30 \
+              --retries 3 \
+              --fragment-retries 3 \
+              --max-filesize 90M \
+              --merge-output-format mp4 \
+              -f "bv*[height<=480]+ba/b[height<=480]/best[height<=480]" \
+              -o "/tmp/nexus-video.%(ext)s" \
+              "$SOURCE_URL"
+            RC=$?
+          fi
+          set -e
+          if [ "$RC" -ne 0 ]; then exit "$RC"; fi
 
           FILE="$(find /tmp -maxdepth 1 -type f -name 'nexus-video.*' | head -n 1)"
           if [ -z "$FILE" ] || [ ! -s "$FILE" ]; then
