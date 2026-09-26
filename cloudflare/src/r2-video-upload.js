@@ -166,7 +166,7 @@ export async function completeR2VideoUpload(env, clientId, input = {}) {
     progress: 100,
     storage: "r2",
     objectEtag: object.httpEtag || "",
-    message: "Vídeo salvo na biblioteca. Configure os cortes antes de iniciar."
+    message: "Vídeo salvo na biblioteca com áudio original. Aguardando ação do cliente."
   };
 
   try {
@@ -521,7 +521,7 @@ export async function completeGithubVideoIngest(env, clientId, jobId, request, c
   delete settings.ingestCallbackToken;
 
   await env.DB.prepare(
-    "UPDATE video_jobs SET source_object_key=?3,status='queued',settings_json=?4,result_json=?5,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2"
+    "UPDATE video_jobs SET source_object_key=?3,status='awaiting_configuration',settings_json=?4,result_json=?5,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2"
   ).bind(
     String(jobId),
     String(clientId),
@@ -529,11 +529,11 @@ export async function completeGithubVideoIngest(env, clientId, jobId, request, c
     JSON.stringify(settings),
     JSON.stringify({
       ...result,
-      progress: 50,
+      progress: 100,
       storage: "r2",
       objectEtag: object.httpEtag || "",
       resolver: "github-actions-yt-dlp",
-      message: "Vídeo recebido no R2. Iniciando análise e cortes.",
+      message: "Vídeo salvo na biblioteca com áudio original. Nenhum corte foi iniciado.",
       error: ""
     })
   ).run();
@@ -682,7 +682,7 @@ export async function processR2PublicTrailerImportJob(env, clientId, jobId) {
     settings.displayName = settings.filename;
 
     await env.DB.prepare(
-      "UPDATE video_jobs SET source_object_key=?3,status='queued',settings_json=?4,result_json=?5,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2"
+      "UPDATE video_jobs SET source_object_key=?3,status='awaiting_configuration',settings_json=?4,result_json=?5,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2"
     ).bind(
       row.id,
       row.client_id,
@@ -690,12 +690,12 @@ export async function processR2PublicTrailerImportJob(env, clientId, jobId) {
       JSON.stringify(settings),
       JSON.stringify({
         ...result,
-        progress: 50,
+        progress: 100,
         storage: "r2",
         objectEtag: object.httpEtag || "",
         resolver: resolved.resolver || resolved.host,
         importAttempts: attempt,
-        message: "Vídeo recebido no R2. Iniciando análise e cortes.",
+        message: "Vídeo salvo na biblioteca com áudio original. Nenhum corte foi iniciado.",
         error: ""
       })
     ).run();
@@ -789,7 +789,7 @@ export async function importR2PublicTrailer(env, clientId, input = {}) {
     storage: "r2",
     objectEtag: object.httpEtag || "",
     resolver: "invidious",
-    message: "Trailer recebido na biblioteca. Iniciando cortes."
+    message: "Trailer recebido na biblioteca com áudio original. Aguardando ação do cliente."
   };
 
   try {
@@ -869,7 +869,7 @@ export async function importR2VideoFromUrl(env, clientId, input = {}) {
     progress: 100,
     storage: "r2",
     objectEtag: object.httpEtag || "",
-    message: "Vídeo importado para a biblioteca. Configure os cortes antes de iniciar."
+    message: "Vídeo importado para a biblioteca com áudio original. Aguardando ação do cliente."
   };
 
   try {
