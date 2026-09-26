@@ -181,6 +181,83 @@ async function tokenUsage(env) {
   }));
 }
 
+
+async function ensureMasterSettingsTable(env) {
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS master_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL DEFAULT '',
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`
+  ).run();
+}
+
+async function getMasterSetting(env, key, fallback = "") {
+  await ensureMasterSettingsTable(env);
+  const row = await env.DB.prepare(
+    "SELECT value FROM master_settings WHERE key = ?1 LIMIT 1"
+  ).bind(String(key)).first();
+  return row ? String(row.value ?? "") : String(fallback ?? "");
+}
+
+async function setMasterSetting(env, key, value) {
+  await ensureMasterSettingsTable(env);
+  await env.DB.prepare(
+    `INSERT INTO master_settings(key, value, updated_at)
+     VALUES(?1, ?2, CURRENT_TIMESTAMP)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`
+  ).bind(String(key), String(value ?? "")).run();
+}
+
+async function openAIMasterSummary(env) {
+  const usage = await tokenUsage(env);
+  const apiConnected = Boolean(String(env.OPENAI_API_KEY_SHARED || "").trim());
+  const ragnarConnected = Boolean(String(env.OPENAI_API_KEY_RAGNAR || "").trim());
+
+  const [balanceRaw, budgetRaw] = await Promise.all([
+    getMasterSetting(env, "openai_current_balance_usd", ""),
+    getMasterSetting(env, "openai_monthly_budget_usd", "")
+  ]);
+
+  const balanceEstimatedUsd = balanceRaw === "" ? null : Number(balanceRaw);
+  const monthlyBudgetUsd = budgetRaw === "" ? null : Number(budgetRaw);
+
+  const monthPrefix = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit"
+  }).format(new Date());
+
+  const monthRows = usage.filter(row => String(row.dayKey || "").startsWith(monthPrefix));
+  const monthTokens = monthRows.reduce((sum, row) => sum + Number(row.usedTokens || 0), 0);
+  const monthCostUsd = null;
+  const budgetRemainingUsd = monthlyBudgetUsd == null || monthCostUsd == null
+    ? null
+    : Math.max(0, monthlyBudgetUsd - monthCostUsd);
+  const budgetPercent = monthlyBudgetUsd && monthCostUsd != null
+    ? Math.min(100, Math.round((monthCostUsd / monthlyBudgetUsd) * 100))
+    : null;
+
+  return {
+    ok: true,
+    connected: apiConnected,
+    apiConnected,
+    billingConnected: false,
+    ragnarConnected,
+    routing: {
+      ragnar: "OPENAI_API_KEY_RAGNAR",
+      default: "OPENAI_API_KEY_SHARED"
+    },
+    balanceEstimatedUsd: Number.isFinite(balanceEstimatedUsd) ? balanceEstimatedUsd : null,
+    monthlyBudgetUsd: Number.isFinite(monthlyBudgetUsd) ? monthlyBudgetUsd : null,
+    budgetRemainingUsd,
+    budgetPercent,
+    monthCostUsd,
+    monthTokens,
+    usage
+  };
+}
+
 export async function handleMaster(request, env, url) {
   if ((url.pathname === "/master" || url.pathname === "/master/" || url.pathname === "/index.html")
       && request.method === "GET") {
@@ -559,15 +636,31 @@ export async function handleMaster(request, env, url) {
   }
 
   if (url.pathname === "/api/master/openai" && request.method === "GET") {
-    const usage = await tokenUsage(env);
-    return json({
-      ok: true,
-      routing: {
-        ragnar: "OPENAI_API_KEY_RAGNAR",
-        default: "OPENAI_API_KEY_SHARED"
-      },
-      usage
-    });
+    return json(await openAIMasterSummary(env));
+  }
+
+  if (url.pathname === "/api/master/openai" && request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+
+    if (Object.prototype.hasOwnProperty.call(body, "currentBalanceUsd")) {
+      const value = String(body.currentBalanceUsd ?? "").trim();
+      if (value !== "") {
+        const number = Number(value);
+        if (!Number.isFinite(number) || number < 0) return json({ error: "invalid_balance" }, 400);
+        await setMasterSetting(env, "openai_current_balance_usd", number.toFixed(2));
+      }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, "monthlyBudgetUsd")) {
+      const value = String(body.monthlyBudgetUsd ?? "").trim();
+      if (value !== "") {
+        const number = Number(value);
+        if (!Number.isFinite(number) || number <= 0) return json({ error: "invalid_budget" }, 400);
+        await setMasterSetting(env, "openai_monthly_budget_usd", number.toFixed(2));
+      }
+    }
+
+    return json(await openAIMasterSummary(env));
   }
 
   return json({
