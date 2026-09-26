@@ -1160,7 +1160,11 @@ function renderVideoJobs(data={}){
 async function loadVideoJobs(){
   try{
     const r=await portalFetch("/api/portal/videos");
-    if(r.status===401){showPortalLogin();return;}
+    if(r.status===401){
+      const sessionCheck=await portalFetch("/api/portal/session");
+      if(!sessionCheck.ok){showPortalLogin();return;}
+      throw new Error("A biblioteca de vídeos não respondeu, mas sua sessão continua ativa.");
+    }
     if(!r.ok)throw new Error();
     renderVideoJobs(await r.json());
   }catch{
