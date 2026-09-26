@@ -7,7 +7,7 @@ import { handleMaster } from "./master.js";
 import { runSchedulerTick } from "./scheduler.js";
 import { processDueJobs } from "./executor.js";
 import { masterCredentialsValid, createMasterSession, authenticatePortalUser, createPortalSession, masterSessionCookie, portalSessionCookie, loginRateLimitStatus, recordLoginFailure, clearLoginFailures, resolvePortalSession, resolveMasterSession } from "./auth.js";
-import { processQueuedVideoJobs, processVideoJob } from "./video-processing.js";
+import { processQueuedVideoJobs, processVideoJob, githubVideoRenderSource, completeGithubVideoRender, failGithubVideoRender } from "./video-processing.js";
 import { processQueuedVideoImports, completeGithubVideoIngest, failGithubVideoIngest } from "./r2-video-upload.js";
 
 export class YoutubeDownloader extends DurableObject {
@@ -304,6 +304,52 @@ export default {
       } catch (error) {
         const code = error instanceof Error ? error.message : String(error);
         return json({ error: code }, code === "invalid_ingest_callback_token" ? 401 : 400);
+      }
+    }
+
+    if (url.pathname === "/api/internal/video-render/source" && request.method === "GET") {
+      const jobId = String(request.headers.get("x-nexus-job-id") || "");
+      const clipId = String(request.headers.get("x-nexus-clip-id") || "");
+      const clientId = String(request.headers.get("x-nexus-client-id") || "");
+      const callbackToken = String(request.headers.get("x-nexus-callback-token") || "");
+      if (!jobId || !clipId || !clientId || !callbackToken) return json({ error: "render_headers_required" }, 400);
+      try {
+        const object = await githubVideoRenderSource(env, clientId, jobId, clipId, callbackToken);
+        const headers = new Headers({ "content-type": object.httpMetadata?.contentType || "video/mp4", "cache-control": "private, no-store" });
+        if (Number.isFinite(object.size)) headers.set("content-length", String(object.size));
+        return new Response(object.body, { status: 200, headers });
+      } catch (error) {
+        const code = error instanceof Error ? error.message : String(error);
+        return json({ error: code }, code === "invalid_render_callback_token" ? 401 : 404);
+      }
+    }
+
+    if (url.pathname === "/api/internal/video-render/upload" && request.method === "PUT") {
+      const jobId = String(request.headers.get("x-nexus-job-id") || "");
+      const clipId = String(request.headers.get("x-nexus-clip-id") || "");
+      const clientId = String(request.headers.get("x-nexus-client-id") || "");
+      const callbackToken = String(request.headers.get("x-nexus-callback-token") || "");
+      if (!jobId || !clipId || !clientId || !callbackToken) return json({ error: "render_headers_required" }, 400);
+      try {
+        return json(await completeGithubVideoRender(env, clientId, jobId, clipId, request, callbackToken), 201);
+      } catch (error) {
+        const code = error instanceof Error ? error.message : String(error);
+        return json({ error: code }, code === "invalid_render_callback_token" ? 401 : 400);
+      }
+    }
+
+    if (url.pathname === "/api/internal/video-render/fail" && request.method === "POST") {
+      const jobId = String(request.headers.get("x-nexus-job-id") || "");
+      const clipId = String(request.headers.get("x-nexus-clip-id") || "");
+      const clientId = String(request.headers.get("x-nexus-client-id") || "");
+      const callbackToken = String(request.headers.get("x-nexus-callback-token") || "");
+      const body = await request.json().catch(() => ({}));
+      if (!jobId || !clipId || !clientId || !callbackToken) return json({ error: "render_headers_required" }, 400);
+      try {
+        return json(await failGithubVideoRender(env, clientId, jobId, clipId, callbackToken, body?.error));
+      } catch (error) {
+        const code = error instanceof Error ? error.message : String(error);
+        return json({ error: code }, code === "invalid_render_callback_token" ? 401 : 400);
       }
     }
 
