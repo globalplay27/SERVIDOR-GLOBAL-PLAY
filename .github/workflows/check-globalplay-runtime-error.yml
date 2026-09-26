@@ -1,0 +1,24 @@
+name: Check Global Play Runtime Error
+
+on:
+  push:
+    branches:
+      - feature/nexus-app-v2-20260924
+    paths:
+      - ".github/workflows/check-globalplay-runtime-error.yml"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract runtime error
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -sS -L --max-time 20 https://globalplay-site.diamantehinode2015.workers.dev/ -o body.html || true
+          python - <<'PY'
+          import re, html
+          body=open("body.html",encoding="utf-8",errors="ignore").read()
+          m=re.search(r'<div class="error-message">(.*?)</div>', body, re.S)
+          print("ERROR:", html.unescape(re.sub(r"<[^>]+>"," ",m.group(1))).strip() if m else "not-found")
+          PY
