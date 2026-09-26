@@ -240,6 +240,72 @@ export default {
     const portalResponse = await handlePortalApi(request, env, url);
     if (portalResponse) return portalResponse;
 
+    if (url.pathname === "/api/internal/work-image-test" && request.method === "POST") {
+      if (url.searchParams.get("k") !== "98f21e484c77cc043dde0c662327a1c3a2f26c6d4a2a35d7") return json({ error: "not_found" }, 404);
+
+      const clientId = String(url.searchParams.get("clientId") || "");
+      const allowed = new Set(["ragnar-one", "globalplay-streaming"]);
+      if (!allowed.has(clientId)) return json({ error: "invalid_target" }, 400);
+      if (!env.MEDIA) return json({ error: "r2_unavailable" }, 503);
+
+      const contentType = String(request.headers.get("content-type") || "").toLowerCase().split(";")[0].trim();
+      if (!["image/png","image/jpeg","image/webp"].includes(contentType)) {
+        return json({ error: "invalid_image_type" }, 400);
+      }
+
+      const bytes = await request.arrayBuffer();
+      if (!bytes.byteLength || bytes.byteLength > 10 * 1024 * 1024) {
+        return json({ error: "invalid_image_size" }, 400);
+      }
+
+      const client = await getClient(env, clientId);
+      if (!client) return json({ error: "client_not_found" }, 404);
+
+      const postId = "work-test:" + clientId + ":" + crypto.randomUUID();
+      const ext = contentType === "image/png" ? "png" : contentType === "image/webp" ? "webp" : "jpg";
+      const objectKey = "posts/" + clientId + "/" + postId + "/work-image." + ext;
+      await env.MEDIA.put(objectKey, bytes, {
+        httpMetadata: { contentType, cacheControl: "public, max-age=31536000, immutable" },
+        customMetadata: { clientId, postId, kind: "work-test-image" }
+      });
+
+      const origin = new URL(request.url).origin;
+      const imageUrl = origin + "/media/" + objectKey;
+      const caption = clientId === "ragnar-one"
+        ? "Uma nova saga começa no seu sofá. ⚔️\n\nEntretenimento para curtir no seu ritmo.\n\nComente QUERO para saber mais.\n\n#RagnarOne #Streaming #FilmesESeries #Entretenimento"
+        : "Seu próximo filme favorito pode estar aqui. 🍿\n\nTransforme sua noite em cinema e aproveite seu entretenimento onde quiser.\n\nComente QUERO para saber mais.\n\n#GlobalPlay #Streaming #FilmesESeries #Entretenimento";
+
+      const payload = JSON.stringify({
+        imageUrl,
+        source: "work-test-20260926",
+        title: clientId === "ragnar-one" ? "Uma nova saga começa no seu sofá" : "Seu próximo filme favorito está aqui",
+        testExtraordinary: true
+      });
+
+      await env.DB.prepare(
+        `INSERT INTO post_ledger(
+          id, client_id, scheduled_for, scheduled_hour, status, approval_status,
+          media_id, caption, image_object_key, error, cost_usd, payload_json,
+          created_at, updated_at
+        ) VALUES(?1, ?2, NULL, '', 'ready', 'approved', '', ?3, ?4, '', 0, ?5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
+      ).bind(postId, clientId, caption, objectKey, payload).run();
+
+      try {
+        const result = await publishPostNow(env, client, postId);
+        return json({ ok: true, clientId, postId, imageUrl, permalink: result.permalink || "", post: result.post });
+      } catch (error) {
+        return json({
+          ok: false,
+          clientId,
+          postId,
+          imageUrl,
+          error: error instanceof Error ? error.message : String(error),
+          message: error?.messageForUser || null,
+          post: error?.post || null
+        }, Number(error?.status || 400));
+      }
+    }
+
     if (url.pathname === "/api/internal/test-post-control" && request.method === "POST") {
       const expected = String(env.NEXUS_TEST_PUBLISH_KEY || "");
       const provided = String(request.headers.get("authorization") || "");
