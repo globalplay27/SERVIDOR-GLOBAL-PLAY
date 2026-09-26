@@ -489,15 +489,11 @@ async function loadIntegrations() {
     const items = [
       {
         name: "GitHub Core",
-        detail: status.githubConfigured ? "Código central conectado" : "Configuração administrativa opcional",
-        label: status.githubConfigured ? "CONECTADO" : "OPCIONAL",
+        detail: status.githubConfigured
+          ? "Repositório central conectado · deploy automático ativo"
+          : "Conexão com o repositório indisponível",
+        label: status.githubConfigured ? "CONECTADO" : "PENDENTE",
         ready: Boolean(status.githubConfigured)
-      },
-      {
-        name: "Railway Core",
-        detail: status.railwayConfigured ? "Hospedagem central operacional" : "Integração pendente",
-        label: status.railwayConfigured ? "CONECTADO" : "PENDENTE",
-        ready: Boolean(status.railwayConfigured)
       },
       {
         name: "Meta / Instagram",
@@ -515,20 +511,14 @@ async function loadIntegrations() {
         : "NÃO CONECTADA";
       openaiState.classList.toggle("off", !openai.connected);
     }
-    const money = value => Number.isFinite(Number(value)) ? "US$ " + Number(value).toFixed(2) : "—";
-    $("#openai-balance").textContent = money(openai.balanceEstimatedUsd);
-    $("#openai-month-cost").textContent = money(openai.monthCostUsd);
-    $("#openai-month-budget").textContent = money(openai.monthlyBudgetUsd);
-    $("#openai-budget-remaining").textContent = money(openai.budgetRemainingUsd);
-    $("#openai-balance-note").textContent = openai.balanceEstimatedUsd != null
-      ? "estimativa automática desde o último saldo informado"
-      : "informe seu saldo atual uma vez";
+    const tokens = value => Number(value || 0).toLocaleString("pt-BR");
+    $("#openai-balance").textContent = tokens(openai.nexusTodayTokens);
+    $("#openai-month-cost").textContent = tokens(openai.nexusMonthTokens);
+    $("#openai-month-budget").textContent = tokens(openai.ragnarTodayTokens);
+    $("#openai-budget-remaining").textContent = tokens(openai.ragnarMonthTokens);
+    $("#openai-balance-note").textContent = "tokens NEXUS usados hoje";
     const budgetNote = $("#openai-budget-note");
-    if (budgetNote) {
-      budgetNote.textContent = openai.budgetPercent != null
-        ? openai.budgetPercent + "% do orçamento consumido"
-        : "defina o orçamento mensal";
-    }
+    if (budgetNote) budgetNote.textContent = "tokens Ragnar usados no mês";
     const igState=$("#instagram-master-state");
     if(igState){
       igState.textContent=instagram.configured?"CONFIGURADO":"NÃO CONFIGURADO";
