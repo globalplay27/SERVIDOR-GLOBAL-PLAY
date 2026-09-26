@@ -36,7 +36,7 @@ function validToken(row, token) {
 }
 
 export async function dispatchGitHubVideoIngest(env, clientId, jobId, sourceUrl, title = "trailer") {
-  const token = String(env.NEXUS_ACTIONS_TOKEN || "").trim();
+  const token = String(env.GITHUB_ACTIONS_TOKEN || "").trim();
   if (!token) throw new Error("github_actions_token_missing");
 
   const repo = String(env.GITHUB_INGEST_REPOSITORY || "globalplay27/SERVIDOR-GLOBAL-PLAY").trim();
@@ -129,7 +129,7 @@ export async function dispatchGitHubVideoIngest(env, clientId, jobId, sourceUrl,
 }
 
 export async function dispatchPendingGitHubVideoImports(env, limit = 2) {
-  if (!env?.DB || !env.NEXUS_ACTIONS_TOKEN) return { processed: 0 };
+  if (!env?.DB || !env.GITHUB_ACTIONS_TOKEN) return { processed: 0 };
   const rows = await env.DB.prepare(
     "SELECT id,client_id,settings_json FROM video_jobs WHERE status='importing' ORDER BY updated_at ASC LIMIT ?1"
   ).bind(Math.max(1, Math.min(5, Number(limit || 1)))).all();
