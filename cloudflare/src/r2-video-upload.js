@@ -443,6 +443,38 @@ async function youtubeMuxedStream(sourceUrl) {
 }
 
 
+function downloaderServiceConfig(env) {
+  return {
+    url: String(env?.NEXUS_DOWNLOADER_URL || "").trim().replace(/\/+$/, ""),
+    secret: String(env?.NEXUS_DOWNLOADER_SECRET || "").trim()
+  };
+}
+
+async function dispatchDownloaderService(env, payload) {
+  const { url, secret } = downloaderServiceConfig(env);
+  if (!url) return { dispatched: false, reason: "downloader_not_configured" };
+  const callbackBase = String(
+    env?.PUBLIC_BASE_URL || "https://servidor-nexus.diamantehinode2015.workers.dev"
+  ).trim().replace(/\/+$/, "");
+  const response = await fetch(url + "/ingest", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      ...(secret ? { authorization: "Bearer " + secret } : {})
+    },
+    body: JSON.stringify({
+      ...payload,
+      callback_base: callbackBase
+    }),
+    signal: AbortSignal.timeout(8000)
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error("downloader_dispatch_http_" + response.status + (detail ? "_" + detail.slice(0, 120) : ""));
+  }
+  return { dispatched: true };
+}
+
 function githubActionsConfig(env) {
   const token = String(env?.NEXUS_GITHUB_ACTIONS_TOKEN || "").trim();
   const repo = String(env?.NEXUS_GITHUB_ACTIONS_REPO || "globalplay27/SERVIDOR-GLOBAL-PLAY").trim();
@@ -504,7 +536,7 @@ export async function completeGithubVideoIngest(env, clientId, jobId, request, c
       originalName: fileName,
       sourceHost: "youtube.com",
       sourceVideoId: youtubeVideoIdFromUrl(settings.sourceUrl),
-      resolver: "github-actions-yt-dlp",
+      resolver: "external-yt-dlp",
       kind: "video-source"
     }
   });
@@ -532,7 +564,7 @@ export async function completeGithubVideoIngest(env, clientId, jobId, request, c
       progress: 100,
       storage: "r2",
       objectEtag: object.httpEtag || "",
-      resolver: "github-actions-yt-dlp",
+      resolver: "external-yt-dlp",
       message: "Vídeo salvo na biblioteca com áudio original. Nenhum corte foi iniciado.",
       error: ""
     })
@@ -595,21 +627,45 @@ export async function createR2PublicTrailerImportJob(env, clientId, input = {}) 
      VALUES(?1,?2,'','importing',?3,?4,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)`
   ).bind(jobId, String(clientId), JSON.stringify(settings), JSON.stringify(result)).run();
 
+  const ingestPayload = {
+    source_url: settings.sourceUrl,
+    job_id: jobId,
+    client_id: String(clientId),
+    callback_token: settings.ingestCallbackToken,
+    title
+  };
+
   try {
-    const dispatch = await dispatchGithubLibraryIngest(env, {
-      source_url: settings.sourceUrl,
-      job_id: jobId,
-      client_id: String(clientId),
-      callback_token: settings.ingestCallbackToken,
-      title
-    });
+    const downloader = await dispatchDownloaderService(env, ingestPayload);
+    if (downloader.dispatched) {
+      await env.DB.prepare(
+        "UPDATE video_jobs SET status='external_ingest',result_json=?3,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2"
+      ).bind(
+        jobId,
+        String(clientId),
+        JSON.stringify({ ...result, progress: 8, message: "Download iniciado pelo NEXUS. O vídeo será enviado direto para a biblioteca.", resolver: "nexus-downloader-yt-dlp" })
+      ).run();
+      return { jobId, ingest: "nexus-downloader" };
+    }
+  } catch (error) {
+    await env.DB.prepare(
+      "UPDATE video_jobs SET result_json=?3,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2"
+    ).bind(
+      jobId,
+      String(clientId),
+      JSON.stringify({ ...result, progress: 6, message: "O downloader principal falhou. Tentando rota de contingência.", downloaderError: String(error instanceof Error ? error.message : error).slice(0, 240) })
+    ).run();
+  }
+
+  try {
+    const dispatch = await dispatchGithubLibraryIngest(env, ingestPayload);
     if (dispatch.dispatched) {
       await env.DB.prepare(
         "UPDATE video_jobs SET status='external_ingest',result_json=?3,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2"
       ).bind(
         jobId,
         String(clientId),
-        JSON.stringify({ ...result, progress: 8, message: "Download iniciado pelo NEXUS. O vídeo será enviado direto para a biblioteca.", resolver: "github-actions-yt-dlp" })
+        JSON.stringify({ ...result, progress: 8, message: "Download iniciado pela rota de contingência. O vídeo será enviado direto para a biblioteca.", resolver: "external-yt-dlp" })
       ).run();
       return { jobId, ingest: "github-actions" };
     }
