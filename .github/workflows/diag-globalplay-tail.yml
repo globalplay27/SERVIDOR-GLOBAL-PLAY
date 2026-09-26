@@ -1,0 +1,41 @@
+name: Diagnose Global Play Worker Exception
+
+on:
+  push:
+    branches:
+      - feature/nexus-app-v2-20260924
+    paths:
+      - ".github/workflows/diag-globalplay-tail.yml"
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Discover Cloudflare account
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          response=$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts?per_page=50")
+          account_id=$(node -e 'const d=JSON.parse(process.argv[1]); const r=d.result||[]; if(!d.success||r.length!==1)process.exit(2); process.stdout.write(r[0].id)' "$response")
+          echo "CLOUDFLARE_ACCOUNT_ID=$account_id" >> "$GITHUB_ENV"
+      - name: Capture Worker exception
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -u
+          timeout 18s npx --yes wrangler@4.86.0 tail globalplay-site --format json > tail.log 2>&1 &
+          pid=$!
+          sleep 5
+          curl -sS -L --max-time 10 https://globalplay-site.diamantehinode2015.workers.dev/admin/login >/dev/null || true
+          sleep 5
+          kill $pid 2>/dev/null || true
+          wait $pid 2>/dev/null || true
+          echo "=== TAIL ==="
+          cat tail.log
