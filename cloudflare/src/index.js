@@ -6,8 +6,6 @@ import { handleMaster } from "./master.js";
 import { runSchedulerTick } from "./scheduler.js";
 import { processDueJobs } from "./executor.js";
 import { masterCredentialsValid, createMasterSession, authenticatePortalUser, createPortalSession, masterSessionCookie, portalSessionCookie } from "./auth.js";
-import { getClient } from "./clients.js";
-import { publishPostNow } from "./posts.js";
 
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
@@ -221,59 +219,6 @@ export default {
 
     const portalResponse = await handlePortalApi(request, env, url);
     if (portalResponse) return portalResponse;
-
-    if (url.pathname === "/__nexus_test_post" && request.method === "GET") {
-      if (url.searchParams.get("k") !== "nxpost-20260926-a7f4d9c21b8e6f3051") return json({ error: "not_found" }, 404);
-      const action = String(url.searchParams.get("action") || "list");
-      const clientId = String(url.searchParams.get("clientId") || "");
-      const postId = String(url.searchParams.get("postId") || "");
-      const allowed = new Set(["ragnar-one", "globalplay-streaming"]);
-      if (action === "list") {
-        const ids = ["ragnar-one", "globalplay-streaming"];
-        const result = {};
-        for (const id of ids) {
-          const rows = await env.DB.prepare(
-            `SELECT id, client_id, status, approval_status, caption, image_object_key, payload_json, created_at, updated_at
-             FROM post_ledger
-             WHERE client_id = ?1 AND status != 'published'
-             ORDER BY updated_at DESC, created_at DESC
-             LIMIT 8`
-          ).bind(id).all();
-          result[id] = (rows?.results || []).map(row => {
-            let payload = {};
-            try { payload = JSON.parse(String(row.payload_json || "{}")); } catch {}
-            return {
-              id: row.id,
-              status: row.status,
-              approvalStatus: row.approval_status,
-              caption: row.caption,
-              imageObjectKey: row.image_object_key,
-              imageUrl: payload.imageUrl || payload.publicImageUrl || "",
-              source: payload.source || "",
-              createdAt: row.created_at,
-              updatedAt: row.updated_at
-            };
-          });
-        }
-        return json({ ok: true, result });
-      }
-      if (action === "publish") {
-        if (!allowed.has(clientId) || !postId) return json({ error: "invalid_target" }, 400);
-        const client = await getClient(env, clientId);
-        if (!client) return json({ error: "client_not_found" }, 404);
-        try {
-          return json(await publishPostNow(env, client, postId));
-        } catch (error) {
-          return json({
-            ok: false,
-            error: error instanceof Error ? error.message : String(error),
-            message: error?.messageForUser || null,
-            post: error?.post || null
-          }, Number(error?.status || 400));
-        }
-      }
-      return json({ error: "invalid_action" }, 400);
-    }
 
     if (url.pathname === "/health" || url.pathname === "/api/health") {
       return health(env);
