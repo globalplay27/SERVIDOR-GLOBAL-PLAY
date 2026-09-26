@@ -1095,7 +1095,7 @@ async function moveVideoJob(jobId,folderId){
 }
 
 function videoJobStatus(job){
-  const labels={importing:"IMPORTANDO DO YOUTUBE",awaiting_configuration:"AGUARDANDO CONFIGURAÇÃO",queued:"RECEBIDO",processing:"PROCESSANDO",uploaded:"RECEBIDO",transcribing:"TRANSCREVENDO",selecting:"ESCOLHENDO CORTES",cutting:"CRIANDO CORTES",ready:"PRONTO PARA REVISÃO",failed:"FALHOU"};
+  const labels={importing:"IMPORTANDO DO YOUTUBE",awaiting_configuration:"NA BIBLIOTECA",queued:"RECEBIDO",processing:"PROCESSANDO",uploaded:"RECEBIDO",transcribing:"TRANSCREVENDO",selecting:"ESCOLHENDO CORTES",cutting:"CRIANDO CORTES",ready:"PRONTO PARA REVISÃO",failed:"FALHOU"};
   return labels[job.status]||String(job.status||"RECEBIDO").toUpperCase();
 }
 function videoApprovalLabel(status){
@@ -1159,34 +1159,15 @@ function renderVideoJobs(data={}){
         const goal=job.goal||"viral",duration=String(job.clipDuration||30),format=job.outputFormat||"reel";
         return header+`<div class="video-cutter-config">
           <div class="video-cutter-config-head">
-            <div><strong>${needsReimport?"Importação falhou":job.status==="failed"?"Ajuste e tente novamente":"Configure os cortes antes de iniciar"}</strong><span>Escolha o tipo de corte, o tempo e quantas opções você quer. O NEXUS só começa depois da sua confirmação.</span></div>
+            <div><strong>${needsReimport?"Importação falhou":job.status==="failed"?"Tente novamente":"Vídeo original salvo"}</strong><span>O arquivo fica inteiro na biblioteca. Quando você decidir criar, o NEXUS gera uma única versão vertical 9:16, mantém o áudio original e não adiciona legendas.</span></div>
           </div>
           <div class="video-cutter-config-grid">
-            <label><span>Tipo de corte</span><select data-video-job-goal>
-              <option value="viral" ${goal==="viral"?"selected":""}>Engajamento / viral</option>
-              <option value="sales" ${goal==="sales"?"selected":""}>Vendas</option>
-              <option value="educational" ${goal==="educational"?"selected":""}>Educativo</option>
-              <option value="podcast" ${goal==="podcast"?"selected":""}>Podcast / entrevista</option>
-              <option value="testimonial" ${goal==="testimonial"?"selected":""}>Depoimento</option>
-            </select></label>
-            <label><span>Tempo de cada corte</span><select data-video-job-duration>
-              <option value="15" ${duration==="15"?"selected":""}>15 segundos</option>
-              <option value="30" ${duration==="30"?"selected":""}>30 segundos</option>
-              <option value="45" ${duration==="45"?"selected":""}>45 segundos</option>
-              <option value="60" ${duration==="60"?"selected":""}>60 segundos</option>
-            </select></label>
-            <label><span>Quantidade de opções</span><input data-video-job-clips type="number" min="1" max="12" value="${Math.max(1,Math.min(12,Number(job.requestedClips||3)))}"></label>
-            <label><span>Formato</span><select data-video-job-format>
-              <option value="reel" ${format==="reel"?"selected":""}>Reels / Stories 9:16</option>
-              <option value="feed" ${format==="feed"?"selected":""}>Feed 4:5</option>
-              <option value="square" ${format==="square"?"selected":""}>Quadrado 1:1</option>
-            </select></label>
-            <label class="video-config-check"><input data-video-job-subtitles type="checkbox" ${job.autoSubtitles!==false?"checked":""}><span>Legenda automática PT-BR quando o áudio estiver em outro idioma</span></label>
-            <label><span>Frase final (opcional)</span><input data-video-job-end-text maxlength="90" value="${escapeSupport(job.endText||"")}" placeholder="Ex.: Continua..."></label>
-            <label><span>Contato / CTA final (opcional)</span><input data-video-job-end-contact maxlength="90" value="${escapeSupport(job.endContact||"")}" placeholder="Ex.: WhatsApp..."></label>
+            <label><span>Formato</span><input value="Instagram vertical 9:16" disabled></label>
+            <label><span>Áudio</span><input value="Original do vídeo" disabled></label>
+            <label><span>WhatsApp no vídeo (opcional)</span><input data-video-job-end-contact maxlength="90" value="${escapeSupport(job.endContact||"")}" placeholder="Ex.: (21) 99999-9999"></label>
           </div>
           ${job.status==="failed"&&job.message?`<p class="video-config-error">${escapeSupport(job.message)}</p>`:""}
-          <button type="button" class="connection-submit video-start-processing" data-video-start-processing="${escapeSupport(job.id)}">${needsReimport?"Tentar importar novamente":job.status==="failed"?"Tentar gerar cortes novamente":"Criar cortes agora"}</button>
+          <button type="button" class="connection-submit video-start-processing" data-video-start-processing="${escapeSupport(job.id)}">${needsReimport?"Tentar importar novamente":job.status==="failed"?"Tentar criar novamente":"Criar vídeo 9:16"}</button>
           <div class="client-post-response" data-video-job-response></div>
         </div></article>`;
       }
@@ -1246,17 +1227,15 @@ async function startVideoProcessing(button){
   if(!jobId||!card)return;
   const response=card.querySelector("[data-video-job-response]");
   const payload={
-    goal:card.querySelector("[data-video-job-goal]")?.value||"viral",
-    duration:card.querySelector("[data-video-job-duration]")?.value||30,
-    clips:card.querySelector("[data-video-job-clips]")?.value||3,
-    outputFormat:card.querySelector("[data-video-job-format]")?.value||"reel",
-    autoSubtitles:Boolean(card.querySelector("[data-video-job-subtitles]")?.checked),
-    endText:card.querySelector("[data-video-job-end-text]")?.value?.trim()||"",
+    goal:"full",
+    duration:60,
+    clips:1,
+    requestedClips:1,
+    outputFormat:"reel",
+    autoSubtitles:false,
+    endText:"",
     endContact:card.querySelector("[data-video-job-end-contact]")?.value?.trim()||""
   };
-  const clipCount=Math.max(1,Math.min(12,Number(payload.clips||3)));
-  const duration=Math.max(10,Math.min(60,Number(payload.duration||30)));
-  payload.clips=clipCount;payload.duration=duration;
   button.disabled=true;
   const original=button.textContent;
   button.textContent="Iniciando…";
@@ -1549,7 +1528,7 @@ if(videoFileInput)videoFileInput.addEventListener("change",()=>{
   if($("#video-file-name"))$("#video-file-name").textContent=files.length>1?files.length+" vídeos selecionados":files[0]?.name||"MP4, MOV, WEBM ou MKV";
   if(files.length){
     const status=$("#video-upload-status");
-    if(status){status.textContent="Vídeo selecionado. Enviando para o servidor e iniciando os cortes…";status.className="save-status";}
+    if(status){status.textContent="Vídeo selecionado. Enviando o arquivo original para a biblioteca…";status.className="save-status";}
     videoUploadForm?.requestSubmit();
   }
 });
@@ -1595,18 +1574,15 @@ async function importAuthorizedVideo(button,statusTarget=null){
   const payload={
     url,
     contentTitle:title,
-    goal:$("#video-goal")?.value||"viral",
-    duration:$("#video-clip-duration")?.value||30,
-    clips:$("#video-requested-clips")?.value||3,
-    outputFormat:$("#video-output-format")?.value||"reel",
-    autoSubtitles:Boolean($("#video-auto-subtitles")?.checked),
-    subtitleSize:$("#video-subtitle-size")?.value||"auto",
-    subtitleColor:$("#video-subtitle-color")?.value||"white",
-    subtitleWeight:$("#video-subtitle-weight")?.value||"bold",
-    subtitleBg:$("#video-subtitle-bg")?.value||"black",
+    goal:"full",
+    duration:60,
+    clips:1,
+    requestedClips:1,
+    outputFormat:"reel",
+    autoSubtitles:false,
     folderId:$("#video-upload-folder")?.value||"default",
-    endText:$("#video-end-text")?.value?.trim()||"",
-    endContact:$("#video-end-contact")?.value?.trim()||""
+    endText:"",
+    endContact:$("#video-whatsapp")?.value?.trim()||""
   };
   try{
     const r=await fetch("/api/portal/videos/import",{
@@ -1634,9 +1610,9 @@ async function importAuthorizedVideo(button,statusTarget=null){
     showView("videos");
     const folderFilter=$("#video-folder-filter");if(folderFilter)folderFilter.value=videoFolderFilter;
     if(importedJob){
-      await autoStartUploadedVideo(importedJob,payload,status);
+      if(status){status.textContent="Vídeo salvo na biblioteca com áudio original. Nenhum corte foi criado.";status.className="save-status ok";}
     }else{
-      if(status){status.textContent="Vídeo recebido, mas o trabalho de corte não foi criado.";status.className="save-status error";}
+      if(status){status.textContent="Vídeo recebido, mas o item da biblioteca não foi criado.";status.className="save-status error";}
     }
     await loadVideoJobs();
   }catch(error){
@@ -1657,18 +1633,15 @@ async function importTrailerVideo(button){
   const payload={
     url,
     contentTitle:title,
-    goal:$("#video-goal")?.value||"viral",
-    duration:$("#video-clip-duration")?.value||30,
-    clips:$("#video-requested-clips")?.value||3,
-    outputFormat:$("#video-output-format")?.value||"reel",
-    autoSubtitles:Boolean($("#video-auto-subtitles")?.checked),
-    subtitleSize:$("#video-subtitle-size")?.value||"auto",
-    subtitleColor:$("#video-subtitle-color")?.value||"white",
-    subtitleWeight:$("#video-subtitle-weight")?.value||"bold",
-    subtitleBg:$("#video-subtitle-bg")?.value||"black",
+    goal:"full",
+    duration:60,
+    clips:1,
+    requestedClips:1,
+    outputFormat:"reel",
+    autoSubtitles:false,
     folderId:$("#video-upload-folder")?.value||"default",
-    endText:$("#video-end-text")?.value?.trim()||"",
-    endContact:$("#video-end-contact")?.value?.trim()||""
+    endText:"",
+    endContact:$("#video-whatsapp")?.value?.trim()||""
   };
   try{
     const r=await fetch("/api/portal/videos/import-trailer",{
@@ -1691,7 +1664,7 @@ async function importTrailerVideo(button){
       latestVideoJobs=[importedJob,...latestVideoJobs.filter(job=>job.id!==importedJob.id)];
       renderVideoJobs({jobs:latestVideoJobs,folders:latestVideoFolders});
     }
-    if(status){status.textContent="Adicionado à biblioteca. O NEXUS está importando o vídeo do YouTube no servidor.";status.className="save-status ok";}
+    if(status){status.textContent="Importação iniciada. Quando terminar, o vídeo ficará inteiro na biblioteca e nenhum corte será criado automaticamente.";status.className="save-status ok";}
     showView("videos");
     const folderFilter=$("#video-folder-filter");if(folderFilter)folderFilter.value=videoFolderFilter;
     await loadVideoJobs();
@@ -1832,19 +1805,16 @@ if(videoUploadForm)videoUploadForm.addEventListener("submit",async event=>{
   const oversized=files.find(file=>file.size>100*1024*1024);
   if(oversized){if(status)status.textContent=oversized.name+" passa do limite de 100 MB.";return;}
   const settings={
-    goal:$("#video-goal").value,
-    duration:$("#video-clip-duration").value,
-    clips:$("#video-requested-clips").value,
-    outputFormat:$("#video-output-format")?.value||"reel",
-    autoSubtitles:Boolean($("#video-auto-subtitles")?.checked),
-    subtitleSize:$("#video-subtitle-size")?.value||"auto",
-    subtitleColor:$("#video-subtitle-color")?.value||"white",
-    subtitleWeight:$("#video-subtitle-weight")?.value||"bold",
-    subtitleBg:$("#video-subtitle-bg")?.value||"black",
+    goal:"full",
+    duration:60,
+    clips:1,
+    requestedClips:1,
+    outputFormat:"reel",
+    autoSubtitles:false,
     folderId:$("#video-upload-folder")?.value||"default",
     contentTitle:$("#video-content-title")?.value?.trim()||"",
-    endText:$("#video-end-text")?.value?.trim()||"",
-    endContact:$("#video-end-contact")?.value?.trim()||""
+    endText:"",
+    endContact:$("#video-whatsapp")?.value?.trim()||""
   };
   button.disabled=true;
   if(status){status.textContent="Carregando "+files.length+" vídeo(s)…";status.className="save-status";}
@@ -1859,10 +1829,9 @@ if(videoUploadForm)videoUploadForm.addEventListener("submit",async event=>{
         latestVideoJobs=[result.job,...latestVideoJobs.filter(job=>job.id!==result.job.id)];
         renderVideoJobs({jobs:latestVideoJobs,folders:latestVideoFolders});
         if(status){
-          status.textContent="Vídeo recebido pelo servidor. Iniciando análise e cortes…";
-          status.className="save-status";
+          status.textContent="Vídeo salvo na biblioteca com áudio original. Nenhum corte foi criado.";
+          status.className="save-status ok";
         }
-        await autoStartUploadedVideo(result.job,settings,status);
       }
     }catch(error){failed++;lastError=error.message;}
   }
@@ -1875,7 +1844,7 @@ if(videoUploadForm)videoUploadForm.addEventListener("submit",async event=>{
     const folderFilter=$("#video-folder-filter");if(folderFilter)folderFilter.value=videoFolderFilter;
   }
   if(status){
-    status.textContent=sent+" vídeo(s) enviado(s) e corte(s) iniciado(s)"+(failed?"; "+failed+" falhou: "+lastError:".");
+    status.textContent=sent+" vídeo(s) salvo(s) na biblioteca"+(failed?"; "+failed+" falhou: "+lastError:". Nenhum corte foi iniciado.");
     status.className=failed?"save-status error":"save-status ok";
   }
   if(sent===0&&/sessão expirou/i.test(lastError)){
