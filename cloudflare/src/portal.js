@@ -493,8 +493,44 @@ export async function handlePortalApi(request, env, url) {
     const query = String(url.searchParams.get("q") || "").trim();
     const type = String(url.searchParams.get("type") || "movie") === "series" ? "series" : "movie";
     if (!query) return json({ error: "query_required" }, 400);
+
+    const cacheUrl = new URL(request.url);
+    cacheUrl.pathname = "/__cache/trailer-catalog";
+    cacheUrl.search = "";
+    cacheUrl.searchParams.set("client", String(client.id));
+    cacheUrl.searchParams.set("type", type);
+    cacheUrl.searchParams.set("q", query.toLowerCase());
+    const cacheKey = new Request(cacheUrl.toString(), { method: "GET" });
+
     try {
-      return json(await searchTrailers(env, client.id, query, type));
+      const cached = await caches.default.match(cacheKey);
+      if (cached) {
+        const body = await cached.text();
+        return new Response(body, {
+          status: 200,
+          headers: {
+            "content-type": "application/json; charset=utf-8",
+            "cache-control": "private, max-age=0",
+            "x-nexus-search-cache": "hit"
+          }
+        });
+      }
+    } catch {}
+
+    try {
+      const payload = await searchTrailers(env, client.id, query, type);
+      const response = json(payload);
+      try {
+        const cacheResponse = new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: {
+            "content-type": "application/json; charset=utf-8",
+            "cache-control": "public, max-age=21600"
+          }
+        });
+        if (ctx?.waitUntil) ctx.waitUntil(caches.default.put(cacheKey, cacheResponse));
+      } catch {}
+      return response;
     } catch (error) {
       return json({
         error: "trailer_search_failed",
