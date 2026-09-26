@@ -7,7 +7,7 @@ import { handleMaster } from "./master.js";
 import { runSchedulerTick } from "./scheduler.js";
 import { processDueJobs } from "./executor.js";
 import { masterCredentialsValid, createMasterSession, authenticatePortalUser, createPortalSession, masterSessionCookie, portalSessionCookie, loginRateLimitStatus, recordLoginFailure, clearLoginFailures, resolvePortalSession, resolveMasterSession } from "./auth.js";
-import { processQueuedVideoJobs } from "./video-processing.js";
+import { processQueuedVideoJobs, processVideoJob } from "./video-processing.js";
 import { processQueuedVideoImports, completeGithubVideoIngest, failGithubVideoIngest } from "./r2-video-upload.js";
 
 export class YoutubeDownloader extends DurableObject {
