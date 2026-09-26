@@ -604,6 +604,12 @@ $("#client-form").addEventListener("submit", async event => {
   event.preventDefault();
   const form = event.currentTarget;
   const data = Object.fromEntries(new FormData(form));
+  if (!String(data.password || "").trim()) {
+    const bytes = new Uint8Array(9);
+    crypto.getRandomValues(bytes);
+    const suffix = Array.from(bytes, value => value.toString(36).padStart(2, "0")).join("").slice(0, 14);
+    data.password = "Nx!" + suffix;
+  }
   $("#form-status").textContent = "Salvando…";
   try {
     const result = await api("/api/clients", { method: "POST", body: JSON.stringify(data) });
