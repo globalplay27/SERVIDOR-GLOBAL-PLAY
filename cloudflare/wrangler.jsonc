@@ -1,5 +1,5 @@
 {
-  // deploy-refresh: 2026-09-26-strict-movie-series-catalog
+  // deploy-refresh: 2026-09-26-fast-search-library-import-v2
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "servidor-nexus",
   "main": "src/index.js",
