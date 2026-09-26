@@ -791,6 +791,7 @@ export async function handlePortalApi(request, env, url, ctx = null) {
         autoSubtitles: body.autoSubtitles,
         endText: body.endText,
         endContact: body.endContact,
+        logoEnabled: body.logoEnabled === true,
         editStyle: body.editStyle || "cinematic-card-v1"
       });
       await startGitHubVideoRender(env, client.id, jobId, body);
