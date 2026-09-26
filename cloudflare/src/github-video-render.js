@@ -91,6 +91,7 @@ export async function startGitHubVideoRender(env, clientId, jobId, patch = {}) {
         year: String(settings.releaseYear || "").slice(0, 12),
         media_type: String(settings.mediaType || "").slice(0, 24),
         poster_url: String(settings.posterUrl || "").slice(0, 1200),
+        logo_enabled: settings.logoEnabled === true && Boolean(settings.logoObjectKey),
         duration,
         edit_style: editStyle,
         end_text: String(settings.endText || "").slice(0, 120),
@@ -144,6 +145,22 @@ export async function handleGitHubVideoRenderCallback(request, env, url) {
       status: 401,
       headers: { "content-type": "application/json; charset=utf-8" }
     });
+  }
+
+  if (url.pathname === "/api/internal/video-render/logo" && request.method === "GET") {
+    const settings = parseJson(row.settings_json, {});
+    const key = String(settings.logoObjectKey || "");
+    const allowed = key.startsWith("branding/" + String(clientId) + "/") && !key.includes("..");
+    if (!env.MEDIA || !settings.logoEnabled || !allowed) {
+      return new Response(JSON.stringify({ error: "logo_not_found" }), { status: 404, headers: { "content-type": "application/json" } });
+    }
+    const object = await env.MEDIA.get(key);
+    if (!object) return new Response(JSON.stringify({ error: "logo_not_found" }), { status: 404, headers: { "content-type": "application/json" } });
+    const headers = new Headers();
+    object.writeHttpMetadata(headers);
+    headers.set("cache-control", "private, no-store");
+    if (object.size) headers.set("content-length", String(object.size));
+    return new Response(object.body, { status: 200, headers });
   }
 
   if (url.pathname === "/api/internal/video-render/source" && request.method === "GET") {
