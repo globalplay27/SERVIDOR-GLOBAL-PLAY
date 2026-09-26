@@ -7967,3 +7967,5 @@ server.listen(PORT, "0.0.0.0", () => {
   if (typeof agentCoreTimer.unref === "function") agentCoreTimer.unref();
   videoTimer.unref?.();
 });
+
+// railway-watch-refresh: trailer-resolver-20260926
