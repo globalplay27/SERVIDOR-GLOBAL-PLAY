@@ -223,6 +223,16 @@ export async function handleMaster(request, env, url) {
   }
 
   if (url.pathname === "/master-login" && request.method === "POST") {
+    const form = await request.formData().catch(() => null);
+    const username = String(form?.get("username") || "").trim();
+    const password = String(form?.get("password") || "");
+
+    if (await masterCredentialsValid(env, username, password)) {
+      await clearLoginFailures(env, request, "login");
+      const session = await createMasterSession(env);
+      return redirect("/master", { "set-cookie": masterSessionCookie(session.token) });
+    }
+
     const rate = await loginRateLimitStatus(env, request, "login");
     if (!rate.allowed) {
       return new Response(masterLoginPage(true), {
@@ -235,22 +245,29 @@ export async function handleMaster(request, env, url) {
       });
     }
 
-    const form = await request.formData().catch(() => null);
-    const username = String(form?.get("username") || "").trim();
-    const password = String(form?.get("password") || "");
-    if (!await masterCredentialsValid(env, username, password)) {
-      await recordLoginFailure(env, request, "login");
-      return new Response(masterLoginPage(true), {
-        status: 401,
-        headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" }
-      });
-    }
-    await clearLoginFailures(env, request, "login");
-    const session = await createMasterSession(env);
-    return redirect("/master", { "set-cookie": masterSessionCookie(session.token) });
+    await recordLoginFailure(env, request, "login");
+    return new Response(masterLoginPage(true), {
+      status: 401,
+      headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" }
+    });
   }
 
   if (url.pathname === "/api/master/desktop-login" && request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    const username = String(body?.username || "").trim();
+    const password = String(body?.password || "");
+
+    if (await masterCredentialsValid(env, username, password)) {
+      await clearLoginFailures(env, request, "login");
+      const session = await createMasterSession(env);
+      return json({
+        ok: true,
+        token: session.token,
+        expiresAt: session.expiresAt,
+        consolePath: "/api/master/console"
+      }, 200);
+    }
+
     const rate = await loginRateLimitStatus(env, request, "login");
     if (!rate.allowed) {
       return json(
@@ -260,23 +277,8 @@ export async function handleMaster(request, env, url) {
       );
     }
 
-    const body = await request.json().catch(() => ({}));
-    const username = String(body?.username || "").trim();
-    const password = String(body?.password || "");
-
-    if (!await masterCredentialsValid(env, username, password)) {
-      await recordLoginFailure(env, request, "login");
-      return json({ ok: false, error: "invalid_credentials" }, 401);
-    }
-
-    await clearLoginFailures(env, request, "login");
-    const session = await createMasterSession(env);
-    return json({
-      ok: true,
-      token: session.token,
-      expiresAt: session.expiresAt,
-      consolePath: "/api/master/console"
-    }, 200);
+    await recordLoginFailure(env, request, "login");
+    return json({ ok: false, error: "invalid_credentials" }, 401);
   }
 
   if (url.pathname === "/master-logout" && request.method === "POST") {
@@ -296,6 +298,16 @@ export async function handleMaster(request, env, url) {
   }
 
   if (url.pathname === "/api/master/access" && request.method === "POST") {
+    const form = await request.formData().catch(() => null);
+    const username = String(form?.get("username") || "").trim();
+    const password = String(form?.get("password") || "");
+
+    if (await masterCredentialsValid(env, username, password)) {
+      await clearLoginFailures(env, request, "login");
+      const session = await createMasterSession(env);
+      return redirect("/api/master/console", { "set-cookie": masterSessionCookie(session.token) });
+    }
+
     const rate = await loginRateLimitStatus(env, request, "login");
     if (!rate.allowed) {
       return new Response(masterLoginPage(true, "/api/master/access"), {
@@ -309,23 +321,15 @@ export async function handleMaster(request, env, url) {
       });
     }
 
-    const form = await request.formData().catch(() => null);
-    const username = String(form?.get("username") || "").trim();
-    const password = String(form?.get("password") || "");
-    if (!await masterCredentialsValid(env, username, password)) {
-      await recordLoginFailure(env, request, "login");
-      return new Response(masterLoginPage(true, "/api/master/access"), {
-        status: 401,
-        headers: {
-          "content-type": "text/html; charset=utf-8",
-          "cache-control": "no-store, no-cache, must-revalidate",
-          "pragma": "no-cache"
-        }
-      });
-    }
-    await clearLoginFailures(env, request, "login");
-    const session = await createMasterSession(env);
-    return redirect("/api/master/console", { "set-cookie": masterSessionCookie(session.token) });
+    await recordLoginFailure(env, request, "login");
+    return new Response(masterLoginPage(true, "/api/master/access"), {
+      status: 401,
+      headers: {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "no-store, no-cache, must-revalidate",
+        "pragma": "no-cache"
+      }
+    });
   }
 
   if (url.pathname === "/api/master/console" && request.method === "GET") {
