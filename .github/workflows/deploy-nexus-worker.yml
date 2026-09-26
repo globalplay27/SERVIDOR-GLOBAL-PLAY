@@ -7,6 +7,7 @@ on:
       - feature/nexus-app-v2-20260924
     paths:
       - "cloudflare/**"
+      - "public/**"
       - ".github/workflows/deploy-nexus-worker.yml"
 
 concurrency:
