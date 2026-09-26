@@ -88,7 +88,7 @@ async function youtubeHtmlSearch(query, kind) {
       "user-agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/153.0.0.0 Safari/537.36",
       cookie:"CONSENT=YES+cb.20210328-17-p0.en+FX+417"
     },
-    signal:AbortSignal.timeout(5500)
+    signal:AbortSignal.timeout(3200)
   });
   if(!response.ok)throw new Error("youtube_search_http_"+response.status);
 
@@ -161,7 +161,7 @@ async function pipedSearch(query, kind) {
     url.searchParams.set("filter", "videos");
     const response = await fetch(url, {
       headers: { accept: "application/json", "user-agent": "NEXUS-AI/2.2" },
-      signal: AbortSignal.timeout(4500)
+      signal: AbortSignal.timeout(2600)
     });
     if (!response.ok) throw new Error("piped_search_" + response.status);
     const payload = await response.json().catch(() => ({}));
@@ -304,11 +304,12 @@ export async function searchTrailers(env, clientId, query, type = "movie") {
   const kind = String(type || "") === "series" ? "tv" : "movie";
 
   const fastSources = [
-    pipedSearch(q, kind),
+    youtubeHtmlSearch(q, kind),
     tmdbSearch(env, q, kind).then(result => {
       if (!result?.results?.some(item => item.trailerUrl)) throw new Error("tmdb_no_trailer");
       return result;
-    })
+    }),
+    pipedSearch(q, kind)
   ];
 
   try {
@@ -316,11 +317,7 @@ export async function searchTrailers(env, clientId, query, type = "movie") {
   } catch {}
 
   try {
-    return await youtubeHtmlSearch(q, kind);
-  } catch {}
-
-  try {
-    const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("search_timeout")), 5000));
+    const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("search_timeout")), 3500));
     return await Promise.race([openAISearch(env, clientId, q, kind), timeout]);
   } catch (error) {
     const code = String(error instanceof Error ? error.message : error);
