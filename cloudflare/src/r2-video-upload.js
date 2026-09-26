@@ -57,6 +57,13 @@ function normalizeSettings(input = {}, file = {}) {
     subtitleBg: String(settings.subtitleBg || "black").slice(0, 30),
     endText: String(settings.endText || "").trim().slice(0, 120),
     endContact: String(settings.endContact || "").trim().slice(0, 120),
+    editStyle: ["classic-cuts","cinematic-card-v1"].includes(String(settings.editStyle || "cinematic-card-v1"))
+      ? String(settings.editStyle || "cinematic-card-v1")
+      : "cinematic-card-v1",
+    posterUrl: String(settings.posterUrl || "").trim().slice(0, 1200),
+    overview: String(settings.overview || "").trim().slice(0, 1800),
+    releaseYear: String(settings.releaseYear || settings.year || "").trim().slice(0, 12),
+    mediaType: String(settings.mediaType || "").trim().slice(0, 24),
     storage: "r2"
   };
 }
