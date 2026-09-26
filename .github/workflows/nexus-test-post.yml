@@ -1,0 +1,29 @@
+name: Nexus test post probe
+
+on:
+  push:
+    branches:
+      - feature/nexus-app-v2-20260924
+  workflow_dispatch:
+
+jobs:
+  probe:
+    if: contains(github.event.head_commit.message, '[nexus-test-post-list]') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for Worker and list candidates
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL='https://servidor-nexus.diamantehinode2015.workers.dev/__nexus_test_post?k=nxpost-20260926-a7f4d9c21b8e6f3051&action=list'
+          for i in $(seq 1 20); do
+            code=$(curl -sS -o /tmp/nexus.json -w '%{http_code}' "$URL" || true)
+            if [ "$code" = "200" ]; then
+              cat /tmp/nexus.json
+              exit 0
+            fi
+            echo "Worker not ready yet: HTTP $code"
+            sleep 5
+          done
+          cat /tmp/nexus.json || true
+          exit 1
