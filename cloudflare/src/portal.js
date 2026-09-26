@@ -10,11 +10,12 @@ import { getClient, upsertClient, portalClientView } from "./clients.js";
 import { tokenUsageToday } from "./openai.js";
 import { startInstagramOAuth, handleInstagramOAuthCallback } from "./instagram.js";
 import { searchTrailers } from "./trailers.js";
+import { dispatchYouTubeImport } from "./youtube-container.js";
 import { AGENT_CORE_MODULES, normalizeAgentCoreConfig, agentCoreState, agentExecutions, saveAgentCoreConfig } from "./agent-core.js";
 import { leadsForClient, leadHunterSummary } from "./leads.js";
 import { leadHunterView, saveLeadHunterConfig, runLeadHunter, discardLead } from "./lead-hunter.js";
 import { createVideoFolder, renameVideoFolder, deleteVideoFolder, patchVideoJob, deleteVideoJob, setClipApproval, adjustClip, selectClip, scheduleClip, bulkScheduleClips } from "./video-library.js";
-import { createR2VideoUpload, uploadR2VideoPart, completeR2VideoUpload, abortR2VideoUpload, importR2VideoFromUrl, createR2PublicTrailerImportJob, processR2PublicTrailerImportJob } from "./r2-video-upload.js";
+import { createR2VideoUpload, uploadR2VideoPart, completeR2VideoUpload, abortR2VideoUpload, importR2VideoFromUrl, createR2PublicTrailerImportJob } from "./r2-video-upload.js";
 import { decidePost, requestPostRevision, saveOwnPostContent, publishPostNow } from "./posts.js";
 
 function json(data, status = 200, headers = {}) {
@@ -454,11 +455,13 @@ export async function handlePortalApi(request, env, url, ctx = null) {
         : await importR2VideoFromUrl(env, client.id, body);
 
       if (isTrailerImport) {
-        if (ctx?.waitUntil) {
-          ctx.waitUntil(processR2PublicTrailerImportJob(env, client.id, imported.jobId).catch(() => {}));
-        } else {
-          processR2PublicTrailerImportJob(env, client.id, imported.jobId).catch(() => {});
-        }
+        await dispatchYouTubeImport(
+          env,
+          client.id,
+          imported.jobId,
+          String(body.url || body.trailerUrl || ""),
+          String(body.contentTitle || "trailer")
+        );
       }
 
       const jobs = await listVideos(env, client.id);
