@@ -100,7 +100,7 @@ export async function patchVideoJob(env, clientId, jobId, patch={}) {
     settings.folderId=folderId;
   }
 
-  const allowed=["contentTitle","goal","clipDuration","requestedClips","outputFormat","autoSubtitles","subtitleSize","subtitleColor","subtitleWeight","subtitleBg","endText","endContact"];
+  const allowed=["contentTitle","goal","clipDuration","requestedClips","outputFormat","autoSubtitles","subtitleSize","subtitleColor","subtitleWeight","subtitleBg","endText","endContact","editStyle","posterUrl","overview","releaseYear","mediaType"];
   for(const key of allowed){
     if(Object.prototype.hasOwnProperty.call(patch,key))settings[key]=patch[key];
   }
