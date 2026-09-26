@@ -325,7 +325,7 @@
 
         <section class="video-client-grid">
           <article class="panel settings-panel">
-            <p class="eyebrow">NOVO VÍDEO</p><h2>Enviar para cortes</h2>
+            <p class="eyebrow">NOVO VÍDEO</p><h2>Adicionar à biblioteca</h2>
             <form id="video-upload-form" class="video-upload-form">
               <div class="video-remote-import">
                 <div class="video-remote-copy">
@@ -345,22 +345,13 @@
                 <input id="video-file" type="file" accept="video/mp4,video/quicktime,video/webm,video/x-matroska,.mkv,.m4v" hidden multiple>
               </label>
               <div class="video-options">
-                <label><span>Objetivo</span><select id="video-goal"><option value="viral">Cortes com potencial de engajamento</option><option value="sales">Vendas</option><option value="educational">Conteúdo educativo</option><option value="podcast">Podcast / entrevista</option><option value="testimonial">Depoimento</option></select></label>
-                <label><span>Nome do filme / série / conteúdo (contexto)</span><input id="video-content-title" maxlength="100" placeholder="Ex.: Reacher (opcional)"><small>Serve apenas para ajudar a IA a escolher as melhores cenas. O NEXUS não escreve esse nome no vídeo; se ele já existir nas imagens originais, será preservado naturalmente.</small></label>
-                <label><span>Duração desejada</span><select id="video-clip-duration"><option value="15">15 segundos</option><option value="30" selected>30 segundos</option><option value="45">45 segundos</option><option value="60">60 segundos</option><option value="90">90 segundos</option></select></label>
-                <label><span>Opções de melhores cortes</span><input id="video-requested-clips" type="number" min="1" max="12" value="3"></label>
-                <label><span>Formato de saída</span><select id="video-output-format"><option value="reel" selected>Reels / Stories 9:16</option><option value="feed">Feed do Instagram 4:5</option><option value="square">Quadrado 1:1</option></select></label>
-                <label class="video-subtitle-option"><input id="video-auto-subtitles" type="checkbox" checked><span><strong>Legenda automática em PT-BR</strong><small>Se o áudio estiver em outro idioma, o NEXUS traduz e grava a legenda no vídeo.</small></span></label>
-                <label><span>Tamanho da legenda</span><select id="video-subtitle-size"><option value="auto" selected>Automático (proporcional)</option><option value="small">Pequeno</option><option value="medium">Médio</option><option value="large">Grande</option></select></label>
-                <label><span>Cor da legenda</span><select id="video-subtitle-color"><option value="white" selected>Branca</option><option value="yellow">Amarela</option><option value="gold">Dourada</option><option value="orange">Laranja</option><option value="cyan">Ciano</option><option value="blue">Azul</option><option value="green">Verde</option><option value="lime">Verde-limão</option><option value="pink">Rosa</option><option value="purple">Roxa</option><option value="red">Vermelha</option></select></label>
-                <label><span>Espessura da letra</span><select id="video-subtitle-weight"><option value="normal">Normal</option><option value="semibold">Seminegrito</option><option value="bold" selected>Negrito</option><option value="extrabold">Extra negrito</option></select></label>
-                <label><span>Fundo da legenda</span><select id="video-subtitle-bg"><option value="black" selected>Preto</option><option value="navy">Azul escuro</option><option value="transparent">Sem fundo</option></select></label>
+                <label><span>Nome do filme / série (opcional)</span><input id="video-content-title" maxlength="100" placeholder="Ex.: Reacher"></label>
                 <label><span>Pasta</span><select id="video-upload-folder"><option value="default">Meus vídeos</option></select></label>
-                <label><span>Frase final (opcional)</span><input id="video-end-text" maxlength="90" placeholder="Ex.: Continua..."></label>
-                <label><span>Contato / CTA final (opcional)</span><input id="video-end-contact" maxlength="90" placeholder="Ex.: WhatsApp 34 99999-9999"></label>
+                <label><span>WhatsApp no vídeo (opcional)</span><input id="video-whatsapp" maxlength="90" placeholder="Ex.: (21) 99999-9999"></label>
+                <div class="video-fixed-format-note"><strong>Padrão fixo</strong><span>1 vídeo completo · Instagram 9:16 · áudio original · sem legenda automática.</span></div>
               </div>
               <div class="video-upload-progress" id="video-upload-progress" hidden><i></i><span>Enviando...</span></div>
-              <button type="submit" class="connection-submit">Carregar e fazer cortes</button>
+              <button type="submit" class="connection-submit">Salvar na biblioteca</button>
             </form>
           </article>
 
