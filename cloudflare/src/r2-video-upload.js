@@ -431,7 +431,65 @@ async function invidiousMuxedStream(sourceUrl) {
   return Promise.any(instances.map(attemptInstance));
 }
 
-async function youtubeMuxedStream(sourceUrl) {
+async function railwayMuxedStream(env, clientId, sourceUrl) {
+  const base = String(env.RAILWAY_VIDEO_BRIDGE_URL || "").trim().replace(/\/+$/, "");
+  const secret = String(env.NEXUS_RAILWAY_BRIDGE_SECRET || "").trim();
+  const videoId = youtubeVideoIdFromUrl(sourceUrl);
+  if (!base || !secret || !videoId) throw new Error("railway_trailer_resolver_unavailable");
+
+  const response = await fetch(base + "/api/nexus/bridge/trailer-resolve", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-nexus-bridge-secret": secret,
+      "x-nexus-client-id": String(clientId),
+      "x-nexus-bridge-source": "cloudflare"
+    },
+    body: JSON.stringify({ url: String(sourceUrl) }),
+    signal: AbortSignal.timeout(95000)
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || !payload?.url) {
+    throw new Error(String(payload?.error || "railway_trailer_resolve_failed"));
+  }
+
+  const direct = new URL(String(payload.url));
+  const host = direct.hostname.toLowerCase();
+  if (direct.protocol !== "https:" || !(host === "googlevideo.com" || host.endsWith(".googlevideo.com"))) {
+    throw new Error("railway_trailer_url_not_allowed");
+  }
+
+  const media = await fetch(direct.toString(), {
+    headers: {
+      accept: "video/*,*/*;q=0.8",
+      "user-agent": "Mozilla/5.0 NEXUS-AI/2.4"
+    },
+    signal: AbortSignal.timeout(120000)
+  });
+  if (!media.ok || !media.body) throw new Error("railway_trailer_media_" + media.status);
+
+  const declaredLength = Number(media.headers.get("content-length") || 0);
+  if (declaredLength > MAX_VIDEO_BYTES) {
+    try { await media.body.cancel(); } catch {}
+    throw new Error("video_too_large");
+  }
+  const contentType = String(media.headers.get("content-type") || "video/mp4")
+    .toLowerCase().split(";")[0].trim();
+  return {
+    response: media,
+    videoId,
+    host,
+    extension: contentType.includes("webm") ? "webm" : "mp4",
+    contentType: contentType.startsWith("video/") ? contentType : "video/mp4",
+    size: declaredLength,
+    resolver: "railway-yt-dlp"
+  };
+}
+
+async function youtubeMuxedStream(env, clientId, sourceUrl) {
+  try {
+    return await railwayMuxedStream(env, clientId, sourceUrl);
+  } catch {}
   try {
     return await Promise.any([
       pipedMuxedStream(sourceUrl),
@@ -497,7 +555,7 @@ export async function processR2PublicTrailerImportJob(env, clientId, jobId) {
 
   let key = "";
   try {
-    const resolved = await youtubeMuxedStream(settings.sourceUrl);
+    const resolved = await youtubeMuxedStream(env, clientId, settings.sourceUrl);
     await env.DB.prepare(
       "UPDATE video_jobs SET result_json=?3,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2"
     ).bind(
@@ -592,7 +650,7 @@ export async function importR2PublicTrailer(env, clientId, input = {}) {
   const sourceUrl = String(input.url || input.trailerUrl || "").trim();
   if (!sourceUrl) throw new Error("trailer_url_required");
 
-  const resolved = await youtubeMuxedStream(sourceUrl);
+  const resolved = await youtubeMuxedStream(env, clientId, sourceUrl);
   const key = videoKeyPrefix(clientId) + crypto.randomUUID() + "." + resolved.extension;
   const title = String(input.contentTitle || "trailer").trim().slice(0, 160) || "trailer";
 
