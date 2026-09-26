@@ -1509,6 +1509,10 @@ async function importAuthorizedVideo(button,statusTarget=null){
     clips:$("#video-requested-clips")?.value||3,
     outputFormat:$("#video-output-format")?.value||"reel",
     editStyle:$("#video-edit-style")?.value||"cinematic-card-v1",
+    posterUrl,
+    overview,
+    releaseYear,
+    mediaType,
     autoSubtitles:Boolean($("#video-auto-subtitles")?.checked),
     subtitleSize:$("#video-subtitle-size")?.value||"auto",
     subtitleColor:$("#video-subtitle-color")?.value||"white",
@@ -1555,6 +1559,10 @@ async function importAuthorizedVideo(button,statusTarget=null){
 async function importTrailerVideo(button){
   const url=String(button?.dataset.importTrailer||"").trim();
   const title=String(button?.dataset.importTitle||"").trim();
+  const posterUrl=String(button?.dataset.importPoster||"").trim();
+  const overview=String(button?.dataset.importOverview||"").trim();
+  const releaseYear=String(button?.dataset.importYear||"").trim();
+  const mediaType=String(button?.dataset.importType||"").trim();
   if(!url||!button)return;
   const original=button.textContent;
   const status=$("#trailer-search-status");
