@@ -344,6 +344,9 @@ export async function searchTrailers(env, clientId, query, type = "movie") {
         '{"results":[{"title":"Título da obra","year":"2024","overview":"Sinopse completa em português.","posterUrl":"","trailerUrl":"https://www.youtube.com/watch?v=...","channel":"Canal","official":true}]}'
       ].join("\n"),
       max_output_tokens: 1200
+    }, {
+      enforceBudget: false,
+      recordBudgetUsage: false
     });
 
     const text = outputText(response);
