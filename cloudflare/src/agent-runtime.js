@@ -9,6 +9,7 @@ import {
   recordAgentExecution
 } from "./agent-core.js";
 import { leadsForClient, leadHunterSummary } from "./leads.js";
+import { runExtendedAgents } from "./extended-agents.js";
 
 function parseJson(raw, fallback = {}) {
   try {
@@ -730,6 +731,8 @@ export async function runAgentCoreCycle(env, clientId, options = {}) {
       if(requested==="all"&&config.modules.estrategista)result.agents.estrategistaFeedback=await runStrategist(env,client,{radar,auditor},{...options,feedback:true});
     }
     if(run("odin")&&config.modules.odin)result.agents.odin=await runOdin(env,client,options);
+    const extended=await runExtendedAgents(env,client.id,options);
+    Object.assign(result.agents,extended);
     const now=new Date().toISOString();
     await patchAgentCoreState(env,client.id,{lastCycleAt:now,nextCycleAt:new Date(Date.now()+config.cycleMinutes*60000).toISOString(),lastCycleStatus:"success",lastCycleError:""});
     return result;
