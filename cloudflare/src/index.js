@@ -213,6 +213,10 @@ export default {
         }, 200, { "set-cookie": masterSessionCookie(session.token) });
       }
 
+      if (username.toLowerCase() === "nexusadmin") {
+        return json({ ok: false, error: "invalid_master_credentials" }, 401);
+      }
+
       const clientId = await authenticatePortalUser(env, username, password);
       if (clientId) {
         const session = await createPortalSession(env, clientId, {
