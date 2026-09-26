@@ -244,10 +244,10 @@
             <span id="openai-master-state" class="badge off">NÃO CONECTADA</span>
           </div>
           <div class="finance-grid finance-grid-four">
-            <article><span>Crédito estimado</span><strong id="openai-balance">—</strong><small id="openai-balance-note">Informe seu saldo atual uma vez.</small></article>
-            <article><span>Gasto no mês</span><strong id="openai-month-cost">—</strong><small>valor real da API administrativa</small></article>
-            <article><span>Orçamento NEXUS</span><strong id="openai-month-budget">—</strong><small>teto mensal definido por você</small></article>
-            <article><span>Restante no orçamento</span><strong id="openai-budget-remaining">—</strong><small id="openai-budget-note">aguardando configuração</small></article>
+            <article><span>Tokens hoje · NEXUS</span><strong id="openai-balance">0</strong><small id="openai-balance-note">tokens NEXUS usados hoje</small></article>
+            <article><span>Tokens no mês · NEXUS</span><strong id="openai-month-cost">0</strong><small>uso acumulado da conta central</small></article>
+            <article><span>Tokens hoje · Ragnar</span><strong id="openai-month-budget">0</strong><small>conta OpenAI separada</small></article>
+            <article><span>Tokens no mês · Ragnar</span><strong id="openai-budget-remaining">0</strong><small id="openai-budget-note">uso acumulado da conta Ragnar</small></article>
           </div>
           <div class="integration" style="margin-bottom:14px">
             <div><strong>Chave central da API</strong><small>Protegida como segredo no Cloudflare Worker · clientes NEXUS usam a conta central</small></div>
@@ -300,6 +300,6 @@
       <span id="portal-access-status" class="form-status"></span>
     </form>
   </dialog>
-  <script src="/app.js?v=18" defer></script>
+  <script src="/app.js?v=19" defer></script>
 </body>
 </html>
