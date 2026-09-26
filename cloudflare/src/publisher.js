@@ -46,10 +46,29 @@ async function graphRequest(accessToken, pathName, method = "GET", form = null) 
 
 export async function publishInstagramImage(env, clientId, imageUrl, caption = "") {
   const connection = await metaConnection(env, clientId);
-  const accessToken = connection?.accessToken
+  const storedAccessToken = connection?.accessToken
     ? await decryptSecret(env, connection.accessToken).catch(() => "")
     : "";
-  const igUserId = String(connection?.igUserId || "").trim();
+  const storedIgUserId = String(connection?.igUserId || "").trim();
+
+  const legacyAccessToken = String(
+    clientId === "ragnar-one"
+      ? env.INSTAGRAM_ACCESS_TOKEN_RAGNAR
+      : clientId === "globalplay-streaming"
+        ? env.INSTAGRAM_ACCESS_TOKEN_GLOBALPLAY
+        : ""
+  ).trim();
+
+  const legacyIgUserId = String(
+    clientId === "ragnar-one"
+      ? env.INSTAGRAM_ACCOUNT_ID_RAGNAR
+      : clientId === "globalplay-streaming"
+        ? env.INSTAGRAM_ACCOUNT_ID_GLOBALPLAY
+        : ""
+  ).trim();
+
+  const accessToken = storedAccessToken || legacyAccessToken;
+  const igUserId = storedIgUserId || legacyIgUserId;
 
   if (!accessToken || !igUserId) {
     throw new Error("instagram_not_connected");
