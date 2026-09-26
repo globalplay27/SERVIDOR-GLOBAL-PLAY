@@ -9,6 +9,7 @@ import {
 import { getClient, upsertClient, portalClientView } from "./clients.js";
 import { tokenUsageToday } from "./openai.js";
 import { startInstagramOAuth, handleInstagramOAuthCallback } from "./instagram.js";
+import { searchTrailers } from "./trailers.js";
 import { AGENT_CORE_MODULES, normalizeAgentCoreConfig, agentCoreState, agentExecutions, saveAgentCoreConfig } from "./agent-core.js";
 import { leadsForClient, leadHunterSummary } from "./leads.js";
 import { leadHunterView, saveLeadHunterConfig, runLeadHunter, discardLead } from "./lead-hunter.js";
@@ -472,6 +473,20 @@ export async function handlePortalApi(request, env, url) {
         : code.startsWith("video_source_http_") ? 502
         : 400;
       return json({ error: code }, status);
+    }
+  }
+
+  if (url.pathname === "/api/portal/trailers/search" && request.method === "GET") {
+    const query = String(url.searchParams.get("q") || "").trim();
+    const type = String(url.searchParams.get("type") || "movie") === "series" ? "series" : "movie";
+    if (!query) return json({ error: "query_required" }, 400);
+    try {
+      return json(await searchTrailers(env, client.id, query, type));
+    } catch (error) {
+      return json({
+        error: "trailer_search_failed",
+        message: error instanceof Error ? error.message : String(error)
+      }, 502);
     }
   }
 
