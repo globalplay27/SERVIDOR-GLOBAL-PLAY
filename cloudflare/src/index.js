@@ -1,3 +1,4 @@
+export { YouTubeDownloader, ContainerProxy } from "./youtube-container.js";
 export class YoutubeDownloader {
   constructor(state, env) {
     this.state = state;
