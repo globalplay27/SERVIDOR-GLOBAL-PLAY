@@ -8,7 +8,7 @@ import {
   upsertPortalUser
 } from "./auth.js";
 import { listClients, getClient, upsertClient } from "./clients.js";
-import { getMasterInstagramSummary, saveMasterInstagramConfig } from "./instagram.js";
+import { getMasterInstagramSummary, saveMasterInstagramConfig, startInstagramOAuth } from "./instagram.js";
 import { agentCoreDashboard, agentCoreClientView, saveAgentCoreConfig, queueManualAgentRun } from "./agent-core.js";
 import { masterLeadSummary } from "./leads.js";
 
@@ -306,6 +306,22 @@ export async function handleMaster(request, env, url) {
 
   if (!protectedApi) return null;
   if (!await requireMaster(request, env)) return json({ error: "unauthorized" }, 401);
+
+  if (url.pathname === "/api/master/instagram-connect" && request.method === "GET") {
+    const clientId = String(url.searchParams.get("clientId") || "").trim();
+    if (!clientId) return json({ error: "client_id_required" }, 400);
+    const client = await getClient(env, clientId);
+    if (!client) return json({ error: "client_not_found" }, 404);
+    try {
+      const oauth = await startInstagramOAuth(env, request, clientId);
+      return redirect(oauth.url);
+    } catch (error) {
+      return json({
+        error: error instanceof Error ? error.message : String(error),
+        clientId
+      }, 400);
+    }
+  }
 
   if (url.pathname === "/api/system/status" && request.method === "GET") {
     const [clientCount, sessionCount, videoCount, postCount] = await Promise.all([
