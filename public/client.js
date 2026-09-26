@@ -1,6 +1,12 @@
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 let sessionAuth=null,currentClient=null;
 
+function portalFetch(url, options={}){
+  const headers=new Headers(options.headers||{});
+  if(sessionAuth)headers.set("x-nexus-session",sessionAuth);
+  return fetch(url,{...options,credentials:"same-origin",headers});
+}
+
 function showPortalLogin(message="Sua sessão precisa ser renovada. Entre novamente uma vez para manter o painel conectado."){
   sessionAuth=null;
   currentClient=null;
@@ -238,7 +244,7 @@ async function loadTokenUsage(){
 async function providerUsage(){
   if(currentClient?.managedInfrastructure)return;
   try{
-    const r=await fetch("/api/portal/provider-usage",{headers:{"x-nexus-session":sessionAuth}});
+    const r=await portalFetch("/api/portal/provider-usage");
     if(!r.ok)return;
     const d=await r.json();
     const oa=$("#live-openai"),oad=$("#live-openai-detail"),rw=$("#live-railway"),rwd=$("#live-railway-detail");
@@ -263,7 +269,7 @@ setInterval(()=>{
 
 async function liveStatus(){
   try{
-    const r=await fetch("/api/portal/live-status",{headers:{"x-nexus-session":sessionAuth}});
+    const r=await portalFetch("/api/portal/live-status");
     const d=await r.json();
     const configured=currentClient?.status==="online";
     if(!d.connected){
@@ -297,7 +303,7 @@ async function liveStatus(){
 }
 async function loadConnections(){
   try{
-    const r=await fetch("/api/portal/connections",{headers:{"x-nexus-session":sessionAuth}});
+    const r=await portalFetch("/api/portal/connections");
     if(!r.ok)return null;
     const d=await r.json();
     currentClient.connections=d.connections||{};
@@ -311,7 +317,7 @@ async function loadConnections(){
 let instagramOauthTimer=null;
 async function refreshPortalClient(){
   try{
-    const r=await fetch("/api/portal/session",{credentials:"same-origin"});
+    const r=await portalFetch("/api/portal/session");
     if(!r.ok)return null;
     const c=await r.json();
     renderClient(c);
@@ -336,7 +342,7 @@ async function startInstagramConnection(){
   button.textContent="Abrindo Instagram…";
   if(status)status.textContent="";
   try{
-    const r=await fetch("/api/portal/instagram/start",{credentials:"same-origin"});
+    const r=await portalFetch("/api/portal/instagram/start");
     const d=await r.json().catch(()=>({}));
     if(!r.ok||!d.url){
       if(d.error==="instagram_nexus_not_configured"){
@@ -450,7 +456,7 @@ function renderClientLeads(data={}){
 }
 async function loadClientLeads(){
   try{
-    const r=await fetch("/api/portal/leads",{credentials:"same-origin"});
+    const r=await portalFetch("/api/portal/leads");
     if(!r.ok)throw new Error("Não foi possível sincronizar o Odin.");
     renderClientLeads(await r.json());
   }catch(error){
@@ -541,7 +547,7 @@ async function loadLeadHunter(){
   const status=$("#lead-hunter-status");
   try{
     if(status){status.textContent="Sincronizando RADAR…";status.className="save-status";}
-    const r=await fetch("/api/portal/lead-hunter",{credentials:"same-origin"});
+    const r=await portalFetch("/api/portal/lead-hunter");
     const d=await r.json().catch(()=>({}));
     if(!r.ok)throw new Error(d.error||"Não foi possível carregar a captação.");
     renderLeadHunter(d);
@@ -590,7 +596,7 @@ async function runLeadHunterNow(){
   if(button){button.disabled=true;button.textContent="RADAR captando…";}
   if(status){status.textContent="RADAR coletando · ODIN qualificando…";status.className="save-status";}
   try{
-    const r=await fetch("/api/portal/lead-hunter/run",{method:"POST",credentials:"same-origin"});
+    const r=await portalFetch("/api/portal/lead-hunter/run",{method:"POST"});
     const d=await r.json().catch(()=>({}));
     if(!r.ok)throw new Error(d.message||d.error||"Falha na captação.");
     renderLeadHunter(d.view||d);
@@ -697,7 +703,7 @@ function renderClientPosts(data={}){
 }
 async function loadClientPosts(){
   try{
-    const r=await fetch("/api/portal/posts",{credentials:"same-origin"});
+    const r=await portalFetch("/api/portal/posts");
     if(!r.ok)throw new Error("Não foi possível carregar as postagens.");
     renderClientPosts(await r.json());
   }catch(error){
@@ -735,7 +741,7 @@ async function sendPostNow(postId,button){
   const card=postCardForButton(button);
   button.disabled=true;button.textContent="Consultando servidor…";setPostResponse(card,"");
   try{
-    const r=await fetch("/api/portal/posts/"+encodeURIComponent(postId)+"/manual",{method:"POST",credentials:"same-origin"});
+    const r=await portalFetch("/api/portal/posts/"+encodeURIComponent(postId)+"/manual",{method:"POST"});
     const d=await r.json().catch(()=>({}));
     if(!r.ok){
       setPostResponse(card,d.message||"O servidor não liberou esta postagem.","error");
@@ -1153,7 +1159,7 @@ function renderVideoJobs(data={}){
 }
 async function loadVideoJobs(){
   try{
-    const r=await fetch("/api/portal/videos",{credentials:"same-origin",headers:sessionAuth?{"x-nexus-session":sessionAuth}:{}});
+    const r=await portalFetch("/api/portal/videos");
     if(r.status===401){showPortalLogin();return;}
     if(!r.ok)throw new Error();
     renderVideoJobs(await r.json());
@@ -1379,12 +1385,12 @@ async function searchTrailers(event){
   if(status){status.textContent="Pesquisando…";status.className="save-status";}
   if(root)root.innerHTML='<div class="post-client-empty"><strong>Pesquisando</strong><span>Localizando a obra e o trailer oficial…</span></div>';
   try{
-    let r=await fetch("/api/portal/trailers/search?q="+encodeURIComponent(query)+"&type="+encodeURIComponent(type),{credentials:"same-origin",headers:sessionAuth?{"x-nexus-session":sessionAuth}:{}});
+    let r=await portalFetch("/api/portal/trailers/search?q="+encodeURIComponent(query)+"&type="+encodeURIComponent(type));
     let d=await r.json().catch(()=>({}));
     if(r.status===401){
       const sessionCheck=await fetch("/api/portal/session",{credentials:"same-origin",headers:sessionAuth?{"x-nexus-session":sessionAuth}:{}});
       if(sessionCheck.ok){
-        r=await fetch("/api/portal/trailers/search?q="+encodeURIComponent(query)+"&type="+encodeURIComponent(type),{credentials:"same-origin",headers:sessionAuth?{"x-nexus-session":sessionAuth}:{}});
+        r=await portalFetch("/api/portal/trailers/search?q="+encodeURIComponent(query)+"&type="+encodeURIComponent(type));
         d=await r.json().catch(()=>({}));
       }
     }
@@ -1846,7 +1852,7 @@ async function resumeCookieSession(){
     return;
   }
   try{
-    const r=await fetch("/api/portal/session",{credentials:"same-origin"});
+    const r=await portalFetch("/api/portal/session");
     if(r.status===401){showPortalLogin("");return;}
     if(!r.ok)return;
     const c=await r.json();
