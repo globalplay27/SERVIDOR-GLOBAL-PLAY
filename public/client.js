@@ -318,6 +318,17 @@ async function refreshPortalClient(){
     return c;
   }catch{return null;}
 }
+async function testInstagramConnection(){
+  const status=$("#instagram-connect-status")||$("#setup-instagram-status");
+  try{
+    const popup=window.open("/api/portal/instagram/test","nexus-instagram-test","width=620,height=620");
+    if(!popup)throw new Error("Permita a abertura da janela para testar a conexão.");
+    if(status)status.textContent="Testando fluxo do painel…";
+  }catch(error){
+    if(status)status.textContent=error.message;
+  }
+}
+
 async function startInstagramConnection(){
   const button=$("#instagram-connect"),status=$("#instagram-connect-status");
   if(!button||button.disabled)return;
@@ -362,12 +373,27 @@ async function startInstagramConnection(){
   }
 }
 window.addEventListener("message",event=>{
+  if(event.data?.type!=="nexus-instagram-oauth-test")return;
+  const message=event.data?.appConfigured
+    ?"Teste concluído: painel, sessão e retorno do NEXUS estão OK. Para conectar de verdade, use uma conta Profissional."
+    :"Teste do painel OK, mas o aplicativo Instagram central ainda precisa ser configurado corretamente.";
+  const a=$("#instagram-connect-status"),b=$("#setup-instagram-status");
+  if(a)a.textContent=message;
+  if(b)b.textContent=message;
+});
+
+window.addEventListener("message",event=>{
   if(event.data?.type!=="nexus-instagram-oauth")return;
   refreshPortalClient().then(c=>{
     const status=$("#instagram-connect-status");
     if(c?.instagram&&status)status.textContent=c.instagram+" conectado com sucesso.";
   });
 });
+const instagramTestButton=$("#instagram-test");
+if(instagramTestButton)instagramTestButton.addEventListener("click",testInstagramConnection);
+const setupInstagramTestButton=$("#setup-instagram-test");
+if(setupInstagramTestButton)setupInstagramTestButton.addEventListener("click",testInstagramConnection);
+
 const instagramConnectButton=$("#instagram-connect");
 if(instagramConnectButton)instagramConnectButton.addEventListener("click",startInstagramConnection);
 const setupInstagramConnectButton=$("#setup-instagram-connect");
