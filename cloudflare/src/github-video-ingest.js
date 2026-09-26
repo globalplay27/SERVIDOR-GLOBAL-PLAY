@@ -144,7 +144,7 @@ export async function dispatchPendingGitHubVideoImports(env, limit = 2) {
     const attempts = Number(settings.githubDispatchAttempts || 0);
     const state = String(settings.githubDispatchState || "");
     const last = Date.parse(String(settings.githubDispatchUpdatedAt || "")) || 0;
-    const stale = last && (Date.now() - last) > 20 * 60 * 1000;
+    const stale = last && (Date.now() - last) > 2 * 60 * 1000;
     if (state === "dispatched" && !stale) continue;
     if (attempts >= 3) continue;
 
