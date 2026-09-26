@@ -1,0 +1,24 @@
+name: Check Global Play Admin URLs
+
+on:
+  push:
+    branches:
+      - feature/nexus-app-v2-20260924
+    paths:
+      - ".github/workflows/check-globalplay-admin-urls.yml"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check admin URLs
+        shell: bash
+        run: |
+          set -u
+          for url in             "https://globalplay.fun/admin/login"             "https://globalplay.fun/admin"             "https://globalplay-site.diamantehinode2015.workers.dev/admin/login"
+          do
+            echo "=== $url ==="
+            curl -sS -L --max-time 20 -o body.txt -w "STATUS=%{http_code}\nFINAL=%{url_effective}\n" "$url" || true
+            head -c 300 body.txt | tr '\n' ' ' || true
+            echo
+          done
