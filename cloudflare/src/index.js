@@ -202,7 +202,8 @@ export default {
       await runSchedulerTick(env, at);
       await processDueJobs(env, at);
       await processQueuedVideoImports(env, 1);
-      await processQueuedVideoJobs(env, 1);
+      // Video processing is intentionally manual. Imported/uploaded videos stay in the library
+      // until the client explicitly requests processing from the portal.
     })());
   },
 
@@ -285,7 +286,6 @@ export default {
       if (!jobId || !clientId || !callbackToken) return json({ error: "ingest_headers_required" }, 400);
       try {
         const completed = await completeGithubVideoIngest(env, clientId, jobId, request, callbackToken);
-        if (ctx?.waitUntil) ctx.waitUntil(processVideoJob(env, clientId, jobId).catch(() => {}));
         return json(completed, 201);
       } catch (error) {
         const code = error instanceof Error ? error.message : String(error);
