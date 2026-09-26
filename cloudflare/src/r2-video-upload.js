@@ -1,4 +1,4 @@
-const MAX_VIDEO_BYTES = 750 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
 const DEFAULT_CHUNK_BYTES = 8 * 1024 * 1024;
 
 function cleanFileName(value) {
@@ -244,6 +244,413 @@ function fileNameFromRemote(response, finalUrl, fallbackTitle = "") {
     try { return cleanFileName(decodeURIComponent(pathnameName)); } catch { return cleanFileName(pathnameName); }
   }
   return cleanFileName(String(fallbackTitle || "video"));
+}
+
+
+function youtubeVideoIdFromUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  try {
+    const url = new URL(raw);
+    const host = url.hostname.toLowerCase().replace(/^www\./, "");
+    if (url.protocol !== "https:") return "";
+    if (host === "youtu.be") return url.pathname.split("/").filter(Boolean)[0] || "";
+    if (host !== "youtube.com") return "";
+    if (url.pathname === "/watch") return url.searchParams.get("v") || "";
+    const parts = url.pathname.split("/").filter(Boolean);
+    if (["shorts","embed","live"].includes(parts[0]) && parts[1]) return parts[1];
+  } catch {}
+  return "";
+}
+
+
+const PIPED_STREAM_APIS = [
+  "https://pipedapi.kavin.rocks",
+  "https://pipedapi.tokhmi.xyz",
+  "https://pipedapi.moomoo.me",
+  "https://pipedapi.syncpundit.io",
+  "https://api-piped.mha.fi",
+  "https://piped-api.garudalinux.org",
+  "https://pipedapi.rivo.lol",
+  "https://pipedapi.leptons.xyz"
+];
+
+
+async function pipedMuxedStream(sourceUrl) {
+  const videoId = youtubeVideoIdFromUrl(sourceUrl);
+  if (!videoId) throw new Error("trailer_video_id_missing");
+
+  const attemptInstance = async base => {
+    const response = await fetch(base + "/streams/" + encodeURIComponent(videoId), {
+      headers: { accept: "application/json", "user-agent": "NEXUS-AI/2.3" },
+      signal: AbortSignal.timeout(4000)
+    });
+    if (!response.ok) throw new Error("piped_streams_" + response.status);
+    const payload = await response.json().catch(() => ({}));
+
+    const streams = (Array.isArray(payload?.videoStreams) ? payload.videoStreams : [])
+      .filter(item => item?.url && item?.videoOnly !== true)
+      .map(item => {
+        const quality = Number(String(item?.quality || "").match(/\d+/)?.[0] || 0);
+        const bytes = Number(item?.contentLength || 0);
+        const mime = String(item?.mimeType || "").toLowerCase();
+        const format = String(item?.format || "").toUpperCase();
+        return { ...item, quality, bytes, mime, format };
+      })
+      .filter(item => !item.bytes || item.bytes <= MAX_VIDEO_BYTES)
+      .sort((a, b) => {
+        const aMp4 = a.mime.includes("mp4") || a.format.includes("MP4") || a.format.includes("MPEG_4") ? 1 : 0;
+        const bMp4 = b.mime.includes("mp4") || b.format.includes("MP4") || b.format.includes("MPEG_4") ? 1 : 0;
+        const aQ = a.quality <= 480 ? a.quality : 0;
+        const bQ = b.quality <= 480 ? b.quality : 0;
+        return (bMp4 - aMp4) || (bQ - aQ) || (a.bytes - b.bytes);
+      })
+      .slice(0, 3);
+
+    if (!streams.length) throw new Error("piped_no_muxed_stream");
+
+    const fetchStream = async stream => {
+      const mediaUrl = new URL(String(stream.url), base);
+      if (mediaUrl.protocol !== "https:" || unsafeRemoteVideoHost(mediaUrl.hostname)) {
+        throw new Error("piped_stream_not_allowed");
+      }
+      const media = await fetch(mediaUrl.toString(), {
+        headers: { accept: "video/*,*/*;q=0.8", "user-agent": "Mozilla/5.0 NEXUS-AI/2.3" },
+        signal: AbortSignal.timeout(15000)
+      });
+      if (!media.ok || !media.body) throw new Error("piped_media_" + media.status);
+
+      const declaredLength = Number(media.headers.get("content-length") || stream.bytes || 0);
+      if (!declaredLength || declaredLength > MAX_VIDEO_BYTES) {
+        try { await media.body.cancel(); } catch {}
+        throw new Error(declaredLength > MAX_VIDEO_BYTES ? "video_too_large" : "trailer_size_unknown");
+      }
+
+      const contentType = String(media.headers.get("content-type") || stream.mime || "video/mp4")
+        .toLowerCase().split(";")[0].trim();
+      const extension = contentType.includes("webm") ? "webm" : "mp4";
+      return {
+        response: media,
+        videoId,
+        host: new URL(base).hostname,
+        extension,
+        contentType: contentType.startsWith("video/") ? contentType : (extension === "webm" ? "video/webm" : "video/mp4"),
+        size: declaredLength,
+        resolver: "piped"
+      };
+    };
+
+    return Promise.any(streams.map(fetchStream));
+  };
+
+  return Promise.any(PIPED_STREAM_APIS.map(attemptInstance));
+}
+
+async function invidiousMuxedStream(sourceUrl) {
+  const videoId = youtubeVideoIdFromUrl(sourceUrl);
+  if (!videoId) throw new Error("invalid_trailer_url");
+
+  const instances = [
+    "inv.nadeko.net",
+    "invidious.nerdvpn.de",
+    "yt.chocolatemoo53.com",
+    "invidious.tiekoetter.com"
+  ];
+
+  const attemptInstance = async host => {
+    const base = "https://" + host;
+    const api = await fetch(base + "/api/v1/videos/" + encodeURIComponent(videoId) + "?local=1&region=BR", {
+      headers: { accept: "application/json", "user-agent": "NEXUS-AI-Trailer-Resolver/2.3" },
+      signal: AbortSignal.timeout(4000)
+    });
+    if (!api.ok) throw new Error("invidious_api_" + api.status);
+
+    const payload = await api.json().catch(() => ({}));
+    const streams = (Array.isArray(payload?.formatStreams) ? payload.formatStreams : [])
+      .filter(item => item?.url)
+      .map(item => {
+        const quality = Number(String(item.qualityLabel || item.quality || "").match(/\d+/)?.[0] || 0);
+        const bytes = Number(item.clength || item.contentLength || 0);
+        const container = String(item.container || "").toLowerCase();
+        return { ...item, quality, bytes, container };
+      })
+      .filter(item => !item.bytes || item.bytes <= MAX_VIDEO_BYTES)
+      .sort((a, b) => {
+        const aMp4 = a.container === "mp4" ? 1 : 0;
+        const bMp4 = b.container === "mp4" ? 1 : 0;
+        const aQ = a.quality <= 480 ? a.quality : 0;
+        const bQ = b.quality <= 480 ? b.quality : 0;
+        return (bMp4 - aMp4) || (bQ - aQ) || (a.bytes - b.bytes);
+      })
+      .slice(0, 3);
+
+    if (!streams.length) throw new Error("invidious_no_stream");
+
+    const fetchStream = async stream => {
+      const mediaUrl = new URL(String(stream.url), base);
+      const hostName = mediaUrl.hostname.toLowerCase();
+      const allowedHost = hostName === host
+        || hostName.endsWith(".googlevideo.com")
+        || hostName === "googlevideo.com";
+      if (mediaUrl.protocol !== "https:" || !allowedHost || unsafeRemoteVideoHost(hostName)) {
+        throw new Error("invidious_stream_not_allowed");
+      }
+
+      const media = await fetch(mediaUrl.toString(), {
+        headers: {
+          accept: "video/*,*/*;q=0.8",
+          referer: base + "/watch?v=" + encodeURIComponent(videoId),
+          "user-agent": "Mozilla/5.0 NEXUS-AI/2.3"
+        },
+        signal: AbortSignal.timeout(15000)
+      });
+      if (!media.ok || !media.body) throw new Error("invidious_media_" + media.status);
+
+      const declaredLength = Number(media.headers.get("content-length") || stream.bytes || 0);
+      if (!declaredLength || declaredLength > MAX_VIDEO_BYTES) {
+        try { await media.body.cancel(); } catch {}
+        throw new Error(declaredLength > MAX_VIDEO_BYTES ? "video_too_large" : "trailer_size_unknown");
+      }
+
+      const contentType = String(media.headers.get("content-type") || "").toLowerCase().split(";")[0].trim();
+      const extension = stream.container === "webm" || contentType.includes("webm") ? "webm" : "mp4";
+      return {
+        response: media,
+        videoId,
+        host,
+        extension,
+        contentType: contentType.startsWith("video/") ? contentType : (extension === "webm" ? "video/webm" : "video/mp4"),
+        size: declaredLength,
+        resolver: "invidious"
+      };
+    };
+
+    return Promise.any(streams.map(fetchStream));
+  };
+
+  return Promise.any(instances.map(attemptInstance));
+}
+
+async function youtubeMuxedStream(sourceUrl) {
+  try {
+    return await Promise.any([
+      pipedMuxedStream(sourceUrl),
+      invidiousMuxedStream(sourceUrl)
+    ]);
+  } catch {
+    throw new Error("youtube_stream_resolve_failed");
+  }
+}
+
+export async function createR2PublicTrailerImportJob(env, clientId, input = {}) {
+  const sourceUrl = String(input.url || input.trailerUrl || "").trim();
+  if (!youtubeVideoIdFromUrl(sourceUrl)) throw new Error("invalid_trailer_url");
+
+  const title = String(input.contentTitle || "video-youtube").trim().slice(0, 160) || "video-youtube";
+  const settings = normalizeSettings(input, {
+    fileName: title + ".mp4",
+    contentType: "video/mp4",
+    size: 0
+  });
+  settings.folderId = await validFolderId(env, clientId, settings.folderId);
+  settings.sourceType = "youtube-public";
+  settings.sourceUrl = sourceUrl.slice(0, 1200);
+  settings.importAttempts = 0;
+
+  const jobId = "vid_" + crypto.randomUUID().replace(/-/g, "").slice(0, 20);
+  const result = {
+    progress: 5,
+    storage: "r2",
+    importAttempts: 0,
+    message: "Importando vídeo do YouTube para a biblioteca.",
+    error: ""
+  };
+
+  await env.DB.prepare(
+    `INSERT INTO video_jobs(id,client_id,source_object_key,status,settings_json,result_json,created_at,updated_at)
+     VALUES(?1,?2,'','importing',?3,?4,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)`
+  ).bind(jobId, String(clientId), JSON.stringify(settings), JSON.stringify(result)).run();
+
+  return { jobId };
+}
+
+export async function processR2PublicTrailerImportJob(env, clientId, jobId) {
+  if (!env.MEDIA) throw new Error("r2_unavailable");
+  const row = await env.DB.prepare(
+    "SELECT id,client_id,status,settings_json,result_json FROM video_jobs WHERE id=?1 AND client_id=?2 LIMIT 1"
+  ).bind(String(jobId), String(clientId)).first();
+  if (!row || String(row.status) !== "importing") return { skipped: true };
+
+  const settings = (() => { try { return JSON.parse(String(row.settings_json || "{}")); } catch { return {}; } })();
+  const result = (() => { try { return JSON.parse(String(row.result_json || "{}")); } catch { return {}; } })();
+  const attempt = Math.max(Number(settings.importAttempts || result.importAttempts || 0), 0) + 1;
+  settings.importAttempts = attempt;
+
+  await env.DB.prepare(
+    "UPDATE video_jobs SET settings_json=?3,result_json=?4,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2"
+  ).bind(
+    row.id,
+    row.client_id,
+    JSON.stringify(settings),
+    JSON.stringify({ ...result, progress: 10, importAttempts: attempt, message: "Localizando o vídeo no YouTube · tentativa " + attempt + " de 3.", error: "" })
+  ).run();
+
+  let key = "";
+  try {
+    const resolved = await youtubeMuxedStream(settings.sourceUrl);
+    await env.DB.prepare(
+      "UPDATE video_jobs SET result_json=?3,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2"
+    ).bind(
+      row.id,
+      row.client_id,
+      JSON.stringify({ ...result, progress: 35, importAttempts: attempt, message: "Vídeo localizado. Transferindo para o R2.", error: "" })
+    ).run();
+    key = videoKeyPrefix(clientId) + crypto.randomUUID() + "." + resolved.extension;
+
+    const object = await env.MEDIA.put(key, resolved.response.body, {
+      httpMetadata: { contentType: resolved.contentType, cacheControl: "private, no-store" },
+      customMetadata: {
+        clientId: String(clientId),
+        originalName: cleanFileName((settings.contentTitle || "video-youtube") + "." + resolved.extension),
+        sourceHost: "youtube.com",
+        sourceVideoId: resolved.videoId,
+        resolver: resolved.resolver || resolved.host,
+        kind: "video-source"
+      }
+    });
+    if (!object) throw new Error("trailer_store_failed");
+    if (Number(object.size || resolved.size || 0) > MAX_VIDEO_BYTES) {
+      await env.MEDIA.delete(key).catch(() => {});
+      throw new Error("video_too_large");
+    }
+
+    settings.fileSize = Number(object.size || resolved.size || 0);
+    settings.contentType = resolved.contentType;
+    settings.filename = cleanFileName((settings.contentTitle || "video-youtube") + "." + resolved.extension);
+    settings.displayName = settings.filename;
+
+    await env.DB.prepare(
+      "UPDATE video_jobs SET source_object_key=?3,status='queued',settings_json=?4,result_json=?5,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2"
+    ).bind(
+      row.id,
+      row.client_id,
+      key,
+      JSON.stringify(settings),
+      JSON.stringify({
+        ...result,
+        progress: 50,
+        storage: "r2",
+        objectEtag: object.httpEtag || "",
+        resolver: resolved.resolver || resolved.host,
+        importAttempts: attempt,
+        message: "Vídeo recebido no R2. Iniciando análise e cortes.",
+        error: ""
+      })
+    ).run();
+    return { ok: true, jobId: row.id };
+  } catch (cause) {
+    if (key) await env.MEDIA.delete(key).catch(() => {});
+    const code = String(cause instanceof Error ? cause.message : cause);
+    const retry = attempt < 3;
+    await env.DB.prepare(
+      "UPDATE video_jobs SET status=?3,settings_json=?4,result_json=?5,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2"
+    ).bind(
+      row.id,
+      row.client_id,
+      retry ? "importing" : "failed",
+      JSON.stringify(settings),
+      JSON.stringify({
+        ...result,
+        progress: retry ? 5 : 0,
+        importAttempts: attempt,
+        message: retry
+          ? "A origem não respondeu. O NEXUS tentará novamente automaticamente."
+          : "Não foi possível importar este vídeo do YouTube após 3 tentativas.",
+        error: code.slice(0, 500)
+      })
+    ).run();
+    return { ok: false, retry, error: code };
+  }
+}
+
+export async function processQueuedVideoImports(env, limit = 1) {
+  if (!env?.DB || !env.MEDIA) return { processed: 0 };
+  const rows = await env.DB.prepare(
+    "SELECT id,client_id FROM video_jobs WHERE status='importing' ORDER BY updated_at ASC LIMIT ?1"
+  ).bind(Math.max(1, Math.min(2, Number(limit || 1)))).all();
+  let processed = 0;
+  for (const row of rows?.results || []) {
+    await processR2PublicTrailerImportJob(env, row.client_id, row.id).catch(() => {});
+    processed += 1;
+  }
+  return { processed };
+}
+
+export async function importR2PublicTrailer(env, clientId, input = {}) {
+  if (!env.MEDIA) throw new Error("r2_unavailable");
+
+  const sourceUrl = String(input.url || input.trailerUrl || "").trim();
+  if (!sourceUrl) throw new Error("trailer_url_required");
+
+  const resolved = await youtubeMuxedStream(sourceUrl);
+  const key = videoKeyPrefix(clientId) + crypto.randomUUID() + "." + resolved.extension;
+  const title = String(input.contentTitle || "trailer").trim().slice(0, 160) || "trailer";
+
+  let object;
+  try {
+    object = await env.MEDIA.put(key, resolved.response.body, {
+      httpMetadata: {
+        contentType: resolved.contentType,
+        cacheControl: "private, no-store"
+      },
+      customMetadata: {
+        clientId: String(clientId),
+        originalName: cleanFileName(title + "." + resolved.extension),
+        sourceHost: "youtube.com",
+        sourceVideoId: resolved.videoId,
+        resolver: resolved.host,
+        kind: "video-source"
+      }
+    });
+  } catch {
+    throw new Error("trailer_store_failed");
+  }
+
+  if (!object) throw new Error("trailer_store_failed");
+  if (Number(object.size || resolved.size || 0) > MAX_VIDEO_BYTES) {
+    await env.MEDIA.delete(key).catch(() => {});
+    throw new Error("video_too_large");
+  }
+
+  const settings = normalizeSettings(input, {
+    fileName: title + "." + resolved.extension,
+    contentType: resolved.contentType,
+    size: Number(object.size || resolved.size || 0)
+  });
+  settings.folderId = await validFolderId(env, clientId, settings.folderId);
+  settings.sourceType = "youtube-trailer";
+  settings.sourceUrl = sourceUrl.slice(0, 1200);
+
+  const jobId = "vid_" + crypto.randomUUID().replace(/-/g, "").slice(0, 20);
+  const result = {
+    progress: 100,
+    storage: "r2",
+    objectEtag: object.httpEtag || "",
+    resolver: "invidious",
+    message: "Trailer recebido na biblioteca. Iniciando cortes."
+  };
+
+  try {
+    await env.DB.prepare(
+      `INSERT INTO video_jobs(id,client_id,source_object_key,status,settings_json,result_json,created_at,updated_at)
+       VALUES(?1,?2,?3,'awaiting_configuration',?4,?5,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)`
+    ).bind(jobId, String(clientId), key, JSON.stringify(settings), JSON.stringify(result)).run();
+  } catch (error) {
+    await env.MEDIA.delete(key).catch(() => {});
+    throw error;
+  }
+
+  return { jobId, objectKey: key, etag: object.httpEtag || "", source: "youtube-trailer" };
 }
 
 export async function importR2VideoFromUrl(env, clientId, input = {}) {
