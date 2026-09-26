@@ -177,7 +177,7 @@ function signedPortalClientForRequest(req) {
 }
 
 function bridgePortalClientForRequest(req) {
-  const expected = String(process.env.NEXUS_RAILWAY_BRIDGE_SECRET || "").trim();
+  const expected = String(process.env.NEXUS_BRIDGE_SECRET || "").trim();
   const supplied = String(req.headers["x-nexus-bridge-secret"] || "").trim();
   const clientId = String(req.headers["x-nexus-client-id"] || "").trim();
   if (!expected || !supplied || !clientId || !safeEqualText(supplied, expected)) return null;
@@ -189,7 +189,7 @@ function videoUploadTicketClientForRequest(req) {
   const parsed = new URL(req.url, "http://localhost");
   if (parsed.pathname !== "/api/portal/videos") return null;
 
-  const secret = String(process.env.NEXUS_RAILWAY_BRIDGE_SECRET || "").trim();
+  const secret = String(process.env.NEXUS_BRIDGE_SECRET || "").trim();
   const clientId = String(parsed.searchParams.get("bridge_client") || "").trim();
   const expires = Number(parsed.searchParams.get("bridge_exp") || 0);
   const supplied = String(parsed.searchParams.get("bridge_sig") || "").trim();
@@ -5525,8 +5525,209 @@ function slug(value) {
     .replace(/^-+|-+$/g, "");
 }
 
+
+const activeExternalIngests = new Set();
+const ALLOWED_INGEST_CALLBACK_HOSTS = new Set([
+  "servidor-nexus.diamantehinode2015.workers.dev"
+]);
+
+function downloaderRequestAuthorized(req) {
+  const expected = String(process.env.NEXUS_DOWNLOADER_SECRET || "").trim();
+  if (!expected) return true;
+  const supplied = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
+  return Boolean(supplied && safeEqualText(supplied, expected));
+}
+
+function validatedIngestCallbackBase(value) {
+  const raw = String(value || "").trim().replace(/\/+$/, "");
+  let parsed;
+  try { parsed = new URL(raw); } catch { throw new Error("invalid_callback_base"); }
+  if (parsed.protocol !== "https:" || !ALLOWED_INGEST_CALLBACK_HOSTS.has(parsed.hostname.toLowerCase())) {
+    throw new Error("callback_base_not_allowed");
+  }
+  return parsed.origin;
+}
+
+function youtubeSourceForIngest(value) {
+  const raw = String(value || "").trim();
+  let parsed;
+  try { parsed = new URL(raw); } catch { throw new Error("invalid_source_url"); }
+  const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
+  if (parsed.protocol !== "https:" || !["youtube.com","youtu.be"].includes(host)) {
+    throw new Error("unsupported_source_url");
+  }
+  return raw;
+}
+
+async function reportExternalIngestFailure(payload, errorCode) {
+  try {
+    const callbackBase = validatedIngestCallbackBase(payload.callback_base);
+    await fetch(callbackBase + "/api/internal/video-ingest/fail", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-nexus-job-id": String(payload.job_id || ""),
+        "x-nexus-client-id": String(payload.client_id || ""),
+        "x-nexus-callback-token": String(payload.callback_token || "")
+      },
+      body: JSON.stringify({ error: String(errorCode || "render_ingest_failed").slice(0, 500) }),
+      signal: AbortSignal.timeout(30000)
+    });
+  } catch (callbackError) {
+    console.warn("Render ingest failure callback failed:", String(callbackError?.message || callbackError));
+  }
+}
+
+async function processExternalYoutubeIngest(payload) {
+  const sourceUrl = youtubeSourceForIngest(payload.source_url);
+  const callbackBase = validatedIngestCallbackBase(payload.callback_base);
+  const jobId = String(payload.job_id || "").trim();
+  const clientId = String(payload.client_id || "").trim();
+  const callbackToken = String(payload.callback_token || "").trim();
+  if (!jobId || !clientId || !callbackToken) throw new Error("ingest_payload_incomplete");
+
+  const safeJob = jobId.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80) || crypto.randomUUID();
+  const prefix = "nexus-render-" + safeJob;
+  const template = path.join("/tmp", prefix + ".%(ext)s");
+
+  const clearTemp = () => {
+    try {
+      for (const name of fs.readdirSync("/tmp")) {
+        if (name.startsWith(prefix + ".")) {
+          try { fs.unlinkSync(path.join("/tmp", name)); } catch {}
+        }
+      }
+    } catch {}
+  };
+
+  clearTemp();
+  try {
+    const common = [
+      "--no-playlist",
+      "--no-warnings",
+      "--socket-timeout", "30",
+      "--retries", "2",
+      "--fragment-retries", "2",
+      "--concurrent-fragments", "4",
+      "--max-filesize", "95M",
+      "--merge-output-format", "mp4",
+      "-o", template
+    ];
+
+    let downloaded = false;
+    let lastError = null;
+    const attempts = [
+      [...common, "--extractor-args", "youtube:player_client=web_embedded", "-f", "b[height<=480]/b", sourceUrl],
+      [...common, "-f", "b[height<=480]/b", sourceUrl],
+      [...common, "-f", "bv*[height<=480]+ba/b[height<=480]/b", sourceUrl]
+    ];
+
+    for (const args of attempts) {
+      clearTemp();
+      try {
+        await execFileAsync("yt-dlp", args, {
+          timeout: 8 * 60 * 1000,
+          maxBuffer: 8 * 1024 * 1024
+        });
+        downloaded = true;
+        lastError = null;
+        break;
+      } catch (error) {
+        lastError = error;
+        console.warn("Render yt-dlp attempt failed:", String(error?.stderr || error?.message || error).replace(/\s+/g, " ").slice(0, 350));
+      }
+    }
+
+    if (!downloaded) {
+      throw new Error("render_ytdlp_failed:" + String(lastError?.stderr || lastError?.message || "download_failed").replace(/\s+/g, " ").slice(0, 350));
+    }
+
+    const candidates = fs.readdirSync("/tmp")
+      .filter(name => name.startsWith(prefix + "."))
+      .map(name => {
+        const full = path.join("/tmp", name);
+        let size = 0;
+        try { size = fs.statSync(full).size; } catch {}
+        return { name, full, size };
+      })
+      .filter(item => item.size > 0 && item.size <= 100 * 1024 * 1024)
+      .sort((a,b) => b.size - a.size);
+
+    const selected = candidates[0];
+    if (!selected) throw new Error("render_download_empty_or_too_large");
+
+    const ext = path.extname(selected.name).toLowerCase();
+    const contentType = ext === ".webm" ? "video/webm" : ext === ".mkv" ? "video/x-matroska" : "video/mp4";
+    const requestedTitle = String(payload.title || "video-youtube").trim().replace(/[\\/\0-\x1f\x7f]+/g, "_").slice(0, 120) || "video-youtube";
+    const fileName = requestedTitle + (ext || ".mp4");
+
+    const uploadResponse = await fetch(callbackBase + "/api/internal/video-ingest/upload", {
+      method: "PUT",
+      headers: {
+        "content-type": contentType,
+        "content-length": String(selected.size),
+        "x-nexus-job-id": jobId,
+        "x-nexus-client-id": clientId,
+        "x-nexus-callback-token": callbackToken,
+        "x-nexus-file-name": fileName
+      },
+      body: fs.createReadStream(selected.full),
+      duplex: "half",
+      signal: AbortSignal.timeout(4 * 60 * 1000)
+    });
+
+    if (!uploadResponse.ok) {
+      const detail = await uploadResponse.text().catch(() => "");
+      throw new Error("render_callback_upload_http_" + uploadResponse.status + (detail ? ":" + detail.slice(0, 220) : ""));
+    }
+
+    console.log("Render YouTube ingest completed", { jobId, clientId, bytes: selected.size });
+  } finally {
+    clearTemp();
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+
+  if (url.pathname === "/ingest" && req.method === "POST") {
+    if (!downloaderRequestAuthorized(req)) {
+      return send(res, 401, { ok: false, error: "unauthorized" });
+    }
+
+    let payload = {};
+    try {
+      payload = await readBody(req);
+      youtubeSourceForIngest(payload.source_url);
+      validatedIngestCallbackBase(payload.callback_base);
+      if (!payload.job_id || !payload.client_id || !payload.callback_token) {
+        throw new Error("ingest_payload_incomplete");
+      }
+    } catch (error) {
+      return send(res, 400, { ok: false, error: String(error?.message || error) });
+    }
+
+    if (activeExternalIngests.size >= 2) {
+      return send(res, 429, { ok: false, error: "render_ingest_busy" });
+    }
+
+    const executionKey = String(payload.client_id) + ":" + String(payload.job_id);
+    if (activeExternalIngests.has(executionKey)) {
+      return send(res, 202, { ok: true, accepted: true, duplicate: true, jobId: String(payload.job_id) });
+    }
+
+    activeExternalIngests.add(executionKey);
+    processExternalYoutubeIngest(payload)
+      .catch(async error => {
+        const detail = String(error?.message || error).slice(0, 500);
+        console.error("Render YouTube ingest failed", executionKey, detail);
+        await reportExternalIngestFailure(payload, detail);
+      })
+      .finally(() => activeExternalIngests.delete(executionKey));
+
+    return send(res, 202, { ok: true, accepted: true, jobId: String(payload.job_id) });
+  }
+
 
   const signedVideoUpload = url.pathname === "/api/portal/videos"
     && Boolean(url.searchParams.get("bridge_client"))
@@ -5684,7 +5885,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (url.pathname === "/api/nexus/bridge/auth-check" && req.method === "POST") {
-    const expected = String(process.env.NEXUS_RAILWAY_BRIDGE_SECRET || "").trim();
+    const expected = String(process.env.NEXUS_BRIDGE_SECRET || "").trim();
     const supplied = String(req.headers["x-nexus-bridge-secret"] || "").trim();
     if (!expected || !supplied || !safeEqualText(supplied, expected)) {
       return send(res, 401, { ok: false, error: "unauthorized" });
