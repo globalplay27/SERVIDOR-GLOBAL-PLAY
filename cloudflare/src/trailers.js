@@ -343,11 +343,12 @@ export async function searchTrailers(env, clientId, query, type = "movie") {
   if (!q) throw new Error("query_required");
   const kind = String(type || "") === "series" ? "tv" : "movie";
 
+  let catalogError = null;
   // 1) Catálogo estruturado, quando houver TMDB configurado.
   try {
     const tmdb = await tmdbSearch(env, q, kind);
     const rows = Array.isArray(tmdb?.results) ? tmdb.results : [];
-    if (rows.length) {
+    if (tmdb?.configured && Array.isArray(tmdb.results)) {
       return {
         configured: true,
         source: "tmdb-catalog",
@@ -356,7 +357,7 @@ export async function searchTrailers(env, clientId, query, type = "movie") {
           .slice(0, 4)
       };
     }
-  } catch {}
+  } catch (error) { catalogError = error; }
 
   // 2) Sem catálogo externo, usa busca web da IA para identificar OBRAS,
   // não vídeos. Só depois associa trailer do YouTube à obra encontrada.
@@ -383,14 +384,16 @@ export async function searchTrailers(env, clientId, query, type = "movie") {
         "Formato obrigatório:",
         '{"results":[{"title":"Título da obra","year":"2024","overview":"Sinopse completa em português.","posterUrl":"","trailerUrl":"https://www.youtube.com/watch?v=...","channel":"Canal","official":true}]}'
       ].join("\n"),
-      max_output_tokens: 1200
+      max_output_tokens: 4000
     }, {
       enforceBudget: false,
       recordBudgetUsage: false
     });
 
+    if (response?.status === "incomplete") throw new Error("trailer_response_incomplete");
     const text = outputText(response);
     const parsed = safeJsonObjectFromText(text);
+    if (!parsed || !Array.isArray(parsed.results)) throw new Error("trailer_response_invalid");
     if (parsed) {
       const results = (Array.isArray(parsed?.results) ? parsed.results : [])
         .slice(0, 4)
@@ -411,8 +414,9 @@ export async function searchTrailers(env, clientId, query, type = "movie") {
   } catch (error) {
     const code = String(error instanceof Error ? error.message : error);
     if (!code.includes("openai_not_configured")) throw error;
+    if (catalogError) throw catalogError;
   }
 
   // Nunca cair para uma busca crua do YouTube: isso mistura clipes e outros vídeos.
-  return { configured: false, source: "catalog-unavailable", results: [] };
+  throw new Error("trailer_catalog_not_configured");
 }

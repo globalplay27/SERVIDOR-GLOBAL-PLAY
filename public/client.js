@@ -1428,7 +1428,7 @@ async function searchTrailers(event){
     if(status){
       const directCount=rows.filter(item=>(item.downloadable&&item.downloadUrl)||item.trailerUrl).length;
       status.textContent=d.configured
-        ?(directCount?"Resultados encontrados · "+directCount+" pronto(s) para enviar direto ao servidor.":"Resultados encontrados, mas sem vídeo disponível para importação.")
+        ?(rows.length?(directCount?"Resultados encontrados · "+directCount+" trailer(s) disponível(is).":"Resultados encontrados, mas sem trailer oficial dublado disponível."):"Nenhuma obra encontrada para este título.")
         :"A pesquisa interna não respondeu. Tente novamente.";
       status.className=directCount?"save-status ok":"save-status";
     }
@@ -1488,7 +1488,8 @@ async function searchTrailers(event){
 
   }catch(error){
     if(status){status.textContent=error.message;status.className="save-status error";}
-    if(root)root.innerHTML='<div class="post-client-empty"><strong>Não foi possível pesquisar</strong><span>'+escapeSupport(error.message)+'</span></div>';
+    if(root)root.innerHTML='<div class="post-client-empty"><strong>Não foi possível pesquisar</strong><span>'+escapeSupport(error.message)+'</span><button type="button" class="ghost-action" id="trailer-retry-search">Tentar novamente</button></div>';
+    $("#trailer-retry-search")?.addEventListener("click",()=>searchTrailers());
   }
 }
 

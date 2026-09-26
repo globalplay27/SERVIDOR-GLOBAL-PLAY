@@ -504,7 +504,7 @@ export async function handlePortalApi(request, env, url, ctx = null) {
     cacheUrl.searchParams.set("client", String(client.id));
     cacheUrl.searchParams.set("type", type);
     cacheUrl.searchParams.set("q", query.toLowerCase());
-    cacheUrl.searchParams.set("official", "ptbr-v3");
+    cacheUrl.searchParams.set("official", "ptbr-v4");
     const cacheKey = new Request(cacheUrl.toString(), { method: "GET" });
 
     try {
@@ -533,14 +533,26 @@ export async function handlePortalApi(request, env, url, ctx = null) {
             "cache-control": "public, max-age=21600"
           }
         });
-        if (ctx?.waitUntil) ctx.waitUntil(caches.default.put(cacheKey, cacheResponse));
+        if (payload.configured === true && Array.isArray(payload.results) && payload.results.length && ctx?.waitUntil) {
+          ctx.waitUntil(caches.default.put(cacheKey, cacheResponse));
+        }
       } catch {}
       return response;
     } catch (error) {
+      const code = error instanceof Error ? error.message : String(error);
+      const messages = {
+        trailer_catalog_not_configured: "A busca de filmes não está configurada para esta conta. Configure o catálogo TMDB ou a chave OpenAI no servidor.",
+        trailer_response_incomplete: "A resposta da pesquisa veio incompleta. Tente novamente.",
+        trailer_response_invalid: "O serviço de pesquisa retornou uma resposta inválida. Tente novamente.",
+        openai_quota_exhausted: "A conta OpenAI usada na pesquisa está sem saldo disponível.",
+        tmdb_http_401: "A credencial do catálogo de filmes precisa ser corrigida no servidor.",
+        openai_http_401: "A chave OpenAI usada na pesquisa precisa ser corrigida no servidor."
+      };
       return json({
         error: "trailer_search_failed",
-        message: error instanceof Error ? error.message : String(error)
-      }, 502);
+        code,
+        message: messages[code] || "O serviço de pesquisa está indisponível no momento. Tente novamente."
+      }, code === "trailer_catalog_not_configured" ? 503 : 502);
     }
   }
 
