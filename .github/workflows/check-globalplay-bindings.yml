@@ -1,0 +1,37 @@
+name: Check Global Play Worker Bindings
+
+on:
+  push:
+    branches:
+      - feature/nexus-app-v2-20260924
+    paths:
+      - ".github/workflows/check-globalplay-bindings.yml"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Inspect Worker settings
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          response=$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts?per_page=50")
+          account_id=$(node -e 'const d=JSON.parse(process.argv[1]); const r=d.result||[]; if(!d.success||r.length!==1)process.exit(2); process.stdout.write(r[0].id)' "$response")
+          settings=$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$account_id/workers/scripts/globalplay-site/settings")
+          node -e '
+            const d=JSON.parse(process.argv[1]);
+            if(!d.success){console.error(JSON.stringify(d.errors||d));process.exit(2);}
+            console.log(JSON.stringify({
+              bindings:(d.result.bindings||[]).map(b=>({name:b.name,type:b.type,id:b.id||b.namespace_id||b.bucket_name||null})),
+              compatibility_date:d.result.compatibility_date||null
+            },null,2));
+          ' "$settings"
+          for url in             "https://globalplay-site.diamantehinode2015.workers.dev/"             "https://globalplay-site.diamantehinode2015.workers.dev/admin/login"
+          do
+            echo "=== $url ==="
+            curl -sS -L --max-time 20 -o body.txt -w "STATUS=%{http_code}\n" "$url" || true
+            head -c 500 body.txt | tr '\n' ' ' || true
+            echo
+          done
