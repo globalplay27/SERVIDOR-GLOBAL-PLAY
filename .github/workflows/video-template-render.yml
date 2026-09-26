@@ -5,7 +5,7 @@ on:
     types: [video-template-render]
 
 concurrency:
-  group: nexus-video-render-${{ github.event.client_payload.job_id }}
+  group: nexus-video-render-${{ github.event.client_payload.clip_id }}
   cancel-in-progress: false
 
 jobs:
@@ -14,19 +14,18 @@ jobs:
     timeout-minutes: 30
     env:
       JOB_ID: ${{ github.event.client_payload.job_id }}
+      CLIP_ID: ${{ github.event.client_payload.clip_id }}
       CLIENT_ID: ${{ github.event.client_payload.client_id }}
       CALLBACK_TOKEN: ${{ github.event.client_payload.callback_token }}
+      START_SECONDS: ${{ github.event.client_payload.start }}
+      END_SECONDS: ${{ github.event.client_payload.end }}
       TITLE: ${{ github.event.client_payload.title }}
-      OVERVIEW: ${{ github.event.client_payload.overview }}
-      RELEASE_YEAR: ${{ github.event.client_payload.year }}
-      MEDIA_TYPE: ${{ github.event.client_payload.media_type }}
-      POSTER_URL: ${{ github.event.client_payload.poster_url }}
-      LOGO_ENABLED: ${{ github.event.client_payload.logo_enabled }}
-      REQUESTED_DURATION: ${{ github.event.client_payload.duration }}
-      EDIT_STYLE: ${{ github.event.client_payload.edit_style }}
+      INTRO_TEXT: ${{ github.event.client_payload.intro_text }}
       END_TEXT: ${{ github.event.client_payload.end_text }}
       END_CONTACT: ${{ github.event.client_payload.end_contact }}
+      SUBTITLE_CUES: ${{ toJSON(github.event.client_payload.subtitle_cues) }}
       NEXUS_BASE_URL: https://servidor-nexus.diamantehinode2015.workers.dev
+
     steps:
       - name: Install FFmpeg
         shell: bash
@@ -35,107 +34,114 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
 
-      - name: Download source from R2 through NEXUS
+      - name: Download original source from R2
         shell: bash
         run: |
           set -euo pipefail
           curl --fail-with-body --retry 2 --retry-all-errors \
             "$NEXUS_BASE_URL/api/internal/video-render/source" \
             -H "x-nexus-job-id: $JOB_ID" \
+            -H "x-nexus-clip-id: $CLIP_ID" \
             -H "x-nexus-client-id: $CLIENT_ID" \
             -H "x-nexus-callback-token: $CALLBACK_TOKEN" \
             -o /tmp/source.mp4
           test -s /tmp/source.mp4
 
-      - name: Prepare poster and typography
+      - name: Build reference subtitles and text
         shell: bash
         run: |
           set -euo pipefail
-          if [ -n "$POSTER_URL" ]; then
-            curl -L --fail --max-time 20 "$POSTER_URL" -o /tmp/poster.jpg || rm -f /tmp/poster.jpg
-          fi
-          if [ "$LOGO_ENABLED" = "true" ]; then
-            curl --fail-with-body --retry 2 --retry-all-errors \
-              "$NEXUS_BASE_URL/api/internal/video-render/logo" \
-              -H "x-nexus-job-id: $JOB_ID" \
-              -H "x-nexus-client-id: $CLIENT_ID" \
-              -H "x-nexus-callback-token: $CALLBACK_TOKEN" \
-              -o /tmp/logo-input || rm -f /tmp/logo-input
-            if [ -s /tmp/logo-input ]; then
-              ffmpeg -y -i /tmp/logo-input -vf "scale=180:180:force_original_aspect_ratio=decrease,pad=180:180:(ow-iw)/2:(oh-ih)/2:color=black@0" /tmp/logo.png >/dev/null 2>&1 || rm -f /tmp/logo.png
-            fi
-          fi
           python - <<'PY'
-          import os, textwrap
-          def clean(value):
-              return " ".join((value or "").replace("\n"," ").replace("\r"," ").split())
-          title=clean(os.getenv("TITLE","Conteúdo"))[:100]
-          overview=clean(os.getenv("OVERVIEW",""))[:600]
-          year=clean(os.getenv("RELEASE_YEAR",""))
-          media=clean(os.getenv("MEDIA_TYPE","")).upper()
-          end_text=clean(os.getenv("END_TEXT",""))
-          end_contact=clean(os.getenv("END_CONTACT",""))
-          with open("/tmp/title.txt","w",encoding="utf-8") as f:
-              f.write("\n".join(textwrap.wrap(title, 24)[:3]))
-          with open("/tmp/meta.txt","w",encoding="utf-8") as f:
-              bits=[b for b in [media,year] if b]
-              f.write("  •  ".join(bits) or "DESTAQUE")
-          with open("/tmp/overview.txt","w",encoding="utf-8") as f:
-              f.write("\n".join(textwrap.wrap(overview or "Confira este destaque selecionado para você.", 42)[:8]))
-          with open("/tmp/cta.txt","w",encoding="utf-8") as f:
-              f.write("  •  ".join([x for x in [end_text,end_contact] if x])[:160])
+          import json, os, re, textwrap
+
+          start=float(os.getenv("START_SECONDS","0") or 0)
+          end=float(os.getenv("END_SECONDS","30") or 30)
+          dur=max(1.0,end-start)
+
+          def clean(s):
+              return " ".join(str(s or "").replace("\n"," ").replace("\r"," ").split())
+
+          def ass_time(sec):
+              sec=max(0.0,float(sec))
+              h=int(sec//3600); sec-=h*3600
+              m=int(sec//60); sec-=m*60
+              return f"{h}:{m:02d}:{sec:05.2f}"
+
+          def ass_escape(s):
+              s=clean(s).replace("\\","\\\\").replace("{","\\{").replace("}","\\}")
+              lines=textwrap.wrap(s,28)[:2]
+              return r"\N".join(lines)
+
+          try:
+              cues=json.loads(os.getenv("SUBTITLE_CUES","[]") or "[]")
+          except Exception:
+              cues=[]
+
+          with open("/tmp/subtitles.ass","w",encoding="utf-8") as f:
+              f.write("""[Script Info]
+          ScriptType: v4.00+
+          PlayResX: 1080
+          PlayResY: 1920
+          WrapStyle: 2
+
+          [V4+ Styles]
+          Format: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding
+          Style: Default,DejaVu Sans,46,&H0000D6FF,&H0000D6FF,&H00000000,&H99000000,-1,0,0,0,100,100,0,0,3,2,0,2,90,90,430,1
+
+          [Events]
+          Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text
+          """)
+              for cue in cues:
+                  cs=max(0.0,float(cue.get("start",start))-start)
+                  ce=min(dur,float(cue.get("end",end))-start)
+                  text=ass_escape(cue.get("text",""))
+                  if text and ce>cs:
+                      f.write(f"Dialogue: 0,{ass_time(cs)},{ass_time(ce)},Default,,0,0,0,,{text}\n")
+
+          intro=clean(os.getenv("INTRO_TEXT") or os.getenv("TITLE") or "")[:90]
+          outro=" • ".join(x for x in [
+              clean(os.getenv("TITLE",""))[:70],
+              clean(os.getenv("END_TEXT",""))[:70],
+              clean(os.getenv("END_CONTACT",""))[:70]
+          ] if x)[:180]
+          with open("/tmp/intro.txt","w",encoding="utf-8") as f:
+              f.write("\n".join(textwrap.wrap(intro,28)[:2]))
+          with open("/tmp/outro.txt","w",encoding="utf-8") as f:
+              f.write("\n".join(textwrap.wrap(outro,30)[:2]))
           PY
 
-      - name: Render cinematic NEXUS template
-        id: render
+      - name: Render approved NEXUS reference
         shell: bash
         run: |
           set -euo pipefail
-          SRC_DUR="$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 /tmp/source.mp4 | head -n1)"
-          export SRC_DUR
-          RENDER_DUR="$(python - <<'PY'
+          DURATION="$(python - <<'PY'
           import os
-          try: src=float(os.environ.get("SRC_DUR","30") or 30)
-          except: src=30
-          try: req=float(os.environ.get("REQUESTED_DURATION","30") or 30)
-          except: req=30
-          print(max(6,min(src,req,90)))
+          s=float(os.getenv("START_SECONDS","0") or 0)
+          e=float(os.getenv("END_SECONDS","30") or 30)
+          print(max(1.0,min(60.0,e-s)))
           PY
           )"
-          export RENDER_DUR
-          FONT="/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+          OUTRO_START="$(python - <<PY
+          d=float("$DURATION")
+          print(max(0.0,d-2.5))
+          PY
+          )"
           BOLD="/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
-          if [ "$EDIT_STYLE" = "classic-cuts" ]; then
-            ffmpeg -y -i /tmp/source.mp4 -t "$RENDER_DUR" \
-              -vf "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1" \
-              -map 0:v:0 -map 0:a? -c:v libx264 -preset veryfast -crf 24 -c:a aac -b:a 128k -movflags +faststart /tmp/rendered-base.mp4
-          elif [ -s /tmp/poster.jpg ]; then
-            ffmpeg -y -i /tmp/source.mp4 -loop 1 -i /tmp/poster.jpg -t "$RENDER_DUR" \
-              -filter_complex "[0:v]scale=1080:900:force_original_aspect_ratio=increase,crop=1080:900,setsar=1[v];color=c=0x050807:s=1080x1920:d=$RENDER_DUR[bg];[bg][v]overlay=0:0[base];[base]drawbox=x=35:y=955:w=1010:h=900:color=0x071119@0.96:t=fill[panel];[1:v]scale=280:420:force_original_aspect_ratio=decrease,pad=280:420:(ow-iw)/2:(oh-ih)/2:color=0x0b1117[poster];[panel][poster]overlay=65:1030[p];[p]drawtext=fontfile=$BOLD:text='DESTAQUE':x=390:y=985:fontsize=26:fontcolor=0x65d9ff[lab];[lab]drawtext=fontfile=$BOLD:textfile=/tmp/title.txt:x=390:y=1035:fontsize=48:line_spacing=10:fontcolor=white[tit];[tit]drawtext=fontfile=$BOLD:textfile=/tmp/meta.txt:x=390:y=1190:fontsize=27:fontcolor=0x65d9ff[meta];[meta]drawtext=fontfile=$FONT:textfile=/tmp/overview.txt:x=390:y=1250:fontsize=28:line_spacing=9:fontcolor=0xc7d8e2[desc];[desc]drawbox=x=65:y=1680:w=950:h=110:color=0x0d2330@0.95:t=fill[cta];[cta]drawtext=fontfile=$BOLD:textfile=/tmp/cta.txt:x=(w-text_w)/2:y=1716:fontsize=31:fontcolor=0xa5ebff[outv]" \
-              -map "[outv]" -map 0:a? -c:v libx264 -preset veryfast -crf 24 -c:a aac -b:a 128k -pix_fmt yuv420p -movflags +faststart /tmp/rendered-base.mp4
-          else
-            ffmpeg -y -i /tmp/source.mp4 -t "$RENDER_DUR" \
-              -filter_complex "[0:v]scale=1080:930:force_original_aspect_ratio=increase,crop=1080:930,setsar=1[v];color=c=0x050807:s=1080x1920:d=$RENDER_DUR[bg];[bg][v]overlay=0:0[base];[base]drawbox=x=45:y=990:w=990:h=820:color=0x071119@0.96:t=fill[panel];[panel]drawtext=fontfile=$BOLD:text='DESTAQUE':x=75:y=1035:fontsize=28:fontcolor=0x65d9ff[lab];[lab]drawtext=fontfile=$BOLD:textfile=/tmp/title.txt:x=75:y=1090:fontsize=56:line_spacing=12:fontcolor=white[tit];[tit]drawtext=fontfile=$BOLD:textfile=/tmp/meta.txt:x=75:y=1280:fontsize=29:fontcolor=0x65d9ff[meta];[meta]drawtext=fontfile=$FONT:textfile=/tmp/overview.txt:x=75:y=1350:fontsize=31:line_spacing=10:fontcolor=0xc7d8e2[desc];[desc]drawbox=x=65:y=1680:w=950:h=110:color=0x0d2330@0.95:t=fill[cta];[cta]drawtext=fontfile=$BOLD:textfile=/tmp/cta.txt:x=(w-text_w)/2:y=1716:fontsize=31:fontcolor=0xa5ebff[outv]" \
-              -map "[outv]" -map 0:a? -c:v libx264 -preset veryfast -crf 24 -c:a aac -b:a 128k -pix_fmt yuv420p -movflags +faststart /tmp/rendered-base.mp4
-          fi
-          test -s /tmp/rendered-base.mp4
-          if [ -s /tmp/logo.png ]; then
-            ffmpeg -y -i /tmp/rendered-base.mp4 -i /tmp/logo.png \
-              -filter_complex "[0:v][1:v]overlay=W-w-38:38:format=auto[outv]" \
-              -map "[outv]" -map 0:a? -c:v libx264 -preset veryfast -crf 24 -c:a copy -movflags +faststart /tmp/rendered.mp4
-          else
-            mv /tmp/rendered-base.mp4 /tmp/rendered.mp4
-          fi
+          ffmpeg -y -ss "$START_SECONDS" -i /tmp/source.mp4 -t "$DURATION" \
+            -filter_complex "[0:v]split=2[bg][fg];[bg]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=20:10[bg2];[fg]scale=1080:1920:force_original_aspect_ratio=decrease[fg2];[bg2][fg2]overlay=(W-w)/2:(H-h)/2,format=yuv420p[base];[base]ass=/tmp/subtitles.ass[subbed];[subbed]drawbox=x=iw*0.08:y=ih*0.08:w=iw*0.84:h=ih*0.09:color=black@0.65:t=fill:enable='between(t,0,2.5)'[introbg];[introbg]drawtext=fontfile=$BOLD:textfile=/tmp/intro.txt:fontcolor=white:fontsize=40:borderw=2:bordercolor=black:x=(w-text_w)/2:y=ih*0.11:fix_bounds=1:enable='between(t,0,2.5)'[intro];[intro]drawbox=x=0:y=ih*0.72:w=iw:h=ih*0.28:color=black@0.75:t=fill:enable='gte(t,$OUTRO_START)'[outrobg];[outrobg]drawtext=fontfile=$BOLD:textfile=/tmp/outro.txt:fontcolor=white:fontsize=42:borderw=2:bordercolor=black:x=(w-text_w)/2:y=h*0.82-text_h/2:fix_bounds=1:enable='gte(t,$OUTRO_START)'[outv]" \
+            -map "[outv]" -map 0:a? -r 30 -c:v libx264 -preset veryfast -crf 22 -pix_fmt yuv420p \
+            -c:a aac -b:a 128k -movflags +faststart /tmp/rendered.mp4
           test -s /tmp/rendered.mp4
 
-      - name: Upload rendered video to NEXUS
+      - name: Upload rendered clip to NEXUS
         shell: bash
         run: |
           set -euo pipefail
           curl --fail-with-body --retry 2 --retry-all-errors \
             -X PUT "$NEXUS_BASE_URL/api/internal/video-render/upload" \
             -H "x-nexus-job-id: $JOB_ID" \
+            -H "x-nexus-clip-id: $CLIP_ID" \
             -H "x-nexus-client-id: $CLIENT_ID" \
             -H "x-nexus-callback-token: $CALLBACK_TOKEN" \
             -H "content-type: video/mp4" \
@@ -149,6 +155,7 @@ jobs:
           curl --silent --show-error \
             -X POST "$NEXUS_BASE_URL/api/internal/video-render/fail" \
             -H "x-nexus-job-id: $JOB_ID" \
+            -H "x-nexus-clip-id: $CLIP_ID" \
             -H "x-nexus-client-id: $CLIENT_ID" \
             -H "x-nexus-callback-token: $CALLBACK_TOKEN" \
             -H "content-type: application/json" \
