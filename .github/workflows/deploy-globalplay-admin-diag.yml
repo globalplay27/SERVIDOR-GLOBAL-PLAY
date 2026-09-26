@@ -1,0 +1,52 @@
+name: Deploy Global Play Admin Diagnostic
+
+on:
+  push:
+    branches:
+      - feature/nexus-app-v2-20260924
+    paths:
+      - ".github/workflows/deploy-globalplay-admin-diag.yml"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Discover Cloudflare account
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          response=$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts?per_page=50")
+          account_id=$(node -e 'const d=JSON.parse(process.argv[1]); const r=d.result||[]; if(!d.success||r.length!==1)process.exit(2); process.stdout.write(r[0].id)' "$response")
+          echo "CLOUDFLARE_ACCOUNT_ID=$account_id" >> "$GITHUB_ENV"
+      - name: Upload diagnostic build
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/globalplay27/globalplay-site.git globalplay-site
+          cd globalplay-site
+          node --check src/index.js
+          python -m pip install --quiet requests
+          python - <<'PY'
+          import json, os, requests
+          account=os.environ["CLOUDFLARE_ACCOUNT_ID"]
+          token=os.environ["CLOUDFLARE_API_TOKEN"].strip()
+          url=f"https://api.cloudflare.com/client/v4/accounts/{account}/workers/scripts/globalplay-site/content"
+          with open("src/index.js","rb") as fh:
+              files=[
+                ("metadata",(None,json.dumps({"main_module":"index.js"}),"application/json")),
+                ("files",("index.js",fh,"application/javascript+module"))
+              ]
+              r=requests.put(url,headers={"Authorization":f"Bearer {token}"},files=files,timeout=60)
+          print(r.status_code,r.text)
+          if not r.ok or not r.json().get("success"): raise SystemExit(2)
+          PY
+      - name: Read admin count
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL --max-time 20 https://globalplay-site.diamantehinode2015.workers.dev/__diag/admin-state
