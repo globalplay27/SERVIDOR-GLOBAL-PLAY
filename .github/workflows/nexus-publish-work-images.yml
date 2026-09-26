@@ -17,20 +17,26 @@ jobs:
           set -euo pipefail
           curl -fL --retry 3 -o /tmp/global.jpg "https://cdn.creativeclaw.co/u/9ffaeee4/images/a95a1a3c-1e8a-443c-94d5-e8c51393b488.jpg"
           curl -fL --retry 3 -o /tmp/ragnar.jpg "https://cdn.creativeclaw.co/u/9ffaeee4/images/e8833549-e78c-4451-8514-e0a775629829.jpg"
-          file /tmp/global.jpg /tmp/ragnar.jpg
 
-      - name: Publish Global Play test image
+      - name: Publish and diagnose both accounts
         shell: bash
         run: |
-          set -euo pipefail
-          curl -fsS             -H "Content-Type: image/jpeg"             --data-binary @/tmp/global.jpg             "https://servidor-nexus.diamantehinode2015.workers.dev/api/internal/work-image-test?k=98f21e484c77cc043dde0c662327a1c3a2f26c6d4a2a35d7&clientId=globalplay-streaming"             -o /tmp/global-result.json
+          set -u
+          global_code=$(curl -sS             -H "Content-Type: image/jpeg"             --data-binary @/tmp/global.jpg             -o /tmp/global-result.json -w '%{http_code}'             "https://servidor-nexus.diamantehinode2015.workers.dev/api/internal/work-image-test?k=98f21e484c77cc043dde0c662327a1c3a2f26c6d4a2a35d7&clientId=globalplay-streaming")
+          echo "GLOBAL_HTTP=$global_code"
           cat /tmp/global-result.json
-          node -e 'const d=require("/tmp/global-result.json"); if(!d.ok) process.exit(2); console.log("GLOBAL_OK", d.post?.mediaId||"", d.permalink||"");'
+          echo
 
-      - name: Publish Ragnar One test image
-        shell: bash
-        run: |
-          set -euo pipefail
-          curl -fsS             -H "Content-Type: image/jpeg"             --data-binary @/tmp/ragnar.jpg             "https://servidor-nexus.diamantehinode2015.workers.dev/api/internal/work-image-test?k=98f21e484c77cc043dde0c662327a1c3a2f26c6d4a2a35d7&clientId=ragnar-one"             -o /tmp/ragnar-result.json
+          ragnar_code=$(curl -sS             -H "Content-Type: image/jpeg"             --data-binary @/tmp/ragnar.jpg             -o /tmp/ragnar-result.json -w '%{http_code}'             "https://servidor-nexus.diamantehinode2015.workers.dev/api/internal/work-image-test?k=98f21e484c77cc043dde0c662327a1c3a2f26c6d4a2a35d7&clientId=ragnar-one")
+          echo "RAGNAR_HTTP=$ragnar_code"
           cat /tmp/ragnar-result.json
-          node -e 'const d=require("/tmp/ragnar-result.json"); if(!d.ok) process.exit(2); console.log("RAGNAR_OK", d.post?.mediaId||"", d.permalink||"");'
+          echo
+
+          node - <<'NODE'
+          const fs=require('fs');
+          const g=JSON.parse(fs.readFileSync('/tmp/global-result.json','utf8'));
+          const r=JSON.parse(fs.readFileSync('/tmp/ragnar-result.json','utf8'));
+          console.log('SUMMARY_GLOBAL', JSON.stringify({ok:g.ok,error:g.error,message:g.message,postId:g.postId,mediaId:g.post?.mediaId,permalink:g.permalink||g.post?.permalink||''}));
+          console.log('SUMMARY_RAGNAR', JSON.stringify({ok:r.ok,error:r.error,message:r.message,postId:r.postId,mediaId:r.post?.mediaId,permalink:r.permalink||r.post?.permalink||''}));
+          if(!g.ok || !r.ok) process.exit(2);
+          NODE
