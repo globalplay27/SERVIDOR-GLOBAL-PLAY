@@ -1,5 +1,5 @@
 {
-  // deploy-refresh: 2026-09-26-native-trailer-search-restored
+  // deploy-refresh: 2026-09-26-youtube-library-import-restored
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "servidor-nexus",
   "main": "src/index.js",
