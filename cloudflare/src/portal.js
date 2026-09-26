@@ -526,6 +526,30 @@ export async function handlePortalApi(request, env, url) {
     return json({ ok: true, connections: await connectionSummary(env, client.id) });
   }
 
+  if (url.pathname === "/api/portal/instagram/test" && request.method === "GET") {
+    const appConfigured = Boolean(String(env.INSTAGRAM_APP_ID || "").trim() && String(env.INSTAGRAM_APP_SECRET || "").trim());
+    const payload = JSON.stringify({
+      type: "nexus-instagram-oauth-test",
+      ok: true,
+      appConfigured
+    }).replace(/</g, "\\u003c");
+    return new Response(
+      `<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+      <title>NEXUS AI · Teste Instagram</title>
+      <body style="margin:0;background:#050807;color:#eef8ff;font-family:system-ui;display:grid;place-items:center;min-height:100vh">
+      <main style="max-width:520px;padding:30px;border:1px solid #173549;border-radius:20px;background:#071018;text-align:center">
+      <h1 style="color:#5dd3ff">Fluxo do painel OK</h1>
+      <p style="color:#aab9c2;line-height:1.6">O painel do cliente, a sessão e o retorno do NEXUS estão funcionando.</p>
+      <p style="color:#aab9c2;line-height:1.6">Para conectar uma conta de verdade e publicar automaticamente, a conta do Instagram precisa ser Profissional (Comercial ou Criador).</p>
+      </main>
+      <script>
+      try{if(window.opener)window.opener.postMessage(${payload},"*");}catch(e){}
+      setTimeout(()=>window.close(),1800);
+      <\/script></body></html>`,
+      { status: 200, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } }
+    );
+  }
+
   if (url.pathname === "/api/portal/instagram/start" && request.method === "GET") {
     try {
       return json({ ok: true, ...(await startInstagramOAuth(env, request, client.id)) });
