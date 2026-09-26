@@ -331,6 +331,106 @@ async function clearOldClips(env, clientId, jobId) {
   if (keys.length) await env.MEDIA.delete([...new Set(keys)]).catch(() => {});
 }
 
+
+function githubRenderConfig(env) {
+  return {
+    token: String(env?.NEXUS_GITHUB_ACTIONS_TOKEN || "").trim(),
+    repo: String(env?.NEXUS_GITHUB_ACTIONS_REPO || "globalplay27/SERVIDOR-GLOBAL-PLAY").trim()
+  };
+}
+
+async function dispatchReferenceRender(env, payload) {
+  const { token, repo } = githubRenderConfig(env);
+  if (!token || !repo.includes("/")) return { dispatched: false };
+  const response = await fetch("https://api.github.com/repos/" + repo + "/dispatches", {
+    method: "POST",
+    headers: {
+      authorization: "Bearer " + token,
+      accept: "application/vnd.github+json",
+      "content-type": "application/json",
+      "user-agent": "NEXUS-AI/2.0"
+    },
+    body: JSON.stringify({ event_type: "video-template-render", client_payload: payload }),
+    signal: AbortSignal.timeout(5000)
+  });
+  if (!response.ok) throw new Error("github_render_dispatch_http_" + response.status);
+  return { dispatched: true };
+}
+
+function renderTokenMatches(settings, token) {
+  const expected = String(settings?.renderCallbackToken || "");
+  const provided = String(token || "");
+  return Boolean(expected && provided && expected.length === provided.length && expected === provided);
+}
+
+export async function githubVideoRenderSource(env, clientId, jobId, clipId, callbackToken) {
+  const row = await env.DB.prepare(
+    `SELECT c.settings_json,j.source_object_key
+     FROM video_clips c JOIN video_jobs j ON j.id=c.job_id
+     WHERE c.id=?1 AND c.job_id=?2 AND c.client_id=?3 LIMIT 1`
+  ).bind(String(clipId), String(jobId), String(clientId)).first();
+  if (!row) throw new Error("clip_not_found");
+  const settings = parseJson(row.settings_json, {});
+  if (!renderTokenMatches(settings, callbackToken)) throw new Error("invalid_render_callback_token");
+  const object = await env.MEDIA.get(String(row.source_object_key || ""));
+  if (!object?.body) throw new Error("video_source_missing");
+  return object;
+}
+
+export async function completeGithubVideoRender(env, clientId, jobId, clipId, request, callbackToken) {
+  const row = await env.DB.prepare(
+    "SELECT id,output_object_key,settings_json,result_json FROM video_clips WHERE id=?1 AND job_id=?2 AND client_id=?3 LIMIT 1"
+  ).bind(String(clipId), String(jobId), String(clientId)).first();
+  if (!row) throw new Error("clip_not_found");
+  const settings = parseJson(row.settings_json, {});
+  const result = parseJson(row.result_json, {});
+  if (!renderTokenMatches(settings, callbackToken)) throw new Error("invalid_render_callback_token");
+  if (!request.body) throw new Error("empty_rendered_video");
+
+  const outputKey = String(row.output_object_key || ("videos/" + clientId + "/clips/" + jobId + "/" + clipId + ".mp4"));
+  await env.MEDIA.put(outputKey, request.body, {
+    httpMetadata: { contentType: "video/mp4", cacheControl: "private, no-store" },
+    customMetadata: { clientId: String(clientId), jobId: String(jobId), clipId: String(clipId), kind: "video-clip-reference" }
+  });
+  delete settings.renderCallbackToken;
+  await env.DB.prepare(
+    "UPDATE video_clips SET status='ready',settings_json=?4,result_json=?5,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND job_id=?2 AND client_id=?3"
+  ).bind(
+    String(clipId), String(jobId), String(clientId),
+    JSON.stringify(settings),
+    JSON.stringify({
+      ...result,
+      previewUrl: "/media/" + outputKey,
+      subtitlesApplied: true,
+      referenceStyle: "nexus-reference-v1",
+      compositionMode: "ffmpeg-blurred-background",
+      processor: "github-actions-ffmpeg",
+      templateRenderStatus: "ready",
+      templateRenderedAt: new Date().toISOString()
+    })
+  ).run();
+  return { ok: true, clipId: String(clipId), outputKey };
+}
+
+export async function failGithubVideoRender(env, clientId, jobId, clipId, callbackToken, errorCode = "github_template_render_failed") {
+  const row = await env.DB.prepare(
+    "SELECT settings_json,result_json FROM video_clips WHERE id=?1 AND job_id=?2 AND client_id=?3 LIMIT 1"
+  ).bind(String(clipId), String(jobId), String(clientId)).first();
+  if (!row) throw new Error("clip_not_found");
+  const settings = parseJson(row.settings_json, {});
+  const result = parseJson(row.result_json, {});
+  if (!renderTokenMatches(settings, callbackToken)) throw new Error("invalid_render_callback_token");
+  delete settings.renderCallbackToken;
+  await env.DB.prepare(
+    "UPDATE video_clips SET settings_json=?4,result_json=?5,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND job_id=?2 AND client_id=?3"
+  ).bind(
+    String(clipId), String(jobId), String(clientId),
+    JSON.stringify(settings),
+    JSON.stringify({ ...result, templateRenderStatus: "failed", templateRenderError: String(errorCode || "").slice(0, 300) })
+  ).run();
+  return { ok: true };
+}
+
 async function renderClip(env, row, settings, candidate, rank) {
   const source = await env.MEDIA.get(row.source_object_key);
   if (!source?.body) throw new Error("video_source_missing");
@@ -378,7 +478,9 @@ async function renderClip(env, row, settings, candidate, rank) {
     referenceIntroSeconds: 2.5,
     referenceOutroSeconds: 2.5,
     referenceSubtitleCharsPerLine: 28,
-    referenceSubtitleMaxLines: 2
+    referenceSubtitleMaxLines: 2,
+    subtitleCues: Array.isArray(candidate.subtitleCues) ? candidate.subtitleCues.slice(0, 40) : [],
+    renderCallbackToken: crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "")
   };
   const clipResult = {
     previewUrl: "/media/" + outputKey,
@@ -407,6 +509,33 @@ async function renderClip(env, row, settings, candidate, rank) {
     JSON.stringify(clipSettings),
     JSON.stringify(clipResult)
   ).run();
+
+  try {
+    const dispatched = await dispatchReferenceRender(env, {
+      job_id: String(row.id),
+      clip_id: clipId,
+      client_id: String(row.client_id),
+      callback_token: clipSettings.renderCallbackToken,
+      start: clipSettings.start,
+      end: clipSettings.end,
+      title: clipSettings.title,
+      intro_text: cleanText(candidate.hook || clipSettings.title, 90),
+      end_text: clipSettings.endText,
+      end_contact: clipSettings.endContact,
+      subtitle_cues: clipSettings.subtitleCues
+    });
+    if (dispatched.dispatched) {
+      const nextResult = { ...clipResult, templateRenderStatus: "queued", processor: "cloudflare-preview+github-ffmpeg" };
+      await env.DB.prepare(
+        "UPDATE video_clips SET result_json=?4,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND job_id=?2 AND client_id=?3"
+      ).bind(clipId, row.id, row.client_id, JSON.stringify(nextResult)).run();
+    }
+  } catch (error) {
+    const nextResult = { ...clipResult, templateRenderStatus: "dispatch_failed", templateRenderError: String(error instanceof Error ? error.message : error).slice(0, 240) };
+    await env.DB.prepare(
+      "UPDATE video_clips SET result_json=?4,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND job_id=?2 AND client_id=?3"
+    ).bind(clipId, row.id, row.client_id, JSON.stringify(nextResult)).run();
+  }
 
   return { id: clipId, outputKey };
 }
@@ -496,6 +625,9 @@ export async function processVideoJob(env, clientId, jobId) {
     for (let index = 0; index < candidates.length && rendered.length < requested; index += 1) {
       const candidate = {
         ...candidates[index],
+        subtitleCues: transcript.segments
+          .filter(segment => segment.end >= candidates[index].start && segment.start <= candidates[index].end)
+          .map(segment => ({ start: segment.start, end: segment.end, text: cleanText(segment.text, 220) })),
         transcript: transcript.segments
           .filter(segment => segment.end >= candidates[index].start && segment.start <= candidates[index].end)
           .map(segment => segment.text).join(" ")
