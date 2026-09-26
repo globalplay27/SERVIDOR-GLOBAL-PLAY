@@ -1,3 +1,21 @@
+export class YoutubeDownloader {
+  constructor(state, env) {
+    this.state = state;
+    this.env = env;
+  }
+
+  async fetch() {
+    return new Response(JSON.stringify({
+      ok: false,
+      error: "legacy_youtube_downloader_disabled",
+      service: "Servidor Nexus"
+    }), {
+      status: 410,
+      headers: { "content-type": "application/json; charset=utf-8" }
+    });
+  }
+}
+
 import { openAIKeyStatus } from "./openai-routing.js";
 import { openAIResponses, tokenUsageToday } from "./openai.js";
 import { getState, putState, deleteState } from "./storage.js";
