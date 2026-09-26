@@ -370,6 +370,54 @@ export async function handleMaster(request, env, url) {
     }, d1Ready ? 200 : 503);
   }
 
+  if (url.pathname === "/api/master/self-test" && request.method === "GET") {
+    const configured = Boolean(env.NEXUS_ADMIN_USERNAME && env.NEXUS_ADMIN_PASSWORD && env.NEXUS_SECRET_KEY);
+    let credentialsValid = false;
+    let sessionCreated = false;
+    let sessionResolved = false;
+    let error = "";
+
+    if (configured) {
+      try {
+        credentialsValid = await masterCredentialsValid(
+          env,
+          String(env.NEXUS_ADMIN_USERNAME || ""),
+          String(env.NEXUS_ADMIN_PASSWORD || "")
+        );
+
+        if (credentialsValid) {
+          const session = await createMasterSession(env);
+          sessionCreated = Boolean(session?.token);
+
+          if (sessionCreated) {
+            const probe = new Request(request.url, {
+              method: "GET",
+              headers: {
+                cookie: "nexus_master=" + encodeURIComponent(session.token)
+              }
+            });
+            sessionResolved = Boolean(await resolveMasterSession(env, probe));
+            await deleteMasterSession(env, probe).catch(() => {});
+          }
+        }
+      } catch (caught) {
+        error = caught instanceof Error ? caught.message : String(caught);
+      }
+    }
+
+    return json({
+      ok: configured && credentialsValid && sessionCreated && sessionResolved,
+      runtime: "cloudflare-workers",
+      configured,
+      credentialsValid,
+      sessionCreated,
+      sessionResolved,
+      assetsBound: Boolean(env.ASSETS),
+      databaseBound: Boolean(env.DB),
+      error: error || null
+    }, configured && credentialsValid && sessionCreated && sessionResolved ? 200 : 503);
+  }
+
   const protectedApi =
     url.pathname === "/api/clients"
     || url.pathname.startsWith("/api/clients/")
