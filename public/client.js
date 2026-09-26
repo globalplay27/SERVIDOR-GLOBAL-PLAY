@@ -1122,6 +1122,13 @@ function renderVideoJobs(data={}){
               <option value="classic-cuts" ${job.editStyle==="classic-cuts"?"selected":""}>Corte clássico</option>
             </select><small>Vídeo + pôster + ficha visual + sinopse + CTA.</small></label>
             <label class="video-config-check"><input data-video-job-subtitles type="checkbox" ${job.autoSubtitles!==false?"checked":""}><span>Legenda automática PT-BR quando o áudio estiver em outro idioma</span></label>
+            <div class="video-logo-config">
+              <div><strong>Logo no vídeo</strong><span>Envie a logo da marca para aparecer no modelo cinematográfico.</span></div>
+              ${job.logoUrl?'<img src="'+escapeSupport(job.logoUrl)+'" alt="Logo do vídeo">':""}
+              <label class="ghost-action video-logo-upload">Selecionar logo<input type="file" accept="image/png,image/jpeg,image/webp" data-video-job-logo-file hidden></label>
+              <label class="video-config-check"><input data-video-job-logo-enabled type="checkbox" ${job.logoEnabled!==false?"checked":""}><span>Mostrar logo no vídeo</span></label>
+              <span data-video-logo-status></span>
+            </div>
             <label><span>Frase final (opcional)</span><input data-video-job-end-text maxlength="90" value="${escapeSupport(job.endText||"")}" placeholder="Ex.: Continua..."></label>
             <label><span>Contato / CTA final (opcional)</span><input data-video-job-end-contact maxlength="90" value="${escapeSupport(job.endContact||"")}" placeholder="Ex.: WhatsApp..."></label>
           </div>
@@ -1198,6 +1205,7 @@ async function startVideoProcessing(button){
     clips:card.querySelector("[data-video-job-clips]")?.value||3,
     outputFormat:card.querySelector("[data-video-job-format]")?.value||"reel",
     editStyle:card.querySelector("[data-video-job-edit-style]")?.value||"cinematic-card-v1",
+    logoEnabled:Boolean(card.querySelector("[data-video-job-logo-enabled]")?.checked),
     autoSubtitles:Boolean(card.querySelector("[data-video-job-subtitles]")?.checked),
     endText:card.querySelector("[data-video-job-end-text]")?.value?.trim()||"",
     endContact:card.querySelector("[data-video-job-end-contact]")?.value?.trim()||""
@@ -1641,6 +1649,28 @@ $("#video-folder-filter")?.addEventListener("change",event=>{videoFolderFilter=e
 $("#video-create-folder")?.addEventListener("click",createVideoFolder);
 $("#video-rename-folder")?.addEventListener("click",renameCurrentVideoFolder);
 $("#video-delete-folder")?.addEventListener("click",deleteCurrentVideoFolder);
+$("#client-video-jobs")?.addEventListener("change",async event=>{
+  const input=event.target.closest?.("[data-video-job-logo-file]");
+  if(!input)return;
+  const file=input.files?.[0];if(!file)return;
+  const card=input.closest("[data-video-job]");
+  const jobId=String(card?.dataset.videoJob||"");
+  const status=card?.querySelector("[data-video-logo-status]");
+  if(!jobId)return;
+  try{
+    if(status)status.textContent="Enviando logo…";
+    const optimized=await optimizeLogo(file);
+    const logo=await uploadProfileLogo(optimized);
+    await updateVideoMeta(jobId,{logoObjectKey:logo.objectKey,logoEnabled:true});
+    if(status)status.textContent="Logo aplicada.";
+    await loadVideoJobs();
+  }catch(error){
+    if(status)status.textContent=error.message||"Falha ao enviar logo.";
+  }finally{
+    input.value="";
+  }
+});
+
 
 async function uploadSingleVideo(file,index,total,settings,progress){
   const headers={"content-type":"application/json",...(sessionAuth?{"x-nexus-session":sessionAuth}:{})};
