@@ -1,5 +1,5 @@
 {
-  // deploy-refresh: 2026-09-26-video-trailer-session-isolation
+  // deploy-refresh: 2026-09-26-client-videos-trailers-session-final
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "servidor-nexus",
   "main": "src/index.js",
