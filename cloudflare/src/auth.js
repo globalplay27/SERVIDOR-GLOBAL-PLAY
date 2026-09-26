@@ -298,7 +298,7 @@ async function verifyMasterPasswordRecord(env, password, record) {
   return safeEqualHex(hash, record.password_hash);
 }
 
-async function upsertMasterUser(env, username, password) {
+export async function upsertMasterUser(env, username, password) {
   if (!env?.DB || !env.NEXUS_SECRET_KEY) return;
   const cleanUsername = cleanConfiguredValue(username);
   if (!cleanUsername || !String(password || "")) return;
