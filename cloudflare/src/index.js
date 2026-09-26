@@ -21,6 +21,8 @@ import { openAIResponses, tokenUsageToday } from "./openai.js";
 import { getState, putState, deleteState } from "./storage.js";
 import { handlePortalApi } from "./portal.js";
 import { handleMaster } from "./master.js";
+import { getClient } from "./clients.js";
+import { publishPostNow } from "./posts.js";
 import { runSchedulerTick } from "./scheduler.js";
 import { processDueJobs } from "./executor.js";
 import { masterCredentialsValid, createMasterSession, authenticatePortalUser, createPortalSession, masterSessionCookie, portalSessionCookie } from "./auth.js";
@@ -237,6 +239,74 @@ export default {
 
     const portalResponse = await handlePortalApi(request, env, url);
     if (portalResponse) return portalResponse;
+
+    if (url.pathname === "/api/internal/test-post-control" && request.method === "POST") {
+      const expected = String(env.NEXUS_TEST_PUBLISH_KEY || "");
+      const provided = String(request.headers.get("authorization") || "");
+      if (!expected || provided !== "Bearer " + expected) {
+        return json({ error: "unauthorized" }, 401);
+      }
+
+      const body = await request.json().catch(() => ({}));
+      const action = String(body.action || "list");
+      const allowedClientIds = new Set(["ragnar-one", "globalplay-streaming"]);
+
+      if (action === "list") {
+        const result = {};
+        for (const clientId of allowedClientIds) {
+          const rows = await env.DB.prepare(
+            `SELECT id, client_id, status, approval_status, caption, image_object_key, payload_json, created_at, updated_at
+             FROM post_ledger
+             WHERE client_id = ?1
+               AND status != 'published'
+             ORDER BY updated_at DESC, created_at DESC
+             LIMIT 10`
+          ).bind(clientId).all();
+
+          result[clientId] = (rows?.results || []).map(row => {
+            let payload = {};
+            try { payload = JSON.parse(String(row.payload_json || "{}")); } catch {}
+            return {
+              id: row.id,
+              clientId: row.client_id,
+              status: row.status,
+              approvalStatus: row.approval_status,
+              caption: row.caption,
+              imageObjectKey: row.image_object_key,
+              imageUrl: payload.imageUrl || payload.publicImageUrl || "",
+              source: payload.source || "",
+              createdAt: row.created_at,
+              updatedAt: row.updated_at
+            };
+          });
+        }
+        return json({ ok: true, result });
+      }
+
+      if (action === "publish") {
+        const clientId = String(body.clientId || "");
+        const postId = String(body.postId || "");
+        if (!allowedClientIds.has(clientId) || !postId) {
+          return json({ error: "invalid_target" }, 400);
+        }
+
+        const client = await getClient(env, clientId);
+        if (!client) return json({ error: "client_not_found" }, 404);
+
+        try {
+          return json(await publishPostNow(env, client, postId));
+        } catch (error) {
+          return json({
+            ok: false,
+            error: error instanceof Error ? error.message : String(error),
+            message: error?.messageForUser || null,
+            post: error?.post || null
+          }, Number(error?.status || 400));
+        }
+      }
+
+      return json({ error: "invalid_action" }, 400);
+    }
 
     if (url.pathname === "/health" || url.pathname === "/api/health") {
       return health(env);
