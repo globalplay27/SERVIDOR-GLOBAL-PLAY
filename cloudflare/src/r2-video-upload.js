@@ -442,6 +442,129 @@ async function youtubeMuxedStream(sourceUrl) {
   }
 }
 
+
+function githubActionsConfig(env) {
+  const token = String(env?.NEXUS_GITHUB_ACTIONS_TOKEN || "").trim();
+  const repo = String(env?.NEXUS_GITHUB_ACTIONS_REPO || "globalplay27/SERVIDOR-GLOBAL-PLAY").trim();
+  return { token, repo };
+}
+
+async function dispatchGithubLibraryIngest(env, payload) {
+  const { token, repo } = githubActionsConfig(env);
+  if (!token || !repo.includes("/")) return { dispatched: false, reason: "github_actions_not_configured" };
+  const response = await fetch("https://api.github.com/repos/" + repo + "/dispatches", {
+    method: "POST",
+    headers: {
+      authorization: "Bearer " + token,
+      accept: "application/vnd.github+json",
+      "content-type": "application/json",
+      "user-agent": "NEXUS-AI/2.0"
+    },
+    body: JSON.stringify({
+      event_type: "library-ingest",
+      client_payload: payload
+    }),
+    signal: AbortSignal.timeout(5000)
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error("github_dispatch_http_" + response.status + (detail ? "_" + detail.slice(0, 120) : ""));
+  }
+  return { dispatched: true };
+}
+
+function ingestTokenMatches(settings, token) {
+  const expected = String(settings?.ingestCallbackToken || "");
+  const provided = String(token || "");
+  return Boolean(expected && provided && expected.length === provided.length && expected === provided);
+}
+
+export async function completeGithubVideoIngest(env, clientId, jobId, request, callbackToken) {
+  if (!env.MEDIA) throw new Error("r2_unavailable");
+  const row = await env.DB.prepare(
+    "SELECT id,client_id,status,settings_json,result_json FROM video_jobs WHERE id=?1 AND client_id=?2 LIMIT 1"
+  ).bind(String(jobId), String(clientId)).first();
+  if (!row) throw new Error("video_not_found");
+  const settings = (() => { try { return JSON.parse(String(row.settings_json || "{}")); } catch { return {}; } })();
+  const result = (() => { try { return JSON.parse(String(row.result_json || "{}")); } catch { return {}; } })();
+  if (!ingestTokenMatches(settings, callbackToken)) throw new Error("invalid_ingest_callback_token");
+  if (!request.body) throw new Error("empty_video_source");
+
+  const declared = Number(request.headers.get("content-length") || 0);
+  if (declared > MAX_VIDEO_BYTES) throw new Error("video_too_large");
+  const contentType = String(request.headers.get("content-type") || "video/mp4").toLowerCase().split(";")[0].trim();
+  const fileName = cleanFileName(request.headers.get("x-nexus-file-name") || (settings.contentTitle || "video-youtube") + ".mp4");
+  const extension = extensionForVideo(fileName, contentType) || "mp4";
+  const key = videoKeyPrefix(clientId) + crypto.randomUUID() + "." + extension;
+
+  const object = await env.MEDIA.put(key, request.body, {
+    httpMetadata: { contentType: contentType.startsWith("video/") ? contentType : "video/mp4", cacheControl: "private, no-store" },
+    customMetadata: {
+      clientId: String(clientId),
+      originalName: fileName,
+      sourceHost: "youtube.com",
+      sourceVideoId: youtubeVideoIdFromUrl(settings.sourceUrl),
+      resolver: "github-actions-yt-dlp",
+      kind: "video-source"
+    }
+  });
+  if (!object) throw new Error("video_store_failed");
+  if (Number(object.size || declared || 0) > MAX_VIDEO_BYTES) {
+    await env.MEDIA.delete(key).catch(() => {});
+    throw new Error("video_too_large");
+  }
+
+  settings.fileSize = Number(object.size || declared || 0);
+  settings.contentType = contentType.startsWith("video/") ? contentType : "video/mp4";
+  settings.filename = fileName;
+  settings.displayName = fileName;
+  delete settings.ingestCallbackToken;
+
+  await env.DB.prepare(
+    "UPDATE video_jobs SET source_object_key=?3,status='queued',settings_json=?4,result_json=?5,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2"
+  ).bind(
+    String(jobId),
+    String(clientId),
+    key,
+    JSON.stringify(settings),
+    JSON.stringify({
+      ...result,
+      progress: 50,
+      storage: "r2",
+      objectEtag: object.httpEtag || "",
+      resolver: "github-actions-yt-dlp",
+      message: "Vídeo recebido no R2. Iniciando análise e cortes.",
+      error: ""
+    })
+  ).run();
+  return { ok: true, jobId: String(jobId), clientId: String(clientId), objectKey: key };
+}
+
+export async function failGithubVideoIngest(env, clientId, jobId, callbackToken, errorCode = "github_ingest_failed") {
+  const row = await env.DB.prepare(
+    "SELECT id,client_id,settings_json,result_json FROM video_jobs WHERE id=?1 AND client_id=?2 LIMIT 1"
+  ).bind(String(jobId), String(clientId)).first();
+  if (!row) throw new Error("video_not_found");
+  const settings = (() => { try { return JSON.parse(String(row.settings_json || "{}")); } catch { return {}; } })();
+  const result = (() => { try { return JSON.parse(String(row.result_json || "{}")); } catch { return {}; } })();
+  if (!ingestTokenMatches(settings, callbackToken)) throw new Error("invalid_ingest_callback_token");
+  delete settings.ingestCallbackToken;
+  await env.DB.prepare(
+    "UPDATE video_jobs SET status='failed',settings_json=?3,result_json=?4,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2"
+  ).bind(
+    String(jobId),
+    String(clientId),
+    JSON.stringify(settings),
+    JSON.stringify({
+      ...result,
+      progress: 0,
+      message: "Não foi possível importar este vídeo do YouTube.",
+      error: String(errorCode || "github_ingest_failed").slice(0, 500)
+    })
+  ).run();
+  return { ok: true };
+}
+
 export async function createR2PublicTrailerImportJob(env, clientId, input = {}) {
   const sourceUrl = String(input.url || input.trailerUrl || "").trim();
   if (!youtubeVideoIdFromUrl(sourceUrl)) throw new Error("invalid_trailer_url");
@@ -456,6 +579,7 @@ export async function createR2PublicTrailerImportJob(env, clientId, input = {}) 
   settings.sourceType = "youtube-public";
   settings.sourceUrl = sourceUrl.slice(0, 1200);
   settings.importAttempts = 0;
+  settings.ingestCallbackToken = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
 
   const jobId = "vid_" + crypto.randomUUID().replace(/-/g, "").slice(0, 20);
   const result = {
@@ -471,7 +595,35 @@ export async function createR2PublicTrailerImportJob(env, clientId, input = {}) 
      VALUES(?1,?2,'','importing',?3,?4,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)`
   ).bind(jobId, String(clientId), JSON.stringify(settings), JSON.stringify(result)).run();
 
-  return { jobId };
+  try {
+    const dispatch = await dispatchGithubLibraryIngest(env, {
+      source_url: settings.sourceUrl,
+      job_id: jobId,
+      client_id: String(clientId),
+      callback_token: settings.ingestCallbackToken,
+      title
+    });
+    if (dispatch.dispatched) {
+      await env.DB.prepare(
+        "UPDATE video_jobs SET status='external_ingest',result_json=?3,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2"
+      ).bind(
+        jobId,
+        String(clientId),
+        JSON.stringify({ ...result, progress: 8, message: "Download iniciado pelo NEXUS. O vídeo será enviado direto para a biblioteca.", resolver: "github-actions-yt-dlp" })
+      ).run();
+      return { jobId, ingest: "github-actions" };
+    }
+  } catch (error) {
+    await env.DB.prepare(
+      "UPDATE video_jobs SET result_json=?3,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2"
+    ).bind(
+      jobId,
+      String(clientId),
+      JSON.stringify({ ...result, progress: 5, message: "Usando importação alternativa do Cloudflare.", dispatchError: String(error instanceof Error ? error.message : error).slice(0, 240) })
+    ).run();
+  }
+
+  return { jobId, ingest: "cloudflare-fallback" };
 }
 
 export async function processR2PublicTrailerImportJob(env, clientId, jobId) {
