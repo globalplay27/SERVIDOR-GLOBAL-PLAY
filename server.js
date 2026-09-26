@@ -5627,6 +5627,62 @@ const server = http.createServer(async (req, res) => {
       version: "1.0.0"
     });
   }
+  if (url.pathname === "/api/nexus/bridge/trailer-resolve" && req.method === "POST") {
+    const client = bridgePortalClientForRequest(req);
+    if (!client) return send(res, 401, { ok: false, error: "unauthorized" });
+
+    try {
+      const body = await readBody(req);
+      const sourceUrl = normalizePublicTrailerUrl(body.url || body.trailerUrl || "");
+      const common = [
+        "--no-playlist",
+        "--no-warnings",
+        "--socket-timeout", "20",
+        "--retries", "1",
+        "--format", "b[height<=480]/b",
+        "--get-url"
+      ];
+
+      let stdout = "";
+      let lastError = null;
+      for (const args of [
+        [...common, "--extractor-args", "youtube:player_client=web_embedded", sourceUrl],
+        [...common, sourceUrl]
+      ]) {
+        try {
+          const out = await execFileAsync("yt-dlp", args, {
+            timeout: 90000,
+            maxBuffer: 2 * 1024 * 1024
+          });
+          stdout = String(out.stdout || "").trim();
+          if (stdout) { lastError = null; break; }
+        } catch (error) {
+          lastError = error;
+        }
+      }
+
+      if (lastError || !stdout) {
+        const detail = String(lastError?.stderr || lastError?.message || "resolver_empty")
+          .replace(/\s+/g, " ").slice(0, 400);
+        throw new Error("trailer_resolve_failed:" + detail);
+      }
+
+      const directUrl = stdout.split(/\r?\n/).map(x => x.trim()).find(x => /^https:\/\//i.test(x)) || "";
+      if (!directUrl) throw new Error("trailer_resolve_empty");
+
+      return send(res, 200, {
+        ok: true,
+        clientId: client.id,
+        url: directUrl
+      });
+    } catch (error) {
+      return send(res, 502, {
+        ok: false,
+        error: String(error?.message || "trailer_resolve_failed").slice(0, 500)
+      });
+    }
+  }
+
   if (url.pathname === "/api/nexus/bridge/auth-check" && req.method === "POST") {
     const expected = String(process.env.NEXUS_RAILWAY_BRIDGE_SECRET || "").trim();
     const supplied = String(req.headers["x-nexus-bridge-secret"] || "").trim();
