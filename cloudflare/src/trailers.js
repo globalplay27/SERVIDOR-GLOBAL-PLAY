@@ -53,7 +53,7 @@ function normalizeResult(item, kind, fallbackTitle = "") {
     type: kind === "tv" ? "series" : "movie",
     title: String(item?.title || item?.name || fallbackTitle || "").trim().slice(0, 160),
     year: String(item?.year || item?.release_date || item?.first_air_date || "").slice(0, 4),
-    overview: String(item?.overview || item?.synopsis || "").trim().slice(0, 600),
+    overview: String(item?.overview || item?.synopsis || "").trim().slice(0, 1800),
     posterUrl: poster || trailerThumb,
     posterFallbackUrl: trailerThumb,
     trailerUrl,
@@ -303,30 +303,66 @@ export async function searchTrailers(env, clientId, query, type = "movie") {
   if (!q) throw new Error("query_required");
   const kind = String(type || "") === "series" ? "tv" : "movie";
 
-  const fastSources = [
-    pipedSearch(q, kind),
-    tmdbSearch(env, q, kind).then(result => {
-      if (!result?.results?.some(item => item.trailerUrl)) throw new Error("tmdb_no_trailer");
-      return result;
-    })
-  ];
-
+  // 1) Catálogo estruturado, quando houver TMDB configurado.
   try {
-    return await Promise.any(fastSources);
+    const tmdb = await tmdbSearch(env, q, kind);
+    const rows = Array.isArray(tmdb?.results) ? tmdb.results : [];
+    if (rows.length) {
+      return {
+        configured: true,
+        source: "tmdb-catalog",
+        results: rows
+          .filter(item => item.type === (kind === "tv" ? "series" : "movie"))
+          .slice(0, 8)
+      };
+    }
   } catch {}
 
+  // 2) Sem catálogo externo, usa busca web da IA para identificar OBRAS,
+  // não vídeos. Só depois associa trailer do YouTube à obra encontrada.
   try {
-    return await youtubeHtmlSearch(q, kind);
-  } catch {}
+    const response = await openAIResponses(env, clientId, {
+      model: "gpt-5.6-luna",
+      tools: [{ type: "web_search" }],
+      instructions: [
+        "Você é um catálogo de filmes e séries.",
+        "A busca do usuário deve retornar somente obras audiovisuais do tipo solicitado.",
+        "NUNCA retorne clipes musicais, shows, entrevistas, reviews, cenas soltas, fan edits, vídeos de reação ou compilações.",
+        "Para FILME, retorne somente longas, documentários ou telefilmes que sejam de fato filmes.",
+        "Para SÉRIE, retorne somente séries ou minisséries.",
+        "Para cada obra, confirme título, ano e forneça sinopse em português com 2 a 5 frases.",
+        "Depois localize no YouTube um trailer oficial ou promocional confiável daquela obra.",
+        "Nunca invente URL de YouTube.",
+        "Se não houver trailer verificável, deixe trailerUrl vazio.",
+        "Retorne somente JSON válido, sem markdown."
+      ].join(" "),
+      input: [
+        "Tipo solicitado:", kind === "tv" ? "SÉRIE" : "FILME",
+        "Consulta:", JSON.stringify(q),
+        "Retorne no máximo 8 obras realmente correspondentes.",
+        "Formato obrigatório:",
+        '{"results":[{"title":"Título da obra","year":"2024","overview":"Sinopse completa em português.","posterUrl":"","trailerUrl":"https://www.youtube.com/watch?v=...","channel":"Canal","official":true}]}'
+      ].join("\n"),
+      max_output_tokens: 2400
+    });
 
-  try {
-    const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("search_timeout")), 5000));
-    return await Promise.race([openAISearch(env, clientId, q, kind), timeout]);
+    const text = outputText(response);
+    const a = text.indexOf("{");
+    const b = text.lastIndexOf("}");
+    if (a >= 0 && b > a) {
+      const parsed = JSON.parse(text.slice(a, b + 1));
+      const results = (Array.isArray(parsed?.results) ? parsed.results : [])
+        .slice(0, 8)
+        .map(item => normalizeResult(item, kind, q))
+        .filter(item => item.title && item.type === (kind === "tv" ? "series" : "movie"));
+
+      return { configured: true, source: "catalog-web-search", results };
+    }
   } catch (error) {
     const code = String(error instanceof Error ? error.message : error);
-    if (code.includes("openai_not_configured") || code.includes("search_timeout")) {
-      return { configured: false, source: "unavailable", results: [] };
-    }
-    throw error;
+    if (!code.includes("openai_not_configured")) throw error;
   }
+
+  // Nunca cair para uma busca crua do YouTube: isso mistura clipes e outros vídeos.
+  return { configured: false, source: "catalog-unavailable", results: [] };
 }
