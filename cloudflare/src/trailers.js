@@ -247,7 +247,8 @@ async function tmdbSearch(env, query, kind) {
     } catch {}
 
     const youtube = videos.filter(video => video?.site === "YouTube");
-    const trailer = [...youtube].sort((a, b) => score(b) - score(a))[0] || null;
+    const officialTrailers = youtube.filter(video => video?.type === "Trailer" && video?.official === true);
+    const trailer = [...officialTrailers].sort((a, b) => score(b) - score(a))[0] || null;
     const title = String(kind === "tv" ? item.name : item.title || query);
     const date = String(kind === "tv" ? item.first_air_date : item.release_date || "");
 
@@ -331,9 +332,9 @@ export async function searchTrailers(env, clientId, query, type = "movie") {
         "Para FILME, retorne somente longas, documentários ou telefilmes que sejam de fato filmes.",
         "Para SÉRIE, retorne somente séries ou minisséries.",
         "Para cada obra, confirme título, ano e forneça sinopse em português com 2 a 5 frases.",
-        "Depois localize no YouTube um trailer oficial ou promocional confiável daquela obra.",
+        "Depois localize no YouTube SOMENTE um trailer oficial publicado ou marcado como oficial daquela obra.",
         "Nunca invente URL de YouTube.",
-        "Se não houver trailer verificável, deixe trailerUrl vazio.",
+        "Se não houver trailer oficial verificável, deixe trailerUrl vazio e official=false.",
         "Retorne somente JSON válido, sem markdown."
       ].join(" "),
       input: [
@@ -357,6 +358,7 @@ export async function searchTrailers(env, clientId, query, type = "movie") {
       const results = (Array.isArray(parsed?.results) ? parsed.results : [])
         .slice(0, 4)
         .map(item => normalizeResult(item, kind, q))
+        .map(item => item.official === true ? item : { ...item, trailerUrl: "", trailerName: "", downloadable: false, downloadUrl: "" })
         .filter(item => item.title && item.type === (kind === "tv" ? "series" : "movie"));
 
       return { configured: true, source: "catalog-web-search", results };
