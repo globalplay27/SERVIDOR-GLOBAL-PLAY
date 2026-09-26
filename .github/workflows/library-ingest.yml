@@ -20,13 +20,20 @@ jobs:
       CONTENT_TITLE: ${{ github.event.client_payload.title }}
       NEXUS_INGEST_BASE_URL: https://servidor-nexus.diamantehinode2015.workers.dev
     steps:
-      - name: Install yt-dlp and ffmpeg
+      - name: Install yt-dlp, PO-token provider and ffmpeg
         shell: bash
         run: |
           set -euo pipefail
-          python -m pip install --upgrade yt-dlp
+          python -m pip install --upgrade yt-dlp bgutil-ytdlp-pot-provider
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg
+          docker run --name nexus-pot-provider -d --init \
+            -p 127.0.0.1:4416:4416 \
+            brainicism/bgutil-ytdlp-pot-provider:latest
+          for i in {1..20}; do
+            if curl -fsS http://127.0.0.1:4416/ >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
 
       - name: Download public YouTube video
         id: download
@@ -38,7 +45,7 @@ jobs:
           yt-dlp \
             --no-playlist \
             --js-runtimes node \
-            --extractor-args "youtube:player_client=web_embedded,android_vr;player_skip=webpage" \
+            --extractor-args "youtube:player_client=mweb,web_embedded,android_vr" \
             --socket-timeout 30 \
             --retries 3 \
             --fragment-retries 3 \
@@ -53,7 +60,7 @@ jobs:
             yt-dlp \
               --no-playlist \
               --js-runtimes node \
-              --extractor-args "youtube:player_client=web_embedded,android_vr,default" \
+              --extractor-args "youtube:player_client=mweb,web_safari,android_vr" \
               --socket-timeout 30 \
               --retries 3 \
               --fragment-retries 3 \
