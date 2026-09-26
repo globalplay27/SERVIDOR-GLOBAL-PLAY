@@ -190,7 +190,7 @@ export async function handleMaster(request, env, url) {
         headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" }
       });
     }
-    return asset(env, request, "/master.html");
+    return asset(env, request, "/admin-dashboard.html");
   }
 
   if (url.pathname === "/master-login" && request.method === "POST") {
@@ -263,7 +263,7 @@ export async function handleMaster(request, env, url) {
     if (!await requireMaster(request, env)) {
       return redirect("/api/master/access");
     }
-    return asset(env, request, "/master.html");
+    return asset(env, request, "/admin-dashboard.html");
   }
 
   if (url.pathname === "/api/master/diagnostic" && request.method === "GET") {
