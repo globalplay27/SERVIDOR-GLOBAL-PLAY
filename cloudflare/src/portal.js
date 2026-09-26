@@ -14,7 +14,6 @@ import { AGENT_CORE_MODULES, normalizeAgentCoreConfig, agentCoreState, agentExec
 import { leadsForClient, leadHunterSummary } from "./leads.js";
 import { leadHunterView, saveLeadHunterConfig, runLeadHunter, discardLead } from "./lead-hunter.js";
 import { createVideoFolder, renameVideoFolder, deleteVideoFolder, patchVideoJob, deleteVideoJob, setClipApproval, adjustClip, selectClip, scheduleClip, bulkScheduleClips } from "./video-library.js";
-import { proxyRailwayVideoRequest, createVideoUploadTicket } from "./railway-video-bridge.js";
 import { createR2VideoUpload, uploadR2VideoPart, completeR2VideoUpload, abortR2VideoUpload, importR2VideoFromUrl, createR2PublicTrailerImportJob, processR2PublicTrailerImportJob } from "./r2-video-upload.js";
 import { decidePost, requestPostRevision, saveOwnPostContent, publishPostNow } from "./posts.js";
 
@@ -364,16 +363,6 @@ export async function handlePortalApi(request, env, url, ctx = null) {
   const { session, client } = await sessionClient(request, env);
   if (!session || !client) return json({ error: "unauthorized" }, 401);
 
-  if (url.pathname === "/api/portal/video-upload-ticket" && request.method === "POST") {
-    try {
-      return json({ ok: true, ...(await createVideoUploadTicket(env, client.id)) });
-    } catch (error) {
-      return json({
-        error: error instanceof Error ? error.message : String(error)
-      }, 503);
-    }
-  }
-
   if (url.pathname === "/api/portal/logo" && request.method === "POST") {
     try {
       const logo = await storeProfileLogo(env, client.id, request);
@@ -539,8 +528,6 @@ export async function handlePortalApi(request, env, url, ctx = null) {
     }
   }
 
-  const videoBridgeResponse = await proxyRailwayVideoRequest(request, env, url, client.id);
-  if (videoBridgeResponse) return videoBridgeResponse;
 
   if (url.pathname === "/api/portal/session" && request.method === "GET") {
     return json(
