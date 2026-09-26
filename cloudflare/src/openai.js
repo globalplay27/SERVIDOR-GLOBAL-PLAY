@@ -135,19 +135,24 @@ export async function tokenUsageToday(env, clientId) {
   };
 }
 
-export async function openAIResponses(env, clientId, input) {
+export async function openAIResponses(env, clientId, input, options = {}) {
   const apiKey = openAIKeyForClient(env, clientId);
   if (!apiKey) {
     await setRuntimeStatus(env, clientId, "not_configured", "OpenAI key not configured");
     throw new Error("openai_not_configured_for_client");
   }
 
-  const budget = await tokenUsageToday(env, clientId);
-  if (budget.blocked) {
-    const error = new Error(budget.quotaExhausted ? "openai_quota_exhausted" : "openai_daily_budget_reached");
-    error.status = 429;
-    error.detail = budget;
-    throw error;
+  const enforceBudget = options?.enforceBudget !== false;
+  const recordBudgetUsage = options?.recordBudgetUsage !== false;
+
+  if (enforceBudget) {
+    const budget = await tokenUsageToday(env, clientId);
+    if (budget.blocked) {
+      const error = new Error(budget.quotaExhausted ? "openai_quota_exhausted" : "openai_daily_budget_reached");
+      error.status = 429;
+      error.detail = budget;
+      throw error;
+    }
   }
 
   const payload = { ...(input && typeof input === "object" ? input : {}) };
@@ -188,7 +193,7 @@ export async function openAIResponses(env, clientId, input) {
   }
 
   await Promise.all([
-    recordUsage(env, clientId, data?.usage || {}, payload.model).catch(() => {}),
+    recordBudgetUsage ? recordUsage(env, clientId, data?.usage || {}, payload.model).catch(() => {}) : Promise.resolve(),
     setRuntimeStatus(env, clientId, "ok", "")
   ]);
   return data;
