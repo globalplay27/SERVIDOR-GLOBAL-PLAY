@@ -376,15 +376,19 @@ export async function handleMaster(request, env, url) {
     });
 
     const username = slug(body.username || id).replace(/-/g, ".") || id;
-    const password = String(body.password || "").trim();
-    let portalCredentials = { username, portalPath: "/" };
-    if (password) {
-      if (password.length < 8) return json({ error: "portal_password_too_short" }, 400);
-      await upsertPortalUser(env, id, username, password);
-      portalCredentials.initialPassword = password;
-    } else {
-      portalCredentials.passwordRequired = true;
-    }
+    const suppliedPassword = String(body.password || "").trim();
+    const generatedPassword = "Nx!" + crypto.randomUUID().replace(/-/g, "").slice(0, 13);
+    const password = suppliedPassword || generatedPassword;
+    if (password.length < 8) return json({ error: "portal_password_too_short" }, 400);
+
+    await upsertPortalUser(env, id, username, password);
+
+    const portalCredentials = {
+      username,
+      portalPath: "/login",
+      initialPassword: password,
+      generated: !suppliedPassword
+    };
 
     return json({ client: masterClientView(client), portalCredentials }, 201);
   }
