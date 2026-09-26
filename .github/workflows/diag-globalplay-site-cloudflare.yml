@@ -1,0 +1,33 @@
+name: Diagnose Global Play Site Cloudflare
+
+on:
+  push:
+    branches:
+      - feature/nexus-app-v2-20260924
+    paths:
+      - ".github/workflows/diag-globalplay-site-cloudflare.yml"
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Discover account and list site resources
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          response=$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts?per_page=50")
+          account_id=$(node -e 'const d=JSON.parse(process.argv[1]); const r=d.result||[]; if(!d.success||r.length!==1)process.exit(2); process.stdout.write(r[0].id)' "$response")
+          echo "ACCOUNT=$account_id"
+          echo "=== WORKERS ==="
+          curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$account_id/workers/scripts" | node -e '
+            let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);for(const x of (j.result||[])) console.log(x.id||x.name||JSON.stringify(x));});
+          '
+          echo "=== D1 DATABASES ==="
+          curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$account_id/d1/database?per_page=100" | node -e '
+            let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);for(const x of (j.result||[])) console.log((x.name||"")+"|"+(x.uuid||x.id||""));});
+          '
