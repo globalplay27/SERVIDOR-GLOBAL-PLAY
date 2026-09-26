@@ -104,22 +104,12 @@ jobs:
           git clone --depth 1 https://github.com/globalplay27/globalplay-site.git globalplay-site
           cd globalplay-site
           node --check src/index.js
-          cat > wrangler.deploy.jsonc <<'EOF'
-          {
-            "name": "globalplay-site",
-            "main": "src/index.js",
-            "compatibility_date": "2026-09-15",
-            "d1_databases": [
-              {
-                "binding": "DB",
-                "database_name": "globalplay-site-db",
-                "database_id": "cde8489c-e032-4835-b655-77134242eb33"
-              }
-            ]
-          }
-          EOF
-          npx --yes wrangler@4.86.0 deploy --dry-run --config wrangler.deploy.jsonc
-          npx --yes wrangler@4.86.0 deploy --config wrangler.deploy.jsonc
+          response=$(curl -fsS -X PUT             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/globalplay-site"             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             -F 'metadata={"main_module":"index.js","keep_bindings":["d1"],"compatibility_date":"2026-09-15"};type=application/json'             -F 'index.js=@src/index.js;type=application/javascript+module')
+          node -e '
+            const d=JSON.parse(process.argv[1]);
+            if(!d.success){console.error(JSON.stringify(d.errors||d));process.exit(2);}
+            console.log("Global Play Worker uploaded successfully.");
+          ' "$response"
 
       - name: Verify Global Play SEO live
         shell: bash
