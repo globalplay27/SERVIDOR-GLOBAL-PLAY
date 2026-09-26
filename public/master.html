@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#080b0a">
+  <title>NEXUS AI · Painel Master</title>
+  <link rel="stylesheet" href="/styles.css?v=14">
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand"><img src="/assets/nexus-ai-mark.svg" alt="NEXUS AI"><div><strong>NEXUS AI</strong><small>AGENT CONTROL CENTER</small></div></div>
+      <nav>
+        <button class="nav-item active" data-view="dashboard">▦ <span>Visão geral</span></button>
+        <button class="nav-item" data-view="clients">◉ <span>Clientes</span></button>
+        <button class="nav-item" data-view="agents">⬡ <span>Agent Core</span></button>
+        <button class="nav-item" data-view="posts">▤ <span>Postagens & custos</span></button>
+        <button class="nav-item nav-notifications" data-view="notifications">✦ <span>Notificações</span><b id="notification-count" class="notification-count" hidden>0</b></button>
+        <button class="nav-item" data-view="portal">⌁ <span>Portal do cliente</span></button>
+        <button class="nav-item" data-view="odin">◆ <span>Odin & Leads</span></button>
+        <button class="nav-item" data-view="onboarding">＋ <span>Novo cliente</span></button>
+        <button class="nav-item" data-view="settings">⚙ <span>Integrações</span></button>
+      </nav>
+      <div class="core-card"><span class="pulse"></span><div><strong>Agent Core</strong><small>Motor central disponível</small></div></div>
+    </aside>
+
+    <main>
+      <header>
+        <div><p class="eyebrow">PAINEL MASTER</p><h1 id="page-title">Visão geral</h1></div>
+        <div class="header-actions"><span class="master-chip">MASTER</span><span class="live"><i></i> Sistema online</span><button id="refresh" class="icon-btn" title="Atualizar">↻</button></div>
+      </header>
+
+      <section id="dashboard" class="view active">
+        <div class="metrics">
+          <article><span>Clientes</span><strong id="metric-clients">—</strong><small>gerenciados na Central</small></article>
+          <article><span>Agentes online</span><strong id="metric-online">—</strong><small>em produção</small></article>
+          <article><span>Leads no Odin</span><strong id="metric-leads">—</strong><small id="metric-hot">— quentes</small></article>
+          <article><span>Alertas</span><strong id="metric-alerts">—</strong><small>consumo e operação</small></article>
+        </div>
+        <div class="grid-main">
+          <section class="panel"><div class="panel-head"><div><p class="eyebrow">OPERAÇÃO</p><h2>Clientes ativos</h2></div><button class="ghost" data-go="clients">Ver todos</button></div><div id="client-cards" class="client-list"></div></section>
+          <section class="panel consumption"><div class="panel-head"><div><p class="eyebrow">CONSUMO</p><h2>Uso por cliente</h2></div></div><div id="usage-list"></div><p class="disclaimer">Valores percentuais configurados. Dados reais serão conectados somente quando a API do provedor os disponibilizar.</p></section>
+        </div>
+      </section>
+
+      <section id="clients" class="view">
+        <div class="panel"><div class="panel-head"><div><p class="eyebrow">GESTÃO</p><h2>Todos os clientes</h2></div><button class="primary" data-go="onboarding">＋ Adicionar cliente</button></div><div class="table-wrap"><table><thead><tr><th>Cliente</th><th>Status</th><th>Instagram</th><th>Odin</th><th>Horários</th><th>IA do cliente</th><th>Ações</th></tr></thead><tbody id="clients-table"></tbody></table></div></div>
+        <div class="panel master-profiles-panel">
+          <div class="panel-head"><div><p class="eyebrow">PERFIS RECEBIDOS</p><h2>Configuração dos agentes</h2><p class="muted">O cliente informa o negócio, identidade e logo. Aqui você revisa o perfil e define toda a operação do agente.</p></div></div>
+          <div id="master-agent-profiles" class="master-agent-profiles"></div>
+        </div>
+      </section>
+
+      <section id="agents" class="view">
+        <div class="agent-core-metrics">
+          <article><span>Execuções hoje</span><strong id="agent-core-executions">0</strong><small>tarefas registradas pelos agentes</small></article>
+          <article><span>Custo hoje</span><strong id="agent-core-cost-today">US$ 0,0000</strong><small>somente custos realmente informados</small></article>
+          <article><span>Custo no mês</span><strong id="agent-core-cost-month">US$ 0,0000</strong><small>somatório das execuções</small></article>
+          <article><span>Clientes ativos</span><strong id="agent-core-active-clients">0</strong><small>Agent Core habilitado</small></article>
+        </div>
+
+        <div class="agent-core-grid" id="agent-core-modules">
+          <article><span>01</span><strong>RADAR</strong><small>Sinais, tendências e histórico real do Instagram.</small></article>
+          <article><span>02</span><strong>ESTRATEGISTA</strong><small>Nicho, público, Radar, leads e feedback do Auditor.</small></article>
+          <article><span>03</span><strong>CREATOR</strong><small>Pautas, ganchos, legendas, CTA e hashtags da marca.</small></article>
+          <article><span>04</span><strong>PUBLISHER</strong><small>Fila, publicação aprovada, tentativas e registro de falhas.</small></article>
+          <article><span>05</span><strong>AUDITOR</strong><small>Métricas pós-publicação e retorno para a estratégia.</small></article>
+          <article><span>06</span><strong>ODIN</strong><small>Intenção, classificação e prioridade comercial dos leads.</small></article>
+        </div>
+
+        <div class="agent-core-layout">
+          <section class="panel agent-core-control">
+            <div class="panel-head">
+              <div><p class="eyebrow">CONTROLE POR CLIENTE</p><h2>Operação dos agentes</h2><p class="muted">Por padrão, o Creator prepara a pauta e o Publisher só publica depois da aprovação do cliente.</p></div>
+              <span id="agent-core-client-state" class="badge">ATIVO</span>
+            </div>
+            <label class="agent-core-client-select">Cliente<select id="agent-core-client"></select></label>
+            <div class="agent-core-config">
+              <label><input type="checkbox" id="agent-core-enabled"> Agent Core habilitado</label>
+              <label><input type="checkbox" id="agent-core-auto-publish"> Modo automático</label>
+              <label><input type="checkbox" id="agent-core-require-approval" checked> Exigir aprovação antes de publicar</label>
+              <label class="agent-core-cycle">Ciclo completo a cada <input id="agent-core-cycle-minutes" type="number" min="15" max="1440" step="5" value="60"> minutos</label>
+            </div>
+            <div class="agent-core-safety"><strong id="agent-core-approval-label">APROVAÇÃO OBRIGATÓRIA</strong><span id="agent-core-approval-note">Nenhuma pauta do Creator será publicada sem aprovação.</span></div>
+            <div id="agent-core-module-toggles" class="agent-core-module-toggles"></div>
+            <div class="agent-core-actions">
+              <button type="button" id="agent-core-save" class="ghost">Salvar configuração</button>
+              <button type="button" id="agent-core-run-all" class="primary">Executar ciclo completo</button>
+              <span id="agent-core-message" class="form-status"></span>
+            </div>
+            <div class="agent-core-manual">
+              <span>Executar individualmente</span>
+              <div>
+                <button type="button" data-run-agent="radar">RADAR</button>
+                <button type="button" data-run-agent="estrategista">ESTRATEGISTA</button>
+                <button type="button" data-run-agent="creator">CREATOR</button>
+                <button type="button" data-run-agent="publisher">PUBLISHER</button>
+                <button type="button" data-run-agent="auditor">AUDITOR</button>
+                <button type="button" data-run-agent="odin">ODIN</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head"><div><p class="eyebrow">ESTADO ATUAL</p><h2>Última atividade</h2><p class="muted">Status persistido de cada módulo do cliente selecionado.</p></div></div>
+            <div id="agent-core-live-state" class="agent-core-live-state"><p class="muted">Carregando estado dos agentes…</p></div>
+          </section>
+        </div>
+
+        <section class="panel agent-core-log-panel">
+          <div class="panel-head"><div><p class="eyebrow">AUDITORIA</p><h2>Execuções e custos</h2><p class="muted">Cliente, agente, função, modelo, quantidade, custo e horário de cada execução.</p></div><button type="button" id="agent-core-refresh" class="ghost">Atualizar</button></div>
+          <div class="table-wrap">
+            <table class="agent-core-log-table">
+              <thead><tr><th>Horário</th><th>Cliente</th><th>Agente</th><th>Função</th><th>Status</th><th>Modelo</th><th>Qtd.</th><th>Custo</th><th>Detalhe</th></tr></thead>
+              <tbody id="agent-core-log-body"><tr><td colspan="9">Nenhuma execução registrada.</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section id="posts" class="view">
+        <div class="post-cost-metrics">
+          <article><span>Gasto nas postagens</span><strong id="posts-total-cost">US$ 0,00</strong><small>mês atual · custo OpenAI calculado</small></article>
+          <article><span>Postagens registradas</span><strong id="posts-total-count">0</strong><small>tentativas no mês</small></article>
+          <article><span>Publicadas</span><strong id="posts-published-count">0</strong><small>concluídas no Instagram</small></article>
+          <article><span>Não publicadas</span><strong id="posts-failed-count">0</strong><small>falhas que exigem atenção</small></article>
+        </div>
+
+        <div class="post-cost-grid">
+          <section class="panel">
+            <div class="panel-head"><div><p class="eyebrow">CUSTO POR CLIENTE</p><h2>Quem está gastando mais</h2><p class="muted">Ranking mensal pelo custo de IA atribuído a cada postagem.</p></div></div>
+            <div id="post-cost-ranking" class="post-cost-ranking"></div>
+          </section>
+          <section class="panel">
+            <div class="panel-head"><div><p class="eyebrow">STATUS</p><h2>Saúde das postagens</h2><p class="muted">Acompanhe horário programado, horário real, falhas e custo individual.</p></div></div>
+            <div class="post-status-legend"><span class="post-dot published"></span> Publicada <span class="post-dot failed"></span> Falhou <span class="post-dot running"></span> Em andamento</div>
+          </section>
+        </div>
+
+        <section class="panel master-post-ledger">
+          <div class="panel-head">
+            <div><p class="eyebrow">HISTÓRICO DETALHADO</p><h2>Postagens por cliente</h2><p class="muted">A Global Play (@globalplay_streaming) aparece como cliente para que sua operação seja comparada com as demais.</p></div>
+            <label class="post-client-filter">Cliente<select id="post-client-filter"><option value="">Todos</option></select></label>
+          </div>
+          <div class="table-wrap">
+            <table class="post-ledger-table">
+              <thead><tr><th>Cliente</th><th>Instagram</th><th>Programada</th><th>Publicada / tentativa</th><th>Status</th><th>Custo</th><th>Modelo</th><th>Detalhe</th></tr></thead>
+              <tbody id="post-ledger-body"><tr><td colspan="8">Nenhuma postagem registrada ainda.</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section id="notifications" class="view">
+        <div class="panel">
+          <div class="panel-head">
+            <div><p class="eyebrow">CENTRAL DE SUPORTE</p><h2>Notificações dos clientes</h2><p class="muted">Chamados abertos diretamente pelo aplicativo NEXUS.</p></div>
+            <div class="support-summary"><span><strong id="support-new-count">0</strong> novos</span><span><strong id="support-open-count">0</strong> abertos</span></div>
+          </div>
+          <div class="support-filters">
+            <button type="button" class="active" data-support-filter="all">Todos</button>
+            <button type="button" data-support-filter="new">Novos</button>
+            <button type="button" data-support-filter="read">Lidos</button>
+            <button type="button" data-support-filter="resolved">Resolvidos</button>
+          </div>
+          <div id="support-notifications" class="support-notifications"><p class="muted">Nenhum chamado recebido.</p></div>
+        </div>
+      </section>
+
+      <section id="portal" class="view">
+        <div class="portal-toolbar"><div><p class="eyebrow">VISÃO DO CLIENTE</p><h2>Portal personalizado</h2></div><div class="portal-toolbar-actions"><label>Visualizar como<select id="portal-client"></select></label><button type="button" id="assume-selected-client" class="primary">Assumir painel do cliente</button></div></div>
+        <div id="portal-empty" class="panel empty-state"><strong>Nenhum cliente disponível</strong><span>Cadastre o primeiro cliente para gerar o portal.</span></div>
+        <div id="client-portal" class="client-portal" hidden>
+          <section class="portal-hero"><div class="portal-identity"><div id="portal-avatar" class="portal-avatar">NX</div><div><span class="portal-label">AGENTE AUTÔNOMO</span><h2 id="portal-name">Cliente</h2><p id="portal-meta">Configuração do agente</p></div></div><div class="agent-orbit"><span></span><i></i><b></b><em></em><div class="robot-core">AI</div></div><div class="portal-status"><i></i><span id="portal-status">Online</span></div></section>
+          <div class="portal-metrics"><article><span>Leads captados</span><strong id="portal-leads">0</strong><small>Odin comercial</small></article><article><span>Leads quentes</span><strong id="portal-hot">0</strong><small>prontos para atendimento</small></article><article><span>Próxima postagem</span><strong id="portal-next-post">—</strong><small>horário configurado</small></article><article><span>Automação</span><strong id="portal-odin">Ativa</strong><small>monitoramento contínuo</small></article></div>
+          <div class="grid-main"><section class="panel"><div class="panel-head"><div><p class="eyebrow">OPERAÇÃO</p><h2>Seu agente</h2></div><span id="portal-agent-badge" class="badge">ONLINE</span></div><div class="agent-grid"><div><span>Instagram</span><strong id="portal-instagram">—</strong></div><div><span>Segmento</span><strong id="portal-niche">—</strong></div><div><span>Postagens</span><strong id="portal-times">—</strong></div><div><span>Atendimento</span><strong>WhatsApp humano</strong></div></div></section><section class="panel"><p class="eyebrow">CONSUMO</p><h2>Recursos</h2><div id="portal-usage"></div><p class="disclaimer">Indicadores de uso. Custos e limites reais dependem dos dados disponibilizados por cada provedor.</p></section></div>
+        </div>
+      </section>
+
+      <section id="odin" class="view">
+        <div class="odin-master-metrics">
+          <article><span>Total</span><strong id="funnel-total">0</strong><small>leads captados</small></article>
+          <article><span>Quentes</span><strong id="funnel-hot">0</strong><small>alta intenção</small></article>
+          <article><span>Mornos</span><strong id="funnel-warm">0</strong><small>em qualificação</small></article>
+          <article><span>Frios</span><strong id="funnel-cold">0</strong><small>baixo sinal comercial</small></article>
+          <article><span>Humano</span><strong id="funnel-human">0</strong><small>precisam de atendimento</small></article>
+        </div>
+        <div class="panel">
+          <div class="panel-head">
+            <div><p class="eyebrow">ODIN EM TEMPO REAL</p><h2>Leads de todos os clientes</h2><p class="muted">O comentário já entra no Odin como lead. Palavras de intenção aumentam o score e podem iniciar a qualificação automática.</p></div>
+            <label class="post-client-filter">Cliente<select id="master-lead-client-filter"><option value="">Todos</option></select></label>
+          </div>
+          <div class="table-wrap">
+            <table class="odin-lead-table">
+              <thead><tr><th>Cliente</th><th>Instagram</th><th>Classificação</th><th>Score</th><th>Interesse</th><th>Etapa</th><th>Humano</th><th>Atualizado</th></tr></thead>
+              <tbody id="master-leads-body"><tr><td colspan="8">Sincronizando agentes…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section id="onboarding" class="view">
+        <div class="panel form-panel compact-create">
+          <div class="panel-head">
+            <div><p class="eyebrow">CADASTRO EXPRESSO</p><h2>Novo cliente NEXUS</h2><p class="muted">O cliente não cria GitHub, Railway, Cloudflare ou OpenAI. Você cria o acesso e ele autoriza apenas o Instagram.</p></div>
+            <span class="managed-chip">INFRA GERENCIADA</span>
+          </div>
+          <form id="client-form">
+            <div class="form-grid">
+              <label>Empresa / nome<input name="name" required placeholder="Ex.: Loja Alpha"></label>
+              <label>Nicho<input name="niche" placeholder="Ex.: Restaurante, loja, streaming"></label>
+              
+              <label>Usuário do aplicativo<input name="username" placeholder="Gerado automaticamente"></label>
+              <label>Senha inicial<input name="password" type="text" minlength="8" placeholder="Gerada automaticamente"></label>
+              <label>Tema<select name="theme"><option value="green-black">Preto + Verde</option><option value="red-black">Preto + Vermelho</option><option value="blue-white">Azul + Branco</option><option value="gold-black">Preto + Dourado</option></select></label>
+              <div class="managed-ai-info"><span>IA</span><strong>IA NEXUS gerenciada</strong><small>Sem conta OpenAI e sem chave para o cliente.</small></div>
+            </div>
+            <div class="automation-summary">
+              <div><span>1</span><strong>Você cria o acesso</strong><small>Usuário e senha saem daqui.</small></div>
+              <div><span>2</span><strong>Cliente entra no NEXUS</strong><small>Sem cadastro técnico externo.</small></div>
+              <div><span>3</span><strong>Autoriza o Instagram</strong><small>Única autorização prevista para o cliente.</small></div>
+            </div>
+            <div class="theme-preview" id="theme-preview"><span>PRÉVIA</span><strong>Seu agente, sua marca.</strong><small>Automação inteligente e independente</small></div>
+            <button class="primary" type="submit">Criar acesso do cliente</button>
+            <span id="form-status" class="form-status"></span>
+          </form>
+          <div id="new-client-access" class="access-result" hidden>
+            <div><span>ACESSO CRIADO</span><strong id="new-client-user">—</strong><small id="new-client-password">—</small></div>
+            <div class="access-actions"><button id="copy-client-access" class="ghost" type="button">Copiar acesso</button><a id="open-client-login" class="primary link-button" href="/login" target="_blank" rel="noopener">Abrir login do cliente</a></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="settings" class="view">
+        <div class="panel">
+          <div class="panel-head"><div><p class="eyebrow">NEXUS CORE</p><h2>Infraestrutura central</h2><p class="muted">Estas conexões pertencem ao NEXUS. Seus clientes não precisam criar contas técnicas.</p></div></div>
+          <div id="integration-list" class="integration-list"></div>
+        </div>
+
+        <div class="panel master-openai-panel">
+          <div class="panel-head">
+            <div><p class="eyebrow">CENTRAL DE CRÉDITOS</p><h2>OpenAI NEXUS</h2><p class="muted">Uma conta central abastece os clientes NEXUS. Ragnar continua separado e não consome estes créditos.</p></div>
+            <span id="openai-master-state" class="badge off">NÃO CONECTADA</span>
+          </div>
+          <div class="finance-grid finance-grid-four">
+            <article><span>Crédito estimado</span><strong id="openai-balance">—</strong><small id="openai-balance-note">Informe seu saldo atual uma vez.</small></article>
+            <article><span>Gasto no mês</span><strong id="openai-month-cost">—</strong><small>valor real da API administrativa</small></article>
+            <article><span>Orçamento NEXUS</span><strong id="openai-month-budget">—</strong><small>teto mensal definido por você</small></article>
+            <article><span>Restante no orçamento</span><strong id="openai-budget-remaining">—</strong><small id="openai-budget-note">aguardando configuração</small></article>
+          </div>
+          <form id="openai-master-form" class="openai-master-form openai-master-form-five">
+            <label>Chave API do projeto NEXUS<input name="apiKey" type="password" autocomplete="off" placeholder="sk-... · deixe vazio para manter a atual"></label>
+            <label>Admin API Key<input name="adminKey" type="password" autocomplete="off" placeholder="Chave administrativa para consultar gastos"></label>
+            <label>Crédito / saldo atual (US$)<input name="currentBalanceUsd" type="number" min="0" step="0.01" placeholder="Ex.: 25.00"></label>
+            <label>Orçamento mensal NEXUS (US$)<input name="monthlyBudgetUsd" type="number" min="0.01" step="0.01" placeholder="Ex.: 50.00"></label>
+            <button class="primary" type="submit">Salvar controle OpenAI</button>
+            <span id="openai-master-message" class="form-status"></span>
+          </form>
+
+          <p class="disclaimer">O gasto total em dólares vem da OpenAI quando a Admin API Key estiver conectada. A geração paga de imagens para clientes está desativada. Esta integração permanece disponível para recursos de texto, análise e vídeo que utilizem a API.</p>
+        </div>
+
+        <div class="panel master-instagram-panel">
+          <div class="panel-head">
+            <div><p class="eyebrow">AUTORIZAÇÃO CENTRAL</p><h2>Instagram NEXUS</h2><p class="muted">Configure uma única vez. Depois cada cliente apenas entra no Instagram e autoriza a própria conta.</p></div>
+            <span id="instagram-master-state" class="badge off">NÃO CONFIGURADO</span>
+          </div>
+          <form id="instagram-master-form" class="openai-master-form">
+            <label>Instagram App ID<input name="appId" id="instagram-app-id" autocomplete="off" placeholder="App ID do Instagram"></label>
+            <label>Instagram App Secret<input name="appSecret" type="password" autocomplete="off" placeholder="Deixe vazio para manter o atual"></label>
+            <label>OAuth Redirect URL<input id="instagram-callback-url" readonly value="Carregando..."></label>
+            <button class="primary" type="submit">Salvar Instagram NEXUS</button>
+            <span id="instagram-master-message" class="form-status"></span>
+          </form>
+          <p class="disclaimer">Cadastre exatamente a URL acima em “Valid OAuth Redirect URIs” no aplicativo Meta/Instagram do NEXUS. Esta configuração é única; os clientes não criam aplicativo.</p>
+        </div>
+      </section>
+    </main>
+  </div>
+  <dialog id="portal-access-dialog" class="nexus-dialog">
+    <form id="portal-access-form" method="dialog">
+      <div class="dialog-head">
+        <div><p class="eyebrow">ACESSO DO CLIENTE</p><h2 id="portal-access-title">Definir acesso</h2></div>
+        <button type="button" id="portal-access-close" class="icon-btn" aria-label="Fechar">×</button>
+      </div>
+      <input type="hidden" id="portal-access-client-id">
+      <label>Usuário<input id="portal-access-username" autocomplete="username" required></label>
+      <label>Senha<input id="portal-access-password" type="password" autocomplete="new-password" minlength="8" required></label>
+      <div class="dialog-actions">
+        <button type="button" id="portal-access-cancel" class="ghost">Cancelar</button>
+        <button type="submit" class="primary">Salvar acesso</button>
+      </div>
+      <span id="portal-access-status" class="form-status"></span>
+    </form>
+  </dialog>
+  <script src="/app.js?v=17" defer></script>
+</body>
+</html>
