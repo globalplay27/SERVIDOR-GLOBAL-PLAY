@@ -113,9 +113,10 @@ function jsonObjectFromText(value) {
 }
 
 function outputTransform(format) {
-  if (format === "feed") return { width: 1080, height: 1350, fit: "cover" };
-  if (format === "square") return { width: 1080, height: 1080, fit: "cover" };
-  return { width: 720, height: 1280, fit: "cover" };
+  if (format === "feed") return { width: 1080, height: 1350, fit: "contain" };
+  if (format === "square") return { width: 1080, height: 1080, fit: "contain" };
+  // Padrão NEXUS aprovado: Reel vertical Full HD sem deformar o vídeo original.
+  return { width: 1080, height: 1920, fit: "contain" };
 }
 
 function transcriptSummary(segments) {
@@ -174,13 +175,21 @@ async function intelligentCandidates(env, clientId, settings, segments) {
   if (!segments.length) return fallback;
 
   const prompt = [
-    "Você é o editor de vídeo do NEXUS AI.",
-    "Escolha " + requestedClips + " cortes fortes para Instagram.",
+    "Você é o editor de vídeo do NEXUS AI, mas NÃO pode inventar um estilo de corte.",
+    "Aplique obrigatoriamente o padrão de referência NEXUS em todos os cortes.",
+    "Escolha " + requestedClips + " trechos para Instagram.",
     "Objetivo: " + String(settings.goal || "viral") + ".",
-    "Cada corte deve ter de 10 a " + clipDuration + " segundos, preservar começo compreensível e terminar a ideia sem cortar a fala no meio.",
-    "Não invente falas. Use somente os tempos da transcrição.",
-    "Priorize gancho, clareza, emoção, utilidade e conclusão natural.",
-    "Responda APENAS JSON no formato:",
+    "PADRÃO FIXO:",
+    "1) Formato final sempre vertical 9:16 Full HD (1080x1920).",
+    "2) O começo precisa trazer contexto imediatamente; nunca iniciar no meio de frase, resposta, pronome solto ou reação sem explicação.",
+    "3) Preserve de 1 a 3 segundos de contexto antes do ponto mais forte quando isso couber no limite.",
+    "4) O final precisa concluir a ideia; nunca terminar no meio de palavra, frase, raciocínio ou antes da identificação do conteúdo.",
+    "5) Quando houver nome de filme, série, produto, pessoa ou assunto necessário para entender o trecho, inclua esse momento antes do final.",
+    "6) Cada corte deve ter entre 10 e " + clipDuration + " segundos e usar somente limites de fala existentes na transcrição.",
+    "7) Evite dois cortes contando a mesma ideia.",
+    "8) O hook e o título devem descrever o que realmente acontece; não invente falas.",
+    "9) O fechamento deve funcionar sozinho para quem nunca viu o vídeo original.",
+    "Retorne APENAS JSON no formato:",
     '{"clips":[{"start":12.0,"end":42.0,"title":"...","reason":"...","hook":"...","caption":"...","qualityScore":88}]}',
     "TRANSCRIÇÃO:",
     transcriptSummary(segments)
@@ -362,7 +371,14 @@ async function renderClip(env, row, settings, candidate, rank) {
     endText: cleanText(settings.endText, 90),
     endContact: cleanText(settings.endContact, 90),
     selectedForSchedule: false,
-    outputFormat: String(settings.outputFormat || "reel")
+    outputFormat: String(settings.outputFormat || "reel"),
+    referenceStyle: "nexus-reference-v1",
+    referenceWidth: 1080,
+    referenceHeight: 1920,
+    referenceIntroSeconds: 2.5,
+    referenceOutroSeconds: 2.5,
+    referenceSubtitleCharsPerLine: 28,
+    referenceSubtitleMaxLines: 2
   };
   const clipResult = {
     previewUrl: "/media/" + outputKey,
@@ -372,6 +388,8 @@ async function renderClip(env, row, settings, candidate, rank) {
     transcript: cleanText(candidate.transcript || candidate.hook || "", 1200),
     qualityScore: Math.round(clamp(candidate.qualityScore || 75, 1, 100)),
     subtitlesApplied: false,
+    referenceStyle: "nexus-reference-v1",
+    compositionMode: "cloudflare-media-contain",
     processor: "cloudflare-media"
   };
 
@@ -437,7 +455,7 @@ export async function enqueueVideoProcessing(env, clientId, jobId, patch = {}) {
     ...parseJson(row.result_json, {}),
     progress: 55,
     processor: "cloudflare",
-    message: "Análise iniciada no Cloudflare. O NEXUS está escolhendo os melhores trechos.",
+    message: "Análise iniciada no Cloudflare. O NEXUS está aplicando o padrão fixo de cortes.",
     error: ""
   };
   await setJob(env, row, "queued", settings, result);
@@ -467,7 +485,7 @@ export async function processVideoJob(env, clientId, jobId) {
       ...baseResult,
       progress: 75,
       detectedLanguage: transcript.language,
-      message: "Transcrição concluída. Selecionando os cortes com melhor potencial.",
+      message: "Transcrição concluída. Ajustando início e fechamento de cada corte ao padrão NEXUS.",
       error: ""
     });
 
