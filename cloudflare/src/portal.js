@@ -10,7 +10,7 @@ import { getClient, upsertClient, portalClientView } from "./clients.js";
 import { tokenUsageToday } from "./openai.js";
 import { startInstagramOAuth, handleInstagramOAuthCallback } from "./instagram.js";
 import { searchTrailers } from "./trailers.js";
-import { dispatchYouTubeImport } from "./youtube-container.js";
+import { dispatchGitHubVideoIngest } from "./github-video-ingest.js";
 import { AGENT_CORE_MODULES, normalizeAgentCoreConfig, agentCoreState, agentExecutions, saveAgentCoreConfig } from "./agent-core.js";
 import { leadsForClient, leadHunterSummary } from "./leads.js";
 import { leadHunterView, saveLeadHunterConfig, runLeadHunter, discardLead } from "./lead-hunter.js";
@@ -455,7 +455,7 @@ export async function handlePortalApi(request, env, url, ctx = null) {
         : await importR2VideoFromUrl(env, client.id, body);
 
       if (isTrailerImport) {
-        await dispatchYouTubeImport(
+        await dispatchGitHubVideoIngest(
           env,
           client.id,
           imported.jobId,
