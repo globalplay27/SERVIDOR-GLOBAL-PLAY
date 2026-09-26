@@ -1117,6 +1117,10 @@ function renderVideoJobs(data={}){
               <option value="feed" ${format==="feed"?"selected":""}>Feed 4:5</option>
               <option value="square" ${format==="square"?"selected":""}>Quadrado 1:1</option>
             </select></label>
+            <label><span>Estilo de edição</span><select data-video-job-edit-style>
+              <option value="cinematic-card-v1" ${(job.editStyle||"cinematic-card-v1")==="cinematic-card-v1"?"selected":""}>Cinematográfico NEXUS</option>
+              <option value="classic-cuts" ${job.editStyle==="classic-cuts"?"selected":""}>Corte clássico</option>
+            </select><small>Vídeo + pôster + ficha visual + sinopse + CTA.</small></label>
             <label class="video-config-check"><input data-video-job-subtitles type="checkbox" ${job.autoSubtitles!==false?"checked":""}><span>Legenda automática PT-BR quando o áudio estiver em outro idioma</span></label>
             <label><span>Frase final (opcional)</span><input data-video-job-end-text maxlength="90" value="${escapeSupport(job.endText||"")}" placeholder="Ex.: Continua..."></label>
             <label><span>Contato / CTA final (opcional)</span><input data-video-job-end-contact maxlength="90" value="${escapeSupport(job.endContact||"")}" placeholder="Ex.: WhatsApp..."></label>
@@ -1193,6 +1197,7 @@ async function startVideoProcessing(button){
     duration:card.querySelector("[data-video-job-duration]")?.value||30,
     clips:card.querySelector("[data-video-job-clips]")?.value||3,
     outputFormat:card.querySelector("[data-video-job-format]")?.value||"reel",
+    editStyle:card.querySelector("[data-video-job-edit-style]")?.value||"cinematic-card-v1",
     autoSubtitles:Boolean(card.querySelector("[data-video-job-subtitles]")?.checked),
     endText:card.querySelector("[data-video-job-end-text]")?.value?.trim()||"",
     endContact:card.querySelector("[data-video-job-end-contact]")?.value?.trim()||""
@@ -1428,9 +1433,9 @@ async function searchTrailers(event){
       const link=item.trailerUrl||"";
       const badge=item.trailerUrl?(item.official?"TRAILER OFICIAL":"TRAILER ENCONTRADO"):"TRAILER INDISPONÍVEL";
       const cutterAction=item.downloadable&&item.downloadUrl
-        ?'<button type="button" class="trailer-import trailer-primary-action" data-import-video="'+escapeSupport(item.downloadUrl)+'" data-import-title="'+escapeSupport(item.title||"")+'">Enviar para biblioteca</button>'
+        ?'<button type="button" class="trailer-import trailer-primary-action" data-import-video="'+escapeSupport(item.downloadUrl)+'" data-import-title="'+escapeSupport(item.title||"")+'" data-import-poster="'+escapeSupport(item.posterUrl||"")+'" data-import-overview="'+escapeSupport(item.overview||"")+'" data-import-year="'+escapeSupport(item.year||"")+'" data-import-type="'+escapeSupport(item.type||"")+'">Enviar para biblioteca</button>'
         :(item.trailerUrl
-          ?'<button type="button" class="trailer-import trailer-primary-action" data-import-trailer="'+escapeSupport(item.trailerUrl)+'" data-import-title="'+escapeSupport(item.title||"")+'">Enviar para biblioteca</button>'
+          ?'<button type="button" class="trailer-import trailer-primary-action" data-import-trailer="'+escapeSupport(item.trailerUrl)+'" data-import-title="'+escapeSupport(item.title||"")+'" data-import-poster="'+escapeSupport(item.posterUrl||"")+'" data-import-overview="'+escapeSupport(item.overview||"")+'" data-import-year="'+escapeSupport(item.year||"")+'" data-import-type="'+escapeSupport(item.type||"")+'">Enviar para biblioteca</button>'
           :'<span class="trailer-open unavailable">VÍDEO INDISPONÍVEL</span>');
       return '<article class="trailer-card">'
         +(item.posterUrl?'<img class="trailer-poster" data-trailer-poster="1" data-fallback="'+escapeSupport(item.posterFallbackUrl||"")+'" data-title="'+escapeSupport(item.title||"")+'" loading="lazy" referrerpolicy="no-referrer" src="'+escapeSupport(item.posterUrl)+'" alt="Imagem de '+escapeSupport(item.title)+'">':'<div class="trailer-poster-empty">'+escapeSupport((item.title||"NEXUS").slice(0,18))+'</div>')
@@ -1487,6 +1492,10 @@ if(videoFileInput)videoFileInput.addEventListener("change",()=>{
 async function importAuthorizedVideo(button,statusTarget=null){
   const url=String(button?.dataset.importVideo||"").trim();
   const title=String(button?.dataset.importTitle||"").trim();
+  const posterUrl=String(button?.dataset.importPoster||"").trim();
+  const overview=String(button?.dataset.importOverview||"").trim();
+  const releaseYear=String(button?.dataset.importYear||"").trim();
+  const mediaType=String(button?.dataset.importType||"").trim();
   if(!url||!button)return;
   const original=button.textContent;
   button.disabled=true;button.textContent="Baixando…";
@@ -1499,6 +1508,7 @@ async function importAuthorizedVideo(button,statusTarget=null){
     duration:$("#video-clip-duration")?.value||30,
     clips:$("#video-requested-clips")?.value||3,
     outputFormat:$("#video-output-format")?.value||"reel",
+    editStyle:$("#video-edit-style")?.value||"cinematic-card-v1",
     autoSubtitles:Boolean($("#video-auto-subtitles")?.checked),
     subtitleSize:$("#video-subtitle-size")?.value||"auto",
     subtitleColor:$("#video-subtitle-color")?.value||"white",
@@ -1557,6 +1567,11 @@ async function importTrailerVideo(button){
     duration:$("#video-clip-duration")?.value||30,
     clips:$("#video-requested-clips")?.value||3,
     outputFormat:$("#video-output-format")?.value||"reel",
+    editStyle:$("#video-edit-style")?.value||"cinematic-card-v1",
+    posterUrl,
+    overview,
+    releaseYear,
+    mediaType,
     autoSubtitles:Boolean($("#video-auto-subtitles")?.checked),
     subtitleSize:$("#video-subtitle-size")?.value||"auto",
     subtitleColor:$("#video-subtitle-color")?.value||"white",
@@ -1732,6 +1747,11 @@ if(videoUploadForm)videoUploadForm.addEventListener("submit",async event=>{
     duration:$("#video-clip-duration").value,
     clips:$("#video-requested-clips").value,
     outputFormat:$("#video-output-format")?.value||"reel",
+    editStyle:$("#video-edit-style")?.value||"cinematic-card-v1",
+    posterUrl,
+    overview,
+    releaseYear,
+    mediaType,
     autoSubtitles:Boolean($("#video-auto-subtitles")?.checked),
     subtitleSize:$("#video-subtitle-size")?.value||"auto",
     subtitleColor:$("#video-subtitle-color")?.value||"white",
