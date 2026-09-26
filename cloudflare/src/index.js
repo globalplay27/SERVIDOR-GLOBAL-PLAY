@@ -223,24 +223,16 @@ export default {
     }
 
     if (url.pathname === "/api/auth/login" && request.method === "POST") {
-      const rate = await loginRateLimitStatus(env, request, "login");
-      if (!rate.allowed) {
-        return json(
-          { ok: false, error: "too_many_login_attempts", retryAfter: rate.retryAfter },
-          429,
-          { "retry-after": String(rate.retryAfter) }
-        );
-      }
-
       const body = await request.json().catch(() => ({}));
       const username = String(body?.username || "").trim();
       const password = String(body?.password || "");
 
       if (!username || !password) {
-        await recordLoginFailure(env, request, "login");
         return json({ ok: false, error: "username_and_password_required" }, 400);
       }
 
+      // Always allow a valid credential to recover from a previous lockout.
+      // Rate limiting is applied only after both Master and client credentials fail.
       if (await masterCredentialsValid(env, username, password)) {
         await clearLoginFailures(env, request, "login");
         const session = await createMasterSession(env);
@@ -270,6 +262,15 @@ export default {
           cookieName: "nexus_session",
           entryPath: "/portal.html?auth=1"
         }, 200, { "set-cookie": portalSessionCookie(session.token) });
+      }
+
+      const rate = await loginRateLimitStatus(env, request, "login");
+      if (!rate.allowed) {
+        return json(
+          { ok: false, error: "too_many_login_attempts", retryAfter: rate.retryAfter },
+          429,
+          { "retry-after": String(rate.retryAfter) }
+        );
       }
 
       await recordLoginFailure(env, request, "login");
