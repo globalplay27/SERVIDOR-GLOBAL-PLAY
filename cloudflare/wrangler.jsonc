@@ -1,5 +1,5 @@
 {
-  // deploy-refresh: 2026-09-26-openai-master-status
+  // deploy-refresh: 2026-09-26-master-integrations-tokens
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "servidor-nexus",
   "main": "src/index.js",
