@@ -12,9 +12,9 @@ export function videoBridgeConfigured(env) {
 
 function isBridgePath(pathname) {
   const path = String(pathname || "");
-  // Video library, folders, uploads and clip management are native Cloudflare/D1/R2 routes now.
-  // Only trailer discovery still uses the compatibility bridge until its provider is migrated.
-  return path.startsWith("/api/portal/trailers/");
+  // Video library and trailer discovery are native Cloudflare routes now.
+  // Keep the compatibility bridge disabled for portal video/trailer paths.
+  return false;
 }
 
 function isDirectBinaryUpload(request, url) {
