@@ -1,5 +1,37 @@
 import { openAIResponses } from "./openai.js";
 
+function safeJsonObjectFromText(text) {
+  const raw = String(text || "").trim();
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch {}
+  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenced?.[1]) {
+    try { return JSON.parse(fenced[1].trim()); } catch {}
+  }
+  const start = raw.indexOf("{");
+  if (start < 0) return null;
+  let depth = 0, inString = false, escaped = false;
+  for (let i = start; i < raw.length; i++) {
+    const ch = raw[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') { inString = true; continue; }
+    if (ch === "{") depth++;
+    if (ch === "}") {
+      depth--;
+      if (depth === 0) {
+        const slice = raw.slice(start, i + 1);
+        try { return JSON.parse(slice); } catch { return null; }
+      }
+    }
+  }
+  return null;
+}
+
 function outputText(response) {
   if (typeof response?.output_text === "string") return response.output_text;
   const parts = [];
@@ -332,9 +364,9 @@ export async function searchTrailers(env, clientId, query, type = "movie") {
         "Para FILME, retorne somente longas, documentários ou telefilmes que sejam de fato filmes.",
         "Para SÉRIE, retorne somente séries ou minisséries.",
         "Para cada obra, confirme título, ano e forneça sinopse em português com 2 a 5 frases.",
-        "Depois localize no YouTube SOMENTE um trailer oficial publicado ou marcado como oficial daquela obra.",
+        "Depois localize no YouTube SOMENTE um trailer oficial e DUBLADO EM PORTUGUÊS DO BRASIL daquela obra, publicado por canal oficial da distribuidora, estúdio, plataforma ou parceiro oficial.",
         "Nunca invente URL de YouTube.",
-        "Se não houver trailer oficial verificável, deixe trailerUrl vazio e official=false.",
+        "Se não houver trailer oficial DUBLADO EM PT-BR verificável, deixe trailerUrl vazio e official=false. Não use trailer em inglês, legendado, teaser, clipe, review, fan edit, cena ou vídeo promocional genérico.",
         "Retorne somente JSON válido, sem markdown."
       ].join(" "),
       input: [
@@ -351,14 +383,20 @@ export async function searchTrailers(env, clientId, query, type = "movie") {
     });
 
     const text = outputText(response);
-    const a = text.indexOf("{");
-    const b = text.lastIndexOf("}");
-    if (a >= 0 && b > a) {
-      const parsed = JSON.parse(text.slice(a, b + 1));
+    const parsed = safeJsonObjectFromText(text);
+    if (parsed) {
       const results = (Array.isArray(parsed?.results) ? parsed.results : [])
         .slice(0, 4)
         .map(item => normalizeResult(item, kind, q))
-        .map(item => item.official === true ? item : { ...item, trailerUrl: "", trailerName: "", downloadable: false, downloadUrl: "" })
+        .map(item => {
+          const channel = String(item.trailerName || "").toLowerCase();
+          const title = String(item.title || "").toLowerCase();
+          const overview = String(item.overview || "").toLowerCase();
+          const looksPtBr = /dublad|portugu[eê]s|pt[- ]?br|brasil/.test([channel,title,overview,String(item.trailerName||"")].join(" "));
+          return (item.official === true && looksPtBr)
+            ? item
+            : { ...item, trailerUrl: "", trailerName: "", official: false, downloadable: false, downloadUrl: "" };
+        })
         .filter(item => item.title && item.type === (kind === "tv" ? "series" : "movie"));
 
       return { configured: true, source: "catalog-web-search", results };
