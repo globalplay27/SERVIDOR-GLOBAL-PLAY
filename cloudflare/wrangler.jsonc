@@ -21,7 +21,8 @@
     "CLOUDFLARE_AUTOMATION_ACTIVE": "false",
     "NEXUS_AI_PROVIDER": "workers-first",
     "NEXUS_OPENAI_DAILY_TOKEN_LIMIT": "30000",
-    "NEXUS_OPENAI_MAX_OUTPUT_TOKENS": "1200"
+    "NEXUS_OPENAI_MAX_OUTPUT_TOKENS": "1200",
+    "GITHUB_INGEST_REPOSITORY": "globalplay27/SERVIDOR-GLOBAL-PLAY"
   },
   "assets": {
     "directory": "../public",
@@ -50,35 +51,6 @@
     {
       "binding": "MEDIA",
       "bucket_name": "servidor-nexus-media"
-    }
-  ],
-  "containers": [
-    {
-      "class_name": "YouTubeDownloader",
-      "image": "./Dockerfile.youtube",
-      "max_instances": 2,
-      "instance_type": "lite",
-      "constraints": {
-        "regions": [
-          "SAM"
-        ]
-      }
-    }
-  ],
-  "durable_objects": {
-    "bindings": [
-      {
-        "name": "YOUTUBE_DOWNLOADER",
-        "class_name": "YouTubeDownloader"
-      }
-    ]
-  },
-  "migrations": [
-    {
-      "tag": "v1-youtube-downloader",
-      "new_sqlite_classes": [
-        "YouTubeDownloader"
-      ]
     }
   ]
 }
