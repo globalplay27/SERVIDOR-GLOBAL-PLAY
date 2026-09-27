@@ -1,0 +1,25 @@
+# Problemas conhecidos
+
+## P0 — Ragnar não publica consistentemente
+- Relato do proprietário; causa exata **não confirmada**.
+- Hipóteses a verificar com D1/logs: cliente offline, jobs falhos, mídia única indisponível, gates pendentes, secret Meta e IG ID divergentes, token/escopos, erro no container ou publicação, cron não executado.
+- Evidência de código: `instagram-credentials.js` prioriza secret Ragnar com ID IG fixo; `agent-runtime.js` bloqueia mídia ausente/repetida; `scheduled_jobs` registra erro. Nenhuma dessas hipóteses equivale ao erro efetivo.
+
+## P0 — Controle visual deixa passar arte ruim
+- Causa de código identificada: `runCreator` grava flags `visualPolicy` sempre verdadeiras; `runDesigner` confere essas flags e presença de URL, não o conteúdo da imagem. `runPublisher` aceita `designer: approved`.
+- Caminhos adicionais: `publishPostNow` e `runPublisherSweep` não verificam `qualityGates`.
+- Falta correlacionar o post específico por ID e origem para dizer por qual caminho ele passou.
+
+## P1 — Retentativas sem teto
+- `runPublisher` incrementa `retryCount` após falha mas seleciona `failed` indefinidamente. `runPublisherSweep` faz o mesmo. O job da fila tem teto de 3, porém isso não limita novas tentativas do post nos ciclos futuros.
+- Efeito de custo depende de onde ocorre a falha; a geração atual do ciclo é local, mas chamadas Meta e rotas OpenAI existem.
+
+## P1 — Evidência de fiscais em produção ausente
+- Código registra `agent_executions`; não houve leitura autenticada da tabela nesta sessão. Existência de arquivos e `SKILL.md` não prova execução.
+- `COPY CHIEF` valida comprimento/CTA; `DESIGNER` valida metadados; `AUDITOR` compara métricas. Não equiparar estes registros a avaliação visual real.
+
+## P2 — Engajamento baixo
+- Relato do proprietário; métricas atuais, alcance, salvamentos, impressões e base comparativa não foram lidos. O Radar do código calcula principalmente curtidas e comentários de até 25 mídias; análise causal pendente de dados.
+
+## Bloqueio de investigação
+- `dash.cloudflare.com` neste navegador mostrou verificação humana persistente em 2026-09-27. Conector Cloudflare/D1 não está disponível nesta sessão. Diagnósticos públicos não expõem logs/linhas de posts.
