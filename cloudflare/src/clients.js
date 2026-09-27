@@ -114,7 +114,8 @@ export function portalClientView(client) {
     primaryColor: config.primaryColor || (client.id === "ragnar-one" ? "#19c563" : "#22c55e"),
     secondaryColor: config.secondaryColor || "#050807",
     odin: config.odin !== false,
-    postTimes: Array.isArray(config.postTimes) ? config.postTimes : ["09:00", "12:00", "18:00"],
+    postTimes: [],
+    adaptiveTiming: true,
     leads: config.leads && typeof config.leads === "object"
       ? config.leads
       : { total: 0, hot: 0, warm: 0, cold: 0 },
