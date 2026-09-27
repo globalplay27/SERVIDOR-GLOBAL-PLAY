@@ -12,9 +12,9 @@ function parseJson(raw, fallback = {}) {
 function coreSecretPair(env, clientId) {
   const id = String(clientId || "");
   if (id === "ragnar-one") {
-    // @ragnarplay1: use the verified professional Instagram account ID.
-    // This prevents a stale legacy env value from routing Nexus publishing
-    // to the wrong account after the Cloudflare migration.
+    // @ragnarplay1: keep the verified professional Instagram account ID only
+    // as a legacy fallback. A valid OAuth connection stored in D1 is the
+    // source of truth and must not be shadowed by a stale Cloudflare secret.
     const verifiedRagnarIgUserId = "28486848374301373";
     return {
       accessToken: String(env.INSTAGRAM_ACCESS_TOKEN_RAGNAR || "").trim(),
@@ -32,20 +32,7 @@ function coreSecretPair(env, clientId) {
   return { accessToken: "", igUserId: "", source: "" };
 }
 
-export async function resolveInstagramCredentials(env, clientId) {
-  const core = coreSecretPair(env, clientId);
-  if (core.accessToken && core.igUserId) {
-    return {
-      ...core,
-      connected: true,
-      expiresAt: null,
-      expired: false,
-      username: "",
-      accountType: "",
-      scopes: []
-    };
-  }
-
+async function d1OAuthPair(env, clientId) {
   const row = await env.DB.prepare(
     `SELECT provider, payload_json, connected_at, updated_at
      FROM connections
@@ -54,20 +41,7 @@ export async function resolveInstagramCredentials(env, clientId) {
      LIMIT 1`
   ).bind(String(clientId)).first();
 
-  if (!row) {
-    return {
-      connected: false,
-      accessToken: "",
-      igUserId: "",
-      source: "none",
-      expiresAt: null,
-      expired: false,
-      username: "",
-      accountType: "",
-      scopes: [],
-      connectedAt: null
-    };
-  }
+  if (!row) return null;
 
   const payload = parseJson(row.payload_json, {});
   const accessToken = payload?.accessToken
@@ -90,5 +64,42 @@ export async function resolveInstagramCredentials(env, clientId) {
     accountType: String(payload?.accountType || ""),
     scopes: Array.isArray(payload?.scopes) ? payload.scopes : [],
     connectedAt: row.connected_at || row.updated_at || null
+  };
+}
+
+export async function resolveInstagramCredentials(env, clientId) {
+  // Prefer the connection most recently authorized by the client. This keeps
+  // Nexus aligned with the current Meta/Instagram login and avoids a stale
+  // legacy Worker secret silently overriding a valid OAuth connection.
+  const oauth = await d1OAuthPair(env, clientId);
+  if (oauth?.connected) return oauth;
+
+  const core = coreSecretPair(env, clientId);
+  if (core.accessToken && core.igUserId) {
+    return {
+      ...core,
+      connected: true,
+      expiresAt: null,
+      expired: false,
+      username: "",
+      accountType: "",
+      scopes: [],
+      fallbackReason: oauth ? (oauth.expired ? "oauth_expired" : "oauth_incomplete") : "oauth_missing"
+    };
+  }
+
+  if (oauth) return oauth;
+
+  return {
+    connected: false,
+    accessToken: "",
+    igUserId: "",
+    source: "none",
+    expiresAt: null,
+    expired: false,
+    username: "",
+    accountType: "",
+    scopes: [],
+    connectedAt: null
   };
 }
