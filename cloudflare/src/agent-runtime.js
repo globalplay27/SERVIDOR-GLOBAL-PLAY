@@ -166,6 +166,10 @@ async function ledgerRows(env, clientId, limit = 100) {
 }
 
 function recommendedTimes(items, fallback) {
+  const configured = (fallback || ["09:00","12:00","18:00"])
+    .map(String)
+    .filter(value => /^([01]\d|2[0-3]):[0-5]\d$/.test(value));
+  if (configured.length >= 3) return configured.slice(0, 3);
   const scores=new Map();
   for(const item of items||[]){
     if(!item.timestamp)continue;
@@ -184,7 +188,7 @@ function recommendedTimes(items, fallback) {
     if(chosen.length>=3)break;
     if(chosen.every(h=>Math.abs(h-row.hour)>=4))chosen.push(row.hour);
   }
-  for(const raw of fallback||["09:00","14:00","20:00"]){
+  for(const raw of fallback||["09:00","12:00","18:00"]){
     if(chosen.length>=3)break;
     const h=Number(String(raw).slice(0,2));
     if(Number.isInteger(h)&&chosen.every(x=>Math.abs(x-h)>=4))chosen.push(h);
@@ -224,7 +228,7 @@ async function runRadar(env, client, options) {
     engagement:Number(item.likeCount||0)+Number(item.commentsCount||0)*2
   })).sort((a,b)=>b.engagement-a.engagement);
   const engagement=scored.map(item=>item.engagement);
-  const postTimes=recommendedTimes(snapshot.items,client.config?.postTimes||["09:00","14:00","20:00"]);
+  const postTimes=recommendedTimes(snapshot.items,client.config?.postTimes||["09:00","12:00","18:00"]);
   const previousFollowers=Math.max(0,Number(state?.radar?.followersCount||0));
   const followersCount=Math.max(0,Number(snapshot.followersCount||previousFollowers||0));
   const followerDelta=followersCount&&previousFollowers?followersCount-previousFollowers:0;
@@ -325,7 +329,7 @@ async function runStrategist(env,client,context,options) {
     adaptiveTiming:true,
     recommendedPostTimes:Array.isArray(radar.recommendedPostTimes)&&radar.recommendedPostTimes.length===3
       ?radar.recommendedPostTimes
-      :(client.config?.postTimes||["09:00","14:00","20:00"]).slice(0,3),
+      :(client.config?.postTimes||["09:00","12:00","18:00"]).slice(0,3),
     contentMix:{reels:80,carousel:15,static:5},
     niche:client.niche||"Outro",
     audience:profile.targetAudience,
@@ -417,7 +421,7 @@ async function runCreator(env,client,strategy,options) {
 
   const times=(Array.isArray(strategy?.recommendedPostTimes)&&strategy.recommendedPostTimes.length
     ?strategy.recommendedPostTimes
-    :(client.config?.postTimes||["09:00","14:00","20:00"])).slice(0,3);
+    :(client.config?.postTimes||["09:00","12:00","18:00"])).slice(0,3);
   const themes=Array.isArray(strategy?.themes)&&strategy.themes.length
     ?strategy.themes
     :["Descoberta","Utilidade","Comunidade"];
@@ -521,7 +525,7 @@ async function runPublisher(env,client,options) {
   const startedAt=new Date().toISOString();
   const config=normalizeAgentCoreConfig(client);
   const rows=await env.DB.prepare(
-    "SELECT id,scheduled_for,status,approval_status,caption,payload_json FROM post_ledger WHERE client_id=?1 AND status IN ('ready','scheduled','failed') AND (scheduled_for IS NULL OR scheduled_for<=?2) ORDER BY COALESCE(scheduled_for,created_at) ASC LIMIT 8"
+    "SELECT id,scheduled_for,status,approval_status,caption,payload_json FROM post_ledger WHERE client_id=?1 AND status IN ('ready','scheduled','failed') AND (scheduled_for IS NULL OR scheduled_for<=?2) ORDER BY COALESCE(scheduled_for,created_at) ASC LIMIT 1"
   ).bind(client.id,new Date().toISOString()).all();
 
   const recentPublished=await ledgerRows(env,client.id,150);
