@@ -525,7 +525,16 @@ async function runPublisher(env,client,options) {
   const startedAt=new Date().toISOString();
   const config=normalizeAgentCoreConfig(client);
   const rows=await env.DB.prepare(
-    "SELECT id,scheduled_for,status,approval_status,caption,payload_json FROM post_ledger WHERE client_id=?1 AND status IN ('ready','scheduled','failed') AND (scheduled_for IS NULL OR scheduled_for<=?2) ORDER BY COALESCE(scheduled_for,created_at) ASC LIMIT 1"
+    `SELECT id,scheduled_for,status,approval_status,caption,payload_json
+     FROM post_ledger
+     WHERE client_id=?1
+       AND status IN ('ready','scheduled','failed')
+       AND approval_status='approved'
+       AND (scheduled_for IS NULL OR scheduled_for<=?2)
+       AND json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.qualityGates.copyChief')='approved'
+       AND json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.qualityGates.designer')='approved'
+       AND COALESCE(json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.imageUrl'),'')<>''
+     ORDER BY COALESCE(scheduled_for,created_at) ASC LIMIT 1`
   ).bind(client.id,new Date().toISOString()).all();
 
   const recentPublished=await ledgerRows(env,client.id,150);
