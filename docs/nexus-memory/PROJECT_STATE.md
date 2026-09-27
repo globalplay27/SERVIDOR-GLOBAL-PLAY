@@ -1,6 +1,13 @@
 # Estado do Nexus 2.0
 
-Atualizado em 2026-09-27, aproximadamente 10:12 BRT. Base de código examinada: `main` em `292649157760a37989dce4e6857b51100177dddb`. Esta página separa constatação de código, verificação de produção e itens não confirmados.
+Atualizado em 2026-09-27, aproximadamente 12:24 BRT. Esta página separa constatação de código, verificação de produção e itens não confirmados.
+
+## Incidente de 2026-09-27 — fila de publicação
+- Causa confirmada em produção: jobs `lead-hunter` acumulavam a cada minuto e alguns permaneciam em `running`, mantendo dezenas de itens à frente dos publicadores.
+- Correção implantada: um job pendente por tipo/cliente, recuperação de jobs presos, prioridade para Publisher/ciclo central, captação automática opt-in e drenagem da fila antiga sem executar captação desativada.
+- Publisher agora ignora o backlog sem mídia/gates e seleciona no máximo um post publicável por conta/ciclo. Horários padrão fixados em 09:00, 12:00 e 18:00 BRT.
+- Evidência real: `@globalplay_streaming` publicou com sucesso em 2026-09-27 12:21 BRT; `post_ledger` marcou `published`, sem erro e com execução Publisher `published:1`.
+- `@ragnarplay1` não tinha post publicável vencido: o post das 09:00 estava sem mídia e com Designer rejeitado. Nenhuma imagem ruim foi forçada. Há mídia aprovada em agenda futura, mas a qualidade visual continua limitada ao gate superficial já documentado.
 
 ## Confirmado funcionando
 - Workflow GitHub Actions [36314891089](https://github.com/globalplay27/SERVIDOR-GLOBAL-PLAY/actions/runs/36314891089) terminou com sucesso, inclusive a etapa `Deploy servidor-nexus to Cloudflare` para o commit citado.
@@ -26,7 +33,8 @@ Atualizado em 2026-09-27, aproximadamente 10:12 BRT. Base de código examinada: 
 
 ## Último teste e resultado confirmado
 - 2026-09-27 13:10 UTC: [auditoria de leitura D1](https://github.com/globalplay27/SERVIDOR-GLOBAL-PLAY/actions/runs/36321480825) falhou antes de retornar qualquer linha; resposta estruturada da Cloudflare com código `7403`. O CI/deploy do mesmo commit passou. Código 7403 aponta para conta inválida ou não autorizada para esse serviço; o token de deploy não comprova permissão de leitura D1.
-- O health e diagnósticos públicos continuam sendo as últimas provas de Worker/D1 acessíveis pela aplicação. Nenhuma publicação real foi disparada. A causa específica do Ragnar segue **não confirmada**.
+- O health e os diagnósticos públicos continuam provando Worker/D1 acessíveis; a leitura temporária do Worker confirmou a fila e uma publicação real posterior confirmou o caminho até a Meta para Global Play. Para Ragnar, a ausência de mídia publicável foi confirmada, mas a próxima publicação válida ainda precisa ser observada.
+- Uma rota temporária e sanitizada do próprio Worker permitiu ler o estado operacional sem tokens, legendas ou URLs; ela foi removida após a investigação.
 
 ## Próximo passo exato
 Obter acesso de leitura autorizado aos registros D1 em produção para `ragnar-one` e `globalplay-streaming`, sem enviar token em conversa. Caminhos: acesso humano ao painel Cloudflare em navegador que passe a verificação, ou uma credencial CI com permissão mínima D1 de leitura para a conta correta. Depois executar novamente o workflow de auditoria e correlacionar jobs, fiscais e postagens. Não aplicar correções de runtime antes da evidência.
