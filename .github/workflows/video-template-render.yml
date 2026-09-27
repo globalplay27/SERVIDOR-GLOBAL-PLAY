@@ -16,7 +16,6 @@ jobs:
       JOB_ID: ${{ github.event.client_payload.job_id }}
       CLIP_ID: ${{ github.event.client_payload.clip_id }}
       CLIENT_ID: ${{ github.event.client_payload.client_id }}
-      CALLBACK_TOKEN: ${{ github.event.client_payload.callback_token }}
       START_SECONDS: ${{ github.event.client_payload.start }}
       END_SECONDS: ${{ github.event.client_payload.end }}
       TITLE: ${{ github.event.client_payload.title }}
@@ -27,6 +26,15 @@ jobs:
       NEXUS_BASE_URL: https://servidor-nexus.diamantehinode2015.workers.dev
 
     steps:
+      - name: Protect callback token
+        shell: bash
+        run: |
+          set -euo pipefail
+          token="$(jq -r '.client_payload.callback_token // empty' "$GITHUB_EVENT_PATH")"
+          if [ -z "$token" ]; then echo "::error::Missing render callback token"; exit 1; fi
+          echo "::add-mask::$token"
+          echo "CALLBACK_TOKEN=$token" >> "$GITHUB_ENV"
+
       - name: Install FFmpeg
         shell: bash
         run: |
