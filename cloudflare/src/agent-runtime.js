@@ -109,6 +109,14 @@ function postingProfile(client) {
     shareCta: current.shareCta || "Envie para alguém que também curte esse tipo de conteúdo.",
     hashtags: current.hashtags || "#Entretenimento #Streaming #FilmesESeries #Dicas",
     avoidTopics: current.avoidTopics || "Venda agressiva, promessas irreais, poluição visual e repetição de criativos",
+    brandSafety: String(client?.id || "") === "ragnar-one"
+      ? {
+          brandIdentity: "Ragnar One é uma marca própria e independente.",
+          visualDirection: "Estética nórdica/viking genérica, original e não associada a qualquer série, filme, ator ou personagem.",
+          prohibitedReferences: ["Vikings (série)", "Ragnar Lothbrok", "atores da série", "personagens da série", "logos oficiais", "cenas ou frames da série", "figurinos ou composições reconhecíveis copiados da obra"],
+          rule: "Criar somente conteúdo original. Não imitar rosto, personagem, cena, logo, pôster, figurino específico ou material promocional protegido."
+        }
+      : null,
     growthTargetFollowers: Math.max(1000, Math.min(100000000, Number(current.growthTargetFollowers || 1000000))),
     growthHorizonDays: Math.max(7, Math.min(90, Number(current.growthHorizonDays || 30))),
     standardMediaUrls: configuredMedia.length
@@ -346,6 +354,7 @@ async function runStrategist(env,client,context,options) {
     ctaRotation:[profile.followerCta,profile.shareCta,profile.cta],
     hashtags:profile.hashtags,
     avoidTopics:profile.avoidTopics,
+    brandSafety:profile.brandSafety,
     radarTerms:Array.isArray(radar.topTerms)?radar.topTerms.slice(0,8):[],
     radarDiagnosis:Array.isArray(radar.diagnosis)?radar.diagnosis.slice(0,6):[],
     standardMediaUrls:profile.standardMediaUrls,
@@ -523,7 +532,8 @@ async function runCreator(env,client,strategy,options) {
           lowVisualClutter:true,
           tvScreenMustBeFilled:true,
           tvScreenContent:"coherent entertainment or streaming content",
-          focalSubjectCount:1
+          focalSubjectCount:1,
+          brandSafety:strategy?.brandSafety||null
         }
       },
       qualityGates:{copyChief:"pending",designer:"pending"}
