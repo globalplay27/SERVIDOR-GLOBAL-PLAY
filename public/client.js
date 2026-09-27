@@ -1229,8 +1229,8 @@ async function startVideoProcessing(button){
   const payload={
     goal:"full",
     duration:60,
-    clips:1,
-    requestedClips:1,
+    clips:3,
+    requestedClips:3,
     outputFormat:"reel",
     autoSubtitles:false,
     endText:"",
