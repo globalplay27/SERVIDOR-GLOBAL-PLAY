@@ -17,6 +17,7 @@ const category = value => {
   if (/instagram|graph|meta/.test(v)) return "meta_other";
   return "other";
 };
+let failedQueries = 0;
 function select(label, sql) {
   try {
     const output = execFileSync("npx", [
@@ -28,8 +29,17 @@ function select(label, sql) {
     const block = Array.isArray(parsed) ? parsed[0] : parsed;
     if (block?.success === false || !Array.isArray(block?.results)) throw Error("query_result");
     return block.results;
-  } catch {
-    console.log(JSON.stringify({ section: label, status: "query_failed" }));
+  } catch (error) {
+    failedQueries++;
+    const diagnostic = String(error?.stderr || error?.message || "").toLowerCase();
+    const reason = /authentication|unauthorized|invalid api token|code: 10000|code: 9109|forbidden/.test(diagnostic)
+      ? "authentication_or_permission"
+      : /permission|scope|code: 10001/.test(diagnostic) ? "permission"
+      : /sql|syntax|no such table|no such column/.test(diagnostic) ? "sql_or_schema"
+      : /json|unexpected token|parse/.test(diagnostic) ? "output_parse"
+      : /network|timeout|fetch/.test(diagnostic) ? "network"
+      : "unknown";
+    console.log(JSON.stringify({ section: label, status: "query_failed", reason }));
     return null;
   }
 }
@@ -104,3 +114,4 @@ const u = select("usage", `SELECT client_id,SUM(calls) calls,SUM(used_tokens) to
 if (u) console.log(JSON.stringify({section:"usage_7d",rows:u.map(x=>({
   client:safe(x.client_id),calls:Number(x.calls)||0,tokens:Number(x.tokens)||0
 }))}));
+if (failedQueries) process.exitCode = 1;
