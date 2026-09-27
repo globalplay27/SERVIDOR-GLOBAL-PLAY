@@ -5687,8 +5687,166 @@ async function processExternalYoutubeIngest(payload) {
   }
 }
 
+
+async function reportRenderClipFailure(callbackBase, jobId, clientId, clip, errorCode) {
+  try {
+    await fetch(callbackBase + "/api/internal/video-render/fail", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-nexus-job-id": String(jobId),
+        "x-nexus-clip-id": String(clip.clip_id || ""),
+        "x-nexus-client-id": String(clientId),
+        "x-nexus-callback-token": String(clip.callback_token || "")
+      },
+      body: JSON.stringify({ error: String(errorCode || "render_clip_failed").slice(0, 500) }),
+      signal: AbortSignal.timeout(30000)
+    });
+  } catch {}
+}
+
+async function processVideoCutsOnRender(payload) {
+  const callbackBase = validatedIngestCallbackBase(payload.callback_base);
+  const jobId = String(payload.job_id || "").trim();
+  const clientId = String(payload.client_id || "").trim();
+  const clips = Array.isArray(payload.clips) ? payload.clips.slice(0, 12) : [];
+  if (!jobId || !clientId || !clips.length) throw new Error("render_payload_incomplete");
+
+  const sourceClipId = String(payload.source_clip_id || clips[0]?.clip_id || "").trim();
+  const sourceToken = String(payload.source_callback_token || clips[0]?.callback_token || "").trim();
+  if (!sourceClipId || !sourceToken) throw new Error("render_source_token_missing");
+
+  const prefix = "nexus-cut-" + jobId.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80);
+  const sourcePath = path.join("/tmp", prefix + "-source.mp4");
+
+  const cleanup = () => {
+    try {
+      for (const name of fs.readdirSync("/tmp")) {
+        if (name.startsWith(prefix)) {
+          try { fs.unlinkSync(path.join("/tmp", name)); } catch {}
+        }
+      }
+    } catch {}
+  };
+
+  cleanup();
+  try {
+    const sourceResponse = await fetch(callbackBase + "/api/internal/video-render/source", {
+      method: "GET",
+      headers: {
+        "x-nexus-job-id": jobId,
+        "x-nexus-clip-id": sourceClipId,
+        "x-nexus-client-id": clientId,
+        "x-nexus-callback-token": sourceToken
+      },
+      signal: AbortSignal.timeout(120000)
+    });
+    if (!sourceResponse.ok || !sourceResponse.body) {
+      throw new Error("render_source_http_" + sourceResponse.status);
+    }
+    await pipeline(Readable.fromWeb(sourceResponse.body), fs.createWriteStream(sourcePath));
+
+    let durationSeconds = 0;
+    try {
+      const probe = await execFileAsync("ffprobe", [
+        "-v","error","-show_entries","format=duration","-of","default=noprint_wrappers=1:nokey=1",sourcePath
+      ], { timeout: 30000, maxBuffer: 1024 * 1024 });
+      durationSeconds = Math.max(0, Number(String(probe.stdout || "").trim()) || 0);
+    } catch {}
+
+    for (let index = 0; index < clips.length; index += 1) {
+      const clip = clips[index] || {};
+      let start = Math.max(0, Number(clip.start || 0));
+      let end = Math.max(start + 1, Number(clip.end || (start + Number(payload.duration || 30))));
+      const wanted = Math.max(10, Math.min(60, end - start));
+      if (durationSeconds > 0) {
+        const maxStart = Math.max(0, durationSeconds - Math.min(wanted, durationSeconds));
+        if (start > maxStart) {
+          const slots = Math.max(1, clips.length);
+          start = maxStart * (index / slots);
+        }
+        end = Math.min(durationSeconds, start + wanted);
+      }
+      const cutDuration = Math.max(1, end - start);
+      const outPath = path.join("/tmp", prefix + "-" + String(index + 1) + ".mp4");
+
+      const filter = [
+        "[0:v]split=2[bg][fg]",
+        "[bg]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,gblur=sigma=28[bg2]",
+        "[fg]scale=1080:1920:force_original_aspect_ratio=decrease[fg2]",
+        "[bg2][fg2]overlay=(W-w)/2:(H-h)/2,format=yuv420p[v]"
+      ].join(";");
+
+      await execFileAsync("ffmpeg", [
+        "-y",
+        "-ss", String(start.toFixed(3)),
+        "-i", sourcePath,
+        "-t", String(cutDuration.toFixed(3)),
+        "-filter_complex", filter,
+        "-map", "[v]",
+        "-map", "0:a?",
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-crf", "23",
+        "-c:a", "aac",
+        "-b:a", "128k",
+        "-movflags", "+faststart",
+        outPath
+      ], { timeout: 8 * 60 * 1000, maxBuffer: 8 * 1024 * 1024 });
+
+      const stat = fs.statSync(outPath);
+      const upload = await fetch(callbackBase + "/api/internal/video-render/upload", {
+        method: "PUT",
+        headers: {
+          "content-type": "video/mp4",
+          "content-length": String(stat.size),
+          "x-nexus-job-id": jobId,
+          "x-nexus-clip-id": String(clip.clip_id || ""),
+          "x-nexus-client-id": clientId,
+          "x-nexus-callback-token": String(clip.callback_token || "")
+        },
+        body: fs.createReadStream(outPath),
+        duplex: "half",
+        signal: AbortSignal.timeout(4 * 60 * 1000)
+      });
+      if (!upload.ok) {
+        const detail = await upload.text().catch(() => "");
+        throw new Error("render_upload_http_" + upload.status + (detail ? ":" + detail.slice(0, 180) : ""));
+      }
+      try { fs.unlinkSync(outPath); } catch {}
+    }
+  } catch (error) {
+    const message = String(error?.message || error).slice(0, 500);
+    for (const clip of clips) await reportRenderClipFailure(callbackBase, jobId, clientId, clip, message);
+    throw error;
+  } finally {
+    cleanup();
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+
+  if (url.pathname === "/process-video" && req.method === "POST") {
+    if (!downloaderRequestAuthorized(req)) {
+      return send(res, 401, { ok: false, error: "unauthorized" });
+    }
+    let payload = {};
+    try {
+      payload = await readBody(req);
+      validatedIngestCallbackBase(payload.callback_base);
+      if (!payload.job_id || !payload.client_id || !Array.isArray(payload.clips) || !payload.clips.length) {
+        throw new Error("render_payload_incomplete");
+      }
+    } catch (error) {
+      return send(res, 400, { ok: false, error: String(error?.message || error) });
+    }
+
+    processVideoCutsOnRender(payload).catch(error => {
+      console.error("Render cut processing failed", String(error?.message || error).slice(0, 500));
+    });
+    return send(res, 202, { ok: true, accepted: true, jobId: String(payload.job_id) });
+  }
 
   if (url.pathname === "/ingest" && req.method === "POST") {
     if (!downloaderRequestAuthorized(req)) {
