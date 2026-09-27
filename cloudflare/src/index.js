@@ -10,7 +10,7 @@ import { masterCredentialsValid, createMasterSession, authenticatePortalUser, cr
 import { processQueuedVideoJobs, processVideoJob, githubVideoRenderSource, completeGithubVideoRender, failGithubVideoRender } from "./video-processing.js";
 import { processQueuedVideoImports, completeGithubVideoIngest, failGithubVideoIngest } from "./r2-video-upload.js";
 
-export class YoutubeDownloader extends DurableObject {
+export class YouTubeDownloader extends DurableObject {
   async fetch() {
     return new Response(JSON.stringify({
       ok: false,
