@@ -128,7 +128,18 @@ export async function runSchedulerTick(env, scheduledAt = new Date()) {
 
     const state = await schedulerState(env, client.id);
     const next = { ...state };
-    const cycleIsDue = due(state.lastCycleQueuedAt, config.cycleMinutes, nowMs);
+    let cycleIsDue = due(state.lastCycleQueuedAt, config.cycleMinutes, nowMs);
+    if (["ragnar-one", "globalplay-streaming"].includes(client.id)) {
+      const publishedToday = await env.DB.prepare(
+        `SELECT id FROM post_ledger
+         WHERE client_id=?1 AND status='published'
+           AND date(COALESCE(scheduled_for,created_at),'-3 hours')=date(?2,'-3 hours')
+         LIMIT 1`
+      ).bind(client.id, now.toISOString()).first();
+      // Recovery rule: if an autonomous account has not posted today, do not wait
+      // for the normal agent interval. Queue a full cycle on the next cron tick.
+      if (!publishedToday) cycleIsDue = true;
+    }
 
     const hunterConfig = await leadHunterConfig(env, client);
     let lastHunterAt = null;
