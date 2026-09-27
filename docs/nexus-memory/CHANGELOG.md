@@ -20,3 +20,8 @@
 - Horários padrão consolidados em 09:00, 12:00 e 18:00 BRT.
 - Publicação real de `@globalplay_streaming` confirmada às 12:21 BRT. Ragnar permaneceu sem publicação porque o conteúdo vencido estava sem mídia e reprovado pelo Designer.
 - Rota temporária de diagnóstico sanitizado criada para a investigação e removida ao final.
+
+## 2026-09-27 — Pool de mídia Ragnar
+- Geradas e revisadas três imagens 9:16, de cena única e tema nórdico, com TV preenchida, sem texto, logos, colagens ou símbolos esportivos.
+- Assets adicionados em `public/assets/ragnar/nordic-cinema-01.png` até `03.png`.
+- `postingProfile` passa a fornecer esse pool ao `ragnar-one` quando o painel não possui mídia configurada, preservando URLs personalizadas quando existirem.
