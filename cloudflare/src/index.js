@@ -190,6 +190,11 @@ async function temporarySchedulerDiagnostic(env) {
     `SELECT client_id, provider, payload_json, connected_at, updated_at FROM connections
      WHERE client_id IN ('ragnar-one','globalplay-streaming') AND provider IN ('instagram','meta')`
   ).all();
+  const executions = await env.DB.prepare(
+    `SELECT client_id, agent, status, detail_json, created_at FROM agent_executions
+     WHERE client_id IN ('ragnar-one','globalplay-streaming')
+     ORDER BY created_at DESC LIMIT 40`
+  ).all();
   const parse = value => {
     try { return JSON.parse(String(value || "{}")); } catch { return {}; }
   };
@@ -203,7 +208,8 @@ async function temporarySchedulerDiagnostic(env) {
     jobs: (jobs.results || []).map(row => ({ id: row.id, clientId: row.client_id, kind: row.kind, status: row.status, attempts: row.attempts, dueAt: row.due_at, updatedAt: row.updated_at, errorCategory: operationalErrorCategory(row.last_error) })),
     posts: (posts.results || []).map(row => ({ id: row.id, clientId: row.client_id, status: row.status, approval: row.approval_status, scheduledFor: row.scheduled_for, createdAt: row.created_at, updatedAt: row.updated_at, errorCategory: operationalErrorCategory(row.error), copyGate: row.copy_gate, visualGate: row.visual_gate, retryCount: row.retry_count || 0, mediaPresent: Boolean(row.media_present) })),
     state: (state.results || []).map(row => { const value = parse(row.value_json); return { namespace: row.namespace, itemKey: row.item_key, clientId: row.client_id, updatedAt: row.updated_at, lastCronAt: value.lastCronAt || null, lastCycleAt: value.lastCycleAt || null, lastCycleStatus: value.lastCycleStatus || null, lastCycleErrorCategory: operationalErrorCategory(value.lastCycleError), summary: row.namespace === 'scheduler' ? value : undefined }; }),
-    oauth: (oauth.results || []).map(row => { const value = parse(row.payload_json); const expires = value.expiresAt || null; return { clientId: row.client_id, provider: row.provider, connectedAt: row.connected_at, updatedAt: row.updated_at, hasToken: Boolean(value.accessToken), hasInstagramId: Boolean(value.igUserId), username: String(value.username || ''), expiresAt: expires, expired: Boolean(expires && new Date(expires).getTime() <= Date.now()) }; })
+    oauth: (oauth.results || []).map(row => { const value = parse(row.payload_json); const expires = value.expiresAt || null; return { clientId: row.client_id, provider: row.provider, connectedAt: row.connected_at, updatedAt: row.updated_at, hasToken: Boolean(value.accessToken), hasInstagramId: Boolean(value.igUserId), username: String(value.username || ''), expiresAt: expires, expired: Boolean(expires && new Date(expires).getTime() <= Date.now()) }; }),
+    executions: (executions.results || []).map(row => { const detail = parse(row.detail_json); return { clientId: row.client_id, agent: row.agent, status: row.status, createdAt: row.created_at, message: String(detail.message || '').slice(0, 240), metadata: detail.metadata || {} }; })
   });
 }
 
