@@ -112,10 +112,11 @@ function postingProfile(client) {
     creativeRotation: String(client?.id || "") === "globalplay-streaming"
       ? {
           enabled:true,
-          mode:"performance-adaptive",
+          mode:"seasonal-until-2026-10-13",
+          seasonalCampaign:{name:"Dia das Crianças",start:"2026-09-27",endInclusive:"2026-10-13",scope:"globalplay-streaming-only",theme:"3d-cartoon-entertainment",after:"performance-adaptive"},
           illustratedTheme:{
             name:"3D cartoon entertainment",
-            frequency:"alternate with the standard visual line; start as an experiment and increase only when engagement improves",
+            frequency:"Use as the primary visual theme on every Global Play creative through 2026-10-13 inclusive. From 2026-10-14 return automatically to performance-adaptive rotation.",
             direction:"Original premium 3D cartoon/animated illustration, warm home entertainment environment, one coherent scene, expressive generic characters, filled TV screen with generic entertainment categories, strong Global Play branding and highly legible offer/CTA.",
             avoid:"Do not copy Disney, Pixar or any named studio style; no recognizable copyrighted characters, movie/series frames, team logos, split screens, collages or excessive visual clutter."
           },
@@ -549,7 +550,9 @@ async function runCreator(env,client,strategy,options) {
           focalSubjectCount:1,
           brandSafety:strategy?.brandSafety||null,
           creativeRotation:strategy?.creativeRotation||null,
-          creativeTheme:(String(client.id)==="globalplay-streaming"&&index%2===0)?"3d-cartoon-entertainment":"standard"
+          creativeTheme:String(client.id)==="globalplay-streaming"
+            ?((localDay()>="2026-09-27"&&localDay()<="2026-10-13")?"3d-cartoon-entertainment":(index%2===0?"3d-cartoon-entertainment":"standard"))
+            :"standard"
         }
       },
       qualityGates:{copyChief:"pending",designer:"pending"}
