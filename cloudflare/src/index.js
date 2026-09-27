@@ -202,8 +202,10 @@ export default {
       await runSchedulerTick(env, at);
       await processDueJobs(env, at);
       await processQueuedVideoImports(env, 1);
-      // Video processing is intentionally manual. Imported/uploaded videos stay in the library
-      // until the client explicitly requests processing from the portal.
+      // Processing is still started explicitly from the portal, but once a job is queued
+      // the cron must finish it. This prevents a cut from getting stuck when the HTTP
+      // request/waitUntil ends before transcription + Media transformation completes.
+      await processQueuedVideoJobs(env, 1);
     })());
   },
 
