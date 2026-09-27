@@ -753,8 +753,16 @@ export async function runAgentCoreCycle(env, clientId, options = {}) {
     // Quality agents must review drafts BEFORE Publisher. Previously the extended
     // agents ran after publishing, so COPY CHIEF and DESIGNER could only report
     // problems after a post was already sent to Instagram.
-    if(requested==="all"){
-      const prePublish=await runExtendedAgents(env,client.id,{...options,phase:"pre-publish"});
+    // Publisher must never run before the mandatory quality gates.
+    // This applies both to the full autonomous cycle and to the frequent
+    // publisher-sweep, which requests only the publisher module.
+    if(requested==="all"||requested==="publisher"){
+      const qualityAgent=requested==="publisher"?"all":requested;
+      const prePublish=await runExtendedAgents(env,client.id,{
+        ...options,
+        agent:qualityAgent,
+        phase:"pre-publish"
+      });
       Object.assign(result.agents,prePublish);
     }
 
