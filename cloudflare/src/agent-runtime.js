@@ -174,11 +174,10 @@ async function ledgerRows(env, clientId, limit = 100) {
   }));
 }
 
-function recommendedTimes(items, fallback) {
-  const configured = (fallback || ["09:00","12:00","18:00"])
-    .map(String)
-    .filter(value => /^([01]\d|2[0-3]):[0-5]\d$/.test(value));
-  if (configured.length >= 3) return configured.slice(0, 3);
+function recommendedTimes(items) {
+  // Fully adaptive timing for autonomous accounts: historical engagement decides
+  // the posting windows. No configured clock slots are allowed to override RADAR.
+  const configured = [];
   const scores=new Map();
   for(const item of items||[]){
     if(!item.timestamp)continue;
@@ -197,12 +196,9 @@ function recommendedTimes(items, fallback) {
     if(chosen.length>=3)break;
     if(chosen.every(h=>Math.abs(h-row.hour)>=4))chosen.push(row.hour);
   }
-  for(const raw of fallback||["09:00","12:00","18:00"]){
-    if(chosen.length>=3)break;
-    const h=Number(String(raw).slice(0,2));
-    if(Number.isInteger(h)&&chosen.every(x=>Math.abs(x-h)>=4))chosen.push(h);
-  }
-  for(const h of [9,14,20,8,13,18,22]){
+  // Exploration windows are deliberately different from the former 09/12/18
+  // schedule. As engagement data accumulates, ranked historical performance wins.
+  for(const h of [10,15,21,8,13,19,23]){
     if(chosen.length>=3)break;
     if(chosen.every(x=>Math.abs(x-h)>=4))chosen.push(h);
   }
@@ -237,7 +233,7 @@ async function runRadar(env, client, options) {
     engagement:Number(item.likeCount||0)+Number(item.commentsCount||0)*2
   })).sort((a,b)=>b.engagement-a.engagement);
   const engagement=scored.map(item=>item.engagement);
-  const postTimes=recommendedTimes(snapshot.items,client.config?.postTimes||["09:00","12:00","18:00"]);
+  const postTimes=recommendedTimes(snapshot.items);
   const previousFollowers=Math.max(0,Number(state?.radar?.followersCount||0));
   const followersCount=Math.max(0,Number(snapshot.followersCount||previousFollowers||0));
   const followerDelta=followersCount&&previousFollowers?followersCount-previousFollowers:0;
@@ -338,7 +334,7 @@ async function runStrategist(env,client,context,options) {
     adaptiveTiming:true,
     recommendedPostTimes:Array.isArray(radar.recommendedPostTimes)&&radar.recommendedPostTimes.length===3
       ?radar.recommendedPostTimes
-      :(client.config?.postTimes||["09:00","12:00","18:00"]).slice(0,3),
+      :recommendedTimes([]),
     contentMix:{reels:80,carousel:15,static:5},
     niche:client.niche||"Outro",
     audience:profile.targetAudience,
