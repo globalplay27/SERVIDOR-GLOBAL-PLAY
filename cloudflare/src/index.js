@@ -21,6 +21,9 @@ export class YoutubeDownloader extends DurableObject {
   }
 }
 
+// Another existing Durable Object namespace uses this capitalization.
+export class YouTubeDownloader extends YoutubeDownloader {}
+
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
     status,
