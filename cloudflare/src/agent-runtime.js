@@ -109,6 +109,19 @@ function postingProfile(client) {
     shareCta: current.shareCta || "Envie para alguém que também curte esse tipo de conteúdo.",
     hashtags: current.hashtags || "#Entretenimento #Streaming #FilmesESeries #Dicas",
     avoidTopics: current.avoidTopics || "Venda agressiva, promessas irreais, poluição visual e repetição de criativos",
+    creativeRotation: String(client?.id || "") === "globalplay-streaming"
+      ? {
+          enabled:true,
+          mode:"performance-adaptive",
+          illustratedTheme:{
+            name:"3D cartoon entertainment",
+            frequency:"alternate with the standard visual line; start as an experiment and increase only when engagement improves",
+            direction:"Original premium 3D cartoon/animated illustration, warm home entertainment environment, one coherent scene, expressive generic characters, filled TV screen with generic entertainment categories, strong Global Play branding and highly legible offer/CTA.",
+            avoid:"Do not copy Disney, Pixar or any named studio style; no recognizable copyrighted characters, movie/series frames, team logos, split screens, collages or excessive visual clutter."
+          },
+          evaluation:["engagement","likes","comments","shares","follower_growth"]
+        }
+      : null,
     brandSafety: String(client?.id || "") === "ragnar-one"
       ? {
           brandIdentity: "Ragnar One é uma marca própria e independente.",
@@ -355,6 +368,7 @@ async function runStrategist(env,client,context,options) {
     hashtags:profile.hashtags,
     avoidTopics:profile.avoidTopics,
     brandSafety:profile.brandSafety,
+    creativeRotation:profile.creativeRotation,
     radarTerms:Array.isArray(radar.topTerms)?radar.topTerms.slice(0,8):[],
     radarDiagnosis:Array.isArray(radar.diagnosis)?radar.diagnosis.slice(0,6):[],
     standardMediaUrls:profile.standardMediaUrls,
@@ -533,7 +547,9 @@ async function runCreator(env,client,strategy,options) {
           tvScreenMustBeFilled:true,
           tvScreenContent:"coherent entertainment or streaming content",
           focalSubjectCount:1,
-          brandSafety:strategy?.brandSafety||null
+          brandSafety:strategy?.brandSafety||null,
+          creativeRotation:strategy?.creativeRotation||null,
+          creativeTheme:(String(client.id)==="globalplay-streaming"&&index%2===0)?"3d-cartoon-entertainment":"standard"
         }
       },
       qualityGates:{copyChief:"pending",designer:"pending"}
