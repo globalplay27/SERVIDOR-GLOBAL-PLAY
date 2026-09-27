@@ -1,6 +1,6 @@
 # Estado do Nexus 2.0
 
-Atualizado em 2026-09-27, aproximadamente 09:40 BRT. Base de código examinada: `main` em `292649157760a37989dce4e6857b51100177dddb`. Esta página separa constatação de código, verificação de produção e itens não confirmados.
+Atualizado em 2026-09-27, aproximadamente 10:12 BRT. Base de código examinada: `main` em `292649157760a37989dce4e6857b51100177dddb`. Esta página separa constatação de código, verificação de produção e itens não confirmados.
 
 ## Confirmado funcionando
 - Workflow GitHub Actions [36314891089](https://github.com/globalplay27/SERVIDOR-GLOBAL-PLAY/actions/runs/36314891089) terminou com sucesso, inclusive a etapa `Deploy servidor-nexus to Cloudflare` para o commit citado.
@@ -25,8 +25,8 @@ Atualizado em 2026-09-27, aproximadamente 09:40 BRT. Base de código examinada: 
 - Para Ragnar, `instagram-credentials.js` prefere secret do Worker e usa ID IG fixado no código; para Global Play prefere secrets. OAuth em D1 é fallback. Essa prioridade deve ser comparada com as conexões reais.
 
 ## Último teste e resultado confirmado
-- 2026-09-27 12:38 UTC: health 200, D1/R2/assets bound, ambos indicadores OpenAI configurados. 12:39 UTC aproximadamente: diagnósticos públicos de portal/Master 200 com contagens acima. GitHub Actions deploy de `2926491` concluído às 11:11 UTC.
-- Nenhuma publicação real foi disparada nesta auditoria. Não há confirmação de funcionamento do cron, dos fiscais ou da Meta API em produção.
+- 2026-09-27 13:10 UTC: [auditoria de leitura D1](https://github.com/globalplay27/SERVIDOR-GLOBAL-PLAY/actions/runs/36321480825) falhou antes de retornar qualquer linha; resposta estruturada da Cloudflare com código `7403`. O CI/deploy do mesmo commit passou. Código 7403 aponta para conta inválida ou não autorizada para esse serviço; o token de deploy não comprova permissão de leitura D1.
+- O health e diagnósticos públicos continuam sendo as últimas provas de Worker/D1 acessíveis pela aplicação. Nenhuma publicação real foi disparada. A causa específica do Ragnar segue **não confirmada**.
 
 ## Próximo passo exato
-Ler em produção, sem acionar jobs: `scheduled_jobs`, `agent_executions`, `post_ledger`, `nexus_state` de `ragnar-one` e `globalplay-streaming`, e o status da conexão Instagram (sem expor tokens). Correlacionar um post ruim e os últimos fracassos do Ragnar por ID, horário, estágio e erro; confirmar a causa antes de alterar runtime. O painel Cloudflare apresentou verificação humana persistente no navegador do Work nesta sessão.
+Obter acesso de leitura autorizado aos registros D1 em produção para `ragnar-one` e `globalplay-streaming`, sem enviar token em conversa. Caminhos: acesso humano ao painel Cloudflare em navegador que passe a verificação, ou uma credencial CI com permissão mínima D1 de leitura para a conta correta. Depois executar novamente o workflow de auditoria e correlacionar jobs, fiscais e postagens. Não aplicar correções de runtime antes da evidência.
