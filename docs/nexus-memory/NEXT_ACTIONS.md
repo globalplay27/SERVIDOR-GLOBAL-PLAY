@@ -14,3 +14,15 @@ Em toda sessão: ler os sete documentos; revalidar commit/deploy e serviços; at
 
 ## Retomada — 2026-09-27 20h UTC
 Prioridade atual: concluir CI/deploy da revisão visual Global Play, obter evidência autenticada do Designer e do ledger sem publicar testes; resolver fonte de mídia nova respeitando proibição de reativar geração paga; depois métricas e replicação para Ragnar. Não confundir o deploy anterior 45de28b com funcionamento ponta a ponta.
+
+## Diretriz do proprietário e ponto de retomada — 2026-09-27 17:25 BRT
+
+- Rodrigo confirmou que o objetivo é cada função do Nexus executar autonomamente, detectar falhas e ajustar conteúdo conforme desempenho, sem depender de cobranças ou verificações manuais recorrentes. Se alguma função não cumprir seu papel, investigar, corrigir e validar. Relatou falta de visualizações; não há medição atual que permita quantificar ou atribuir a causa.
+- Prioridade preservada: concluir Global Play primeiro e depois aplicar o padrão ao Ragnar com identidade própria. Manter exclusões de Railway, Hyve, agentes independentes e funções de vídeo removidas. Não reativar geração paga sem autorização compatível.
+- Verificação feita nesta sessão: GET /health respondeu ok, Cloudflare Workers, D1 ready, R2 e assets vinculados. Isso não confirma cron, métricas, saldo OpenAI nem execução individual dos agentes.
+- Código local inspecionado em c1c0d4d: runAuditor classifica desempenho por curtidas e comentários; runStrategist recebe contexto com auditor, mas não utiliza esse parecer para mudar a pauta. Listar reach/shares/saves como KPIs não comprova sua coleta ou uso. Há chamada de feedback no ciclo, porém falta integração efetiva dos resultados à decisão.
+- A memória existente confirma pendências de fonte contínua de mídia nova, evidência de fiscalização visual em produção e replicação ao Ragnar. Não registrar essas etapas como concluídas.
+- Acesso confirmado ao repositório operacional pelo conector GitHub. Consulta adicional de rede para commit/deploy foi cancelada antes da decisão de aprovação; não foi concluída. Nenhuma alteração de runtime, publicação de teste ou consulta autenticada ao ledger foi executada nesta sessão.
+- Próximo passo concreto: conferir main/deploy por acesso autorizado e obter registros atuais de agent_executions, scheduler e post_ledger. Em seguida corrigir o consumo de resultados pelo Estrategista/Creator, validar com dados simulados sem postagem e verificar execução real. Implementar acompanhamento automático de falhas com recuperação limitada e indicação clara do que exige intervenção.
+- Critério de conclusão: evidência por função de execução recente, entradas/saídas, erros e recuperação; conteúdo novo aprovado e publicação registrada; métricas reais alimentando decisões seguintes. Não prometer visualizações, viralização ou número de seguidores.
+- Continuidade: ler estes documentos antes de buscar histórico. Esta atualização registra direção e diagnóstico, não conclusão da autonomia.
