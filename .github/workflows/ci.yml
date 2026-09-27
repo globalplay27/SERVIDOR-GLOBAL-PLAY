@@ -31,3 +31,19 @@ jobs:
         run: |
           npm install --no-audit --no-fund
           npm run check
+
+      # Production deploy is automatic on main when the repository already has
+      # CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID configured as Actions secrets.
+      # Pull requests and migration branches remain validation-only.
+      - name: Deploy servidor-nexus to Cloudflare
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        working-directory: cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::warning::Cloudflare deploy skipped: repository deploy secrets are not configured."
+            exit 0
+          fi
+          npm run deploy
