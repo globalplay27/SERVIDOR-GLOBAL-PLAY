@@ -16,11 +16,19 @@ jobs:
       SOURCE_URL: ${{ github.event.client_payload.source_url }}
       JOB_ID: ${{ github.event.client_payload.job_id }}
       CLIENT_ID: ${{ github.event.client_payload.client_id }}
-      CALLBACK_TOKEN: ${{ github.event.client_payload.callback_token }}
       CONTENT_TITLE: ${{ github.event.client_payload.title }}
       NEXUS_INGEST_BASE_URL: https://servidor-nexus.diamantehinode2015.workers.dev
       YOUTUBE_COOKIES_B64: ${{ secrets.YOUTUBE_COOKIES_B64 }}
     steps:
+      - name: Protect callback token
+        shell: bash
+        run: |
+          set -euo pipefail
+          token="$(jq -r '.client_payload.callback_token // empty' "$GITHUB_EVENT_PATH")"
+          if [ -z "$token" ]; then echo "::error::Missing ingest callback token"; exit 1; fi
+          echo "::add-mask::$token"
+          echo "CALLBACK_TOKEN=$token" >> "$GITHUB_ENV"
+
       - name: Install yt-dlp, PO-token provider and ffmpeg
         shell: bash
         run: |
