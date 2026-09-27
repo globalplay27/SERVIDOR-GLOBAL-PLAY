@@ -87,6 +87,14 @@ function topTerms(texts = [], limit = 10) {
 function postingProfile(client) {
   const current = client?.config?.postingProfile && typeof client.config.postingProfile === "object"
     ? client.config.postingProfile : {};
+  const ragnarMedia = [
+    "https://servidor-nexus.diamantehinode2015.workers.dev/assets/ragnar/nordic-cinema-01.png",
+    "https://servidor-nexus.diamantehinode2015.workers.dev/assets/ragnar/nordic-cinema-02.png",
+    "https://servidor-nexus.diamantehinode2015.workers.dev/assets/ragnar/nordic-cinema-03.png"
+  ];
+  const configuredMedia = Array.isArray(current.standardMediaUrls)
+    ? current.standardMediaUrls.map(String).map(v => v.trim()).filter(v => /^https:\/\//i.test(v)).slice(0, 30)
+    : [];
   return {
     contentStrategy: current.contentStrategy || "Crescimento acelerado de seguidores + engajamento qualificado",
     targetAudience: current.targetAudience || "Misto",
@@ -102,9 +110,9 @@ function postingProfile(client) {
     avoidTopics: current.avoidTopics || "Venda agressiva, promessas irreais, poluição visual e repetição de criativos",
     growthTargetFollowers: Math.max(1000, Math.min(100000000, Number(current.growthTargetFollowers || 1000000))),
     growthHorizonDays: Math.max(7, Math.min(90, Number(current.growthHorizonDays || 30))),
-    standardMediaUrls: Array.isArray(current.standardMediaUrls)
-      ? current.standardMediaUrls.map(String).map(v => v.trim()).filter(v => /^https:\/\//i.test(v)).slice(0, 30)
-      : []
+    standardMediaUrls: configuredMedia.length
+      ? configuredMedia
+      : (String(client?.id || "") === "ragnar-one" ? ragnarMedia : [])
   };
 }
 
