@@ -1,7 +1,8 @@
 # Problemas conhecidos
 
 ## P0 — Ragnar não publica consistentemente
-- Relato do proprietário; causa exata **não confirmada**.
+- Causa operacional de fila confirmada e corrigida em 2026-09-27: captação automática inundava a fila e jobs presos impediam o Publisher de avançar.
+- O post Ragnar das 09:00 de 2026-09-27 também não era publicável: mídia ausente e Designer rejeitado. O sistema agiu corretamente ao não enviá-lo.
 - Hipóteses a verificar com D1/logs: cliente offline, jobs falhos, mídia única indisponível, gates pendentes, secret Meta e IG ID divergentes, token/escopos, erro no container ou publicação, cron não executado.
 - Evidência de código: `instagram-credentials.js` prioriza secret Ragnar com ID IG fixo; `agent-runtime.js` bloqueia mídia ausente/repetida; `scheduled_jobs` registra erro. Nenhuma dessas hipóteses equivale ao erro efetivo.
 
@@ -23,6 +24,7 @@
 
 ## Bloqueio de investigação
 - `dash.cloudflare.com` neste navegador mostrou verificação humana persistente em 2026-09-27. Conector Cloudflare/D1 não está disponível nesta sessão. Diagnósticos públicos não expõem logs/linhas de posts.
+- Contornado apenas durante o incidente por uma rota temporária sanitizada no Worker; rota removida após colher a evidência.
 
 ## P0 — Leitura de produção D1 indisponível pelo CI
 - Workflow [36321480825](https://github.com/globalplay27/SERVIDOR-GLOBAL-PLAY/actions/runs/36321480825): cada `wrangler d1 execute --remote --json` falhou com código Cloudflare `7403` antes de devolver linhas. CI/deploy passou no mesmo commit. Hipótese principal: token permite Worker deploy, mas não D1 direto, ou conta associada ao token não autoriza D1. Não foi feita alteração de permissão.
