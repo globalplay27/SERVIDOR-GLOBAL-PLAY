@@ -35,6 +35,19 @@ function select(label, sql) {
   } catch (error) {
     failedQueries++;
     const diagnostic = String(error?.stderr || error?.message || "").toLowerCase();
+    let providerError = null;
+    try {
+      const raw = String(error?.stdout || "");
+      const provider = JSON.parse(raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1));
+      const item = Array.isArray(provider?.errors) ? provider.errors[0] : provider?.error || {};
+      providerError = {
+        code: Number(item?.code) || 0,
+        message: String(item?.message || provider?.message || "")
+          .replace(/https?:\/\/\S+/g, "[url]")
+          .replace(/[A-Za-z0-9_+=\/-]{20,}/g, "[redacted]")
+          .slice(0, 200)
+      };
+    } catch {}
     const reason = /authentication|unauthorized|invalid api token|code: 10000|code: 9109|forbidden/.test(diagnostic)
       ? "authentication_or_permission"
       : /permission|scope|code: 10001/.test(diagnostic) ? "permission"
@@ -49,6 +62,7 @@ function select(label, sql) {
       parsedType: Array.isArray(parsed) ? "array" : typeof parsed,
       commandExitCode: Number(error?.status) || 0,
       providerCodes: [...new Set([...diagnostic.matchAll(/(?:code|error)\s*[:#\[\] ]*\s*(\d{3,6})/g)].map(match => match[1]))].slice(0, 5),
+      providerError,
       providerMessage: String(error?.stdout || error?.stderr || "")
         .replace(/\x1b\[[0-9;]*m/g, "").split("\n")
         .filter(line => line.trim()).slice(-3).join(" ")
