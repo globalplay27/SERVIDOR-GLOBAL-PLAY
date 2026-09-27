@@ -48,6 +48,7 @@ function select(label, sql) {
       length: output.length,
       parsedType: Array.isArray(parsed) ? "array" : typeof parsed,
       commandExitCode: Number(error?.status) || 0,
+      providerCodes: [...new Set([...diagnostic.matchAll(/(?:code|error)\s*[:#\[\] ]*\s*(\d{3,6})/g)].map(match => match[1]))].slice(0, 5),
       diagnosticFlags: {
         database: /database|d1|binding/.test(diagnostic),
         notFound: /not found|couldn't find|does not exist/.test(diagnostic),
@@ -55,7 +56,11 @@ function select(label, sql) {
         account: /account/.test(diagnostic),
         invalidArgument: /unknown argument|invalid argument|option|requires/.test(diagnostic),
         network: /network|fetch|timed out/.test(diagnostic),
-        wranglerConfig: /wrangler\\.jsonc|configuration file/.test(diagnostic)
+        wranglerConfig: /wrangler\\.jsonc|configuration file/.test(diagnostic),
+        d1Specific: /d1 database|database query|d1 api|d1 read|d1 write/.test(diagnostic),
+        accessDenied: /access denied|not authorized|insufficient|does not have/.test(diagnostic),
+        sqlError: /sql error|sqlite_error|syntax error/.test(diagnostic),
+        missingDatabase: /unable to find|could not find|couldn't find|no database|database not found/.test(diagnostic)
       },
       resultKeys: parsed && typeof parsed === "object"
         ? Object.keys(Array.isArray(parsed) ? parsed[0] || {} : parsed).slice(0, 12) : [] }));
