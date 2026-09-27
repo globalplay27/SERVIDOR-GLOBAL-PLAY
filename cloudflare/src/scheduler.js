@@ -13,6 +13,8 @@ function parseJson(raw, fallback = {}) {
 function agentCoreConfig(client) {
   const config = client?.config && typeof client.config === "object" ? client.config : {};
   const current = config.agentCore && typeof config.agentCore === "object" ? config.agentCore : {};
+  const autonomousClient = ["ragnar-one", "globalplay-streaming"].includes(String(client?.id || ""));
+  const autoPublish = current.autoPublish === undefined ? autonomousClient : current.autoPublish === true;
   const modules = {
     radar: current.modules?.radar !== false,
     estrategista: current.modules?.estrategista !== false,
@@ -23,8 +25,8 @@ function agentCoreConfig(client) {
   };
   return {
     enabled: current.enabled !== false,
-    autoPublish: current.autoPublish === true,
-    approvalRequired: current.autoPublish === true ? current.approvalRequired === true : true,
+    autoPublish,
+    approvalRequired: autoPublish ? current.approvalRequired === true : true,
     cycleMinutes: Math.max(15, Math.min(1440, Number(current.cycleMinutes || 30))),
     modules
   };
@@ -71,6 +73,13 @@ async function saveSchedulerState(env, clientId, value) {
 }
 
 async function enqueue(env, clientId, kind, dueAt, payload = {}) {
+  const pending = await env.DB.prepare(
+    `SELECT id FROM scheduled_jobs
+     WHERE client_id = ?1 AND kind = ?2 AND status IN ('scheduled','running')
+     LIMIT 1`
+  ).bind(clientId, kind).first();
+  if (pending) return false;
+
   const bucket = minuteBucket(new Date(dueAt));
   const id = [kind, clientId, bucket].join(":");
   const result = await env.DB.prepare(
@@ -136,6 +145,11 @@ export async function runSchedulerTick(env, scheduledAt = new Date()) {
         }
         next.lastHunterQueuedAt = now.toISOString();
       }
+    } else {
+      await env.DB.prepare(
+        `UPDATE scheduled_jobs SET status='failed', last_error='lead_hunter_automatic_disabled', updated_at=CURRENT_TIMESTAMP
+         WHERE client_id=?1 AND kind='lead-hunter' AND status IN ('scheduled','running')`
+      ).bind(client.id).run();
     }
 
     if (cycleIsDue) {
