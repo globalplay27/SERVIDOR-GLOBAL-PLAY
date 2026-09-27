@@ -16,7 +16,8 @@
     "APP_NAME": "Servidor Nexus",
     "RAGNAR_CLIENT_ID": "ragnar-one",
     "CLOUDFLARE_AUTOMATION_ACTIVE": "true",
-    "PUBLIC_BASE_URL": "https://servidor-nexus.diamantehinode2015.workers.dev"
+    "PUBLIC_BASE_URL": "https://servidor-nexus.diamantehinode2015.workers.dev",
+    "NEXUS_VIDEO_ENGINE_URL": "https://nexus-video-engine.onrender.com"
   },
   "assets": {
     "directory": "../public",
