@@ -8,6 +8,7 @@ Atualizado em 2026-09-27, aproximadamente 12:24 BRT. Esta página separa constat
 - Publisher agora ignora o backlog sem mídia/gates e seleciona no máximo um post publicável por conta/ciclo. Horários padrão fixados em 09:00, 12:00 e 18:00 BRT.
 - Evidência real: `@globalplay_streaming` publicou com sucesso em 2026-09-27 12:21 BRT; `post_ledger` marcou `published`, sem erro e com execução Publisher `published:1`.
 - `@ragnarplay1` não tinha post publicável vencido: o post das 09:00 estava sem mídia e com Designer rejeitado. Nenhuma imagem ruim foi forçada. Há mídia aprovada em agenda futura, mas a qualidade visual continua limitada ao gate superficial já documentado.
+- Em seguida foram adicionadas três mídias verticais próprias para Ragnar em `public/assets/ragnar/`, com cena única, TV preenchida e tema nórdico, sem texto/logos/colagem. O perfil Ragnar usa esse conjunto como pool padrão quando não há URLs configuradas no painel.
 
 ## Confirmado funcionando
 - Workflow GitHub Actions [36314891089](https://github.com/globalplay27/SERVIDOR-GLOBAL-PLAY/actions/runs/36314891089) terminou com sucesso, inclusive a etapa `Deploy servidor-nexus to Cloudflare` para o commit citado.
