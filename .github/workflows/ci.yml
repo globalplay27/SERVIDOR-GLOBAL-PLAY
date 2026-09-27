@@ -17,7 +17,7 @@ jobs:
       - name: Check panel JavaScript
         run: |
           node --check public/app.js
-          node --check public/client.js
+          node --check public/client-lite.js
 
       - name: Check Cloudflare Worker syntax
         shell: bash

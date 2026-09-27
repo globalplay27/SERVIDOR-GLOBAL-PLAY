@@ -429,10 +429,9 @@ export async function handleMaster(request, env, url) {
   if (!await requireMaster(request, env)) return json({ error: "unauthorized" }, 401);
 
   if (url.pathname === "/api/system/status" && request.method === "GET") {
-    const [clientCount, sessionCount, videoCount, postCount] = await Promise.all([
+    const [clientCount, sessionCount, postCount] = await Promise.all([
       env.DB.prepare("SELECT COUNT(*) AS count FROM clients").first(),
       env.DB.prepare("SELECT COUNT(*) AS count FROM portal_sessions").first(),
-      env.DB.prepare("SELECT COUNT(*) AS count FROM video_jobs").first(),
       env.DB.prepare("SELECT COUNT(*) AS count FROM post_ledger").first()
     ]);
     return json({
@@ -446,7 +445,6 @@ export async function handleMaster(request, env, url) {
       counts: {
         clients: Number(clientCount?.count || 0),
         portalSessions: Number(sessionCount?.count || 0),
-        videoJobs: Number(videoCount?.count || 0),
         posts: Number(postCount?.count || 0)
       }
     });
