@@ -725,14 +725,25 @@ export async function runAgentCoreCycle(env, clientId, options = {}) {
     if(run("radar")&&config.modules.radar)result.agents.radar=radar=await runRadar(env,client,options);
     if(run("estrategista")&&config.modules.estrategista)result.agents.estrategista=strategy=await runStrategist(env,client,{radar,auditor},options);
     if(run("creator")&&config.modules.creator)result.agents.creator=await runCreator(env,client,strategy,options);
+
+    // Quality agents must review drafts BEFORE Publisher. Previously the extended
+    // agents ran after publishing, so COPY CHIEF and DESIGNER could only report
+    // problems after a post was already sent to Instagram.
+    if(requested==="all"){
+      const prePublish=await runExtendedAgents(env,client.id,{...options,phase:"pre-publish"});
+      Object.assign(result.agents,prePublish);
+    }
+
     if(run("publisher")&&config.modules.publisher)result.agents.publisher=await runPublisher(env,client,options);
     if(run("auditor")&&config.modules.auditor){
       result.agents.auditor=auditor=await runAuditor(env,client,options);
       if(requested==="all"&&config.modules.estrategista)result.agents.estrategistaFeedback=await runStrategist(env,client,{radar,auditor},{...options,feedback:true});
     }
     if(run("odin")&&config.modules.odin)result.agents.odin=await runOdin(env,client,options);
-    const extended=await runExtendedAgents(env,client.id,options);
-    Object.assign(result.agents,extended);
+    if(requested!=="all"){
+      const extended=await runExtendedAgents(env,client.id,options);
+      Object.assign(result.agents,extended);
+    }
     const now=new Date().toISOString();
     await patchAgentCoreState(env,client.id,{lastCycleAt:now,nextCycleAt:new Date(Date.now()+config.cycleMinutes*60000).toISOString(),lastCycleStatus:"success",lastCycleError:""});
     return result;
