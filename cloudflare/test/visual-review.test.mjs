@@ -45,10 +45,13 @@ test('missing media never invokes provider',async()=>{
   assert.equal(result.status,'rejected');
 });
 
-test('all publishers require matching real review for Global Play only',async()=>{
+test('Global Play and Ragnar require matching real visual review',async()=>{
   assert.equal(visualApproval(client.id,{qualityGates:{designer:'approved'}}),false);
   const review=await reviewImage({},client,url,null,async()=>response(verdict));
   assert.equal(visualApproval(client.id,{imageUrl:url,visualReview:review}),true);
   assert.equal(visualApproval(client.id,{imageUrl:url+'new',visualReview:review}),false);
-  assert.equal(visualApproval('ragnar-one',{}),true);
+  assert.equal(visualApproval('ragnar-one',{}),false);
+  const ragnar={id:'ragnar-one',name:'Ragnar One'};
+  const ragnarReview=await reviewImage({},ragnar,url,null,async()=>response(verdict));
+  assert.equal(visualApproval('ragnar-one',{imageUrl:url,visualReview:ragnarReview}),true);
 });
