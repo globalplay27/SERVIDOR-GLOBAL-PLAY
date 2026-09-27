@@ -393,9 +393,120 @@ async function renderClip(env, row, settings, candidate, rank) {
   return { id: clipId, outputKey };
 }
 
+
+function renderVideoEngineUrl(env) {
+  return String(env?.NEXUS_VIDEO_ENGINE_URL || env?.NEXUS_DOWNLOADER_URL || "").trim().replace(/\/+$/, "");
+}
+
+async function dispatchRenderVideoProcessing(env, row, settings) {
+  const engineUrl = renderVideoEngineUrl(env);
+  if (!engineUrl) return { dispatched: false };
+
+  const requested = Math.round(clamp(settings.requestedClips || settings.clips || 3, 1, 12));
+  const clipDuration = Math.round(clamp(settings.clipDuration || settings.duration || 30, 10, MAX_CLIP_SECONDS));
+  await clearOldClips(env, row.client_id, row.id);
+
+  const clips = [];
+  for (let index = 0; index < requested; index += 1) {
+    const clipId = "clip_" + crypto.randomUUID().replace(/-/g, "").slice(0, 18);
+    const outputKey = "videos/" + row.client_id + "/clips/" + row.id + "/" + clipId + ".mp4";
+    const callbackToken = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
+    const start = index * clipDuration;
+    const end = start + clipDuration;
+    const clipSettings = {
+      start,
+      end,
+      title: "Opção " + (index + 1),
+      caption: "",
+      endText: cleanText(settings.endText, 90),
+      endContact: cleanText(settings.endContact, 90),
+      selectedForSchedule: false,
+      outputFormat: String(settings.outputFormat || "reel"),
+      referenceStyle: "nexus-reference-v1",
+      referenceWidth: 1080,
+      referenceHeight: 1920,
+      renderCallbackToken: callbackToken
+    };
+    const clipResult = {
+      previewUrl: "",
+      rank: index + 1,
+      reason: "Corte criado pelo motor de vídeo NEXUS no Render.",
+      hook: "",
+      transcript: "",
+      qualityScore: 70,
+      subtitlesApplied: false,
+      referenceStyle: "nexus-reference-v1",
+      compositionMode: "render-ffmpeg-blurred-background",
+      processor: "render-ffmpeg",
+      templateRenderStatus: "processing"
+    };
+
+    await env.DB.prepare(
+      `INSERT INTO video_clips(
+        id,job_id,client_id,source_object_key,output_object_key,status,approval_status,publish_status,
+        settings_json,result_json,created_at,updated_at
+      ) VALUES(?1,?2,?3,?4,?5,'processing','pending','draft',?6,?7,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)`
+    ).bind(
+      clipId,
+      row.id,
+      row.client_id,
+      row.source_object_key,
+      outputKey,
+      JSON.stringify(clipSettings),
+      JSON.stringify(clipResult)
+    ).run();
+
+    clips.push({
+      clip_id: clipId,
+      callback_token: callbackToken,
+      start,
+      end,
+      rank: index + 1,
+      title: clipSettings.title,
+      end_text: clipSettings.endText,
+      end_contact: clipSettings.endContact
+    });
+  }
+
+  const callbackBase = String(
+    env?.PUBLIC_BASE_URL || "https://servidor-nexus.diamantehinode2015.workers.dev"
+  ).trim().replace(/\/+$/, "");
+
+  const response = await fetch(engineUrl + "/process-video", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      callback_base: callbackBase,
+      job_id: String(row.id),
+      client_id: String(row.client_id),
+      source_clip_id: clips[0]?.clip_id || "",
+      source_callback_token: clips[0]?.callback_token || "",
+      duration: clipDuration,
+      requested_clips: requested,
+      clips
+    }),
+    signal: AbortSignal.timeout(10000)
+  });
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error("render_video_dispatch_http_" + response.status + (detail ? "_" + detail.slice(0, 180) : ""));
+  }
+
+  await setJob(env, row, "processing", settings, {
+    ...parseJson(row.result_json, {}),
+    progress: 65,
+    processor: "render-ffmpeg",
+    message: "Vídeo enviado ao motor NEXUS. Criando os cortes no padrão 9:16.",
+    error: ""
+  });
+
+  return { dispatched: true, clips: clips.length };
+}
+
 export async function enqueueVideoProcessing(env, clientId, jobId, patch = {}) {
   if (!env.MEDIA) throw new Error("r2_unavailable");
-  if (!env.VIDEO_MEDIA) throw new Error("cloudflare_media_unavailable");
+  if (!env.VIDEO_MEDIA && !renderVideoEngineUrl(env)) throw new Error("video_processor_unavailable");
   const row = await jobRow(env, clientId, jobId);
   if (!row) throw new Error("video_not_found");
 
@@ -451,6 +562,23 @@ export async function processVideoJob(env, clientId, jobId) {
 
   const settings = parseJson(row.settings_json, {});
   const baseResult = parseJson(row.result_json, {});
+  if (renderVideoEngineUrl(env)) {
+    try {
+      const external = await dispatchRenderVideoProcessing(env, row, settings);
+      if (external.dispatched) return { ok: true, external: true, generated: external.clips };
+    } catch (cause) {
+      const code = cause instanceof Error ? cause.message : String(cause);
+      await setJob(env, row, "failed", settings, {
+        ...baseResult,
+        progress: 0,
+        processor: "render-ffmpeg",
+        message: "Falha ao iniciar os cortes no motor de vídeo: " + code,
+        error: code
+      }).catch(() => {});
+      throw cause;
+    }
+  }
+
   const claimed = await env.DB.prepare(
     "UPDATE video_jobs SET status='processing',result_json=?3,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2 AND status='queued'"
   ).bind(
@@ -519,7 +647,7 @@ export async function processVideoJob(env, clientId, jobId) {
 }
 
 export async function processQueuedVideoJobs(env, limit = 1) {
-  if (!env?.DB || !env.MEDIA || !env.VIDEO_MEDIA) return { processed: 0 };
+  if (!env?.DB || !env.MEDIA || (!env.VIDEO_MEDIA && !renderVideoEngineUrl(env))) return { processed: 0 };
   const result = await env.DB.prepare(
     "SELECT id,client_id FROM video_jobs WHERE status='queued' ORDER BY updated_at ASC LIMIT ?1"
   ).bind(Math.max(1, Math.min(3, Number(limit || 1)))).all();
