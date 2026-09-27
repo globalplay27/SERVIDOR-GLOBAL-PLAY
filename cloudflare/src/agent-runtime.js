@@ -476,8 +476,21 @@ async function runCreator(env,client,strategy,options) {
         format:index===0?"reel":index===1?"carousel":"story",
         skill:index===0?"ig-reel":index===1?"ig-carousel":"ig-story",
         mediaSource:imageUrl?"standard-media-pool":"awaiting-unique-media",
-        antiRepeat:true
-      }
+        antiRepeat:true,
+        visualPolicy:{
+          singleScene:true,
+          maxScenes:1,
+          noSplitScreen:true,
+          noCollage:true,
+          noMosaic:true,
+          noBeforeAfter:true,
+          lowVisualClutter:true,
+          tvScreenMustBeFilled:true,
+          tvScreenContent:"coherent entertainment or streaming content",
+          focalSubjectCount:1
+        }
+      },
+      qualityGates:{copyChief:"pending",designer:"pending"}
     };
     await env.DB.prepare(
       "INSERT INTO post_ledger(id,client_id,scheduled_for,scheduled_hour,status,approval_status,media_id,caption,image_object_key,error,cost_usd,payload_json,created_at,updated_at) VALUES(?1,?2,?3,?4,'ready',?5,'',?6,'','',0,?7,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)"
