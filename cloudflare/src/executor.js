@@ -131,11 +131,22 @@ export async function processDueJobs(env, scheduledAt = new Date()) {
     };
   }
 
+  await env.DB.prepare(
+    `UPDATE scheduled_jobs
+     SET status='failed', last_error='stale_running_job_recovered', updated_at=CURRENT_TIMESTAMP
+     WHERE status='running' AND updated_at < datetime('now','-10 minutes')`
+  ).run();
+
   const result = await env.DB.prepare(
     `SELECT id, client_id, kind, due_at, status, attempts, payload_json
      FROM scheduled_jobs
      WHERE status = 'scheduled' AND due_at <= ?1
-     ORDER BY due_at ASC LIMIT 20`
+     ORDER BY CASE kind
+       WHEN 'publisher-sweep' THEN 0
+       WHEN 'agent-core-cycle' THEN 1
+       WHEN 'lead-hunter' THEN 2
+       ELSE 3 END,
+       due_at ASC LIMIT 20`
   ).bind(now.toISOString()).all();
 
   const summary = { active: true, processed: 0, completed: 0, failed: 0, deferred: 0 };
