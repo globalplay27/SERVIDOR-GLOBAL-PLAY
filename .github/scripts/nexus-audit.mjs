@@ -49,11 +49,12 @@ function select(label, sql) {
       parsedType: Array.isArray(parsed) ? "array" : typeof parsed,
       commandExitCode: Number(error?.status) || 0,
       providerCodes: [...new Set([...diagnostic.matchAll(/(?:code|error)\s*[:#\[\] ]*\s*(\d{3,6})/g)].map(match => match[1]))].slice(0, 5),
-      providerMessage: String(error?.stderr || "").split("\n")
+      providerMessage: String(error?.stdout || error?.stderr || "").split("\n")
         .find(line => /\[error\]|✘|error:/i.test(line))
         ?.replace(/https?:\/\/\S+/g, "[url]")
         .replace(/[A-Za-z0-9_+=\/-]{20,}/g, "[redacted]")
         .slice(0, 180) || "unavailable",
+      failedStdoutBytes: String(error?.stdout || "").length,
       diagnosticFlags: {
         database: /database|d1|binding/.test(diagnostic),
         notFound: /not found|couldn't find|does not exist/.test(diagnostic),
