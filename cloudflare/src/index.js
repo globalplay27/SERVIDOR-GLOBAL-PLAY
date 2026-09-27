@@ -146,73 +146,6 @@ async function health(env) {
   }, d1 ? 200 : 503);
 }
 
-function operationalErrorCategory(value) {
-  const text = String(value || "").toLowerCase();
-  if (!text) return "none";
-  if (/quality_gate|visual_quality|copy_quality/.test(text)) return "quality_gate";
-  if (/unique_media|duplicate_media|image.*required|media.*missing/.test(text)) return "media";
-  if (/duplicate_caption/.test(text)) return "duplicate_caption";
-  if (/instagram_not_connected|token|oauth|permission|scope|authoriz/.test(text)) return "instagram_auth";
-  if (/instagram.*process|container|media_publish/.test(text)) return "instagram_publish";
-  if (/quota|budget|openai/.test(text)) return "openai_or_budget";
-  if (/timed?out|timeout|network|fetch|http_5/.test(text)) return "network";
-  return "other";
-}
-
-async function temporarySchedulerDiagnostic(env) {
-  const clients = await env.DB.prepare(
-    `SELECT id, status, instagram, config_json, updated_at
-     FROM clients WHERE id IN ('ragnar-one','globalplay-streaming')`
-  ).all();
-  const jobs = await env.DB.prepare(
-    `SELECT id, client_id, kind, status, attempts, due_at, updated_at, last_error
-     FROM scheduled_jobs WHERE client_id IN ('ragnar-one','globalplay-streaming')
-     ORDER BY updated_at DESC LIMIT 30`
-  ).all();
-  const posts = await env.DB.prepare(
-    `SELECT id, client_id, status, approval_status, scheduled_for, created_at, updated_at, error,
-       json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.qualityGates.copyChief') copy_gate,
-       json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.qualityGates.designer') visual_gate,
-       json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.retryCount') retry_count,
-       CASE WHEN json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.imageUrl') IS NOT NULL
-         AND json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.imageUrl') <> '' THEN 1 ELSE 0 END media_present
-     FROM post_ledger WHERE client_id IN ('ragnar-one','globalplay-streaming')
-     ORDER BY COALESCE(updated_at,created_at) DESC LIMIT 30`
-  ).all();
-  const state = await env.DB.prepare(
-    `SELECT namespace, item_key, client_id, value_json, updated_at FROM nexus_state
-     WHERE (namespace='agent-core' AND item_key IN ('scheduler','state')
-       AND client_id IN ('ragnar-one','globalplay-streaming'))
-       OR (namespace='scheduler' AND item_key='heartbeat' AND client_id='')
-     ORDER BY updated_at DESC LIMIT 8`
-  ).all();
-  const oauth = await env.DB.prepare(
-    `SELECT client_id, provider, payload_json, connected_at, updated_at FROM connections
-     WHERE client_id IN ('ragnar-one','globalplay-streaming') AND provider IN ('instagram','meta')`
-  ).all();
-  const executions = await env.DB.prepare(
-    `SELECT client_id, agent, status, detail_json, created_at FROM agent_executions
-     WHERE client_id IN ('ragnar-one','globalplay-streaming')
-     ORDER BY created_at DESC LIMIT 40`
-  ).all();
-  const parse = value => {
-    try { return JSON.parse(String(value || "{}")); } catch { return {}; }
-  };
-  return json({
-    ok: true,
-    generatedAt: new Date().toISOString(),
-    clients: (clients.results || []).map(row => {
-      const config = parse(row.config_json);
-      return { id: row.id, status: row.status, instagram: row.instagram, postTimes: config.postTimes || [], agentCore: config.agentCore || null, updatedAt: row.updated_at };
-    }),
-    jobs: (jobs.results || []).map(row => ({ id: row.id, clientId: row.client_id, kind: row.kind, status: row.status, attempts: row.attempts, dueAt: row.due_at, updatedAt: row.updated_at, errorCategory: operationalErrorCategory(row.last_error) })),
-    posts: (posts.results || []).map(row => ({ id: row.id, clientId: row.client_id, status: row.status, approval: row.approval_status, scheduledFor: row.scheduled_for, createdAt: row.created_at, updatedAt: row.updated_at, errorCategory: operationalErrorCategory(row.error), copyGate: row.copy_gate, visualGate: row.visual_gate, retryCount: row.retry_count || 0, mediaPresent: Boolean(row.media_present) })),
-    state: (state.results || []).map(row => { const value = parse(row.value_json); return { namespace: row.namespace, itemKey: row.item_key, clientId: row.client_id, updatedAt: row.updated_at, lastCronAt: value.lastCronAt || null, lastCycleAt: value.lastCycleAt || null, lastCycleStatus: value.lastCycleStatus || null, lastCycleErrorCategory: operationalErrorCategory(value.lastCycleError), summary: row.namespace === 'scheduler' ? value : undefined }; }),
-    oauth: (oauth.results || []).map(row => { const value = parse(row.payload_json); const expires = value.expiresAt || null; return { clientId: row.client_id, provider: row.provider, connectedAt: row.connected_at, updatedAt: row.updated_at, hasToken: Boolean(value.accessToken), hasInstagramId: Boolean(value.igUserId), username: String(value.username || ''), expiresAt: expires, expired: Boolean(expires && new Date(expires).getTime() <= Date.now()) }; }),
-    executions: (executions.results || []).map(row => { const detail = parse(row.detail_json); return { clientId: row.client_id, agent: row.agent, status: row.status, createdAt: row.created_at, message: String(detail.message || '').slice(0, 240), metadata: detail.metadata || {} }; })
-  });
-}
-
 async function handleState(request, env, url) {
   const denied = requireAuth(request, env);
   if (denied) return denied;
@@ -353,10 +286,6 @@ export default {
 
     if (url.pathname === "/health" || url.pathname === "/api/health") {
       return health(env);
-    }
-
-    if (url.pathname === "/api/system/scheduler-diagnostic-20260927" && request.method === "GET") {
-      return temporarySchedulerDiagnostic(env);
     }
 
     if (url.pathname === "/api/system/openai-routing" && request.method === "GET") {
