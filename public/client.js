@@ -1706,12 +1706,25 @@ if(videoRemoteImportButton)videoRemoteImportButton.addEventListener("click",asyn
   const status=$("#video-upload-status");
   const url=String(input?.value||"").trim();
   if(!url){
-    if(status){status.textContent="Cole um link HTTPS direto do arquivo de vídeo.";status.className="save-status error";}
+    if(status){status.textContent="Cole um link HTTPS do YouTube ou um link direto de vídeo.";status.className="save-status error";}
     input?.focus();
     return;
   }
-  videoRemoteImportButton.dataset.importVideo=url;
+  let isYoutube=false;
+  try{
+    const parsed=new URL(url);
+    const host=parsed.hostname.toLowerCase().replace(/^www\./,"");
+    isYoutube=parsed.protocol==="https:"&&(host==="youtube.com"||host==="youtu.be");
+  }catch{}
   videoRemoteImportButton.dataset.importTitle=$("#video-content-title")?.value?.trim()||"";
+  if(isYoutube){
+    delete videoRemoteImportButton.dataset.importVideo;
+    videoRemoteImportButton.dataset.importTrailer=url;
+    await importTrailerVideo(videoRemoteImportButton);
+    return;
+  }
+  delete videoRemoteImportButton.dataset.importTrailer;
+  videoRemoteImportButton.dataset.importVideo=url;
   await importAuthorizedVideo(videoRemoteImportButton,status);
 });
 
