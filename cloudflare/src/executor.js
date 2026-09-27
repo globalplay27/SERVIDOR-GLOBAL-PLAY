@@ -1,6 +1,7 @@
 import { publishInstagramImage } from "./publisher.js";
-import { runLeadHunter } from "./lead-hunter.js";
+import { runLeadHunter, leadHunterConfig } from "./lead-hunter.js";
 import { runAgentCoreCycle } from "./agent-runtime.js";
+import { getClient } from "./clients.js";
 
 function parseJson(raw, fallback = {}) {
   try {
@@ -164,9 +165,16 @@ export async function processDueJobs(env, scheduledAt = new Date()) {
         await updateJob(env, job.id, "completed", attempts);
         summary.completed += 1;
       } else if (job.kind === "lead-hunter") {
-        await runLeadHunter(env, job.client_id, { trigger: "scheduler", automatic: true });
-        await updateJob(env, job.id, "completed", attempts);
-        summary.completed += 1;
+        const client = await getClient(env, job.client_id);
+        const hunter = client ? await leadHunterConfig(env, client) : null;
+        if (!hunter?.enabled || !hunter?.autoRun) {
+          await updateJob(env, job.id, "failed", attempts, "lead_hunter_automatic_disabled");
+          summary.deferred += 1;
+        } else {
+          await runLeadHunter(env, job.client_id, { trigger: "scheduler", automatic: true });
+          await updateJob(env, job.id, "completed", attempts);
+          summary.completed += 1;
+        }
       } else if (job.kind === "agent-core-cycle") {
         const payload = parseJson(job.payload_json, {});
         await runAgentCoreCycle(env, job.client_id, {
