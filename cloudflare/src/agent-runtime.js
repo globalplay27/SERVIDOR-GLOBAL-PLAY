@@ -538,6 +538,7 @@ async function runPublisher(env,client,options) {
      WHERE client_id=?1
        AND status IN ('ready','scheduled','failed')
        AND approval_status='approved'
+       AND COALESCE(json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.retryCount'),0) < 3
        AND (scheduled_for IS NULL OR scheduled_for<=?2)
        AND json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.qualityGates.copyChief')='approved'
        AND json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.qualityGates.designer')='approved'

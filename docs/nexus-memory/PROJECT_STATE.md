@@ -38,4 +38,4 @@ Atualizado em 2026-09-27, aproximadamente 12:24 BRT. Esta página separa constat
 - Uma rota temporária e sanitizada do próprio Worker permitiu ler o estado operacional sem tokens, legendas ou URLs; ela foi removida após a investigação.
 
 ## Próximo passo exato
-Obter acesso de leitura autorizado aos registros D1 em produção para `ragnar-one` e `globalplay-streaming`, sem enviar token em conversa. Caminhos: acesso humano ao painel Cloudflare em navegador que passe a verificação, ou uma credencial CI com permissão mínima D1 de leitura para a conta correta. Depois executar novamente o workflow de auditoria e correlacionar jobs, fiscais e postagens. Não aplicar correções de runtime antes da evidência.
+Enviar a correção uniforme dos gates/retentativas para uma branch, validar no CI, integrar em `main` e confirmar o deploy. Depois obter leitura autorizada dos registros D1 para correlacionar jobs, fiscais, publicações e métricas de `ragnar-one` e `globalplay-streaming` antes de ampliar o ciclo de aprendizado.

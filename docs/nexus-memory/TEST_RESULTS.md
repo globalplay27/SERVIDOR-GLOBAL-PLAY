@@ -2,6 +2,7 @@
 
 | Horário (UTC, 2026-09-27) | Componente | Resultado | Evidência / limite |
 |---|---|---|---|
+| ~17:35 | Política uniforme de publicação | Validação local aprovada | Todos os arquivos `cloudflare/src/*.js` passaram em `node --check`; `npm run check` gerou o bundle Wrangler. Ainda não prova deploy ou execução em produção. |
 | ~12:37 | GitHub | Repositório operacional identificado | `SERVIDOR-GLOBAL-PLAY/main@292649157`; estrutura `cloudflare/`. O README do outro `nexus-ai-2.0` o descreve como não migrado. |
 | 11:11 (conclusão do run) | CI/deploy | Sucesso | [Actions 36314891089](https://github.com/globalplay27/SERVIDOR-GLOBAL-PLAY/actions/runs/36314891089), inclusive etapa de deploy. Não comprova funcionamento de cron/Meta. |
 | 12:38:31 | `GET /health` | HTTP 200 | `ok:true`, runtime Cloudflare, `d1-ready`, `r2-bound`, assets bound, indicadores de chave OpenAI configurada. |

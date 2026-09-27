@@ -16,6 +16,21 @@ function automationEnabled(env) {
   return String(env.CLOUDFLARE_AUTOMATION_ACTIVE || "").toLowerCase() === "true";
 }
 
+const MAX_PUBLISH_RETRIES = 3;
+
+function publishGuard(payload = {}) {
+  const quality = payload?.qualityGates && typeof payload.qualityGates === "object"
+    ? payload.qualityGates : {};
+  const retryCount = Math.max(0, Number(payload?.retryCount || 0));
+  if (quality.copyChief !== "approved" || quality.designer !== "approved") {
+    return { ok: false, error: "quality_gate_pending", retryCount };
+  }
+  if (retryCount >= MAX_PUBLISH_RETRIES) {
+    return { ok: false, error: "publish_retry_limit_reached", retryCount };
+  }
+  return { ok: true, error: "", retryCount };
+}
+
 async function duePosts(env, clientId, nowIso) {
   const result = await env.DB.prepare(
     `SELECT id, client_id, scheduled_for, status, approval_status, caption,
@@ -24,6 +39,9 @@ async function duePosts(env, clientId, nowIso) {
      WHERE client_id = ?1
        AND approval_status = 'approved'
        AND status IN ('ready', 'scheduled', 'failed')
+       AND COALESCE(json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.retryCount'),0) < ${MAX_PUBLISH_RETRIES}
+       AND json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.qualityGates.copyChief') = 'approved'
+       AND json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.qualityGates.designer') = 'approved'
        AND scheduled_for IS NOT NULL
        AND scheduled_for <= ?2
      ORDER BY scheduled_for ASC
@@ -62,6 +80,12 @@ async function runPublisherSweep(env, clientId, now) {
 
   for (const row of rows) {
     const payload = parseJson(row.payload_json, {});
+    const guard = publishGuard(payload);
+    if (!guard.ok) {
+      await savePostResult(env, row, { status: row.status, error: guard.error, payload });
+      summary.skipped += 1;
+      continue;
+    }
     const imageUrl = String(payload.imageUrl || payload.publicImageUrl || "");
     if (!imageUrl || !row.caption) {
       summary.skipped += 1;

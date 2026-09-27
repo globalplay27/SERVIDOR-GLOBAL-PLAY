@@ -1,5 +1,11 @@
 # Histórico de alterações feitas pelo Work
 
+## 2026-09-27 — Fechamento uniforme do Publisher
+- Preparada correção para exigir Copy Chief e Designer aprovados também no envio manual e no `publisher-sweep`, eliminando os dois desvios que podiam contornar os fiscais.
+- Limitadas a três as tentativas por post nos três caminhos de publicação; falhas manuais agora incrementam `retryCount`.
+- Validação local concluída: `node --check` em todos os módulos do Worker e bundle `wrangler deploy --dry-run` sem erro.
+- A correção ainda requer commit, CI/deploy e evidência de produção antes de ser considerada implantada.
+
 ## 2026-09-27 — Auditoria inicial
 - Identificado repositório operacional `globalplay27/SERVIDOR-GLOBAL-PLAY`, branch `main`, commit `292649157`.
 - Conferidos GitHub Actions, health público e diagnósticos públicos.

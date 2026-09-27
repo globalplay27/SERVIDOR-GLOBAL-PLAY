@@ -221,6 +221,9 @@ export async function publishPostNow(env, client, postId) {
   const row = await postRow(env, client.id, postId);
   if (!row) throw new Error("post_not_found");
   const payload = parseJson(row.payload_json, {});
+  const quality = payload.qualityGates && typeof payload.qualityGates === "object"
+    ? payload.qualityGates : {};
+  const retryCount = Math.max(0, Number(payload.retryCount || 0));
   const current = view(row);
 
   if (row.status === "published") {
@@ -234,6 +237,20 @@ export async function publishPostNow(env, client, postId) {
     const error = new Error("post_not_approved");
     error.status = 409;
     error.messageForUser = "O servidor bloqueou o envio porque esta postagem ainda não foi aprovada. Envie para correção ou use seu próprio conteúdo.";
+    error.post = current;
+    throw error;
+  }
+  if (quality.copyChief !== "approved" || quality.designer !== "approved") {
+    const error = new Error("quality_gate_pending");
+    error.status = 409;
+    error.messageForUser = "O NEXUS bloqueou o envio porque Copy Chief e Designer ainda não aprovaram o conteúdo.";
+    error.post = current;
+    throw error;
+  }
+  if (retryCount >= 3) {
+    const error = new Error("publish_retry_limit_reached");
+    error.status = 409;
+    error.messageForUser = "O envio atingiu o limite de três tentativas e precisa de correção antes de tentar novamente.";
     error.post = current;
     throw error;
   }
@@ -279,6 +296,7 @@ export async function publishPostNow(env, client, postId) {
       error: cause instanceof Error ? cause.message : String(cause),
       payload: {
         ...payload,
+        retryCount: retryCount + 1,
         lastPublishAttemptAt: new Date().toISOString()
       }
     });

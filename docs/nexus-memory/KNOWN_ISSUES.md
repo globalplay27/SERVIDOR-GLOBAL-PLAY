@@ -14,6 +14,7 @@
 ## P1 — Retentativas sem teto
 - `runPublisher` incrementa `retryCount` após falha mas seleciona `failed` indefinidamente. `runPublisherSweep` faz o mesmo. O job da fila tem teto de 3, porém isso não limita novas tentativas do post nos ciclos futuros.
 - Efeito de custo depende de onde ocorre a falha; a geração atual do ciclo é local, mas chamadas Meta e rotas OpenAI existem.
+- Correção local preparada: filtros e bloqueios com teto de três tentativas no Publisher principal, sweep e envio manual. Permanece aberto até CI/deploy e evidência de produção.
 
 ## P1 — Evidência de fiscais em produção ausente
 - Código registra `agent_executions`; não houve leitura autenticada da tabela nesta sessão. Existência de arquivos e `SKILL.md` não prova execução.
