@@ -17,7 +17,9 @@ function defaultConfig(client) {
   const niche = String(client?.niche || "streaming").trim();
   return {
     enabled: true,
-    autoRun: true,
+    // Lead collection is opt-in. It must never compete with the publishing
+    // queue unless a client explicitly enables automatic scans.
+    autoRun: false,
     metaComments: true,
     publicTargets: false,
     aiQualification: true,
