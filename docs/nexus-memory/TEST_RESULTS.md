@@ -26,3 +26,8 @@ Próximo teste necessário: consultas de leitura D1 aos últimos jobs, execuçõ
 Retomada: seis testes locais de visão passaram (imagem enviada, reprovação de TV/colagem/marca, JSON inválido, cache/invalidação por URL, backoff/teto de tentativas, barreira nos publicadores). Todos os módulos passaram node --check. GET /health retornou ok/D1/R2. Nenhuma chamada real à Meta/OpenAI foi feita pelos testes. Bundle e deploy devem ser registrados após conclusão.
 
 Bundle Wrangler dry-run aprovado nesta retomada. Testes adicionados ao CI antes do deploy.
+
+## Implantação confirmada — revisão visual Global Play
+- Commit `cbe562ced29a3e644104ac64fe816190acf58979`, [CI 36347542955](https://github.com/globalplay27/SERVIDOR-GLOBAL-PLAY/actions/runs/36347542955): seis testes, sintaxe, bundle e etapa de deploy concluídos com sucesso.
+- Health após deploy: ok, D1 pronto, R2 e assets vinculados.
+- Navegador do portal exibe login, sem sessão autenticada. Execução real do Designer e post_ledger ainda não consultados. Nenhuma postagem de teste disparada.
