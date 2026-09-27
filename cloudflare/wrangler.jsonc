@@ -19,8 +19,7 @@
     "PUBLIC_BASE_URL": "https://servidor-nexus.diamantehinode2015.workers.dev",
     "NEXUS_AI_PROVIDER": "local-first",
     "NEXUS_OPENAI_DAILY_TOKEN_LIMIT": "30000",
-    "NEXUS_OPENAI_MAX_OUTPUT_TOKENS": "1200",
-    "NEXUS_DOWNLOADER_URL": "https://nexus-video-engine.onrender.com"
+    "NEXUS_OPENAI_MAX_OUTPUT_TOKENS": "1200"
   },
   "assets": {
     "directory": "../public",
