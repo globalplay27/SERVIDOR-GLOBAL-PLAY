@@ -12,9 +12,13 @@ function parseJson(raw, fallback = {}) {
 function coreSecretPair(env, clientId) {
   const id = String(clientId || "");
   if (id === "ragnar-one") {
+    // @ragnarplay1 has a stable Instagram professional account ID.
+    // Do not let a stale legacy environment value silently route publishing
+    // to the wrong account after the Cloudflare-only migration.
+    const verifiedRagnarIgUserId = "28486848374301373";
     return {
       accessToken: String(env.INSTAGRAM_ACCESS_TOKEN_RAGNAR || "").trim(),
-      igUserId: String(env.INSTAGRAM_ACCOUNT_ID_RAGNAR || "").trim(),
+      igUserId: verifiedRagnarIgUserId,
       source: "cloudflare-secret"
     };
   }
