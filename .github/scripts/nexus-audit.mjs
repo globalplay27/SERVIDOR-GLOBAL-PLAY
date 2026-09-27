@@ -39,7 +39,7 @@ function select(label, sql) {
       ? "authentication_or_permission"
       : /permission|scope|code: 10001/.test(diagnostic) ? "permission"
       : /sql|syntax|no such table|no such column/.test(diagnostic) ? "sql_or_schema"
-      : /json|unexpected token|parse/.test(diagnostic) ? "output_parse"
+      : output && /json|unexpected token|parse/.test(diagnostic) ? "output_parse"
       : /network|timeout|fetch/.test(diagnostic) ? "network"
       : "unknown";
     console.log(JSON.stringify({ section: label, status: "query_failed", reason,
@@ -47,6 +47,16 @@ function select(label, sql) {
       lastCharCode: output.trim().charCodeAt(output.trim().length - 1) || 0,
       length: output.length,
       parsedType: Array.isArray(parsed) ? "array" : typeof parsed,
+      commandExitCode: Number(error?.status) || 0,
+      diagnosticFlags: {
+        database: /database|d1|binding/.test(diagnostic),
+        notFound: /not found|couldn't find|does not exist/.test(diagnostic),
+        unauthorized: /unauthorized|authentication|permission|forbidden|not allowed/.test(diagnostic),
+        account: /account/.test(diagnostic),
+        invalidArgument: /unknown argument|invalid argument|option|requires/.test(diagnostic),
+        network: /network|fetch|timed out/.test(diagnostic),
+        wranglerConfig: /wrangler\\.jsonc|configuration file/.test(diagnostic)
+      },
       resultKeys: parsed && typeof parsed === "object"
         ? Object.keys(Array.isArray(parsed) ? parsed[0] || {} : parsed).slice(0, 12) : [] }));
     return null;
