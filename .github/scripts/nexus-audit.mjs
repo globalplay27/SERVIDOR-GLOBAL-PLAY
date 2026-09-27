@@ -19,13 +19,16 @@ const category = value => {
 };
 let failedQueries = 0;
 function select(label, sql) {
+  let output = "";
+  let parsed;
   try {
-    const output = execFileSync("npx", [
+    output = execFileSync("npx", [
       "--no-install", "wrangler", "d1", "execute", "servidor-nexus",
       "--remote", "--json", "--command", sql
     ], { encoding: "utf8", maxBuffer: 5 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] });
     const start = output.indexOf("[");
-    const parsed = JSON.parse(start >= 0 ? output.slice(start) : output);
+    const end = output.lastIndexOf("]");
+    parsed = JSON.parse(start >= 0 && end >= start ? output.slice(start, end + 1) : output.trim());
     const block = Array.isArray(parsed) ? parsed[0] : parsed;
     if (block?.success === false || !Array.isArray(block?.results)) throw Error("query_result");
     return block.results;
@@ -39,7 +42,13 @@ function select(label, sql) {
       : /json|unexpected token|parse/.test(diagnostic) ? "output_parse"
       : /network|timeout|fetch/.test(diagnostic) ? "network"
       : "unknown";
-    console.log(JSON.stringify({ section: label, status: "query_failed", reason }));
+    console.log(JSON.stringify({ section: label, status: "query_failed", reason,
+      firstCharCode: output.trim().charCodeAt(0) || 0,
+      lastCharCode: output.trim().charCodeAt(output.trim().length - 1) || 0,
+      length: output.length,
+      parsedType: Array.isArray(parsed) ? "array" : typeof parsed,
+      resultKeys: parsed && typeof parsed === "object"
+        ? Object.keys(Array.isArray(parsed) ? parsed[0] || {} : parsed).slice(0, 12) : [] }));
     return null;
   }
 }
