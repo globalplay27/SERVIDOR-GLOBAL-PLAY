@@ -526,6 +526,17 @@ async function runPublisher(env,client,options) {
     let approval=String(row.approval_status||"pending");
     const payload=parseJson(row.payload_json,{});
 
+    // Mandatory quality gates. Autonomous publishing must never bypass the
+    // reviewers just because autoPublish is enabled.
+    const quality=payload.qualityGates&&typeof payload.qualityGates==="object"?payload.qualityGates:{};
+    if(quality.copyChief!=="approved"||quality.designer!=="approved"){
+      await env.DB.prepare(
+        "UPDATE post_ledger SET error='quality_gate_pending',updated_at=CURRENT_TIMESTAMP WHERE id=?1"
+      ).bind(row.id).run();
+      awaitingApproval+=1;
+      continue;
+    }
+
     if(approval!=="approved"&&config.autoPublish&&!config.approvalRequired){
       await env.DB.prepare(
         "UPDATE post_ledger SET approval_status='approved',updated_at=CURRENT_TIMESTAMP WHERE id=?1"
