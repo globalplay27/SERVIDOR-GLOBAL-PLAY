@@ -426,7 +426,7 @@ async function runCreator(env,client,strategy,options) {
 
   const times=(Array.isArray(strategy?.recommendedPostTimes)&&strategy.recommendedPostTimes.length
     ?strategy.recommendedPostTimes
-    :(client.config?.postTimes||["09:00","12:00","18:00"])).slice(0,3);
+    :recommendedTimes([])).slice(0,3);
   const themes=Array.isArray(strategy?.themes)&&strategy.themes.length
     ?strategy.themes
     :["Descoberta","Utilidade","Comunidade"];
@@ -439,7 +439,8 @@ async function runCreator(env,client,strategy,options) {
 
   for(let index=0;index<times.length;index++){
     const time=times[index];
-    const scheduledFor=scheduleIso(time,index);
+    const publishedToday=recent.some(row=>row.status==="published"&&localDay(row.scheduled_for||row.created_at)===localDay());
+    const scheduledFor=(!publishedToday&&index===0)?new Date().toISOString():scheduleIso(time,index);
     const day=localDay(scheduledFor);
     const id="agentcore:"+client.id+":"+day+":"+String(time).replace(":","");
     const exists=await env.DB.prepare(
