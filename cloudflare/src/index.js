@@ -7,10 +7,9 @@ import { handleMaster } from "./master.js";
 import { runSchedulerTick } from "./scheduler.js";
 import { processDueJobs } from "./executor.js";
 import { masterCredentialsValid, createMasterSession, authenticatePortalUser, createPortalSession, masterSessionCookie, portalSessionCookie, loginRateLimitStatus, recordLoginFailure, clearLoginFailures, resolvePortalSession, resolveMasterSession } from "./auth.js";
-import { processQueuedVideoJobs, processVideoJob, githubVideoRenderSource, completeGithubVideoRender, failGithubVideoRender } from "./video-processing.js";
-import { processQueuedVideoImports, completeGithubVideoIngest, failGithubVideoIngest } from "./r2-video-upload.js";
 
-export class YouTubeDownloader extends DurableObject {
+// Keep the exact legacy export name until Cloudflare removes its existing Durable Objects.
+export class YoutubeDownloader extends DurableObject {
   async fetch() {
     return new Response(JSON.stringify({
       ok: false,
@@ -201,11 +200,6 @@ export default {
     ctx.waitUntil((async () => {
       await runSchedulerTick(env, at);
       await processDueJobs(env, at);
-      await processQueuedVideoImports(env, 1);
-      // Processing is still started explicitly from the portal, but once a job is queued
-      // the cron must finish it. This prevents a cut from getting stuck when the HTTP
-      // request/waitUntil ends before transcription + Media transformation completes.
-      await processQueuedVideoJobs(env, 1);
     })());
   },
 
@@ -280,80 +274,6 @@ export default {
       return json({ ok: false, error: "invalid_credentials" }, 401);
     }
 
-
-    if (url.pathname === "/api/internal/video-ingest/upload" && request.method === "PUT") {
-      const jobId = String(request.headers.get("x-nexus-job-id") || "");
-      const clientId = String(request.headers.get("x-nexus-client-id") || "");
-      const callbackToken = String(request.headers.get("x-nexus-callback-token") || "");
-      if (!jobId || !clientId || !callbackToken) return json({ error: "ingest_headers_required" }, 400);
-      try {
-        const completed = await completeGithubVideoIngest(env, clientId, jobId, request, callbackToken);
-        return json(completed, 201);
-      } catch (error) {
-        const code = error instanceof Error ? error.message : String(error);
-        return json({ error: code }, code === "invalid_ingest_callback_token" ? 401 : code === "video_too_large" ? 413 : 400);
-      }
-    }
-
-    if (url.pathname === "/api/internal/video-ingest/fail" && request.method === "POST") {
-      const jobId = String(request.headers.get("x-nexus-job-id") || "");
-      const clientId = String(request.headers.get("x-nexus-client-id") || "");
-      const callbackToken = String(request.headers.get("x-nexus-callback-token") || "");
-      const body = await request.json().catch(() => ({}));
-      if (!jobId || !clientId || !callbackToken) return json({ error: "ingest_headers_required" }, 400);
-      try {
-        return json(await failGithubVideoIngest(env, clientId, jobId, callbackToken, body?.error));
-      } catch (error) {
-        const code = error instanceof Error ? error.message : String(error);
-        return json({ error: code }, code === "invalid_ingest_callback_token" ? 401 : 400);
-      }
-    }
-
-    if (url.pathname === "/api/internal/video-render/source" && request.method === "GET") {
-      const jobId = String(request.headers.get("x-nexus-job-id") || "");
-      const clipId = String(request.headers.get("x-nexus-clip-id") || "");
-      const clientId = String(request.headers.get("x-nexus-client-id") || "");
-      const callbackToken = String(request.headers.get("x-nexus-callback-token") || "");
-      if (!jobId || !clipId || !clientId || !callbackToken) return json({ error: "render_headers_required" }, 400);
-      try {
-        const object = await githubVideoRenderSource(env, clientId, jobId, clipId, callbackToken);
-        const headers = new Headers({ "content-type": object.httpMetadata?.contentType || "video/mp4", "cache-control": "private, no-store" });
-        if (Number.isFinite(object.size)) headers.set("content-length", String(object.size));
-        return new Response(object.body, { status: 200, headers });
-      } catch (error) {
-        const code = error instanceof Error ? error.message : String(error);
-        return json({ error: code }, code === "invalid_render_callback_token" ? 401 : 404);
-      }
-    }
-
-    if (url.pathname === "/api/internal/video-render/upload" && request.method === "PUT") {
-      const jobId = String(request.headers.get("x-nexus-job-id") || "");
-      const clipId = String(request.headers.get("x-nexus-clip-id") || "");
-      const clientId = String(request.headers.get("x-nexus-client-id") || "");
-      const callbackToken = String(request.headers.get("x-nexus-callback-token") || "");
-      if (!jobId || !clipId || !clientId || !callbackToken) return json({ error: "render_headers_required" }, 400);
-      try {
-        return json(await completeGithubVideoRender(env, clientId, jobId, clipId, request, callbackToken), 201);
-      } catch (error) {
-        const code = error instanceof Error ? error.message : String(error);
-        return json({ error: code }, code === "invalid_render_callback_token" ? 401 : 400);
-      }
-    }
-
-    if (url.pathname === "/api/internal/video-render/fail" && request.method === "POST") {
-      const jobId = String(request.headers.get("x-nexus-job-id") || "");
-      const clipId = String(request.headers.get("x-nexus-clip-id") || "");
-      const clientId = String(request.headers.get("x-nexus-client-id") || "");
-      const callbackToken = String(request.headers.get("x-nexus-callback-token") || "");
-      const body = await request.json().catch(() => ({}));
-      if (!jobId || !clipId || !clientId || !callbackToken) return json({ error: "render_headers_required" }, 400);
-      try {
-        return json(await failGithubVideoRender(env, clientId, jobId, clipId, callbackToken, body?.error));
-      } catch (error) {
-        const code = error instanceof Error ? error.message : String(error);
-        return json({ error: code }, code === "invalid_render_callback_token" ? 401 : 400);
-      }
-    }
 
     const masterResponse = await handleMaster(request, env, url);
     if (masterResponse) return masterResponse;

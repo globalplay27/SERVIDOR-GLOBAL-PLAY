@@ -1,7 +1,6 @@
 import { publishInstagramImage } from "./publisher.js";
 import { runLeadHunter } from "./lead-hunter.js";
 import { runAgentCoreCycle } from "./agent-runtime.js";
-import { publishScheduledVideoClips } from "./video-processing.js";
 
 function parseJson(raw, fallback = {}) {
   try {
@@ -151,7 +150,6 @@ export async function processDueJobs(env, scheduledAt = new Date()) {
           trigger: "publisher-sweep",
           agent: "publisher"
         });
-        await publishScheduledVideoClips(env, job.client_id, now);
         await updateJob(env, job.id, "completed", attempts);
         summary.completed += 1;
       } else if (job.kind === "lead-hunter") {

@@ -1,587 +1,69 @@
 <!doctype html>
 <html lang="pt-BR">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#050807">
-  <meta name="application-name" content="NEXUS AI">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <title>NEXUS AI</title>
-  <link rel="icon" href="/assets/nexus-ai-mark.svg" type="image/svg+xml">
-  <link rel="manifest" href="/manifest.webmanifest?v=1">
-  <link rel="stylesheet" href="/client.css?v=71">
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#080d15"><title>NEXUS AI · Acompanhamento</title>
+  <link rel="stylesheet" href="/client-lite.css?v=1"><script src="/client-lite.js?v=1" defer></script>
 </head>
-<body>
-  <div id="nexus-boot" class="nexus-boot" hidden>
-    <div class="boot-grid"></div>
-    <div class="boot-core">
-      <div class="boot-ring ring-a"></div>
-      <div class="boot-ring ring-b"></div>
-      <div class="boot-ring ring-c"></div>
-      <div class="boot-center"><span>N</span></div>
-    </div>
-    <div class="boot-copy">
-      <strong>NEXUS AI</strong>
-      <span id="boot-status">Sincronizando sistemas...</span>
-      <div class="boot-line"><i></i></div>
-    </div>
-  </div>
-  <div class="ambient ambient-a"></div><div class="ambient ambient-b"></div>
-  <main class="portal-shell">
-    <section id="login-view" class="login-card">
-      <img class="login-logo" src="/assets/nexus-ai-logo.png?v=3" alt="NEXUS AI">
-      <div class="login-copy"><p class="eyebrow">ACESSO SEGURO</p><h1>NEXUS AI</h1><p class="muted">Entre com sua credencial. O sistema identifica automaticamente o seu acesso.</p></div>
-      <form id="login-form" action="/portal-login" method="post">
-        <label><span>Usuário</span><input id="login-username" name="username" autocomplete="username" required></label>
-        <label><span>Senha</span><div class="password-field"><input id="login-password" name="password" type="password" autocomplete="current-password" required><button type="button" id="toggle-login-password" class="password-toggle" aria-label="Mostrar senha" title="Mostrar senha">👁</button></div></label>
-        <label class="remember-access"><input id="remember-access" name="remember" type="checkbox" value="1"><span><strong>Lembrar meu acesso</strong><small>Manter este dispositivo conectado por até 30 dias.</small></span></label>
-        <button type="submit">Entrar</button><span id="login-error" role="alert"></span>
-      </form>
-      <div class="login-install">
-        <button type="button" class="install-app-button" data-install-app hidden>Instalar NEXUS AI</button>
-        <small>Instale no celular ou computador e use como aplicativo.</small>
+<body><main class="shell">
+  <section id="login" class="login card" hidden>
+    <div class="brand"><strong>NEXUS AI</strong></div>
+    <p class="eyebrow">ACESSO AO PAINEL</p><h1>Entre na sua conta</h1>
+    <p class="muted">Acompanhe suas publicações e autorize seu Instagram.</p>
+    <form id="login-form">
+      <label>Usuário<input name="username" autocomplete="username" required></label>
+      <label>Senha<input name="password" type="password" autocomplete="current-password" required></label>
+      <button type="submit" class="primary">Entrar</button><p id="login-error" class="error" role="alert"></p>
+    </form>
+  </section>
+  <section id="dashboard" hidden>
+    <header class="topbar">
+      <div class="brand"><strong>NEXUS AI</strong><small>ACOMPANHAMENTO</small></div>
+      <div class="header-actions"><span id="client-label"></span><button id="refresh" type="button">Atualizar</button><button id="logout" type="button">Sair</button></div>
+    </header>
+    <nav class="tabs" aria-label="Seções do painel">
+      <button data-tab="overview" class="active" type="button">Visão geral</button>
+      <button data-tab="posts" type="button">Postagens</button>
+      <button data-tab="performance" type="button">Desempenho</button>
+      <button data-tab="instagram" type="button">Instagram</button>
+    </nav>
+    <div id="notice" class="notice" role="status" hidden></div>
+    <section id="tab-overview" class="tab">
+      <p class="eyebrow">VISÃO GERAL</p><h1 id="client-name">Seu painel</h1>
+      <p class="muted">Acompanhe a operação e os resultados da sua conta.</p>
+      <div class="metrics">
+        <article class="card"><span>Instagram</span><strong id="overview-instagram">—</strong></article>
+        <article class="card"><span>Próxima postagem</span><strong id="next-post">—</strong></article>
+        <article class="card"><span>Publicadas</span><strong id="published-count">—</strong></article>
+        <article class="card"><span>Precisam de atenção</span><strong id="attention-count">—</strong></article>
+      </div>
+      <div class="card"><h2>Última atividade</h2><p id="last-activity" class="muted">Carregando...</p></div>
+    </section>
+    <section id="tab-posts" class="tab" hidden>
+      <div class="section-title"><div><p class="eyebrow">PUBLICAÇÕES</p><h1>Postagens</h1><p class="muted">Agenda, confirmação do Instagram e falhas registradas.</p></div><button data-refresh="posts" type="button">Atualizar</button></div>
+      <div id="post-list" class="list" aria-live="polite"></div>
+    </section>
+    <section id="tab-performance" class="tab" hidden>
+      <div class="section-title"><div><p class="eyebrow">RESULTADOS</p><h1>Desempenho</h1><p class="muted">Dados coletados da conta profissional conectada.</p></div><button data-refresh="performance" type="button">Atualizar</button></div>
+      <div class="metrics">
+        <article class="card"><span>Seguidores</span><strong id="followers">—</strong></article>
+        <article class="card"><span>Variação no último ciclo</span><strong id="followers-delta">—</strong></article>
+        <article class="card"><span>Interações medianas por post</span><strong id="median-engagement">—</strong></article>
+        <article class="card"><span>Publicações analisadas</span><strong id="scanned-media">—</strong></article>
+      </div>
+      <div class="card"><h2>Publicações com maior interação</h2><div id="top-media" class="list"></div><p id="performance-note" class="muted"></p></div>
+    </section>
+    <section id="tab-instagram" class="tab" hidden>
+      <p class="eyebrow">AUTORIZAÇÃO OFICIAL</p><h1>Instagram</h1>
+      <p class="muted">Entre na sua conta profissional na página oficial do Instagram e conceda acesso ao NEXUS. Sua senha não é armazenada aqui.</p>
+      <div class="card connection">
+        <div><span>Conta</span><strong id="instagram-handle">Nenhuma conta conectada</strong></div>
+        <div><span>Status</span><strong id="instagram-state">Verificando...</strong></div>
+        <div><span>Autorização válida até</span><strong id="instagram-expires">—</strong></div>
+        <div><span>Permissões</span><strong id="instagram-scopes">—</strong></div>
+        <button id="connect-instagram" class="primary" type="button">Conectar Instagram</button>
+        <p id="instagram-message" role="status" class="muted"></p>
       </div>
     </section>
-
-    <section id="portal-view" class="dashboard" hidden>
-      <header class="topbar">
-        <div class="brand"><img src="/assets/nexus-ai-logo.png?v=3" alt="NEXUS AI"></div>
-        <div class="top-actions"><button type="button" class="install-app-button compact" data-install-app hidden>Instalar app</button><span id="system-status" class="online"><i></i> Sistema online</span><button id="logout" class="logout">Sair</button></div>
-      </header>
-
-      <section class="setup-hero-card" data-open-setup hidden>
-        <div class="setup-hero-icon">01</div>
-        <div class="setup-hero-copy">
-          <p class="eyebrow">CONEXÕES DO AGENTE</p>
-          <strong>Integrações e serviços</strong>
-          <span>Instagram e recursos do agente em um único lugar.</span>
-        </div>
-        <button type="button">Ver conexões</button>
-      </section>
-
-      <nav class="client-nav">
-        <button type="button" class="active" data-view="overview">Visão geral</button>
-        <button type="button" data-view="posts">Postagens</button>
-        <button type="button" data-view="capture">Captação</button>
-        <button type="button" data-view="leads">Leads</button>
-        <button type="button" data-view="instagram">Instagram</button>
-        <button type="button" data-view="videos" hidden>Vídeos</button>
-        <button type="button" data-view="trailers" hidden>Trailers</button>
-        <button type="button" data-view="posting">Perfil do Agente</button>
-        <button type="button" data-view="support">Suporte</button>
-        <button type="button" class="setup-nav-main" data-view="setup" hidden>Conexões</button>
-      </nav>
-
-      <div id="view-overview" class="client-view">
-        <section id="setup-banner" class="setup-banner" hidden>
-          <div><p class="eyebrow">PRIMEIROS PASSOS</p><strong>Seu agente ainda está em configuração</strong><span>Conclua o passo a passo para deixar tudo pronto.</span></div>
-          <button type="button" data-open-setup>Continuar configuração</button>
-        </section>
-
-        <section class="command-strip">
-          <div><span class="command-dot"></span><strong>CORE NEXUS</strong><small>Sincronizado</small></div>
-          <div><span class="pulse-line"></span><strong>AGENTE</strong><small id="core-agent-state">Operacional</small></div>
-          <div><span class="pulse-line"></span><strong>AUTOMAÇÃO</strong><small>Monitoramento ativo</small></div>
-        </section>
-
-        <section class="hero">
-          <div class="hero-copy">
-            <p class="eyebrow">CENTRAL DE INTELIGÊNCIA AUTÔNOMA</p>
-            <h1 id="client-name">—</h1>
-            <p id="client-meta" class="muted">—</p>
-            <div class="hero-badge"><span></span>SISTEMAS SINCRONIZADOS</div>
-          </div>
-          <div class="ai-visual" aria-hidden="true">
-            <div class="hud-mark hud-north"></div>
-            <div class="hud-mark hud-south"></div>
-            <div class="orbit orbit-one"></div>
-            <div class="orbit orbit-two"></div>
-            <div class="orbit orbit-three"></div>
-            <div class="ai-core"><span>N</span></div>
-          </div>
-        </section>
-
-        <section class="metrics operational-metrics managed-metrics">
-          <article><div class="metric-icon">◉</div><span>Status do agente</span><strong id="overview-agent-status">—</strong><small>operação NEXUS</small></article>
-          <article><div class="metric-icon">＠</div><span>Instagram</span><strong id="instagram-card">—</strong><small>única conta que o cliente autoriza</small></article>
-          <article><div class="metric-icon">AI</div><span>Inteligência artificial</span><strong id="ai-mode-card">—</strong><small id="ai-mode-detail">gerenciada pelo NEXUS</small></article>
-          <article><div class="metric-icon">◷</div><span>Próxima postagem</span><strong id="next-post">—</strong><small>horário programado</small></article>
-          <article><div class="metric-icon">✓</div><span>Última postagem</span><strong id="last-post">—</strong><small id="last-post-detail">aguardando telemetria</small></article>
-        </section>
-
-        <section class="panel token-budget-panel">
-          <div class="token-budget-head">
-            <div><p class="eyebrow">CONSUMO DE IA</p><h2>Tokens — limite diário</h2></div>
-            <span id="token-budget-state" class="status-chip">ATUALIZANDO</span>
-          </div>
-          <div class="token-budget-stats">
-            <article><span>Usados hoje</span><strong id="token-used-today">0</strong><small>entrada + saída</small></article>
-            <article><span>Limite diário</span><strong id="token-daily-limit">—</strong><small>reinicia à meia-noite</small></article>
-            <article><span>Restantes</span><strong id="token-remaining">—</strong><small id="token-call-count">0 chamadas registradas</small></article>
-          </div>
-          <div class="token-budget-track" aria-label="Uso diário de tokens"><i id="token-budget-bar"></i></div>
-          <small id="token-budget-detail">Contabilizando o uso de IA do dia no horário de São Paulo.</small>
-        </section>
-
-        <section class="content-grid compact-overview">
-          <article class="panel">
-            <div class="panel-heading"><div><p class="eyebrow">OPERAÇÃO</p><h2>Agente em tempo real</h2></div><span id="agent-live-chip" class="status-chip">VERIFICANDO</span></div>
-            <div class="details compact-details">
-              <div><span>Segmento</span><strong id="niche">—</strong></div>
-              <div><span>Status</span><strong id="agent-status">—</strong></div>
-              <div><span>Agenda</span><strong id="post-times">—</strong></div>
-              <div><span>Último erro</span><strong id="last-agent-error">Nenhum</strong></div>
-            </div>
-            <div class="overview-actions">
-              <button type="button" data-open-posting>Editar perfil do agente</button>
-              <button type="button" id="instagram-connect" class="managed-instagram-button instagram-connect-action">Conectar Instagram</button>
-              <span id="instagram-connect-status" class="provider-line"></span>
-            </div>
-          </article>
-          <article class="panel nexus-agent-team">
-            <div class="panel-heading"><div><p class="eyebrow">EQUIPE DIGITAL</p><h2>Agentes trabalhando agora</h2></div><button type="button" id="refresh-agent-team" class="ghost-action">Atualizar</button></div>
-            <div id="client-agent-team" class="client-agent-team"><div class="post-client-empty"><strong>Carregando equipe...</strong><span>Sincronizando RADAR, ESTRATEGISTA, CREATOR, PUBLISHER, AUDITOR e ODIN.</span></div></div>
-          </article>
-        </section>
-      </div>
-
-
-      <div id="view-instagram" class="client-view" hidden>
-        <section class="settings-heading">
-          <div>
-            <p class="eyebrow">INSTAGRAM / META</p>
-            <h1>Autorize sua conta do Instagram</h1>
-            <p class="muted">O cliente faz login diretamente no Instagram e concede as permissões necessárias. A senha do Instagram não é informada nem armazenada pelo NEXUS.</p>
-          </div>
-          <span id="instagram-page-chip" class="status-chip">VERIFICANDO</span>
-        </section>
-
-        <section class="content-grid">
-          <article class="panel settings-panel">
-            <div class="panel-heading">
-              <div><p class="eyebrow">CONTA CONECTADA</p><h2 id="instagram-page-account">Nenhuma conta autorizada</h2></div>
-            </div>
-            <div class="details compact-details">
-              <div><span>Status</span><strong id="instagram-page-state">Aguardando autorização</strong></div>
-              <div><span>Tipo de conta</span><strong id="instagram-page-type">—</strong></div>
-              <div><span>Conectado em</span><strong id="instagram-page-connected-at">—</strong></div>
-              <div><span>Validade da autorização</span><strong id="instagram-page-expires-at">—</strong></div>
-            </div>
-            <div class="overview-actions">
-              <button type="button" id="instagram-page-connect" class="managed-instagram-button instagram-connect-action">Entrar com Instagram</button>
-              <button type="button" id="instagram-page-refresh" class="ghost-action">Atualizar status</button>
-            </div>
-            <span id="instagram-page-status" class="provider-line"></span>
-          </article>
-
-          <article class="panel settings-panel">
-            <div class="panel-heading">
-              <div><p class="eyebrow">PERMISSÕES</p><h2>O que o NEXUS solicita</h2></div>
-            </div>
-            <div class="details compact-details">
-              <div><span>Perfil profissional</span><strong id="ig-permission-basic">Pendente</strong></div>
-              <div><span>Publicar conteúdo</span><strong id="ig-permission-publish">Pendente</strong></div>
-              <div><span>Gerenciar comentários</span><strong id="ig-permission-comments">Pendente</strong></div>
-              <div><span>Gerenciar mensagens</span><strong id="ig-permission-messages">Pendente</strong></div>
-            </div>
-            <p class="muted">A autorização acontece na página oficial do Instagram. Você pode reconectar a qualquer momento para trocar de conta ou renovar as permissões.</p>
-          </article>
-        </section>
-      </div>
-
-      <div id="view-capture" class="client-view" hidden>
-        <section class="settings-heading lead-hunter-heading">
-          <div>
-            <p class="eyebrow">NEXUS LEAD HUNTER</p>
-            <h1>Captação inteligente de oportunidades</h1>
-            <p class="muted">O RADAR coleta sinais públicos permitidos e o ODIN qualifica intenção comercial. O NEXUS não dispara mensagens automáticas para pessoas encontradas.</p>
-          </div>
-          <div class="lead-hunter-heading-actions">
-            <span id="lead-hunter-status" class="save-status"></span>
-            <button type="button" id="lead-hunter-run" class="lead-hunter-run">Captar agora</button>
-          </div>
-        </section>
-
-        <section class="lead-hunter-summary">
-          <article><span>Base NEXUS</span><strong id="lead-hunter-total">0</strong><small>oportunidades ativas</small></article>
-          <article><span>Quentes</span><strong id="lead-hunter-hot">0</strong><small>alta intenção</small></article>
-          <article><span>Última varredura</span><strong id="lead-hunter-analyzed">0</strong><small>interações analisadas</small></article>
-          <article><span>Novos</span><strong id="lead-hunter-new">0</strong><small>na última execução</small></article>
-          <article><span>RADAR</span><strong id="lead-hunter-last-run">—</strong><small>última execução</small></article>
-        </section>
-
-        <section class="lead-hunter-grid">
-          <article class="panel settings-panel lead-hunter-config-card">
-            <div class="panel-heading">
-              <div><p class="eyebrow">CONFIGURAÇÃO</p><h2>Onde o RADAR deve procurar</h2></div>
-              <span class="lead-hunter-chip">RADAR + ODIN</span>
-            </div>
-            <form id="lead-hunter-form" class="lead-hunter-form">
-              <div class="lead-hunter-switches">
-                <label><input id="lead-hunter-enabled" type="checkbox" checked><span><strong>Lead Hunter ativo</strong><small>Permite coleta e classificação.</small></span></label>
-                <label><input id="lead-hunter-auto" type="checkbox" checked><span><strong>Rodar automaticamente</strong><small>Executa no ciclo configurado.</small></span></label>
-                <label><input id="lead-hunter-meta" type="checkbox" checked><span><strong>Comentários da minha conta</strong><small>Usa a conexão oficial do Instagram.</small></span></label>
-                <label><input id="lead-hunter-public" type="checkbox" checked><span><strong>Alvos públicos</strong><small>Analisa URLs públicas cadastradas, quando acessíveis.</small></span></label>
-                <label><input id="lead-hunter-ai" type="checkbox" checked><span><strong>Qualificação por IA</strong><small>ODIN refina os sinais comerciais ambíguos.</small></span></label>
-              </div>
-
-              <div class="lead-hunter-controls">
-                <label><span>Intervalo automático</span><select id="lead-hunter-interval"><option value="15">15 min</option><option value="30">30 min</option><option value="60" selected>1 hora</option><option value="180">3 horas</option><option value="360">6 horas</option><option value="720">12 horas</option><option value="1440">1 dia</option></select></label>
-                <label><span>Período dos comentários</span><select id="lead-hunter-lookback"><option value="1">1 dia</option><option value="3">3 dias</option><option value="7" selected>7 dias</option><option value="14">14 dias</option><option value="30">30 dias</option></select></label>
-                <label><span>Máximo por varredura</span><select id="lead-hunter-limit"><option value="20">20</option><option value="50">50</option><option value="100" selected>100</option><option value="150">150</option><option value="250">250</option></select></label>
-                <label><span>Score mínimo</span><input id="lead-hunter-min-score" type="number" min="10" max="90" value="35"></label>
-              </div>
-
-              <label class="lead-hunter-wide"><span>Perfis, posts, Reels ou hashtags para observar</span><textarea id="lead-hunter-targets" rows="5" maxlength="5000" placeholder="@perfilconcorrente&#10;#streaming&#10;https://www.instagram.com/reel/..."></textarea><small>Um alvo por linha. O coletor próprio não tenta burlar login ou bloqueios do Instagram; ele trabalha somente com o que estiver publicamente acessível.</small></label>
-
-              <label class="lead-hunter-wide"><span>Sinais de intenção de compra</span><textarea id="lead-hunter-intents" rows="4" maxlength="3000" placeholder="quanto custa, tem teste, quero, manda o link, como assino..."></textarea></label>
-
-              <label class="lead-hunter-wide"><span>Termos do nicho</span><textarea id="lead-hunter-niche-terms" rows="3" maxlength="2500" placeholder="produto, serviço, categoria, problema que o cliente resolve..."></textarea></label>
-
-              <div class="lead-hunter-form-actions">
-                <span id="lead-hunter-save-status" class="save-status"></span>
-                <button type="submit" class="ghost-action">Salvar configuração</button>
-              </div>
-            </form>
-          </article>
-
-          <article class="panel settings-panel lead-hunter-live-card">
-            <div class="panel-heading">
-              <div><p class="eyebrow">OPORTUNIDADES</p><h2>Encontradas pelo NEXUS</h2></div>
-              <span id="lead-hunter-source-status" class="post-client-help">Aguardando varredura</span>
-            </div>
-            <div id="lead-hunter-leads" class="lead-hunter-leads">
-              <div class="post-client-empty"><strong>Nenhuma oportunidade ainda</strong><span>Salve a configuração e mande o RADAR captar agora.</span></div>
-            </div>
-          </article>
-        </section>
-      </div>
-
-      <div id="view-leads" class="client-view" hidden>
-        <section class="settings-heading">
-          <div>
-            <p class="eyebrow">ODIN LEADS</p>
-            <h1>Leads captados pelo seu Instagram</h1>
-            <p class="muted">Acompanhe o @ do Instagram, classificação comercial, pontuação, interesse e quando o lead precisa de atendimento humano.</p>
-          </div>
-          <button type="button" id="refresh-client-leads" class="ghost-action">Atualizar leads</button>
-        </section>
-        <section class="lead-client-summary">
-          <article><span>Total</span><strong id="client-leads-total">0</strong><small>captados</small></article>
-          <article><span>Quentes</span><strong id="client-leads-hot">0</strong><small>alta intenção</small></article>
-          <article><span>Mornos</span><strong id="client-leads-warm">0</strong><small>em qualificação</small></article>
-          <article><span>Frios</span><strong id="client-leads-cold">0</strong><small>baixo sinal comercial</small></article>
-          <article><span>Atendimento humano</span><strong id="client-leads-human">0</strong><small>precisam de atenção</small></article>
-        </section>
-        <section class="panel settings-panel wide-panel">
-          <div class="panel-heading"><div><p class="eyebrow">FUNIL EM TEMPO REAL</p><h2>Meus leads</h2></div><span id="client-leads-source" class="post-client-help">Sincronizando Odin…</span></div>
-          <div class="client-leads-table-wrap">
-            <table class="client-leads-table">
-              <thead><tr><th>Instagram</th><th>Classificação</th><th>Pontos</th><th>Interesse</th><th>Etapa</th><th>Atualizado</th></tr></thead>
-              <tbody id="client-leads-body"><tr><td colspan="6">Carregando leads…</td></tr></tbody>
-            </table>
-          </div>
-        </section>
-      </div>
-
-      <div id="view-posts" class="client-view" hidden>
-        <section class="settings-heading">
-          <div>
-            <p class="eyebrow">CENTRAL DE POSTAGENS</p>
-            <h1>Acompanhe e controle suas publicações</h1>
-            <p class="muted">Veja o horário previsto, aprovação e envio. Quando precisar, você pode tentar publicar manualmente fora do horário programado.</p>
-          </div>
-          <button type="button" id="refresh-client-posts" class="ghost-action">Atualizar status</button>
-        </section>
-
-        <section class="post-client-summary">
-          <article><span>Agenda</span><strong id="client-post-schedule">—</strong><small>horários configurados</small></article>
-          <article><span>Hoje</span><strong id="client-post-today-count">0</strong><small>postagens previstas</small></article>
-          <article><span>Enviadas</span><strong id="client-post-published-count">0</strong><small>confirmadas</small></article>
-          <article><span>Precisam de atenção</span><strong id="client-post-attention-count">0</strong><small>não aprovadas ou com falha</small></article>
-        </section>
-
-        <section class="panel settings-panel wide-panel">
-          <div class="panel-heading">
-            <div><p class="eyebrow">STATUS</p><h2>Minhas postagens</h2></div>
-            <span class="post-client-help">O custo fica visível somente para o administrador.</span>
-          </div>
-          <div id="client-post-list" class="client-post-list">
-            <div class="post-client-empty"><strong>Carregando agenda...</strong><span>Sincronizando as postagens do seu agente.</span></div>
-          </div>
-        </section>
-      </div>
-
-      <div id="view-videos" class="client-view" hidden>
-        <section class="settings-heading">
-          <div>
-            <p class="eyebrow">NEXUS VIDEO CUTTER</p>
-            <h1>Transforme vídeos longos em cortes</h1>
-            <p class="muted">Envie o vídeo. Os 6 agentes analisam o conteúdo inteiro, transcrevem, escolhem cenas completas com maior impacto e só então geram os cortes. O NEXUS não cria título artificial sobre o vídeo.</p>
-          </div>
-          <span id="video-upload-status" class="save-status"></span>
-        </section>
-
-        <section class="video-client-grid">
-          <article class="panel settings-panel">
-            <p class="eyebrow">NOVO VÍDEO</p><h2>Adicionar à biblioteca</h2>
-            <form id="video-upload-form" class="video-upload-form">
-              <div class="video-remote-import">
-                <div class="video-remote-copy">
-                  <span>Enviar direto por link</span>
-                  <small>Cole um link do YouTube ou um link HTTPS direto para um arquivo MP4, MOV, WEBM ou MKV autorizado. O NEXUS baixa no servidor e coloca na biblioteca sem abrir nenhuma pasta do Windows.</small>
-                </div>
-                <div class="video-remote-row">
-                  <input id="video-remote-url" type="url" inputmode="url" autocomplete="off" placeholder="https://site.com/video.mp4">
-                  <button type="button" id="video-remote-import" class="ghost-action">Importar link</button>
-                </div>
-              </div>
-              <div class="video-upload-divider"><span>ou envie um arquivo do computador</span></div>
-              <label class="video-dropzone">
-                <span>Selecionar vídeo</span>
-                <strong id="video-file-name">MP4, MOV, WEBM ou MKV</strong>
-                <small>Até 100 MB nesta primeira versão.</small>
-                <input id="video-file" type="file" accept="video/mp4,video/quicktime,video/webm,video/x-matroska,.mkv,.m4v" hidden multiple>
-              </label>
-              <div class="video-options">
-                <label><span>Nome do filme / série (opcional)</span><input id="video-content-title" maxlength="100" placeholder="Ex.: Reacher"></label>
-                <label><span>Pasta</span><select id="video-upload-folder"><option value="default">Meus vídeos</option></select></label>
-                <label><span>WhatsApp no vídeo (opcional)</span><input id="video-whatsapp" maxlength="90" placeholder="Ex.: (21) 99999-9999"></label>
-                <div class="video-fixed-format-note"><strong>Padrão fixo</strong><span>1 vídeo completo · Instagram 9:16 · áudio original · sem legenda automática.</span></div>
-              </div>
-              <div class="video-upload-progress" id="video-upload-progress" hidden><i></i><span>Enviando...</span></div>
-              <button type="submit" class="connection-submit">Salvar na biblioteca</button>
-            </form>
-          </article>
-
-          <article class="panel settings-panel">
-            <div class="video-library-heading">
-              <div><p class="eyebrow">BIBLIOTECA</p><h2>Meus vídeos</h2></div>
-              <div class="video-library-actions">
-                <select id="video-folder-filter"><option value="">Todas as pastas</option><option value="default">Meus vídeos</option></select>
-                <input id="video-new-folder-name" maxlength="80" placeholder="Nova pasta">
-                <button type="button" id="video-create-folder" class="ghost-action">Criar pasta</button>
-                <button type="button" id="video-rename-folder" class="ghost-action">Renomear pasta</button>
-                <button type="button" id="video-delete-folder" class="ghost-action">Excluir pasta</button>
-              </div>
-            </div>
-            <div id="client-video-jobs" class="client-video-jobs">
-              <div class="post-client-empty"><strong>Nenhum vídeo enviado</strong><span>Seus trabalhos aparecerão aqui com o andamento.</span></div>
-            </div>
-          </article>
-        </section>
-      </div>
-
-      <div id="view-trailers" class="client-view" hidden>
-        <section class="settings-heading">
-          <div>
-            <p class="eyebrow">NEXUS TRAILER FINDER</p>
-            <h1>Filmes e séries</h1>
-            <p class="muted">Pesquise pelo título e abra o trailer oficial. Quando o resultado não tiver um arquivo de vídeo direto autorizado, use “Usar título na biblioteca” e depois envie o vídeo ou informe um link HTTPS direto. O NEXUS só libera os cortes depois que o arquivo realmente entra na Biblioteca.</p>
-          </div>
-          <span id="trailer-search-status" class="save-status"></span>
-        </section>
-        <section class="panel settings-panel wide-panel trailer-search-panel">
-          <form id="trailer-search-form" class="trailer-search-form trailer-search-premium">
-            <div class="trailer-kind-block">
-              <span class="trailer-field-label">O que você procura?</span>
-              <div class="trailer-kind-toggle" role="group" aria-label="Tipo de conteúdo">
-                <button type="button" class="active" data-trailer-kind="movie" aria-pressed="true"><span>FILME</span></button>
-                <button type="button" data-trailer-kind="series" aria-pressed="false"><span>SÉRIE</span></button>
-              </div>
-              <select id="trailer-type" aria-hidden="true" tabindex="-1"><option value="movie">Filme</option><option value="series">Série</option></select>
-            </div>
-            <label class="trailer-query">
-              <span class="trailer-field-label">Título</span>
-              <span class="trailer-query-shell"><span class="trailer-search-icon" aria-hidden="true">⌕</span><input id="trailer-query" maxlength="120" placeholder="Digite o nome do filme ou série..." autocomplete="off" required></span>
-            </label>
-            <button type="submit" class="trailer-search-submit"><span>Pesquisar</span><small>trailer oficial</small></button>
-          </form>
-          <div id="trailer-results" class="trailer-results">
-            <div class="post-client-empty"><strong>Pesquise um título</strong><span>Os resultados aparecem aqui com capa, ano, sinopse e link do trailer.</span></div>
-          </div>
-        </section>
-      </div>
-
-      <div id="view-posting" class="client-view" hidden>
-        <section class="settings-heading">
-          <div>
-            <p class="eyebrow">PERFIL DO AGENTE</p>
-            <h1>Conte ao NEXUS sobre sua empresa</h1>
-            <p class="muted">Preencha as informações do seu negócio. Depois de salvar, o perfil será enviado ao Painel Master e a configuração técnica ficará por conta do administrador NEXUS.</p>
-          </div>
-          <span id="profile-save-status" class="save-status"></span>
-        </section>
-
-        <form id="agent-profile-form">
-          <nav class="profile-tabs" aria-label="Etapas do perfil">
-            <button type="button" class="active" data-profile-tab="business">1 · Negócio</button>
-            <button type="button" data-profile-tab="identity">2 · Cores e visual</button>
-            <button type="button" data-profile-tab="brand">3 · Logo e contato</button>
-          </nav>
-
-          <section class="profile-tab-panel active" data-profile-panel="business">
-            <article class="panel settings-panel wide-panel">
-              <p class="eyebrow">SUA EMPRESA</p><h2>Informações para treinar o agente</h2>
-              <div class="form-grid profile-form-grid">
-                <label><span>Nome do agente</span><input id="profile-agent-name" maxlength="80" placeholder="Ex.: Claire, Ragnar, Luna"></label>
-                <label><span>Nome da empresa / marca</span><input id="profile-brand-name" maxlength="120" placeholder="Ex.: Flow Arts"></label>
-                <label><span>Nicho / segmento</span><input id="profile-niche" list="profile-niche-options" maxlength="80" placeholder="Digite ou escolha"><datalist id="profile-niche-options"><option value="Streaming"><option value="Restaurante"><option value="Delivery"><option value="Loja / E-commerce"><option value="Serviços"><option value="Imobiliária"><option value="Automotivo"><option value="Academia / Fitness"><option value="Beleza / Estética"><option value="Barbearia"><option value="Saúde / Clínica"><option value="Odontologia"><option value="Advocacia"><option value="Contabilidade"><option value="Educação / Cursos"><option value="Infoprodutos"><option value="Marketing / Agência"><option value="Tecnologia / Software"><option value="Turismo / Hotelaria"><option value="Moda / Roupas"><option value="Pet Shop / Veterinária"><option value="Construção / Reformas"><option value="Energia Solar"><option value="Seguros"><option value="Financeiro"><option value="Fotografia / Vídeo"><option value="Eventos / Festas"><option value="Música / Artista"><option value="Influenciador / Criador"><option value="Supermercado / Mercado"><option value="Farmácia"><option value="Outro"></datalist></label>
-                <label><span>Público principal</span><input id="profile-audience" maxlength="120" placeholder="Ex.: pequenas empresas e empreendedores"></label>
-                <label><span>Objetivo principal</span><select id="profile-goal"><option>Vender mais</option><option>Captar leads</option><option>Ganhar seguidores</option><option>Fortalecer a marca</option><option>Gerar autoridade</option><option>Divulgar produtos e serviços</option><option>Outro</option></select></label>
-                <label><span>Cidade / região de atendimento</span><input id="profile-region" maxlength="120" placeholder="Ex.: Cabo Frio - RJ ou atendimento online"></label>
-                <label class="wide"><span>O que sua empresa vende ou oferece?</span><textarea id="profile-offer" rows="4" maxlength="900" placeholder="Explique de forma simples o que você vende e como ajuda seus clientes."></textarea></label>
-                <label class="wide"><span>Principais produtos / serviços</span><textarea id="profile-services" rows="4" maxlength="900" placeholder="Liste os produtos ou serviços mais importantes."></textarea></label>
-                <label class="wide"><span>Diferenciais da empresa</span><textarea id="profile-differentials" rows="3" maxlength="700" placeholder="Preço, atendimento, experiência, rapidez, qualidade, garantia..."></textarea></label>
-                <label><span>Tom da comunicação</span><input id="profile-tone" maxlength="120" placeholder="Ex.: profissional, direto e moderno"></label>
-                <label><span>Chamada preferida (CTA)</span><input id="profile-cta" maxlength="180" placeholder='Ex.: Comente "QUERO" ou chame no direct'></label>
-                <label class="wide"><span>O que o agente NÃO deve publicar?</span><textarea id="profile-avoid" rows="3" maxlength="700" placeholder="Assuntos, palavras, promessas ou temas que devem ser evitados."></textarea></label>
-                <label class="wide"><span>Informações adicionais</span><textarea id="profile-notes" rows="4" maxlength="1200" placeholder="Conte qualquer detalhe que ajude o NEXUS a entender melhor sua empresa."></textarea></label>
-              </div>
-            </article>
-          </section>
-
-          <section class="profile-tab-panel" data-profile-panel="identity">
-            <article class="panel settings-panel wide-panel">
-              <p class="eyebrow">IDENTIDADE VISUAL</p><h2>Escolha as cores da sua marca</h2>
-              <p class="muted">Mexa nas cores abaixo e veja uma prévia de como a identidade do seu agente pode ficar.</p>
-              <div class="color-grid profile-color-grid">
-                <label><span>Cor principal</span><div class="color-control"><input id="profile-primary" type="color"><code id="profile-primary-text">#22c55e</code></div></label>
-                <label><span>Cor secundária</span><div class="color-control"><input id="profile-secondary" type="color"><code id="profile-secondary-text">#050807</code></div></label>
-              </div>
-              <div id="agent-profile-preview" class="agent-profile-preview">
-                <div class="profile-preview-glow"></div>
-                <div class="profile-preview-logo">
-                  <img id="profile-preview-logo" alt="Logo da empresa" hidden>
-                  <span id="profile-preview-initials">NX</span>
-                </div>
-                <div class="profile-preview-copy">
-                  <small id="profile-preview-niche">SEU SEGMENTO</small>
-                  <strong id="profile-preview-brand">Sua marca</strong>
-                  <span id="profile-preview-agent">Agente NEXUS</span>
-                  <em id="profile-preview-cta">Sua chamada aparecerá aqui</em>
-                </div>
-              </div>
-            </article>
-          </section>
-
-          <section class="profile-tab-panel" data-profile-panel="brand">
-            <article class="panel settings-panel wide-panel">
-              <p class="eyebrow">MARCA E CONTATO</p><h2>Logo e canais da empresa</h2>
-              <div class="profile-brand-grid">
-                <div class="profile-logo-uploader">
-                  <div class="profile-logo-stage">
-                    <img id="profile-logo-stage-image" alt="Prévia da logo" hidden>
-                    <span id="profile-logo-stage-placeholder">LOGO</span>
-                  </div>
-                  <label class="profile-file-button">Selecionar logo
-                    <input id="profile-logo-file" type="file" accept="image/png,image/jpeg,image/webp" hidden>
-                  </label>
-                  <button id="profile-logo-remove" type="button" class="profile-logo-remove">Remover logo</button>
-                  <small>PNG, JPG ou WebP. A imagem será otimizada antes do envio.</small>
-                </div>
-                <div class="form-grid profile-contact-grid">
-                  <label><span>WhatsApp</span><input id="profile-whatsapp" maxlength="40" placeholder="Ex.: 22 99999-9999"></label>
-                  <label><span>Site</span><input id="profile-website" maxlength="220" placeholder="https://seusite.com.br"></label>
-                  <div class="profile-info-card wide">
-                    <strong>O que acontece depois?</strong>
-                    <span>Ao salvar, o Painel Master recebe seu perfil completo, cores, logo e informações comerciais. O administrador configura horários, estratégia, automações, IA e regras de publicação.</span>
-                  </div>
-                </div>
-              </div>
-            </article>
-          </section>
-
-          <div class="save-bar profile-save-bar">
-            <div><strong>Enviar perfil ao NEXUS</strong><span>Você poderá atualizar estas informações depois.</span></div>
-            <button type="submit" id="save-agent-profile">Salvar perfil do meu agente</button>
-          </div>
-        </form>
-      </div>
-
-      <div id="view-support" class="client-view" hidden>
-        <section class="settings-heading">
-          <div><p class="eyebrow">SUPORTE NEXUS</p><h1>Como podemos ajudar?</h1><p class="muted">Abra um chamado aqui. A equipe responsável recebe a notificação diretamente no Painel Master.</p></div>
-          <span id="support-send-status" class="save-status"></span>
-        </section>
-        <section class="support-client-grid">
-          <article class="panel settings-panel">
-            <p class="eyebrow">NOVO CHAMADO</p><h2>Falar com o suporte</h2>
-            <form id="support-form" class="support-form">
-              <label><span>Assunto</span><input id="support-subject" maxlength="140" required placeholder="Ex.: Instagram não conectou"></label>
-              <label><span>Categoria</span><select id="support-category"><option>Instagram / Meta</option><option>Postagens</option><option>Agente / automação</option><option>Acesso ao NEXUS</option><option>Cobrança / plano</option><option>Outro</option></select></label>
-              <label><span>Explique o problema</span><textarea id="support-message" rows="7" maxlength="3000" required placeholder="Conte o que aconteceu e o que você precisa."></textarea></label>
-              <button class="connection-submit" type="submit">Abrir chamado</button>
-            </form>
-          </article>
-          <article class="panel settings-panel">
-            <p class="eyebrow">ACOMPANHAMENTO</p><h2>Meus chamados</h2>
-            <div id="client-support-list" class="client-support-list"><p class="muted">Nenhum chamado aberto.</p></div>
-          </article>
-        </section>
-      </div>
-
-      <div id="view-setup" class="client-view" hidden>
-        <section class="settings-heading">
-          <div>
-            <p class="eyebrow">CONFIGURAÇÃO NEXUS</p>
-            <h1>Seu agente</h1>
-            <p class="muted">A infraestrutura técnica é gerenciada pelo NEXUS. Você só precisa autorizar o Instagram e definir o perfil do agente.</p>
-          </div>
-          <div class="progress-pill"><strong id="setup-progress">0%</strong><span>concluído</span></div>
-        </section>
-
-        <section class="wizard-list">
-          <article class="wizard-step done">
-            <div class="step-number">1</div>
-            <div class="step-body">
-              <strong>Infraestrutura NEXUS</strong>
-              <span>Infraestrutura, banco de dados, automação e IA são administrados centralmente. Nenhuma credencial técnica é exigida do cliente.</span>
-              <small class="provider-line connected">Gerenciada pelo NEXUS</small>
-            </div>
-            <span class="step-state">Concluído</span>
-          </article>
-
-          <article class="wizard-step" data-step="instagram">
-            <div class="step-number">2</div>
-            <div class="step-body">
-              <strong>Instagram profissional</strong>
-              <span>Autorize a conta profissional que o agente vai analisar, atender e publicar.</span>
-              <div class="step-actions"><button type="button" id="setup-instagram-connect" class="instagram-connect-action">Conectar Instagram</button></div>
-              <small class="provider-line" id="setup-instagram-status">Aguardando autorização</small>
-            </div>
-            <span class="step-state">Pendente</span>
-          </article>
-
-          <article class="wizard-step" data-step="creativeProfile">
-            <div class="step-number">3</div>
-            <div class="step-body">
-              <strong>Perfil do agente</strong>
-              <span>Defina nicho, público, identidade visual, horários, CTA, tom e temas das postagens.</span>
-              <div class="step-actions">
-                <button type="button" data-open-posting>Configurar perfil</button>
-                <button type="button" data-complete="creativeProfile">Marcar como concluído</button>
-              </div>
-            </div>
-            <span class="step-state">Pendente</span>
-          </article>
-
-          <article class="wizard-step support-step">
-            <div class="step-number">4</div>
-            <div class="step-body">
-              <strong>Precisa de ajuda?</strong>
-              <span>Abra um chamado pelo próprio NEXUS. O cliente não precisa configurar a infraestrutura manualmente.</span>
-              <div class="step-actions"><button type="button" id="request-support">Abrir suporte</button></div>
-            </div>
-            <span class="step-state">NEXUS</span>
-          </article>
-        </section>
-      </div>
-
-      <footer><span>NEXUS AI</span><small>Ambiente seguro · NEXUS AI</small></footer>
-    </section>
-  </main>
-  <script src="/client.js?v=80" defer></script>
-</body>
-</html>
+  </section>
+</main></body></html>

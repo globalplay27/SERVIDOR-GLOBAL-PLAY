@@ -82,9 +82,7 @@ function renderAgentProfiles() {
     if (!p.submittedAt) {
       return `<article class="master-profile-card waiting"><div class="master-profile-head"><div class="master-profile-logo fallback">${initials(client.name)}</div><div><span class="profile-kicker">AGUARDANDO CLIENTE</span><h3>${escapeHtml(client.name)}</h3><small>O perfil do agente ainda não foi enviado.</small></div></div></article>`;
     }
-    const logo = p.logoUrl
-      ? `<div class="master-profile-logo"><img src="${escapeHtml(p.logoUrl)}" alt=""></div>`
-      : `<div class="master-profile-logo fallback" style="--profile-color:${escapeHtml(p.primaryColor||client.primaryColor||"#22c55e")}">${initials(p.brandName||client.name)}</div>`;
+    const logo = `<div class="master-profile-logo fallback" style="--profile-color:${escapeHtml(p.primaryColor||client.primaryColor||"#22c55e")}">${initials(p.brandName||client.name)}</div>`;
     const status = p.status === "configured" ? "CONFIGURADO" : "NOVO PERFIL";
     const post = client.postingProfile || {};
     const times = Array.isArray(client.postTimes) ? client.postTimes : ["09:00","12:00","18:00"];
