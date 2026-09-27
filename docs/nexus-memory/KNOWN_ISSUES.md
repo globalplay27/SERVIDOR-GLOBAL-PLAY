@@ -5,6 +5,7 @@
 - O post Ragnar das 09:00 de 2026-09-27 também não era publicável: mídia ausente e Designer rejeitado. O sistema agiu corretamente ao não enviá-lo.
 - Hipóteses a verificar com D1/logs: cliente offline, jobs falhos, mídia única indisponível, gates pendentes, secret Meta e IG ID divergentes, token/escopos, erro no container ou publicação, cron não executado.
 - Evidência de código: `instagram-credentials.js` prioriza secret Ragnar com ID IG fixo; `agent-runtime.js` bloqueia mídia ausente/repetida; `scheduled_jobs` registra erro. Nenhuma dessas hipóteses equivale ao erro efetivo.
+- Nova causa de código corrigida localmente: o Creator ignorava slots já existentes sem mídia; agora reaproveita mídia nova do pool e reabre o fluxo de fiscalização. Permanece aberto até deploy e evidência real.
 
 ## P0 — Controle visual deixa passar arte ruim
 - Causa de código identificada: `runCreator` grava flags `visualPolicy` sempre verdadeiras; `runDesigner` confere essas flags e presença de URL, não o conteúdo da imagem. `runPublisher` aceita `designer: approved`.

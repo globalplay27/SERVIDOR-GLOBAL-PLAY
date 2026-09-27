@@ -1,5 +1,10 @@
 # Histórico de alterações feitas pelo Work
 
+## 2026-09-27 — Autorrecuperação de post sem mídia
+- Corrigido o Creator para não ignorar um slot diário já existente quando ele está sem mídia.
+- Quando surge uma mídia válida no pool, o Creator a vincula ao post incompleto, zera tentativas/erro, redefine os gates como pendentes e devolve o post ao fluxo Copy Chief → Designer → Publisher.
+- Validação local aprovada com checagem de sintaxe e bundle Wrangler; aguarda CI/deploy para confirmação em produção.
+
 ## 2026-09-27 — Fechamento uniforme do Publisher
 - Preparada correção para exigir Copy Chief e Designer aprovados também no envio manual e no `publisher-sweep`, eliminando os dois desvios que podiam contornar os fiscais.
 - Limitadas a três as tentativas por post nos três caminhos de publicação; falhas manuais agora incrementam `retryCount`.

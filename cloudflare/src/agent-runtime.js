@@ -437,14 +437,41 @@ async function runCreator(env,client,strategy,options) {
     ?strategy.ctaRotation
     :[strategy?.cta||'Comente "QUERO" para saber mais'];
   const created=[];
+  const repaired=[];
+  const approval=config.autoPublish&&!config.approvalRequired?"approved":"pending";
 
   for(let index=0;index<times.length;index++){
     const time=times[index];
     const scheduledFor=scheduleIso(time,index);
     const day=localDay(scheduledFor);
     const id="agentcore:"+client.id+":"+day+":"+String(time).replace(":","");
-    const exists=await env.DB.prepare("SELECT id FROM post_ledger WHERE id=?1 LIMIT 1").bind(id).first();
-    if(exists)continue;
+    const exists=await env.DB.prepare(
+      "SELECT id,status,approval_status,payload_json FROM post_ledger WHERE id=?1 LIMIT 1"
+    ).bind(id).first();
+    if(exists){
+      const existingPayload=parseJson(exists.payload_json,{});
+      const existingMedia=String(existingPayload.imageUrl||existingPayload.publicImageUrl||"").trim();
+      const replacement=existingMedia?"":String(mediaPool.shift()||"");
+      if(replacement){
+        existingPayload.imageUrl=replacement;
+        existingPayload.retryCount=0;
+        existingPayload.recoveredAt=new Date().toISOString();
+        existingPayload.recoveryReason="missing_media_repaired_by_creator";
+        existingPayload.intelligence={
+          ...(existingPayload.intelligence||{}),
+          mediaSource:"standard-media-pool-recovery"
+        };
+        existingPayload.qualityGates={copyChief:"pending",designer:"pending"};
+        await env.DB.prepare(
+          `UPDATE post_ledger
+           SET status='ready', approval_status=?2, error='', payload_json=?3, updated_at=CURRENT_TIMESTAMP
+           WHERE id=?1`
+        ).bind(id,approval,JSON.stringify(existingPayload)).run();
+        repaired.push({id,scheduledFor,scheduledHour:time,imageUrl:replacement});
+        usedPublishedMedia.add(mediaKey(replacement));
+      }
+      continue;
+    }
 
     const theme=String(themes[index%themes.length]||"Conteúdo");
     const hook=pickUniqueHook(index,day,strategy?.radarTerms||[],recentCaptions);
@@ -472,7 +499,6 @@ async function runCreator(env,client,strategy,options) {
       ].filter(x=>x!==null).join("\n").slice(0,2200);
     }
 
-    const approval=config.autoPublish&&!config.approvalRequired?"approved":"pending";
     const imageUrl=String(mediaPool.shift()||"");
     const payload={
       clientName:client.name||client.id,
@@ -516,17 +542,18 @@ async function runCreator(env,client,strategy,options) {
   await recordAgentExecution(env,client,"CREATOR",{
     function:"growth-30d-creative-generation",trigger:options.trigger,startedAt,status:"success",
     model:"instagram-growth-skill-layer",quantity:created.length,
-    message:created.length
-      ?created.length+" pauta(s) únicas criadas com CTA e gancho rotativos."
-      :"Agenda já preparada; nenhuma pauta duplicada criada.",
+    message:created.length||repaired.length
+      ?created.length+" pauta(s) criada(s) e "+repaired.length+" postagem(ns) incompleta(s) recuperada(s)."
+      :"Agenda já preparada; nenhuma pauta duplicada criada e nenhuma recuperação necessária.",
     metadata:{
       approvalRequired:config.approvalRequired,
       autoPublish:config.autoPublish,
       draftIds:created.map(x=>x.id),
+      repairedIds:repaired.map(x=>x.id),
       uniqueMediaAvailable:mediaPool.length
     }
   });
-  return created;
+  return {created,repaired};
 }
 
 async function runPublisher(env,client,options) {

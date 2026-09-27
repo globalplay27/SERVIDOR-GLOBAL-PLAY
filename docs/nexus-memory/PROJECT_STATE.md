@@ -38,4 +38,4 @@ Atualizado em 2026-09-27, aproximadamente 12:24 BRT. Esta página separa constat
 - Uma rota temporária e sanitizada do próprio Worker permitiu ler o estado operacional sem tokens, legendas ou URLs; ela foi removida após a investigação.
 
 ## Próximo passo exato
-Enviar a correção uniforme dos gates/retentativas para uma branch, validar no CI, integrar em `main` e confirmar o deploy. Depois obter leitura autorizada dos registros D1 para correlacionar jobs, fiscais, publicações e métricas de `ragnar-one` e `globalplay-streaming` antes de ampliar o ciclo de aprendizado.
+Implantar a autorrecuperação do Creator e observar se os posts incompletos do Ragnar recebem as novas mídias e atravessam Copy Chief → Designer → Publisher. Depois obter leitura autorizada dos registros D1 para correlacionar jobs, fiscais, publicações e métricas das duas contas.
