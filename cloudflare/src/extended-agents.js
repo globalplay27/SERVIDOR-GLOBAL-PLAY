@@ -1,4 +1,5 @@
 import { getClient } from "./clients.js";
+import { reviewImage, visualApproval } from "./visual-review.js";
 import { agentCoreState, patchAgentCoreState, recordAgentExecution, normalizeAgentCoreConfig } from "./agent-core.js";
 
 function parseJson(raw, fallback = {}) {
@@ -76,18 +77,32 @@ async function runCopyChief(env,client,options){
 
 async function runDesigner(env,client,options){
   const startedAt=new Date().toISOString();
-  const rows=(await ledgerRows(env,client.id,120)).filter(x=>["ready","scheduled"].includes(String(x.status||""))).slice(0,30);
+  const rows=(await ledgerRows(env,client.id,120)).filter(x=>["ready","scheduled","failed"].includes(String(x.status||""))).slice(0,30);
   let ready=0,missing=0;
   const checks=[];
+  let visualCalls=0;
   for(const row of rows){
     const payload=row.payload&&typeof row.payload==="object"?row.payload:{}; const media=String(payload.imageUrl||payload.publicImageUrl||"").trim(); const mediaReady=/^https:\/\//i.test(media);
     // Creator declares the single-scene policy in intelligence. Designer is the
     // mandatory gate that enforces it before Publisher.
     const policy=payload.intelligence?.visualPolicy||{}; const singleScene=policy.singleScene===true; const noSplitScreen=policy.noSplitScreen===true; const noCollage=policy.noCollage===true; const tvFilled=policy.tvScreenMustBeFilled!==false;
-    const ok=mediaReady&&singleScene&&noSplitScreen&&noCollage&&tvFilled; ok?ready++:missing++;
+    let ok=mediaReady&&singleScene&&noSplitScreen&&noCollage&&tvFilled;
+    // Roll out real image inspection to Global Play first. Never approve a
+    // missing/failed inspection using Creator's self-declared policy flags.
+    if(client.id==="globalplay-streaming"){
+      const prior=payload.visualReview;
+      const cached=prior?.version==="visual-review-v1"&&prior.media===media;
+      const settled=cached&&(["approved","rejected"].includes(prior.status)||Number(prior.attempts)>=3||Date.parse(prior.retryAt)>Date.now());
+      if(settled||visualCalls<1){
+        if(!settled&&mediaReady)visualCalls++;
+        payload.visualReview=await reviewImage(env,client,media,prior);
+      }
+      ok=mediaReady&&visualApproval(client.id,payload);
+    }
+    ok?ready++:missing++;
     payload.qualityGates={...(payload.qualityGates||{}),designer:ok?"approved":"rejected",designerAt:new Date().toISOString()};
     await env.DB.prepare("UPDATE post_ledger SET payload_json=?2,error=?3,updated_at=CURRENT_TIMESTAMP WHERE id=?1").bind(row.id,JSON.stringify(payload),ok?"":"visual_quality_rejected").run();
-    checks.push({id:row.id,mediaReady:mediaReady,singleScene,noSplitScreen,noCollage,tvFilled,ok,format:payload.intelligence?.format||"unknown"});
+    checks.push({id:row.id,mediaReady:mediaReady,singleScene,noSplitScreen,noCollage,tvFilled,ok,visualReview:payload.visualReview?.status||null,reason:payload.visualReview?.reason||null,format:payload.intelligence?.format||"unknown"});
   }
   const output={checked:rows.length,ready,missing,checks,skills:["visual-direction","creative-consistency","media-readiness"]};
   await recordAgentExecution(env,client,"DESIGNER",{function:"visual-readiness-gate",trigger:options.trigger,startedAt,status:missing?"warning":"success",model:"visual-readiness-rules",quantity:rows.length,message:ready+" criativo(s) prontos; "+missing+" aguardando midia."});

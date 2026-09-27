@@ -1,3 +1,4 @@
+import { visualApproval } from "./visual-review.js";
 import { publishInstagramImage } from "./publisher.js";
 import { runLeadHunter, leadHunterConfig } from "./lead-hunter.js";
 import { runAgentCoreCycle } from "./agent-runtime.js";
@@ -18,11 +19,11 @@ function automationEnabled(env) {
 
 const MAX_PUBLISH_RETRIES = 3;
 
-function publishGuard(payload = {}) {
+function publishGuard(payload = {}, clientId) {
   const quality = payload?.qualityGates && typeof payload.qualityGates === "object"
     ? payload.qualityGates : {};
   const retryCount = Math.max(0, Number(payload?.retryCount || 0));
-  if (quality.copyChief !== "approved" || quality.designer !== "approved") {
+  if (quality.copyChief !== "approved" || quality.designer !== "approved" || !visualApproval(clientId, payload)) {
     return { ok: false, error: "quality_gate_pending", retryCount };
   }
   if (retryCount >= MAX_PUBLISH_RETRIES) {
@@ -80,7 +81,7 @@ async function runPublisherSweep(env, clientId, now) {
 
   for (const row of rows) {
     const payload = parseJson(row.payload_json, {});
-    const guard = publishGuard(payload);
+    const guard = publishGuard(payload, clientId);
     if (!guard.ok) {
       await savePostResult(env, row, { status: row.status, error: guard.error, payload });
       summary.skipped += 1;

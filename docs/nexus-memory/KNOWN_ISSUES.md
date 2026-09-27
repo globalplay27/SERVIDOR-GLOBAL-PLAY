@@ -31,3 +31,6 @@
 ## P0 — Leitura de produção D1 indisponível pelo CI
 - Workflow [36321480825](https://github.com/globalplay27/SERVIDOR-GLOBAL-PLAY/actions/runs/36321480825): cada `wrangler d1 execute --remote --json` falhou com código Cloudflare `7403` antes de devolver linhas. CI/deploy passou no mesmo commit. Hipótese principal: token permite Worker deploy, mas não D1 direto, ou conta associada ao token não autoriza D1. Não foi feita alteração de permissão.
 - O workflow `nexus-audit.yml` e script executam apenas SELECT, omitem legendas/tokens/URLs, e agora falham corretamente quando as consultas falham. Seu último status vermelho representa ausência de acesso diagnóstico, não um teste do cron/Instagram.
+
+## Retomada — 2026-09-27 20h UTC
+Pendências desta retomada: fonte contínua de mídia nova continua ausente; Global Play usa URLs configuradas/rascunhos existentes. Visão real ainda precisa de evidência de execução e saldo disponível. Cache identifica URL, não hash dos pixels. Métricas reais e replicação ao Ragnar não concluídas. Sem acesso autenticado ao D1 nesta sessão.

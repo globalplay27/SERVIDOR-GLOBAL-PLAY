@@ -15,3 +15,6 @@ Referência: `globalplay27/SERVIDOR-GLOBAL-PLAY@292649157`. Isto descreve códig
 9. `public/` contém painéis. `portal.js` expõe acompanhamento, aprovação, publicação manual e conexão Instagram; `master.js` expõe rotas protegidas e diagnósticos públicos.
 
 Fluxo pretendido no código: cron → `scheduled_jobs` → ciclo central → `post_ledger` → fiscais → Publisher → Meta Graph → `post_ledger`. Lacuna comprovada: fiscal visual verifica declarações e há caminhos alternativos sem fiscal. As rotas antigas e arquivos legados no repositório não são evidência de serviço ativo.
+
+## Retomada — 2026-09-27 20h UTC
+Nova inspeção visual preparada: extended-agents → visual-review → openAIResponses (chave do cliente e orçamento diário existentes). Modelo padrão gpt-4.1-mini, resposta estruturada, uma avaliação nova por passagem do Designer, cache por URL, backoff de 30 minutos, até três tentativas por mídia/post. Todos os publicadores exigem parecer correspondente à URL para Global Play. Ragnar permanece no fluxo anterior. URLs revisadas devem ser imutáveis; alteração de bytes na mesma URL não é detectada pelo cache.

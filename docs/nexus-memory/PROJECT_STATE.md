@@ -39,3 +39,6 @@ Atualizado em 2026-09-27, aproximadamente 12:24 BRT. Esta página separa constat
 
 ## Próximo passo exato
 Implantar a autorrecuperação do Creator e observar se os posts incompletos do Ragnar recebem as novas mídias e atravessam Copy Chief → Designer → Publisher. Depois obter leitura autorizada dos registros D1 para correlacionar jobs, fiscais, publicações e métricas das duas contas.
+
+## Retomada — 2026-09-27 20h UTC
+Retomada em 27/09/2026: main 45de28b; CI/deploy 36338210500 concluído com sucesso. Health atual responde ok/D1/R2. Correção preparada: inspeção real da imagem para Global Play, bloqueio uniforme nos três publicadores, cache por URL e até três tentativas. Sem chamada real de visão nem consulta autenticada ao ledger nesta sessão; execução em produção ainda não comprovada.

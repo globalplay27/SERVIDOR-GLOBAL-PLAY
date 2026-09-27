@@ -26,6 +26,10 @@ jobs:
             node --check "$file"
           done
 
+      - name: Test visual quality gate
+        # Tests use mocked responses: no paid calls or Instagram publications.
+        run: node --test cloudflare/test/*.test.mjs
+
       - name: Validate Wrangler bundle
         working-directory: cloudflare
         run: |

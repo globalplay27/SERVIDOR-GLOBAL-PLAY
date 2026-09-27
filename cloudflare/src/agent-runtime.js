@@ -1,3 +1,4 @@
+import { visualApproval } from "./visual-review.js";
 import { getClient } from "./clients.js";
 import { resolveInstagramCredentials } from "./instagram-credentials.js";
 import { publishInstagramImage } from "./publisher.js";
@@ -591,7 +592,7 @@ async function runPublisher(env,client,options) {
     // Mandatory quality gates. Autonomous publishing must never bypass the
     // reviewers just because autoPublish is enabled.
     const quality=payload.qualityGates&&typeof payload.qualityGates==="object"?payload.qualityGates:{};
-    if(quality.copyChief!=="approved"||quality.designer!=="approved"){
+    if(quality.copyChief!=="approved"||quality.designer!=="approved"||!visualApproval(client.id,payload)){
       await env.DB.prepare(
         "UPDATE post_ledger SET error='quality_gate_pending',updated_at=CURRENT_TIMESTAMP WHERE id=?1"
       ).bind(row.id).run();

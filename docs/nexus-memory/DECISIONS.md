@@ -11,3 +11,6 @@
 - Nesta auditoria não foi tomada decisão de alterar runtime sem examinar as linhas de produção do Ragnar e do post ruim.
 - Autorizada em 2026-09-27 a conclusão do ciclo dos agentes no runtime existente. Primeira mudança escolhida: política única, fail-closed, para todos os caminhos de publicação e teto de três tentativas por post.
 - A recuperação automática pode preencher somente mídia já autorizada/configurada no pool; não reativar geração paga nem repetir mídia publicada para mascarar falta de conteúdo.
+
+## Retomada — 2026-09-27 20h UTC
+Implementação incremental da visão somente no Global Play, conforme prioridade do proprietário. Não reativada geração paga de imagens. A análise visual usa API e limite diário existentes; falta de saldo/erro impede aprovação e é registrada. Nenhuma postagem de teste disparada.

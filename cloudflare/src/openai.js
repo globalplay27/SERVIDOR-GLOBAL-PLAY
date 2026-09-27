@@ -158,7 +158,8 @@ export async function openAIResponses(env, clientId, input) {
       accept: "application/json",
       "user-agent": "Servidor-Nexus/1.0"
     },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(20000)
   });
 
   const data = await response.json().catch(() => ({}));

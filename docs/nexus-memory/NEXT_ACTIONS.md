@@ -11,3 +11,6 @@
 7. Com publicação e qualidade estáveis, levantar métricas de alcance/interações/frequência e propor experimentos de conteúdo sem promessa de seguidores.
 
 Em toda sessão: ler os sete documentos; revalidar commit/deploy e serviços; atualizar teste, decisão, problema, estado e próximo passo antes de encerrar.
+
+## Retomada — 2026-09-27 20h UTC
+Prioridade atual: concluir CI/deploy da revisão visual Global Play, obter evidência autenticada do Designer e do ledger sem publicar testes; resolver fonte de mídia nova respeitando proibição de reativar geração paga; depois métricas e replicação para Ragnar. Não confundir o deploy anterior 45de28b com funcionamento ponta a ponta.

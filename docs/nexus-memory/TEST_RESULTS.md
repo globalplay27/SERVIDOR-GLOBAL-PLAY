@@ -21,3 +21,8 @@
 | ~15:28 | Pool de mídia Ragnar | Validado localmente | 3 PNGs RGB 941×1672, proporção vertical próxima de 9:16, arquivos distintos por SHA-256; revisão visual confirmou uma cena, TV preenchida e ausência de texto/colagem. |
 
 Próximo teste necessário: consultas de leitura D1 aos últimos jobs, execuções e posts de cada cliente, mascarando URLs privadas/tokens e registrando IDs, horários, erros e gates. Nenhum teste sintético deve enviar conteúdo à Meta.
+
+## Retomada — 2026-09-27 20h UTC
+Retomada: seis testes locais de visão passaram (imagem enviada, reprovação de TV/colagem/marca, JSON inválido, cache/invalidação por URL, backoff/teto de tentativas, barreira nos publicadores). Todos os módulos passaram node --check. GET /health retornou ok/D1/R2. Nenhuma chamada real à Meta/OpenAI foi feita pelos testes. Bundle e deploy devem ser registrados após conclusão.
+
+Bundle Wrangler dry-run aprovado nesta retomada. Testes adicionados ao CI antes do deploy.

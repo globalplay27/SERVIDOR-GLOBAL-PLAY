@@ -1,3 +1,4 @@
+import { visualApproval } from "./visual-review.js";
 import { publishInstagramImage } from "./publisher.js";
 
 function parseJson(raw, fallback = {}) {
@@ -240,7 +241,7 @@ export async function publishPostNow(env, client, postId) {
     error.post = current;
     throw error;
   }
-  if (quality.copyChief !== "approved" || quality.designer !== "approved") {
+  if (quality.copyChief !== "approved" || quality.designer !== "approved" || !visualApproval(client.id, payload)) {
     const error = new Error("quality_gate_pending");
     error.status = 409;
     error.messageForUser = "O NEXUS bloqueou o envio porque Copy Chief e Designer ainda não aprovaram o conteúdo.";
