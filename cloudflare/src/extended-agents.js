@@ -61,7 +61,13 @@ async function runCopyChief(env,client,options){
   const startedAt=new Date().toISOString();
   const rows=(await ledgerRows(env,client.id,120)).filter(x=>["ready","scheduled"].includes(String(x.status||""))).slice(0,20);
   let strong=0,needsWork=0;
-  const reviews=rows.map(row=>{const c=String(row.caption||"");const hasCta=/quero|comente|siga|salva|envie|compartilh/i.test(c);const first=c.split(/\n/)[0].trim();const hookStrong=first.length>=18&&first.length<=140;const ok=hasCta&&hookStrong&&c.length<=2200;ok?strong++:needsWork++;return{id:row.id,ok,hasCta,hookStrong,length:c.length};});
+  const reviews=[];
+  for(const row of rows){
+    const c=String(row.caption||""); const hasCta=/quero|comente|siga|salva|envie|compartilh/i.test(c); const first=c.split(/\n/)[0].trim(); const hookStrong=first.length>=18&&first.length<=140; const ok=hasCta&&hookStrong&&c.length<=2200; ok?strong++:needsWork++;
+    const payload=row.payload&&typeof row.payload==="object"?row.payload:{}; payload.qualityGates={...(payload.qualityGates||{}),copyChief:ok?"approved":"rejected",copyChiefAt:new Date().toISOString()};
+    await env.DB.prepare("UPDATE post_ledger SET payload_json=?2,error=?3,updated_at=CURRENT_TIMESTAMP WHERE id=?1").bind(row.id,JSON.stringify(payload),ok?"":"copy_quality_rejected").run();
+    reviews.push({id:row.id,ok,hasCta,hookStrong,length:c.length});
+  }
   const output={reviewed:rows.length,strong,needsWork,reviews,skills:["hook-review","cta-review","caption-quality"]};
   await recordAgentExecution(env,client,"COPY CHIEF",{function:"caption-quality-gate",trigger:options.trigger,startedAt,status:needsWork?"warning":"success",model:"copy-quality-rules",quantity:rows.length,message:strong+" copy(s) fortes; "+needsWork+" precisam ajuste."});
   await patchAgentCoreState(env,client.id,{copyChief:output});
@@ -72,7 +78,17 @@ async function runDesigner(env,client,options){
   const startedAt=new Date().toISOString();
   const rows=(await ledgerRows(env,client.id,120)).filter(x=>["ready","scheduled"].includes(String(x.status||""))).slice(0,30);
   let ready=0,missing=0;
-  const checks=rows.map(row=>{const media=String(row.payload?.imageUrl||row.payload?.publicImageUrl||"").trim();const ok=/^https:\/\//i.test(media);ok?ready++:missing++;return{id:row.id,mediaReady:ok,format:row.payload?.intelligence?.format||"unknown"};});
+  const checks=[];
+  for(const row of rows){
+    const payload=row.payload&&typeof row.payload==="object"?row.payload:{}; const media=String(payload.imageUrl||payload.publicImageUrl||"").trim(); const mediaReady=/^https:\/\//i.test(media);
+    // Creator declares the single-scene policy in intelligence. Designer is the
+    // mandatory gate that enforces it before Publisher.
+    const policy=payload.intelligence?.visualPolicy||{}; const singleScene=policy.singleScene===true; const noSplitScreen=policy.noSplitScreen===true; const noCollage=policy.noCollage===true; const tvFilled=policy.tvScreenMustBeFilled!==false;
+    const ok=mediaReady&&singleScene&&noSplitScreen&&noCollage&&tvFilled; ok?ready++:missing++;
+    payload.qualityGates={...(payload.qualityGates||{}),designer:ok?"approved":"rejected",designerAt:new Date().toISOString()};
+    await env.DB.prepare("UPDATE post_ledger SET payload_json=?2,error=?3,updated_at=CURRENT_TIMESTAMP WHERE id=?1").bind(row.id,JSON.stringify(payload),ok?"":"visual_quality_rejected").run();
+    checks.push({id:row.id,mediaReady:mediaReady,singleScene,noSplitScreen,noCollage,tvFilled,ok,format:payload.intelligence?.format||"unknown"});
+  }
   const output={checked:rows.length,ready,missing,checks,skills:["visual-direction","creative-consistency","media-readiness"]};
   await recordAgentExecution(env,client,"DESIGNER",{function:"visual-readiness-gate",trigger:options.trigger,startedAt,status:missing?"warning":"success",model:"visual-readiness-rules",quantity:rows.length,message:ready+" criativo(s) prontos; "+missing+" aguardando midia."});
   await patchAgentCoreState(env,client.id,{designer:output});
