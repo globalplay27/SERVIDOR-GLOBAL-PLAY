@@ -32,7 +32,8 @@ export async function reviewImage(env, client, media, previous, request = openAI
 }
 
 export function visualApproval(clientId, payload = {}) {
-  if (clientId !== 'globalplay-streaming') return true;
+  const protectedClients = new Set(['globalplay-streaming', 'ragnar-one']);
+  if (!protectedClients.has(String(clientId || ''))) return true;
   const review = payload.visualReview;
   const media = String(payload.imageUrl || payload.publicImageUrl || '').trim();
   return Boolean(media && review?.version === VERSION && review.media === media && review.status === 'approved');
