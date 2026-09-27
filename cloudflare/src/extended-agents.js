@@ -116,6 +116,7 @@ async function runSupport(env,client,options){
 export async function runExtendedAgents(env,clientId,options={}){
   const client=await getClient(env,clientId); if(!client)throw new Error("client_not_found");
   const config=normalizeAgentCoreConfig(client); const requested=String(options.agent||"all").toLowerCase(); const run=id=>requested==="all"||requested===id; const out={};
+  const prePublish=String(options.phase||"")==="pre-publish";
   if(run("pesquisador")&&config.modules.pesquisador)out.pesquisador=await runResearcher(env,client,options);
   if(run("analista")&&config.modules.analista)out.analista=await runAnalyst(env,client,options);
   if(run("copy-chief")&&config.modules["copy-chief"])out["copy-chief"]=await runCopyChief(env,client,options);
