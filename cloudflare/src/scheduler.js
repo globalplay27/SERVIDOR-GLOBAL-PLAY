@@ -170,6 +170,26 @@ export async function runSchedulerTick(env, scheduledAt = new Date()) {
       ).bind(client.id).run();
     }
 
+    // A slow full cycle must not suppress publishing content that already
+    // passed both quality gates. Queue the sweep independently.
+    if (config.modules.publisher && due(state.lastPublisherQueuedAt, 5, nowMs)) {
+      const ready = await env.DB.prepare(
+        `SELECT id FROM post_ledger WHERE client_id=?1
+         AND status IN ('ready','scheduled','failed') AND approval_status='approved'
+         AND scheduled_for<=?2
+         AND COALESCE(json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.retryCount'),0)<3
+         AND json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.qualityGates.copyChief')='approved'
+         AND json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.qualityGates.designer')='approved'
+         AND COALESCE(json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.imageUrl'),'')<>''
+         LIMIT 1`
+      ).bind(client.id, now.toISOString()).first();
+      if (ready && await enqueue(env, client.id, "publisher-sweep", now, { trigger: "scheduler" })) {
+        summary.queued += 1;
+        summary.publisherSweeps += 1;
+      }
+      next.lastPublisherQueuedAt = now.toISOString();
+    }
+
     if (cycleIsDue) {
       if (await enqueue(env, client.id, "agent-core-cycle", now, {
         trigger: "scheduler",
@@ -179,14 +199,6 @@ export async function runSchedulerTick(env, scheduledAt = new Date()) {
         summary.cycles += 1;
       }
       next.lastCycleQueuedAt = now.toISOString();
-    } else if (config.modules.publisher && due(state.lastPublisherQueuedAt, 5, nowMs)) {
-      if (await enqueue(env, client.id, "publisher-sweep", now, {
-        trigger: "scheduler"
-      })) {
-        summary.queued += 1;
-        summary.publisherSweeps += 1;
-      }
-      next.lastPublisherQueuedAt = now.toISOString();
     }
 
     next.lastCronAt = now.toISOString();

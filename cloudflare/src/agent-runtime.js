@@ -698,7 +698,7 @@ async function runPublisher(env,client,options) {
        AND json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.qualityGates.copyChief')='approved'
        AND json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.qualityGates.designer')='approved'
        AND COALESCE(json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.imageUrl'),'')<>''
-     ORDER BY COALESCE(scheduled_for,created_at) ASC LIMIT 1`
+     ORDER BY COALESCE(scheduled_for,created_at) ASC LIMIT 20`
   ).bind(client.id,new Date().toISOString()).all();
 
   const recentPublished=await ledgerRows(env,client.id,150);
@@ -713,6 +713,7 @@ async function runPublisher(env,client,options) {
   let duplicateMediaBlocked=0,duplicateCaptionBlocked=0;
 
   for(const row of rows?.results||[]){
+    if(published>0)break;
     let approval=String(row.approval_status||"pending");
     const payload=parseJson(row.payload_json,{});
 
@@ -959,8 +960,8 @@ export async function runAgentCoreCycle(env, clientId, options = {}) {
     // Publisher must never run before the mandatory quality gates.
     // This applies both to the full autonomous cycle and to the frequent
     // publisher-sweep, which requests only the publisher module.
-    if(requested==="all"||requested==="publisher"){
-      const qualityAgent=requested==="publisher"?"all":requested;
+    if(requested==="all"){
+      const qualityAgent=requested;
       const prePublish=await runExtendedAgents(env,client.id,{
         ...options,
         agent:qualityAgent,
