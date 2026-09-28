@@ -570,7 +570,16 @@ async function runCreator(env,client,strategy,options) {
     if(exists){
       const existingPayload=parseJson(exists.payload_json,{});
       const existingMedia=String(existingPayload.imageUrl||existingPayload.publicImageUrl||"").trim();
-      const replacementInfo=existingMedia?{url:"",source:"",sourceInstagramMediaId:""}:await nextMedia(id);
+      const blockedMedia=String(existingPayload.blockedDesignerMedia||"");
+      const canRecheckBlocked=!existingMedia
+        &&localDay(scheduledFor)===localDay()
+        &&!existingPayload.blockedDesignerRecoveryAttemptedAt
+        &&/^https:\/\//i.test(blockedMedia);
+      const replacementInfo=existingMedia
+        ?{url:"",source:"",sourceInstagramMediaId:""}
+        :canRecheckBlocked
+          ?{url:blockedMedia,source:"blocked-media-recheck",sourceInstagramMediaId:""}
+          :await nextMedia(id);
       const replacement=String(replacementInfo.url||"");
       if(replacement){
         existingPayload.imageUrl=replacement;
@@ -578,6 +587,7 @@ async function runCreator(env,client,strategy,options) {
         existingPayload.retryCount=0;
         existingPayload.recoveredAt=new Date().toISOString();
         existingPayload.recoveryReason="missing_media_repaired_by_creator";
+        if(canRecheckBlocked)existingPayload.blockedDesignerRecoveryAttemptedAt=new Date().toISOString();
         existingPayload.intelligence={
           ...(existingPayload.intelligence||{}),
           mediaSource:replacementInfo.source||"standard-media-pool-recovery"
