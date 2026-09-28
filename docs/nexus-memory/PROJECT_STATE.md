@@ -1,5 +1,10 @@
 # Estado do Nexus 2.0
 
+## 2026-09-28 12h50 BRT — publicação parada
+- Produção: heartbeat do cron atualizado, mas Publisher das duas contas sem nova execução havia cerca de três horas; vários `agent-core-cycle` e `lead-hunter` marcados `stale_running_job_recovered`. Global Play tem posts aprovados sem mídia e `designer_replacement_queued`; Ragnar tem posts com imagem, mas revisão visual indisponível ou parecer ausente. `candidates:0` não significa publicação bem-sucedida.
+- Correção preparada nesta sessão: limite de 8 segundos em cada consulta Graph do Radar/Auditor; não altera gates nem envia posts. A hipótese de requisições Graph presas como causa dos jobs longos exige validação após deploy.
+- Há PR #31 simultâneo para distinguir falhas de transporte/orçamento OpenAI; ainda não integrado na leitura inicial. Global Play segue sem fonte comprovada de mídia inédita; não reativar geração paga ou repetir imagem usada.
+
 ## 2026-09-27 23h BRT — captação de leads (em implantação)
 - Produção antes da alteração: `/api/autonomy-health` respondeu cron saudável, 13 agentes vistos nas duas contas e `leadHunterRuns:0` no último minuto. Isso não comprova zero leads totais, apenas ausência de varredura naquele tick.
 - Código identificado: Lead Hunter automático desligado por padrão; Odin podia registrar sucesso ao classificar uma lista vazia. A última leitura de produção da configuração efetiva, contagem de leads e erros Meta ainda depende do novo diagnóstico sanitizado.
