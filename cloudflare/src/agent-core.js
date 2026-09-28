@@ -8,6 +8,7 @@ export const AGENT_CORE_MODULES = Object.freeze([
   { id: "creator", name: "CREATOR", skills: ["ig-reel","ig-caption","ig-carousel","ig-story","ig-repurpose"] },
   { id: "copy-chief", name: "COPY CHIEF", skills: ["hook-review","cta-review","caption-quality"] },
   { id: "designer", name: "DESIGNER", skills: ["visual-direction","creative-consistency","media-readiness"] },
+  { id: "video", name: "VIDEO", skills: ["reel-structure","video-adaptation","short-form"] },
   { id: "publisher", name: "PUBLISHER", skills: ["delivery","schedule","meta-publish"] },
   { id: "odin", name: "ODIN", skills: ["ig-comment","ig-reply","ig-dm","lead-scoring"] },
   { id: "suporte", name: "SUPORTE", skills: ["operational-health","integration-issues","incident-triage"] },
