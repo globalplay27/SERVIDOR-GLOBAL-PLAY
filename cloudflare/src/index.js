@@ -204,16 +204,33 @@ async function autonomyHealth(env) {
     const clients = (clientsResult?.results || []).map(client => {
       const agents = expectedAgents.map(agent => {
         const row = latest.get(String(client.id) + "::" + agent);
+        let detail = {};
+        if (agent === "PUBLISHER") {
+          try { detail = JSON.parse(row?.detail_json || "{}"); } catch {}
+        }
         const at = row?.created_at || null;
         const ageMinutes = at && Number.isFinite(Date.parse(at))
           ? Math.max(0, Math.round((now - Date.parse(at)) / 60000))
           : null;
-        return {
+        const result = {
           agent,
           status: row?.status || "never",
           lastRunAt: at,
           ageMinutes
         };
+        if (agent === "PUBLISHER") {
+          const m = detail?.metadata || {};
+          result.result = {
+            candidates: Number(detail.quantity || 0),
+            published: Number(m.published || 0),
+            failed: Number(m.failed || 0),
+            awaitingApproval: Number(m.awaitingApproval || 0),
+            awaitingMedia: Number(m.awaitingMedia || 0),
+            duplicateMediaBlocked: Number(m.duplicateMediaBlocked || 0),
+            duplicateCaptionBlocked: Number(m.duplicateCaptionBlocked || 0)
+          };
+        }
+        return result;
       });
       const missing = agents.filter(item => item.status === "never").map(item => item.agent);
       const leadSettings = leadConfigs.get(client.id) || {};
