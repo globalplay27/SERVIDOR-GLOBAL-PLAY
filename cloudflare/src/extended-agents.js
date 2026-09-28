@@ -11,7 +11,7 @@ function parseJson(raw, fallback = {}) {
 
 async function ledgerRows(env, clientId, limit = 160) {
   const r = await env.DB.prepare(
-    `SELECT id,status,approval_status,caption,error,payload_json,created_at,updated_at
+    `SELECT id,scheduled_for,status,approval_status,caption,error,payload_json,created_at,updated_at
      FROM post_ledger WHERE client_id=?1
      ORDER BY COALESCE(updated_at,created_at) DESC LIMIT ?2`
   ).bind(String(clientId), Math.max(1, Math.min(500, Number(limit || 160)))).all();
@@ -92,7 +92,10 @@ async function runDesigner(env,client,options){
       const priority=row=>{
         const due=Date.parse(String(row.scheduled_for||""));
         const media=String(row.payload?.imageUrl||row.payload?.publicImageUrl||"");
-        return media && Number.isFinite(due) && due<=now ? 0 : 1;
+        const localDate=ms=>new Date(ms-3*60*60*1000).toISOString().slice(0,10);
+        if(media && Number.isFinite(due) && due<=now && localDate(due)===localDate(now))return 0;
+        if(media && Number.isFinite(due) && due>now)return 1;
+        return 2;
       };
       return priority(a)-priority(b)
         || Date.parse(String(a.scheduled_for||a.created_at||""))
