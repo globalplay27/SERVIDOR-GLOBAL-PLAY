@@ -1,5 +1,9 @@
 # Próximas ações, em ordem
 
+## Resposta 400 do Ragnar, 2026-09-28
+1. Observar `openai.code` após diagnóstico sanitizado do parâmetro inválido. Corrigir exclusivamente o campo rejeitado; repetir uma revisão e manter o gate visual obrigatório.
+2. Confirmar status publicado e identificador na Meta/Instagram. Global Play ainda depende de nova mídia simples e original.
+
 ## Correção do orçamento de subrequests, 2026-09-28
 1. Implantar o teto de três mídias com insights por snapshot e um job por cron. Observar que `openai.status` muda de `transport_error` para `ok`/HTTP classificável e que uma imagem recebe parecer v2 aprovado ou rejeitado.
 2. Verificar Publisher com candidato elegível e resultado real `publishedAt`/ID da mídia. Se o transporte continuar falhando, investigar detalhe sanitizado da exceção no Worker sem expor chave.

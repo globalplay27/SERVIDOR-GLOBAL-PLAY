@@ -1,5 +1,8 @@
 # Problemas conhecidos
 
+## 2026-09-28 — resposta 400 na revisão Ragnar
+- Reduzido o consumo de requisições externas; status OpenAI mudou de `openai_transport_error` para HTTP 400 `invalid_value` às 16:17:59 UTC. Imagem pública Ragnar respondeu HTTP 200 / image/png a HEAD. O campo rejeitado não é exposto pelo diagnóstico atual; correção preparada para expor apenas parâmetro sanitizado.
+
 ## 2026-09-28 — limite de chamadas externas do Worker gratuito
 - A revisão visual do Ragnar passou a registrar `openai_transport_error` após o PR #33. O ciclo fazia até 250 consultas de insights para Radar e Auditor juntos, além de outras chamadas; o executor podia executar três jobs na mesma invocação, acima do limite externo de 50 do Worker gratuito. Redução preparada, resultado real ainda pendente.
 - Mesmo se a revisão Ragnar passar, Global Play não possui mídia nova válida e não publica até suprir essa dependência.
