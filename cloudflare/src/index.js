@@ -152,7 +152,7 @@ async function autonomyHealth(env) {
     "DESIGNER","VIDEO","PUBLISHER","ODIN","SUPORTE","AUDITOR","GROWTH"
   ];
   try {
-    const [heartbeatRow, clientsResult, executionsResult, leadRunsResult, leadConfigsResult, leadCountsResult] = await Promise.all([
+    const [heartbeatRow, clientsResult, executionsResult, leadRunsResult, leadConfigsResult, leadCountsResult, postsResult, jobsResult] = await Promise.all([
       env.DB.prepare(
         "SELECT value_json,updated_at FROM nexus_state WHERE namespace='scheduler' AND item_key='heartbeat' AND client_id='' LIMIT 1"
       ).first(),
@@ -170,6 +170,12 @@ async function autonomyHealth(env) {
       ).all(),
       env.DB.prepare(
         "SELECT client_id,COUNT(*) AS total FROM leads GROUP BY client_id"
+      ).all(),
+      env.DB.prepare(
+        "SELECT id,client_id,scheduled_for,status,approval_status,media_id,error,payload_json,created_at,updated_at FROM post_ledger WHERE client_id IN ('globalplay-streaming','ragnar-one') ORDER BY created_at DESC LIMIT 60"
+      ).all(),
+      env.DB.prepare(
+        "SELECT client_id,kind,status,attempts,due_at,updated_at,last_error FROM scheduled_jobs WHERE client_id IN ('globalplay-streaming','ragnar-one') ORDER BY created_at DESC LIMIT 60"
       ).all()
     ]);
 
@@ -214,6 +220,27 @@ async function autonomyHealth(env) {
       const defaultAuto = ["globalplay-streaming", "ragnar-one"].includes(client.id);
       const autoEnabled = leadSettings.enabled !== false && (leadSettings.autoRun === undefined ? defaultAuto : leadSettings.autoRun === true);
       const leadRun = lastLeadRun.get(client.id);
+      const posts = (postsResult?.results || []).filter(row => row.client_id === client.id).slice(0, 12).map(row => {
+        let payload = {};
+        try { payload = JSON.parse(row.payload_json || "{}"); } catch {}
+        const code = String(row.error || "");
+        return {
+          id: row.id, scheduledFor: row.scheduled_for, status: row.status,
+          approval: row.approval_status, mediaIdPresent: Boolean(row.media_id),
+          imagePresent: Boolean(payload.imageUrl || payload.publicImageUrl),
+          copyChief: payload.qualityGates?.copyChief || null,
+          designer: payload.qualityGates?.designer || null,
+          retries: Number(payload.retryCount || 0),
+          publishedAt: payload.publishedAt || null,
+          errorCode: /^[a-z_]+$/.test(code) ? code.slice(0, 80) : (code ? "external_api_error" : ""),
+          createdAt: row.created_at, updatedAt: row.updated_at
+        };
+      });
+      const jobs = (jobsResult?.results || []).filter(row => row.client_id === client.id).slice(0, 12).map(row => ({
+        kind: row.kind, status: row.status, attempts: row.attempts,
+        dueAt: row.due_at, updatedAt: row.updated_at,
+        errorCode: /^[a-z_]+$/.test(String(row.last_error || "")) ? String(row.last_error).slice(0, 80) : (row.last_error ? "execution_error" : "")
+      }));
       return {
         clientId: client.id,
         clientName: client.name,
@@ -221,6 +248,7 @@ async function autonomyHealth(env) {
         agents,
         allAgentsSeen: missing.length === 0,
         missingAgents: missing,
+        publishingDiagnostic: { posts, jobs },
         leadCapture: {
           autoEnabled,
           lastRunAt: leadRun?.finished_at || null,
