@@ -309,6 +309,7 @@ async function runRadar(env, client, options) {
 
   const output={
     source:snapshot.source,
+    scannedAt:new Date().toISOString(),
     scannedMedia:(snapshot.items||[]).length,
     followersCount,
     previousFollowersCount:previousFollowers,
@@ -845,9 +846,12 @@ async function runAuditor(env,client,options) {
       :"Continuar coletando dados e testando ganchos distintos.",
     skills:["ig-human","ig-audit","growth-loop"]
   };
+  const hasCurrentData=(snapshot.items||[]).length>0;
+  const priorRadarAt=Date.parse(String(state?.radar?.scannedAt||state?.updatedAt||""));
+  const hasRecentRadar=Number.isFinite(priorRadarAt)&&(Date.now()-priorRadarAt)<=6*60*60*1000&&Number(state?.radar?.scannedMedia||0)>0;
   await recordAgentExecution(env,client,"AUDITOR",{
     function:"growth-30d-performance-review",trigger:options.trigger,startedAt,
-    status:snapshot.error&&!(snapshot.items||[]).length?"warning":"success",
+    status:(!hasCurrentData&&!hasRecentRadar&&snapshot.error)?"warning":"success",
     model:"instagram-skills+growth-audit",quantity:(snapshot.items||[]).length||ledger.length,
     message:"AUDITOR comparou desempenho, duplicidade e ritmo da campanha de crescimento.",
     metadata:{
