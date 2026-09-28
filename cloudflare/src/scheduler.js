@@ -18,10 +18,17 @@ function agentCoreConfig(client) {
   const modules = {
     radar: current.modules?.radar !== false,
     estrategista: current.modules?.estrategista !== false,
+    pesquisador: current.modules?.pesquisador !== false,
+    analista: current.modules?.analista !== false,
     creator: current.modules?.creator !== false,
+    "copy-chief": current.modules?.["copy-chief"] !== false,
+    designer: current.modules?.designer !== false,
+    video: current.modules?.video !== false,
     publisher: current.modules?.publisher !== false,
+    odin: current.modules?.odin !== false,
+    suporte: current.modules?.suporte !== false,
     auditor: current.modules?.auditor !== false,
-    odin: current.modules?.odin !== false
+    growth: current.modules?.growth !== false
   };
   return {
     enabled: current.enabled !== false,
