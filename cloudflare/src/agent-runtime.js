@@ -136,9 +136,9 @@ function postingProfile(client) {
       : null,
     growthTargetFollowers: Math.max(1000, Math.min(100000000, Number(current.growthTargetFollowers || 1000000))),
     growthHorizonDays: Math.max(7, Math.min(90, Number(current.growthHorizonDays || 30))),
-    standardMediaUrls: configuredMedia.length
-      ? configuredMedia
-      : (String(client?.id || "") === "ragnar-one" ? ragnarMedia : [])
+    standardMediaUrls: String(client?.id || "") === "ragnar-one"
+      ? [...new Set([...configuredMedia, ...ragnarMedia])]
+      : configuredMedia
   };
 }
 
