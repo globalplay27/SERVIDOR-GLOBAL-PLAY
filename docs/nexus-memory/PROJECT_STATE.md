@@ -1,5 +1,8 @@
 # Estado do Nexus 2.0
 
+## 2026-09-28 14h30 BRT — leitura externa do asset falhou no Worker
+- PR #39 integrou e deploy 36458303602 passou. Designer do post Ragnar vencido retornou `pinned_asset_unavailable` em 17:29 UTC. O JPEG público responde, mas a chamada feita de dentro do Worker ao próprio domínio falhou. Correção preparada para ler pelo binding `env.ASSETS.fetch`, verificando o mesmo SHA-256; publicação ainda não confirmada.
+
 ## 2026-09-28 14h25 BRT — orçamento visual diário esgotado
 - Post vencido Ragnar `2026-09-28:1000` recebeu nova mídia após PR #37, mas `visualReview:unavailable`, motivo `openai_daily_budget_reached`. Não elevar limite de tokens. A arte original do usuário, convertida a JPEG 900×1125, foi inspecionada: cena única de sala, TV com navio nórdico genérico, marca Ragnar One e CTA legíveis. SHA-256 `93ec7bbe06be6783beb197e1bcfd838ef66064b4fe3f66d9a37a0b7bf7ae68e2`. Aprovação exclusiva por URL/hash preparada; publicação ainda não confirmada.
 

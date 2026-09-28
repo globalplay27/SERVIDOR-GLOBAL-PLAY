@@ -75,4 +75,9 @@ test('only the inspected Ragnar artwork bytes receive pinned approval without sp
   const replacedAfterApproval=await reviewImage({},ragnar,artwork,approved,neverUseProvider,
     async()=>new Response(new Uint8Array([1,2,3]),{status:200}));
   assert.equal(replacedAfterApproval.status,'unavailable');
+  const viaAssetBinding=await reviewImage({ASSETS:{fetch:async request=>{
+    assert.equal(request.url,artwork);
+    return new Response(bytes,{status:200});
+  }}},ragnar,artwork,null,neverUseProvider);
+  assert.equal(viaAssetBinding.status,'approved');
 });

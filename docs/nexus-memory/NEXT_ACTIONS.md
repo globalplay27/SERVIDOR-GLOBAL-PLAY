@@ -1,5 +1,8 @@
 # Próximas ações, em ordem
 
+## Binding de arte Ragnar, 2026-09-28 14h30 BRT
+- Implantar leitura via ASSETS, conferir parecer aprovado e `mediaIdPresent:true`/`publishedAt` na próxima postagem vencida. Se falhar, ler estado do binding e o código sanitizado sem enfraquecer gate. Resolver reposição contínua de arte após destravar uma postagem.
+
 ## Arte verificada Ragnar, 2026-09-28 14h25 BRT
 - Implantar aprovação restrita à arte inspecionada e conferir CI/deploy. Observar o post vencido atravessar Designer e Publisher; exigir media ID e horário da Meta em produção. Se hash divergir, não liberar. Depois prover novas artes únicas, sem geração paga automática, para sustentar postagem contínua.
 
