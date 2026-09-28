@@ -1,5 +1,8 @@
 # Próximas ações, em ordem
 
+## Diagnóstico Ragnar, 2026-09-28 14h19 BRT
+- Implantar campos booleanos de revisão, observar motivo objetivo da rejeição da nova mídia e corrigir a peça ou a falha de estado correspondente. Repassar gates completos e comprovar `mediaIdPresent:true`/`publishedAt` antes de declarar publicação. Evitar repetição de arte em futuros posts.
+
 ## Postagem Ragnar, 2026-09-28 13h53 BRT
 - Implantar correção de recuperação prioritária, verificar CI e deploy. Aguardar Creator → Copy Chief → Designer → Publisher; confirmar `mediaIdPresent:true` e `publishedAt` em produção antes de dizer que o Ragnar publicou. Se a revisão reprovar a nova arte, registrar o motivo e não contornar o gate. Resolver depois o fornecimento contínuo de peças únicas sem geração paga automática.
 

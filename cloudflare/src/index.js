@@ -256,6 +256,13 @@ async function autonomyHealth(env) {
           reviewReason: /^[a-z_0-9]+$/.test(String(payload.visualReview?.reason || ""))
             ? String(payload.visualReview.reason).slice(0, 80) : null,
           blockedMediaPresent: Boolean(payload.blockedDesignerMedia),
+          blockedMediaIsCorruptLegacy: /\/assets\/ragnar\/nordic-cinema-0[123]\.png(?:[?#]|$)/i.test(String(payload.blockedDesignerMedia||"")),
+          blockedReviewStatus: ["approved","rejected","unavailable"].includes(String(payload.blockedDesignerReviewStatus||""))
+            ? payload.blockedDesignerReviewStatus : null,
+          blockedReviewChecks: payload.blockedDesignerReviewChecks && typeof payload.blockedDesignerReviewChecks === "object"
+            ? Object.fromEntries(["singleScene","noCollage","tvFilled","legibleText","brandCorrect","originalGenericVisual"]
+              .filter(key => typeof payload.blockedDesignerReviewChecks[key] === "boolean")
+              .map(key => [key,payload.blockedDesignerReviewChecks[key]])) : null,
           recoveryAttempted: Boolean(payload.blockedDesignerRecoveryAttemptedAt),
           retries: Number(payload.retryCount || 0),
           publishedAt: payload.publishedAt || null,
