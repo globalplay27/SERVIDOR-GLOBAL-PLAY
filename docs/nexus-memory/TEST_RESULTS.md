@@ -1,5 +1,8 @@
 # Testes e evidências
 
+## 2026-09-28 — leitura interna da arte Ragnar
+- Os sete testes de revisão passaram com ASSETS simulado; chamada externa dentro do Worker retornou `pinned_asset_unavailable` em produção, por isso esta mudança ainda exige validação após deploy.
+
 ## 2026-09-28 — arte Ragnar inspecionada
 - JPEG extraído de `main`, 900×1125, SHA-256 `93ec7bbe06be6783beb197e1bcfd838ef66064b4fe3f66d9a37a0b7bf7ae68e2`; inspecionado visualmente. Sete testes `visual-review.test.mjs` passaram, incluindo aprovação com bytes idênticos e bloqueio após troca dos bytes mesmo quando existia aprovação anterior. Ainda sem evidência de publicação real.
 

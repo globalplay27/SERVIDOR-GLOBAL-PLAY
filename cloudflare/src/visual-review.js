@@ -5,7 +5,7 @@ const fields = ['singleScene', 'noCollage', 'tvFilled', 'legibleText', 'brandCor
 const REVIEWED_RAGNAR_MEDIA = 'https://servidor-nexus.diamantehinode2015.workers.dev/assets/ragnar/saga-sofa-20260928.jpg';
 const REVIEWED_RAGNAR_SHA256 = '93ec7bbe06be6783beb197e1bcfd838ef66064b4fe3f66d9a37a0b7bf7ae68e2';
 
-export async function reviewImage(env, client, media, previous, request = openAIResponses, fetchAsset = fetch) {
+export async function reviewImage(env, client, media, previous, request = openAIResponses, fetchAsset) {
   const same = previous?.version === VERSION && previous?.media === media;
   const pinnedArtwork = client.id === 'ragnar-one' && media === REVIEWED_RAGNAR_MEDIA;
   if (same && previous.status === 'approved' && !pinnedArtwork) return previous;
@@ -16,7 +16,9 @@ export async function reviewImage(env, client, media, previous, request = openAI
   // Verify its actual bytes so a replaced asset cannot inherit that approval.
   if (pinnedArtwork) {
     try {
-      const asset = await fetchAsset(media, { signal: AbortSignal.timeout(8000) });
+      const asset = fetchAsset
+        ? await fetchAsset(media, { signal: AbortSignal.timeout(8000) })
+        : await env.ASSETS.fetch(new Request(media, { signal: AbortSignal.timeout(8000) }));
       if (!asset.ok || Number(asset.headers.get('content-length') || 0) > 3_000_000) throw new Error('pinned_asset_unavailable');
       const bytes = await asset.arrayBuffer();
       if (bytes.byteLength > 3_000_000) throw new Error('pinned_asset_unavailable');
