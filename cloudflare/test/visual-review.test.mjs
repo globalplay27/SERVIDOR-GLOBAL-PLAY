@@ -66,7 +66,7 @@ test('only the inspected Ragnar artwork bytes receive pinned approval without sp
     {version:'visual-review-v2',media:artwork,status:'unavailable',retryAt:'2099-01-01'},
     neverUseProvider,async()=>new Response(bytes,{status:200}));
   assert.equal(approved.status,'approved');
-  assert.equal(approved.method,'inspected-pinned-owner-artwork');
+  assert.equal(approved.method,'inspected-pinned-artwork');
   assert.equal(visualApproval(ragnar.id,{imageUrl:artwork,visualReview:approved}),true);
   const changed=await reviewImage({},ragnar,artwork,null,neverUseProvider,
     async()=>new Response(new Uint8Array([1,2,3]),{status:200}));
@@ -80,4 +80,16 @@ test('only the inspected Ragnar artwork bytes receive pinned approval without sp
     return new Response(bytes,{status:200});
   }}},ragnar,artwork,null,neverUseProvider);
   assert.equal(viaAssetBinding.status,'approved');
+});
+
+test('each new inspected Ragnar creative is byte-verified without paid review',async()=>{
+  const ragnar={id:'ragnar-one',name:'Ragnar One'};
+  for(const name of ['fjord-dia-20260928.jpg','fjord-noite-20260928.jpg']){
+    const artwork='https://servidor-nexus.diamantehinode2015.workers.dev/assets/ragnar/'+name;
+    const bytes=await readFile(new URL('../../public/assets/ragnar/'+name,import.meta.url));
+    const review=await reviewImage({ASSETS:{fetch:async()=>new Response(bytes,{status:200})}},
+      ragnar,artwork,null,()=>{throw new Error('unexpected paid review');});
+    assert.equal(review.status,'approved');
+    assert.equal(visualApproval(ragnar.id,{imageUrl:artwork,visualReview:review}),true);
+  }
 });
