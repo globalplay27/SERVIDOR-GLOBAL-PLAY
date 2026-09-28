@@ -138,10 +138,18 @@ async function runDesigner(env,client,options){
       const prior=payload.visualReview;
       const cached=prior?.version==="visual-review-v2"&&prior.media===media;
       const settled=cached&&(["approved","rejected"].includes(prior.status)||Number(prior.attempts)>=3||Date.parse(prior.retryAt)>Date.now());
+      const diagnosticRetry=prior?.status==="unavailable"
+        &&prior.reason==="visual_review_unavailable"
+        &&!prior.diagnosticRetry
+        &&Number(prior.attempts||0)<3;
       if(mediaReady&&!settled&&visualCalls>=1)continue;
       if(settled||visualCalls<1){
-        if(!settled&&mediaReady)visualCalls++;
-        payload.visualReview=await reviewImage(env,client,media,prior);
+        if((!settled||diagnosticRetry)&&mediaReady)visualCalls++;
+        payload.visualReview=await reviewImage(
+          env,client,media,
+          diagnosticRetry?{...prior,retryAt:"2000-01-01"}:prior
+        );
+        if(diagnosticRetry)payload.visualReview={...payload.visualReview,diagnosticRetry:true};
       }
       if(mediaReady&&payload.visualReview?.status==="unavailable"){
         payload.qualityGates={...(payload.qualityGates||{}),designer:"pending"};
