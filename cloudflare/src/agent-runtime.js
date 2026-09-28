@@ -340,10 +340,22 @@ async function runRadar(env, client, options) {
 async function runStrategist(env,client,context,options) {
   const startedAt=new Date().toISOString();
   const profile=postingProfile(client);
-  const ledger=await ledgerRows(env,client.id,220);
-  const leads=await leadHunterSummary(env,client.id).catch(()=>({total:0,hot:0,warm:0,cold:0}));
-  const radar=context.radar||{};
-  const themes=[profile.morningTheme,profile.afternoonTheme,profile.eveningTheme];
+  const [ledger,leads,state]=await Promise.all([
+    ledgerRows(env,client.id,220),
+    leadHunterSummary(env,client.id).catch(()=>({total:0,hot:0,warm:0,cold:0})),
+    agentCoreState(env,client.id)
+  ]);
+  const radar=context.radar||state.radar||{};
+  const auditor=context.auditor||state.auditor||{};
+  const researcher=state.pesquisador||{};
+  const analyst=state.analista||{};
+  const growth=state.growth||{};
+  const researchTerms=Array.isArray(researcher.opportunities)
+    ? researcher.opportunities.map(item=>String(item?.term||"")).filter(Boolean).slice(0,8)
+    : [];
+  const themes=researchTerms.length
+    ? researchTerms.slice(0,3)
+    : [profile.morningTheme,profile.afternoonTheme,profile.eveningTheme];
   const plan={
     primaryKpi:"followers",
     secondaryKpis:["shares","saves","profile_visits","reach","comments"],
@@ -372,6 +384,23 @@ async function runStrategist(env,client,context,options) {
     creativeRotation:profile.creativeRotation,
     radarTerms:Array.isArray(radar.topTerms)?radar.topTerms.slice(0,8):[],
     radarDiagnosis:Array.isArray(radar.diagnosis)?radar.diagnosis.slice(0,6):[],
+    researchOpportunities:Array.isArray(researcher.opportunities)?researcher.opportunities.slice(0,12):[],
+    analyst:{
+      viralScore:Number(analyst.viralScore||0),
+      potential:String(analyst.potential||""),
+      followerDelta:Number(analyst.followerDelta||0),
+      topEngagement:Number(analyst.topEngagement||0)
+    },
+    auditFeedback:{
+      baseline:Number(auditor.baseline||0),
+      verdict:String(auditor.verdict||auditor.status||""),
+      recommendations:Array.isArray(auditor.recommendations)?auditor.recommendations.slice(0,8):[]
+    },
+    growthFeedback:{
+      scaleMode:String(growth.scaleMode||""),
+      experiment:String(growth.experiment||"")
+    },
+    decisionMode:Number(analyst.viralScore||0)>=70?"scale-winner":Number(analyst.viralScore||0)>=40?"test-and-learn":"explore",
     standardMediaUrls:profile.standardMediaUrls,
     antiRepeat:{
       media:true,
@@ -823,6 +852,16 @@ export async function runAgentCoreCycle(env, clientId, options = {}) {
 
   try{
     if(run("radar")&&config.modules.radar)result.agents.radar=radar=await runRadar(env,client,options);
+
+    // Research and analysis must happen before strategy/creation so their findings
+    // can alter the next content decision in the same autonomous cycle.
+    if(requested==="all"){
+      const research=await runExtendedAgents(env,client.id,{...options,agent:"pesquisador",phase:"pre-strategy"});
+      Object.assign(result.agents,research);
+      const analysis=await runExtendedAgents(env,client.id,{...options,agent:"analista",phase:"pre-strategy"});
+      Object.assign(result.agents,analysis);
+    }
+
     if(run("estrategista")&&config.modules.estrategista)result.agents.estrategista=strategy=await runStrategist(env,client,{radar,auditor},options);
     if(run("creator")&&config.modules.creator)result.agents.creator=await runCreator(env,client,strategy,options);
 
@@ -845,7 +884,13 @@ export async function runAgentCoreCycle(env, clientId, options = {}) {
     if(run("publisher")&&config.modules.publisher)result.agents.publisher=await runPublisher(env,client,options);
     if(run("auditor")&&config.modules.auditor){
       result.agents.auditor=auditor=await runAuditor(env,client,options);
-      if(requested==="all"&&config.modules.estrategista)result.agents.estrategistaFeedback=await runStrategist(env,client,{radar,auditor},{...options,feedback:true});
+    }
+    if(requested==="all"&&config.modules.growth){
+      const growth=await runExtendedAgents(env,client.id,{...options,agent:"growth",phase:"feedback"});
+      Object.assign(result.agents,growth);
+    }
+    if(requested==="all"&&config.modules.estrategista){
+      result.agents.estrategistaFeedback=await runStrategist(env,client,{radar,auditor},{...options,feedback:true});
     }
     if(run("odin")&&config.modules.odin)result.agents.odin=await runOdin(env,client,options);
     if(requested!=="all"){
