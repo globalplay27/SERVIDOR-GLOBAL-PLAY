@@ -1,5 +1,9 @@
 # Problemas conhecidos
 
+## 2026-09-28 — limite de chamadas externas do Worker gratuito
+- A revisão visual do Ragnar passou a registrar `openai_transport_error` após o PR #33. O ciclo fazia até 250 consultas de insights para Radar e Auditor juntos, além de outras chamadas; o executor podia executar três jobs na mesma invocação, acima do limite externo de 50 do Worker gratuito. Redução preparada, resultado real ainda pendente.
+- Mesmo se a revisão Ragnar passar, Global Play não possui mídia nova válida e não publica até suprir essa dependência.
+
 ## 2026-09-28 13h10 — revisão Ragnar esgotada
 - PR #31 foi implantado, mas `openai.status: unknown` persistia; imagens de Ragnar continuaram sem parecer aprovado. A lógica anterior vedava diagnóstico adicional ao chegar a três tentativas. Correção limitada a uma nova tentativa por mídia antiga com falha genérica, com `diagnosticRetry` persistido. Resultado real pendente.
 

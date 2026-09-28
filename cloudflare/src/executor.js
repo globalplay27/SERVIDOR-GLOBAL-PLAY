@@ -172,7 +172,7 @@ export async function processDueJobs(env, scheduledAt = new Date()) {
        WHEN 'agent-core-cycle' THEN 1
        WHEN 'lead-hunter' THEN 2
        ELSE 3 END,
-       due_at ASC LIMIT 3`
+       due_at ASC LIMIT 1`
   ).bind(now.toISOString()).all();
 
   const summary = { active: true, processed: 0, completed: 0, failed: 0, deferred: 0 };

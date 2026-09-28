@@ -1,5 +1,10 @@
 # Próximas ações, em ordem
 
+## Correção do orçamento de subrequests, 2026-09-28
+1. Implantar o teto de três mídias com insights por snapshot e um job por cron. Observar que `openai.status` muda de `transport_error` para `ok`/HTTP classificável e que uma imagem recebe parecer v2 aprovado ou rejeitado.
+2. Verificar Publisher com candidato elegível e resultado real `publishedAt`/ID da mídia. Se o transporte continuar falhando, investigar detalhe sanitizado da exceção no Worker sem expor chave.
+3. Prover imagem inédita, simples e revisável ao Global Play por fonte autorizada; o banner recente com muitos textos/quadros não é substituto adequado.
+
 ## Diagnóstico 2026-09-28 13h10
 1. Implantar tentativa diagnóstica única da revisão Ragnar; observar `reviewReason`, `reviewAttempts`, `diagnosticRetry` e `openai.status` no health. Corrigir a causa específica retornada; não liberar gate sem aprovação.
 2. Global Play: criar mídia inédita de cena única, com textos legíveis e sem afirmações não comprovadas, por fonte autorizada; passar pela revisão e vincular a uma postagem vencida.
