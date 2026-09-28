@@ -1,5 +1,10 @@
 # Problemas conhecidos
 
+## 2026-09-28 — dois bloqueios de publicação
+- Health ao vivo às ~12h45 BRT: cron saudável, Publisher das duas contas com última execução ~09h44 BRT, jobs de ciclo recuperados como obsoletos repetidamente. Consultas Graph do Radar/Auditor sem timeout identificadas no código; timeout de 8 segundos preparado, efeito em produção ainda pendente.
+- Global Play: posts aprovados sem `imageUrl` e Designer pendente (`designer_replacement_queued`); não há pool padrão Global Play. Correção de timeout não cria mídia.
+- Ragnar: imagens presentes, mas parte dos posts tem `visual_review_unavailable` e parte tem Designer aprovado sem parecer v2 correspondente. O publicador exige parecer visual efetivo; investigar razão sanitizada da OpenAI após o PR #31. Não liberar o gate à força.
+
 ## Captação de leads ainda sem comprovação ponta a ponta
 O health anterior exibia Odin `success`, mas não indicava coleta automática, qualidade do acesso Meta ou leads. A mudança local habilita coleta horária padrão e expõe números agregados; falta observar `lastRunStatus`, `lastAnalyzed`, `lastNew` e `totalLeads` em produção. O coletor contempla comentários recentes da própria conta, não DMs; sem comentários de intenção não pode gerar leads genuínos. Configuração explicitamente desligada no D1 continuará desligada.
 

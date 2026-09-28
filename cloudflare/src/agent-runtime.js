@@ -145,7 +145,7 @@ async function instagramMediaInsights(mediaId, headers) {
   for (const metric of metrics) {
     try {
       const url = "https://graph.instagram.com/" + encodeURIComponent(mediaId) + "/insights?metric=" + encodeURIComponent(metric);
-      const response = await fetch(url, { headers });
+      const response = await fetch(url, { headers, signal: AbortSignal.timeout(8000) });
       const payload = await response.json().catch(()=>({}));
       if (!response.ok) continue;
       const row = Array.isArray(payload?.data) ? payload.data[0] : null;
@@ -168,7 +168,7 @@ async function instagramSnapshot(env, client) {
   const headers = { authorization:"Bearer "+token, accept:"application/json", "user-agent":"NEXUS-AgentCore-Cloudflare/1.0" };
   try {
     const mediaUrl = "https://graph.instagram.com/" + encodeURIComponent(igUserId) + "/media?fields=" + encodeURIComponent("id,caption,timestamp,media_type,like_count,comments_count,permalink,media_url,thumbnail_url") + "&limit=25";
-    const mediaResponse = await fetch(mediaUrl,{headers});
+    const mediaResponse = await fetch(mediaUrl,{headers,signal:AbortSignal.timeout(8000)});
     const mediaPayload = await mediaResponse.json().catch(()=>({}));
     if(!mediaResponse.ok)throw new Error(String(mediaPayload?.error?.message || "instagram_media_"+mediaResponse.status));
     const baseItems = Array.isArray(mediaPayload.data) ? mediaPayload.data.map(item=>({
@@ -193,7 +193,7 @@ async function instagramSnapshot(env, client) {
     let followersCount=0, mediaCount=items.length, username=String(conn?.username||"");
     try {
       const profileUrl="https://graph.instagram.com/"+encodeURIComponent(igUserId)+"?fields="+encodeURIComponent("username,followers_count,media_count");
-      const profileResponse=await fetch(profileUrl,{headers});
+      const profileResponse=await fetch(profileUrl,{headers,signal:AbortSignal.timeout(8000)});
       const profile=await profileResponse.json().catch(()=>({}));
       if(profileResponse.ok){
         followersCount=Math.max(0,Number(profile.followers_count||0));
