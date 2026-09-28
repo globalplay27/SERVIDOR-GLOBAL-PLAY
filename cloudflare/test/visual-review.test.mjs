@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { reviewImage, visualApproval } from '../src/visual-review.js';
 const client={id:'globalplay-streaming',name:'Global Play'};
 const url='https://example.com/image.png';
-const verdict={singleScene:true,noCollage:true,tvFilled:true,legibleText:true,brandCorrect:true,reason:'Cena única, TV preenchida.'};
+const verdict={singleScene:true,noCollage:true,tvFilled:true,legibleText:true,brandCorrect:true,originalGenericVisual:true,reason:'Cena única, TV preenchida.'};
 const response=v=>({output:[{content:[{type:'output_text',text:JSON.stringify(v)}]}]});
 
 test('sends actual image and approves complete visual verdict',async()=>{
