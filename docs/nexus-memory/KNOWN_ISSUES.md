@@ -1,5 +1,8 @@
 # Problemas conhecidos
 
+## Captação de leads ainda sem comprovação ponta a ponta
+O health anterior exibia Odin `success`, mas não indicava coleta automática, qualidade do acesso Meta ou leads. A mudança local habilita coleta horária padrão e expõe números agregados; falta observar `lastRunStatus`, `lastAnalyzed`, `lastNew` e `totalLeads` em produção. O coletor contempla comentários recentes da própria conta, não DMs; sem comentários de intenção não pode gerar leads genuínos. Configuração explicitamente desligada no D1 continuará desligada.
+
 ## P0 — Ragnar não publica consistentemente
 - Causa operacional de fila confirmada e corrigida em 2026-09-27: captação automática inundava a fila e jobs presos impediam o Publisher de avançar.
 - O post Ragnar das 09:00 de 2026-09-27 também não era publicável: mídia ausente e Designer rejeitado. O sistema agiu corretamente ao não enviá-lo.

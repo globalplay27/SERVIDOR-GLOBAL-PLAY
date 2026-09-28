@@ -15,15 +15,16 @@ function parseJson(raw, fallback = {}) {
 
 function defaultConfig(client) {
   const niche = String(client?.niche || "streaming").trim();
+  const autonomousAccount = ["globalplay-streaming", "ragnar-one"].includes(String(client?.id || ""));
   return {
     enabled: true,
-    // Lead collection is opt-in. It must never compete with the publishing
-    // queue unless a client explicitly enables automatic scans.
-    autoRun: false,
+    // Existing explicit client settings still override this default. The
+    // scheduler deduplicates scans and prioritizes publishing ahead of them.
+    autoRun: autonomousAccount,
     metaComments: true,
     publicTargets: false,
     aiQualification: true,
-    scanIntervalMinutes: 30,
+    scanIntervalMinutes: 60,
     lookbackDays: 14,
     maxResultsPerRun: 150,
     minScore: 25,
@@ -93,7 +94,12 @@ async function collectMetaComments(env, client, config) {
 
   const headers = { authorization:"Bearer "+token, accept:"application/json", "user-agent":"NEXUS-LeadHunter-Cloudflare/1.0" };
   const mediaUrl = "https://graph.instagram.com/" + encodeURIComponent(igUserId) + "/media?fields=" + encodeURIComponent("id,permalink,timestamp") + "&limit=12";
-  const mediaResponse = await fetch(mediaUrl, { headers });
+  let mediaResponse;
+  try {
+    mediaResponse = await fetch(mediaUrl, { headers, signal: AbortSignal.timeout(10000) });
+  } catch (error) {
+    return { items:[], error:"instagram_media_request_"+String(error?.name || "failed"), source:"meta-comments" };
+  }
   const mediaPayload = await mediaResponse.json().catch(()=>({}));
   if (!mediaResponse.ok) return { items:[], error:String(mediaPayload?.error?.message || "instagram_media_"+mediaResponse.status), source:"meta-comments" };
 
@@ -109,7 +115,7 @@ async function collectMetaComments(env, client, config) {
 
     const commentsUrl = "https://graph.instagram.com/" + encodeURIComponent(String(media.id)) + "/comments?fields=" + encodeURIComponent("id,text,username,timestamp") + "&limit=50";
     try {
-      const response = await fetch(commentsUrl, { headers });
+      const response = await fetch(commentsUrl, { headers, signal: AbortSignal.timeout(8000) });
       const payload = await response.json().catch(()=>({}));
       if (!response.ok) throw new Error(String(payload?.error?.message || "comments_"+response.status));
       for (const comment of Array.isArray(payload.data) ? payload.data : []) {

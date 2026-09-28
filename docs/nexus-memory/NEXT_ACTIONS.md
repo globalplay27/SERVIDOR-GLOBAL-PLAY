@@ -1,5 +1,10 @@
 # Próximas ações, em ordem
 
+## Captação, após implantação
+1. Verificar CI/deploy do commit novo e consultar `/api/autonomy-health`: `leadCapture.autoEnabled`, `lastRunAt`, `lastRunStatus`, `lastAnalyzed`, `lastNew`, `totalLeads` por conta.
+2. Se `autoEnabled:false`, verificar configuração salva no portal sem sobrepor escolha explícita. Se `lastRunStatus:warning`, ler erros autenticados da última varredura e conferir permissão `instagram_business_manage_comments`.
+3. Comparar alcance, comentários com intenção, leads captados e contatos convertidos ao longo de 7 e 14 dias. Ajustar ganchos e oferta com base em dados; não prometer seguidores ou leads específicos.
+
 1. Implantar a autorrecuperação de slots sem mídia e confirmar no D1 que o Creator registrou `repairedIds` antes do próximo Publisher.
 1. Subir e validar no CI a política uniforme que exige os dois gates e limita cada post a três tentativas em todos os caminhos de publicação.
 2. Confirmar no próximo horário válido (18:00 BRT para Global Play; próxima mídia aprovada para Ragnar) que a fila permanece livre e que não há novo acúmulo de captação.

@@ -1,5 +1,11 @@
 # Estado do Nexus 2.0
 
+## 2026-09-27 23h BRT — captação de leads (em implantação)
+- Produção antes da alteração: `/api/autonomy-health` respondeu cron saudável, 13 agentes vistos nas duas contas e `leadHunterRuns:0` no último minuto. Isso não comprova zero leads totais, apenas ausência de varredura naquele tick.
+- Código identificado: Lead Hunter automático desligado por padrão; Odin podia registrar sucesso ao classificar uma lista vazia. A última leitura de produção da configuração efetiva, contagem de leads e erros Meta ainda depende do novo diagnóstico sanitizado.
+- Correção local: padrão de varredura horária para `globalplay-streaming` e `ragnar-one`, respeitando desligamento explícito; timeouts nas chamadas Meta; diagnóstico público agregado de execução/volume; CTA de intenção comercial em cada pauta e formato real de imagem.
+- Testes locais: 15/15 e sintaxe dos módulos aprovada; bundle Wrangler dry-run aprovado. Deploy e execução real ainda não confirmados neste registro.
+
 Atualizado em 2026-09-27, aproximadamente 12:24 BRT. Esta página separa constatação de código, verificação de produção e itens não confirmados.
 
 ## Incidente de 2026-09-27 — fila de publicação

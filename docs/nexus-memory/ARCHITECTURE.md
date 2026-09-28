@@ -1,5 +1,8 @@
 # Arquitetura observada
 
+## Captação (mudança local de 2026-09-27)
+O scheduler coloca `lead-hunter` no máximo uma vez por cliente, após jobs de publicação/ciclo na prioridade do executor. Para as duas contas autônomas o padrão proposto é coleta de comentários a cada 60 minutos; configurações salvas continuam prevalecendo. O Odin lê os leads salvos no D1. `/api/autonomy-health` passa a expor apenas configuração automática, última execução e contagens agregadas, sem comentários nem identificadores pessoais.
+
 Referência: `globalplay27/SERVIDOR-GLOBAL-PLAY@292649157`. Isto descreve código ativo e deploy confirmado, não uma arquitetura desejada.
 
 1. GitHub `main` aciona `.github/workflows/ci.yml`: checagem de sintaxe, bundle Wrangler e deploy do Worker `servidor-nexus`.

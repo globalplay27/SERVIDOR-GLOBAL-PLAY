@@ -152,7 +152,7 @@ async function autonomyHealth(env) {
     "DESIGNER","VIDEO","PUBLISHER","ODIN","SUPORTE","AUDITOR","GROWTH"
   ];
   try {
-    const [heartbeatRow, clientsResult, executionsResult] = await Promise.all([
+    const [heartbeatRow, clientsResult, executionsResult, leadRunsResult, leadConfigsResult, leadCountsResult] = await Promise.all([
       env.DB.prepare(
         "SELECT value_json,updated_at FROM nexus_state WHERE namespace='scheduler' AND item_key='heartbeat' AND client_id='' LIMIT 1"
       ).first(),
@@ -161,6 +161,15 @@ async function autonomyHealth(env) {
       ).all(),
       env.DB.prepare(
         "SELECT client_id,agent,status,detail_json,created_at FROM agent_executions ORDER BY created_at DESC LIMIT 500"
+      ).all(),
+      env.DB.prepare(
+        "SELECT client_id,status,finished_at,analyzed,new_leads FROM lead_hunter_runs ORDER BY COALESCE(finished_at,created_at) DESC LIMIT 100"
+      ).all(),
+      env.DB.prepare(
+        "SELECT client_id,value_json FROM nexus_state WHERE namespace='lead-hunter' AND item_key='config'"
+      ).all(),
+      env.DB.prepare(
+        "SELECT client_id,COUNT(*) AS total FROM leads GROUP BY client_id"
       ).all()
     ]);
 
@@ -176,6 +185,15 @@ async function autonomyHealth(env) {
       const key = String(row.client_id || "") + "::" + String(row.agent || "").toUpperCase();
       if (!latest.has(key)) latest.set(key, row);
     }
+    const lastLeadRun = new Map();
+    for (const row of leadRunsResult?.results || []) {
+      if (!lastLeadRun.has(row.client_id)) lastLeadRun.set(row.client_id, row);
+    }
+    const leadConfigs = new Map((leadConfigsResult?.results || []).map(row => {
+      try { return [row.client_id, JSON.parse(row.value_json || "{}")] ; }
+      catch { return [row.client_id, {}]; }
+    }));
+    const leadCounts = new Map((leadCountsResult?.results || []).map(row => [row.client_id, Number(row.total || 0)]));
 
     const clients = (clientsResult?.results || []).map(client => {
       const agents = expectedAgents.map(agent => {
@@ -192,13 +210,25 @@ async function autonomyHealth(env) {
         };
       });
       const missing = agents.filter(item => item.status === "never").map(item => item.agent);
+      const leadSettings = leadConfigs.get(client.id) || {};
+      const defaultAuto = ["globalplay-streaming", "ragnar-one"].includes(client.id);
+      const autoEnabled = leadSettings.enabled !== false && (leadSettings.autoRun === undefined ? defaultAuto : leadSettings.autoRun === true);
+      const leadRun = lastLeadRun.get(client.id);
       return {
         clientId: client.id,
         clientName: client.name,
         status: client.status,
         agents,
         allAgentsSeen: missing.length === 0,
-        missingAgents: missing
+        missingAgents: missing,
+        leadCapture: {
+          autoEnabled,
+          lastRunAt: leadRun?.finished_at || null,
+          lastRunStatus: leadRun?.status || "never",
+          lastAnalyzed: Number(leadRun?.analyzed || 0),
+          lastNew: Number(leadRun?.new_leads || 0),
+          totalLeads: leadCounts.get(client.id) || 0
+        }
       };
     });
 

@@ -19,7 +19,7 @@ test("Support ignores transient self-healing post errors", () => {
     "duplicate_media_blocked",
     "duplicate_caption_blocked"
   ]) assert.match(extended, new RegExp(error));
-  assert.match(extended, /status\|\|"failed"/);
+  assert.match(extended, /\["ready","scheduled"\]/);
 });
 
 test("Auditor falls back to recent valid RADAR data before warning", () => {

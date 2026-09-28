@@ -1,5 +1,9 @@
 # Histórico de alterações feitas pelo Work
 
+## 2026-09-27 — captação observável (local, aguardando deploy)
+- Coleta horária por padrão para Global Play e Ragnar; desligamento explícito preservado. Timeouts Meta e indicadores agregados de captação adicionados ao health. CTA de comentário QUERO em todas as pautas e formato rotulado como imagem real.
+- Testes antigos alinhados ao fiscal visual v2; novo teste cobre padrão e opt-out. 15 testes e checagem sintática passaram. Sem postagem ou DM de teste.
+
 ## 2026-09-27 — Autorrecuperação de post sem mídia
 - Corrigido o Creator para não ignorar um slot diário já existente quando ele está sem mídia.
 - Quando surge uma mídia válida no pool, o Creator a vincula ao post incompleto, zera tentativas/erro, redefine os gates como pendentes e devolve o post ao fluxo Copy Chief → Designer → Publisher.
