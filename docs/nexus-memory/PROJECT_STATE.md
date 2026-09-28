@@ -48,3 +48,8 @@ Implantar a autorrecuperação do Creator e observar se os posts incompletos do 
 
 ## Retomada — 2026-09-27 20h UTC
 Retomada em 27/09/2026: main 45de28b; CI/deploy 36338210500 concluído com sucesso. Health atual responde ok/D1/R2. Correção preparada: inspeção real da imagem para Global Play, bloqueio uniforme nos três publicadores, cache por URL e até três tentativas. Sem chamada real de visão nem consulta autenticada ao ledger nesta sessão; execução em produção ainda não comprovada.
+
+## Implantação observada — 2026-09-27 23:12 BRT
+- PR #25 integrado em `main` (merge `252d5bb93bcb4ecff8442aa4b5908be113a77568`). Workflow 36368885402 aprovou testes, bundle, deploy Cloudflare e verificação pública de autonomia.
+- `/api/autonomy-health` após deploy: cron saudável, `leadHunterRuns:2` naquele tick; Global Play e Ragnar com `leadCapture.autoEnabled:true`, última varredura `success`, `lastAnalyzed:0`, `lastNew:0`, `totalLeads:0`. Portanto a coleta opera, mas não encontrou comentários utilizáveis; não há lead captado. A causa da ausência de interações exige métricas de alcance e conversão antes de atribuição.
+- O teste demonstra coleta de comentários, não leitura de DMs, respostas automáticas nem geração de nova mídia. Próximo passo: analisar alcance, comentários e criativos por publicação e habilitar um funil de resposta aos contatos recebidos com rastreio de conversão.
