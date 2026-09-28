@@ -152,7 +152,7 @@ async function autonomyHealth(env) {
     "DESIGNER","VIDEO","PUBLISHER","ODIN","SUPORTE","AUDITOR","GROWTH"
   ];
   try {
-    const [heartbeatRow, clientsResult, executionsResult, leadRunsResult, leadConfigsResult, leadCountsResult, postsResult, jobsResult] = await Promise.all([
+    const [heartbeatRow, clientsResult, executionsResult, leadRunsResult, leadConfigsResult, leadCountsResult, postsResult, jobsResult, openaiResult] = await Promise.all([
       env.DB.prepare(
         "SELECT value_json,updated_at FROM nexus_state WHERE namespace='scheduler' AND item_key='heartbeat' AND client_id='' LIMIT 1"
       ).first(),
@@ -176,7 +176,10 @@ async function autonomyHealth(env) {
       ).all(),
       env.DB.prepare(
         "SELECT client_id,kind,status,attempts,due_at,updated_at,last_error FROM scheduled_jobs WHERE client_id IN ('globalplay-streaming','ragnar-one') ORDER BY created_at DESC LIMIT 60"
-      ).all()
+      ).all(),
+      env.DB.prepare(
+        "SELECT client_id,status,detail,updated_at FROM openai_runtime_status WHERE client_id IN ('globalplay-streaming','ragnar-one')"
+      ).all().catch(() => ({ results: [] }))
     ]);
 
     const heartbeat = (() => {
@@ -247,6 +250,11 @@ async function autonomyHealth(env) {
           imagePresent: Boolean(payload.imageUrl || payload.publicImageUrl),
           copyChief: payload.qualityGates?.copyChief || null,
           designer: payload.qualityGates?.designer || null,
+          reviewStatus: payload.visualReview?.status || null,
+          reviewReason: /^[a-z_0-9]+$/.test(String(payload.visualReview?.reason || ""))
+            ? String(payload.visualReview.reason).slice(0, 80) : null,
+          blockedMediaPresent: Boolean(payload.blockedDesignerMedia),
+          recoveryAttempted: Boolean(payload.blockedDesignerRecoveryAttemptedAt),
           retries: Number(payload.retryCount || 0),
           publishedAt: payload.publishedAt || null,
           errorCode: /^[a-z_]+$/.test(code) ? code.slice(0, 80) : (code ? "external_api_error" : ""),
@@ -258,6 +266,7 @@ async function autonomyHealth(env) {
         dueAt: row.due_at, updatedAt: row.updated_at,
         errorCode: /^[a-z_]+$/.test(String(row.last_error || "")) ? String(row.last_error).slice(0, 80) : (row.last_error ? "execution_error" : "")
       }));
+      const provider = (openaiResult?.results || []).find(row => row.client_id === client.id);
       return {
         clientId: client.id,
         clientName: client.name,
@@ -265,7 +274,15 @@ async function autonomyHealth(env) {
         agents,
         allAgentsSeen: missing.length === 0,
         missingAgents: missing,
-        publishingDiagnostic: { posts, jobs },
+        publishingDiagnostic: {
+          posts, jobs,
+          openai: {
+            status: provider?.status || "unknown",
+            code: /^[a-z_0-9]+$/.test(String(provider?.detail || ""))
+              ? String(provider.detail).slice(0, 80) : (provider?.detail ? "provider_error" : ""),
+            updatedAt: provider?.updated_at || null
+          }
+        },
         leadCapture: {
           autoEnabled,
           lastRunAt: leadRun?.finished_at || null,

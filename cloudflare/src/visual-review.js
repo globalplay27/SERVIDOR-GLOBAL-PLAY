@@ -26,8 +26,12 @@ export async function reviewImage(env, client, media, previous, request = openAI
     const result = JSON.parse(text);
     if (!fields.every(k => typeof result[k] === 'boolean') || typeof result.reason !== 'string') throw new Error('invalid_review');
     return { ...base, status: fields.every(k => result[k]) ? 'approved' : 'rejected', checks: Object.fromEntries(fields.map(k => [k, result[k]])), reason: result.reason.slice(0, 300) };
-  } catch {
-    return { ...base, status: 'unavailable', reason: 'visual_review_unavailable', retryAt: new Date(Date.now() + 30 * 60 * 1000).toISOString() };
+  } catch (error) {
+    const message = String(error?.message || '');
+    const reason = /^openai_(quota_exhausted|daily_budget_reached|not_configured_for_client|http_[0-9]{3})$/.test(message)
+      ? message
+      : (error?.name === 'TimeoutError' ? 'openai_timeout' : 'visual_review_unavailable');
+    return { ...base, status: 'unavailable', reason, retryAt: new Date(Date.now() + 30 * 60 * 1000).toISOString() };
   }
 }
 
