@@ -1,5 +1,8 @@
 # Histórico de alterações feitas pelo Work
 
+## 2026-09-28 — priorizar recuperação de postagem Ragnar vencida (preparado)
+- `postingProfile` ignora as três URLs PNG corrompidas também quando gravadas na configuração, permitindo fallback ao JPEG válido. O Creator agora procura uma postagem aprovada e vencida do dia sem imagem antes de distribuir mídia a horários futuros; tenta a antiga imagem bloqueada somente se ela for válida e ainda não tiver sido reavaliada. Mantidos os gates de Copy Chief, Designer e revisão visual.
+
 ## 2026-09-28 — trocar mídia Ragnar corrompida (preparado)
 - Identificados três PNGs com checksum de IDAT inválido. Adicionado JPEG decodificável derivado de arte própria do usuário. Pool padrão aponta para o novo arquivo; Designer descarta URLs antigas e Creator impede sua reutilização. Mantidos gates e antirrepetição.
 

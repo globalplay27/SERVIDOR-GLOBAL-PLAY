@@ -1,5 +1,8 @@
 # Estado do Nexus 2.0
 
+## 2026-09-28 13h53 BRT — Ragnar ainda sem postagem
+- Após PR #36 implantado, `/api/autonomy-health` às 16:52 UTC mostrou Creator e Copy Chief ativos, mas Publisher Ragnar ainda com `candidates:0`, `published:0`; posts vencidos do dia continuavam sem imagem. A imagem válida foi alocada a uma postagem futura, demonstrando falha na prioridade de recuperação. Correção preparada para priorizar um post vencido e filtrar URLs antigas também da configuração salva. Publicação Ragnar ainda não confirmada.
+
 ## 2026-09-28 13h35 BRT — Global Play publicado, mídia Ragnar corrompida
 - Global Play publicou post `agentcore:globalplay-streaming:2026-09-28:1200` em 16:27:42 UTC, `mediaIdPresent:true`, gate Designer e revisão v2 aprovados. Isso comprova fluxo Meta para essa conta, não continuidade automática de mídia.
 - Ragnar permaneceu em `candidates:0`. Seus três PNGs padrão em `public/assets/ragnar/nordic-cinema-01..03.png` falharam na verificação de integridade de PNG (`bad header checksum in IDAT`), apesar de responderem HTTP 200 com `image/png`. Isso explica a resposta OpenAI 400 `invalid_value` para esse conjunto; URL pública/Content-Type não garantem imagem decodificável.

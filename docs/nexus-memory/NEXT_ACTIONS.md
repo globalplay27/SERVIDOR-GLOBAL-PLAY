@@ -1,5 +1,8 @@
 # Próximas ações, em ordem
 
+## Postagem Ragnar, 2026-09-28 13h53 BRT
+- Implantar correção de recuperação prioritária, verificar CI e deploy. Aguardar Creator → Copy Chief → Designer → Publisher; confirmar `mediaIdPresent:true` e `publishedAt` em produção antes de dizer que o Ragnar publicou. Se a revisão reprovar a nova arte, registrar o motivo e não contornar o gate. Resolver depois o fornecimento contínuo de peças únicas sem geração paga automática.
+
 ## Mídia Ragnar, 2026-09-28 13h35
 1. Implantar JPEG válido e excluir do pool as três URLs de PNG corrompido; deixar Designer limpar posts antigos com essas URLs e Creator vincular a mídia nova.
 2. Observar avaliação visual real, Publisher e `publishedAt`/ID de mídia Ragnar. Se a imagem não passar na revisão, registrar motivo e criar outra peça original válida.
