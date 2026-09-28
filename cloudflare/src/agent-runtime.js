@@ -139,6 +139,24 @@ function postingProfile(client) {
   };
 }
 
+async function instagramMediaInsights(mediaId, headers) {
+  const metrics = ["reach","views","saved","shares","total_interactions"];
+  const out = {};
+  for (const metric of metrics) {
+    try {
+      const url = "https://graph.instagram.com/" + encodeURIComponent(mediaId) + "/insights?metric=" + encodeURIComponent(metric);
+      const response = await fetch(url, { headers });
+      const payload = await response.json().catch(()=>({}));
+      if (!response.ok) continue;
+      const row = Array.isArray(payload?.data) ? payload.data[0] : null;
+      const value = Array.isArray(row?.values) ? row.values[0]?.value : row?.value;
+      const number = Number(value);
+      if (Number.isFinite(number)) out[metric] = Math.max(0, number);
+    } catch {}
+  }
+  return out;
+}
+
 async function instagramSnapshot(env, client) {
   const conn = await resolveInstagramCredentials(env, client.id);
   const token = String(conn?.accessToken || "");
@@ -153,7 +171,7 @@ async function instagramSnapshot(env, client) {
     const mediaResponse = await fetch(mediaUrl,{headers});
     const mediaPayload = await mediaResponse.json().catch(()=>({}));
     if(!mediaResponse.ok)throw new Error(String(mediaPayload?.error?.message || "instagram_media_"+mediaResponse.status));
-    const items = Array.isArray(mediaPayload.data) ? mediaPayload.data.map(item=>({
+    const baseItems = Array.isArray(mediaPayload.data) ? mediaPayload.data.map(item=>({
       id:String(item.id||""),
       caption:String(item.caption||"").slice(0,2200),
       timestamp:item.timestamp||null,
@@ -167,6 +185,10 @@ async function instagramSnapshot(env, client) {
           : (item.media_url||item.thumbnail_url||"")
       )
     })) : [];
+    const items = await Promise.all(baseItems.map(async item=>({
+      ...item,
+      insights: item.id ? await instagramMediaInsights(item.id, headers) : {}
+    })));
 
     let followersCount=0, mediaCount=items.length, username=String(conn?.username||"");
     try {
@@ -250,10 +272,16 @@ async function runRadar(env, client, options) {
   ]);
   const captions=[...(snapshot.items||[]).map(x=>x.caption),...ledger.map(x=>x.caption||"")].filter(Boolean);
   const terms=topTerms(captions,12);
-  const scored=(snapshot.items||[]).map(item=>({
-    ...item,
-    engagement:Number(item.likeCount||0)+Number(item.commentsCount||0)*2
-  })).sort((a,b)=>b.engagement-a.engagement);
+  const scored=(snapshot.items||[]).map(item=>{
+    const insights=item.insights&&typeof item.insights==="object"?item.insights:{};
+    const engagement=
+      Number(item.likeCount||0)+
+      Number(item.commentsCount||0)*2+
+      Number(insights.saved||0)*3+
+      Number(insights.shares||0)*4+
+      Number(insights.total_interactions||0);
+    return {...item,engagement};
+  }).sort((a,b)=>b.engagement-a.engagement);
   const engagement=scored.map(item=>item.engagement);
   const postTimes=recommendedTimes(snapshot.items);
   const previousFollowers=Math.max(0,Number(state?.radar?.followersCount||0));
@@ -291,12 +319,22 @@ async function runRadar(env, client, options) {
       mediaType:item.mediaType,
       engagement:item.engagement,
       permalink:item.permalink,
-      caption:String(item.caption||"").slice(0,180)
+      caption:String(item.caption||"").slice(0,180),
+      insights:item.insights||{}
     })),
+    mediaCandidates:scored
+      .filter(item=>/^https:\/\//i.test(String(item.mediaUrl||"")))
+      .map(item=>({id:item.id,mediaUrl:item.mediaUrl,mediaType:item.mediaType,timestamp:item.timestamp,engagement:item.engagement}))
+      .slice(0,25),
     winningFormats:winningFormats.slice(0,4),
     metrics:{
       medianEngagement:median(engagement),
-      topEngagement:scored[0]?.engagement||0
+      topEngagement:scored[0]?.engagement||0,
+      reach:scored.reduce((sum,item)=>sum+Number(item.insights?.reach||0),0),
+      views:scored.reduce((sum,item)=>sum+Number(item.insights?.views||0),0),
+      saves:scored.reduce((sum,item)=>sum+Number(item.insights?.saved||0),0),
+      shares:scored.reduce((sum,item)=>sum+Number(item.insights?.shares||0),0),
+      totalInteractions:scored.reduce((sum,item)=>sum+Number(item.insights?.total_interactions||0),0)
     },
     growthCampaign:{
       targetFollowers:profile.growthTargetFollowers,
@@ -462,6 +500,7 @@ async function stageOwnInstagramImage(env, clientId, postId, sourceUrl) {
 async function runCreator(env,client,strategy,options) {
   const startedAt=new Date().toISOString();
   const config=normalizeAgentCoreConfig(client);
+  const state=await agentCoreState(env,client.id);
   const recent=await ledgerRows(env,client.id,Math.max(60,Number(strategy?.antiRepeat?.recentWindow||120)));
   const recentCaptions=recent.map(row=>String(row.caption||"")).filter(Boolean);
   const usedPublishedMedia=new Set(
@@ -474,6 +513,14 @@ async function runCreator(env,client,strategy,options) {
     .map(row=>String(row.payload?.imageUrl||row.payload?.publicImageUrl||"").trim())
     .filter(url=>/^https:\/\//i.test(url)&&!usedPublishedMedia.has(mediaKey(url)));
   const configuredMedia=Array.isArray(strategy?.standardMediaUrls)?strategy.standardMediaUrls:[];
+  const recentSourceIds=new Set(
+    recent.filter(row=>row.status==="published")
+      .map(row=>String(row.payload?.sourceInstagramMediaId||""))
+      .filter(Boolean)
+  );
+  const instagramCandidates=Array.isArray(state?.radar?.mediaCandidates)
+    ? state.radar.mediaCandidates.filter(item=>item?.id&&item?.mediaUrl&&!recentSourceIds.has(String(item.id)))
+    : [];
   const mediaPool=[...new Set([...configuredMedia,...queuedUnusedMedia])]
     .filter(url=>/^https:\/\//i.test(String(url))&&!usedPublishedMedia.has(mediaKey(url)));
 
@@ -490,6 +537,20 @@ async function runCreator(env,client,strategy,options) {
   const repaired=[];
   const approval=config.autoPublish&&!config.approvalRequired?"approved":"pending";
 
+  async function nextMedia(postId) {
+    const pooled=String(mediaPool.shift()||"");
+    if(pooled) return {url:pooled,source:"standard-media-pool",sourceInstagramMediaId:""};
+    while(instagramCandidates.length){
+      const candidate=instagramCandidates.shift();
+      const staged=await stageOwnInstagramImage(env,client.id,postId,candidate.mediaUrl);
+      if(staged){
+        recentSourceIds.add(String(candidate.id));
+        return {url:staged,source:"own-instagram-r2-replenishment",sourceInstagramMediaId:String(candidate.id)};
+      }
+    }
+    return {url:"",source:"awaiting-unique-media",sourceInstagramMediaId:""};
+  }
+
   for(let index=0;index<times.length;index++){
     const time=times[index];
     const publishedToday=recent.some(row=>row.status==="published"&&localDay(row.scheduled_for||row.created_at)===localDay());
@@ -502,15 +563,17 @@ async function runCreator(env,client,strategy,options) {
     if(exists){
       const existingPayload=parseJson(exists.payload_json,{});
       const existingMedia=String(existingPayload.imageUrl||existingPayload.publicImageUrl||"").trim();
-      const replacement=existingMedia?"":String(mediaPool.shift()||"");
+      const replacementInfo=existingMedia?{url:"",source:"",sourceInstagramMediaId:""}:await nextMedia(id);
+      const replacement=String(replacementInfo.url||"");
       if(replacement){
         existingPayload.imageUrl=replacement;
+        existingPayload.sourceInstagramMediaId=replacementInfo.sourceInstagramMediaId||existingPayload.sourceInstagramMediaId||"";
         existingPayload.retryCount=0;
         existingPayload.recoveredAt=new Date().toISOString();
         existingPayload.recoveryReason="missing_media_repaired_by_creator";
         existingPayload.intelligence={
           ...(existingPayload.intelligence||{}),
-          mediaSource:"standard-media-pool-recovery"
+          mediaSource:replacementInfo.source||"standard-media-pool-recovery"
         };
         existingPayload.qualityGates={copyChief:"pending",designer:"pending"};
         await env.DB.prepare(
@@ -550,11 +613,13 @@ async function runCreator(env,client,strategy,options) {
       ].filter(x=>x!==null).join("\n").slice(0,2200);
     }
 
-    const imageUrl=String(mediaPool.shift()||"");
+    const mediaInfo=await nextMedia(id);
+    const imageUrl=String(mediaInfo.url||"");
     const payload={
       clientName:client.name||client.id,
       instagram:client.instagram||"",
       imageUrl,
+      sourceInstagramMediaId:String(mediaInfo.sourceInstagramMediaId||""),
       title:theme.slice(0,160),
       source:"agent-core:creator-growth-30d",
       model:"instagram-growth-skill-layer",
@@ -564,7 +629,7 @@ async function runCreator(env,client,strategy,options) {
       intelligence:{
         format:index===0?"reel":index===1?"carousel":"story",
         skill:index===0?"ig-reel":index===1?"ig-carousel":"ig-story",
-        mediaSource:imageUrl?"standard-media-pool":"awaiting-unique-media",
+        mediaSource:mediaInfo.source||"awaiting-unique-media",
         antiRepeat:true,
         visualPolicy:{
           singleScene:true,
@@ -744,7 +809,13 @@ async function runAuditor(env,client,options) {
     id:item.id,
     caption:item.caption,
     mediaType:item.mediaType,
-    engagement:Number(item.likeCount||0)+Number(item.commentsCount||0)*2,
+    engagement:
+      Number(item.likeCount||0)+
+      Number(item.commentsCount||0)*2+
+      Number(item.insights?.saved||0)*3+
+      Number(item.insights?.shares||0)*4+
+      Number(item.insights?.total_interactions||0),
+    insights:item.insights||{},
     permalink:item.permalink
   }));
   const baseline=median(engagements.map(x=>x.engagement));
@@ -761,6 +832,13 @@ async function runAuditor(env,client,options) {
     published,
     failed,
     duplicateBlocks,
+    insightTotals:{
+      reach:engagements.reduce((sum,item)=>sum+Number(item.insights?.reach||0),0),
+      views:engagements.reduce((sum,item)=>sum+Number(item.insights?.views||0),0),
+      saves:engagements.reduce((sum,item)=>sum+Number(item.insights?.saved||0),0),
+      shares:engagements.reduce((sum,item)=>sum+Number(item.insights?.shares||0),0),
+      totalInteractions:engagements.reduce((sum,item)=>sum+Number(item.insights?.total_interactions||0),0)
+    },
     growthCampaign:state?.radar?.growthCampaign||null,
     feedback:top
       ?"Reaproveitar estrutura, ângulo e formato dos vencedores sem copiar mídia ou legenda."
