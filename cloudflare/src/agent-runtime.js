@@ -185,9 +185,12 @@ async function instagramSnapshot(env, client) {
           : (item.media_url||item.thumbnail_url||"")
       )
     })) : [];
-    const items = await Promise.all(baseItems.map(async item=>({
+    // The free Worker budget is 50 external subrequests per invocation. Radar
+    // and Auditor both call this function in a full cycle, so inspect only
+    // three recent media in detail while retaining basic data for all 25.
+    const items = await Promise.all(baseItems.map(async (item,index)=>({
       ...item,
-      insights: item.id ? await instagramMediaInsights(item.id, headers) : {}
+      insights: item.id && index < 3 ? await instagramMediaInsights(item.id, headers) : {}
     })));
 
     let followersCount=0, mediaCount=items.length, username=String(conn?.username||"");
