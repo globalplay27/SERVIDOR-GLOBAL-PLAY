@@ -180,7 +180,7 @@ export async function openAIResponses(env, clientId, input) {
   if (!response.ok) {
     const code = String(data?.error?.code || data?.error?.type || "");
     const message = String(data?.error?.message || "");
-    // Never expose the provider\x27s free-form message; it can contain media URLs.
+    // Never expose free-form provider messages; they may contain media URLs.
     const rawField = String(data?.error?.param || "");
     const field = rawField
       ? rawField.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 64)
