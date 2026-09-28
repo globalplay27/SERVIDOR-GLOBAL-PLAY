@@ -92,7 +92,10 @@ function postingProfile(client) {
     "https://servidor-nexus.diamantehinode2015.workers.dev/assets/ragnar/saga-sofa-20260928.jpg"
   ];
   const configuredMedia = Array.isArray(current.standardMediaUrls)
-    ? current.standardMediaUrls.map(String).map(v => v.trim()).filter(v => /^https:\/\//i.test(v)).slice(0, 30)
+    ? current.standardMediaUrls.map(String).map(v => v.trim())
+      .filter(v => /^https:\/\//i.test(v)
+        && !/\/assets\/ragnar\/nordic-cinema-0[123]\.png(?:[?#]|$)/i.test(v))
+      .slice(0, 30)
     : [];
   return {
     contentStrategy: current.contentStrategy || "Crescimento acelerado de seguidores + engajamento qualificado",
@@ -564,26 +567,35 @@ async function runCreator(env,client,strategy,options) {
   }
 
   // Adaptive times may change between cycles. Recover one due post from
-  // today's earlier timing plan even when its slot is no longer selected.
+  // today's earlier timing plan before allocating media to future slots.
   const dueRecoveries=recent
     .filter(row=>row.status==="ready"
       &&localDay(row.scheduled_for)===localDay()
       &&Date.parse(String(row.scheduled_for||""))<=Date.now()
       &&!String(row.payload?.imageUrl||row.payload?.publicImageUrl||"")
-      &&/^https:\/\//i.test(String(row.payload?.blockedDesignerMedia||""))
-      &&!/\/assets\/ragnar\/nordic-cinema-0[123]\.png(?:[?#]|$)/i.test(String(row.payload?.blockedDesignerMedia||""))
-      &&!row.payload?.blockedDesignerRecoveryAttemptedAt)
+      &&row.approval_status==="approved")
     .sort((a,b)=>Date.parse(a.scheduled_for)-Date.parse(b.scheduled_for));
-  for(const pending of dueRecoveries.slice(0,1)){
+  for(const pending of dueRecoveries){
     const payload={...pending.payload};
-    payload.imageUrl=String(payload.blockedDesignerMedia);
-    payload.blockedDesignerRecoveryAttemptedAt=new Date().toISOString();
+    const blocked=String(payload.blockedDesignerMedia||"");
+    const safeRecheck=/^https:\/\//i.test(blocked)
+      &&!/\/assets\/ragnar\/nordic-cinema-0[123]\.png(?:[?#]|$)/i.test(blocked)
+      &&!payload.blockedDesignerRecoveryAttemptedAt;
+    const mediaInfo=safeRecheck
+      ?{url:blocked,source:"blocked-media-recheck",sourceInstagramMediaId:""}
+      :await nextMedia(pending.id);
+    if(!mediaInfo.url)continue;
+    payload.imageUrl=mediaInfo.url;
+    payload.sourceInstagramMediaId=mediaInfo.sourceInstagramMediaId||payload.sourceInstagramMediaId||"";
+    payload.intelligence={...(payload.intelligence||{}),mediaSource:mediaInfo.source};
+    if(safeRecheck)payload.blockedDesignerRecoveryAttemptedAt=new Date().toISOString();
     payload.qualityGates={copyChief:"pending",designer:"pending"};
     payload.visualReview=null;
     await env.DB.prepare(
       "UPDATE post_ledger SET status='ready',error='',payload_json=?2,updated_at=CURRENT_TIMESTAMP WHERE id=?1"
     ).bind(pending.id,JSON.stringify(payload)).run();
     repaired.push({id:pending.id,scheduledFor:pending.scheduled_for,imageUrl:payload.imageUrl});
+    break;
   }
 
   const publishedToday=recent.some(row=>row.status==="published"
