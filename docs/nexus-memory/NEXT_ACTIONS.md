@@ -1,5 +1,10 @@
 # Próximas ações, em ordem
 
+## Diagnóstico 2026-09-28 13h10
+1. Implantar tentativa diagnóstica única da revisão Ragnar; observar `reviewReason`, `reviewAttempts`, `diagnosticRetry` e `openai.status` no health. Corrigir a causa específica retornada; não liberar gate sem aprovação.
+2. Global Play: criar mídia inédita de cena única, com textos legíveis e sem afirmações não comprovadas, por fonte autorizada; passar pela revisão e vincular a uma postagem vencida.
+3. Confirmar `publishedAt`, ID/permalink em produção e visualização na conta; deploy/cron não substituem essa confirmação.
+
 ## 2026-09-28, incidente de publicação
 1. Validar a alteração de timeout do Graph em CI e produção. Confirmar que os jobs deixam de virar `stale_running_job_recovered` e que Publisher volta a registrar execução recente.
 2. Integrar/observar PR #31 e ler no health a categoria efetiva da falha OpenAI do Ragnar. Corrigir transporte, orçamento ou modelo conforme evidência; manter revisão visual obrigatória.
