@@ -127,14 +127,17 @@ async function runDesigner(env,client,options){
     }
     const media=String(payload.imageUrl||payload.publicImageUrl||"").trim();
     const mediaReady=/^https:\/\//i.test(media);
+    const invalidLegacyMedia=client.id==="ragnar-one"
+      &&/\/assets\/ragnar\/nordic-cinema-0[123]\.png(?:[?#]|$)/i.test(media);
+    if(invalidLegacyMedia)payload.blockedDesignerRecoveryAttemptedAt=new Date().toISOString();
     const policy=payload.intelligence.visualPolicy||{};
     const singleScene=policy.singleScene===true;
     const noSplitScreen=policy.noSplitScreen===true;
     const noCollage=policy.noCollage===true;
     const tvFilled=policy.tvScreenMustBeFilled!==false;
-    let ok=mediaReady&&singleScene&&noSplitScreen&&noCollage&&tvFilled;
+    let ok=mediaReady&&!invalidLegacyMedia&&singleScene&&noSplitScreen&&noCollage&&tvFilled;
 
-    if(["globalplay-streaming","ragnar-one"].includes(client.id)){
+    if(["globalplay-streaming","ragnar-one"].includes(client.id)&&!invalidLegacyMedia){
       const prior=payload.visualReview;
       const cached=prior?.version==="visual-review-v2"&&prior.media===media;
       const settled=cached&&(["approved","rejected"].includes(prior.status)||Number(prior.attempts)>=3||Date.parse(prior.retryAt)>Date.now());

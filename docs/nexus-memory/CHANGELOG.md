@@ -1,5 +1,8 @@
 # Histórico de alterações feitas pelo Work
 
+## 2026-09-28 — trocar mídia Ragnar corrompida (preparado)
+- Identificados três PNGs com checksum de IDAT inválido. Adicionado JPEG decodificável derivado de arte própria do usuário. Pool padrão aponta para o novo arquivo; Designer descarta URLs antigas e Creator impede sua reutilização. Mantidos gates e antirrepetição.
+
 ## 2026-09-28 — parâmetro OpenAI sanitizado (preparado)
 - Falha HTTP agora registra somente `code` e nome do parâmetro estruturado ou categoria fixa. Mensagem livre do provedor não aparece no health, prevenindo vazamento de URLs e dados.
 

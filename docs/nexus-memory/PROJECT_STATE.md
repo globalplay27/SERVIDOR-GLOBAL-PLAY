@@ -1,5 +1,10 @@
 # Estado do Nexus 2.0
 
+## 2026-09-28 13h35 BRT — Global Play publicado, mídia Ragnar corrompida
+- Global Play publicou post `agentcore:globalplay-streaming:2026-09-28:1200` em 16:27:42 UTC, `mediaIdPresent:true`, gate Designer e revisão v2 aprovados. Isso comprova fluxo Meta para essa conta, não continuidade automática de mídia.
+- Ragnar permaneceu em `candidates:0`. Seus três PNGs padrão em `public/assets/ragnar/nordic-cinema-01..03.png` falharam na verificação de integridade de PNG (`bad header checksum in IDAT`), apesar de responderem HTTP 200 com `image/png`. Isso explica a resposta OpenAI 400 `invalid_value` para esse conjunto; URL pública/Content-Type não garantem imagem decodificável.
+- Mídia própria já fornecida pelo proprietário, `Saga nórdica no conforto do seu sofá.png`, foi verificada como PNG decodificável, inspecionada visualmente (cena única, TV preenchida, marca Ragnar One e CTA) e convertida para JPEG válido de 900×1125 para o pool. Correção preparada para trocar o pool e descartar referências aos três PNGs quebrados, preservando revisão visual antes de postar. Ainda sem publicação Ragnar confirmada.
+
 ## 2026-09-28 13h20 BRT — erro OpenAI mudou após limite
 - Após PR #34, Ragnar voltou a receber resposta HTTP da OpenAI, mas `400 invalid_value`; revisão ainda não aprovada e nenhuma postagem nova. Isso sustenta que o limite de subrequests era um bloqueio, mas revela uma segunda falha no payload ou acesso à imagem.
 - Preparado diagnóstico seguro do parâmetro inválido: só o campo estruturado do erro ou uma categoria fixa é registrado, jamais mensagem livre, URL ou chave. Confirmar campo em produção antes de modificar o pedido visual.

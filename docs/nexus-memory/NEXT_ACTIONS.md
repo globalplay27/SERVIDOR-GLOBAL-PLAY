@@ -1,5 +1,10 @@
 # Próximas ações, em ordem
 
+## Mídia Ragnar, 2026-09-28 13h35
+1. Implantar JPEG válido e excluir do pool as três URLs de PNG corrompido; deixar Designer limpar posts antigos com essas URLs e Creator vincular a mídia nova.
+2. Observar avaliação visual real, Publisher e `publishedAt`/ID de mídia Ragnar. Se a imagem não passar na revisão, registrar motivo e criar outra peça original válida.
+3. Montar fonte contínua de imagens inéditas e de cena única após a publicação controlada. Global Play publicou às 13h27 BRT, mas também precisa de abastecimento contínuo de mídia aprovada.
+
 ## Resposta 400 do Ragnar, 2026-09-28
 1. Observar `openai.code` após diagnóstico sanitizado do parâmetro inválido. Corrigir exclusivamente o campo rejeitado; repetir uma revisão e manter o gate visual obrigatório.
 2. Confirmar status publicado e identificador na Meta/Instagram. Global Play ainda depende de nova mídia simples e original.

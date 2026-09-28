@@ -89,9 +89,7 @@ function postingProfile(client) {
   const current = client?.config?.postingProfile && typeof client.config.postingProfile === "object"
     ? client.config.postingProfile : {};
   const ragnarMedia = [
-    "https://servidor-nexus.diamantehinode2015.workers.dev/assets/ragnar/nordic-cinema-01.png",
-    "https://servidor-nexus.diamantehinode2015.workers.dev/assets/ragnar/nordic-cinema-02.png",
-    "https://servidor-nexus.diamantehinode2015.workers.dev/assets/ragnar/nordic-cinema-03.png"
+    "https://servidor-nexus.diamantehinode2015.workers.dev/assets/ragnar/saga-sofa-20260928.jpg"
   ];
   const configuredMedia = Array.isArray(current.standardMediaUrls)
     ? current.standardMediaUrls.map(String).map(v => v.trim()).filter(v => /^https:\/\//i.test(v)).slice(0, 30)
@@ -521,7 +519,9 @@ async function runCreator(env,client,strategy,options) {
   const queuedUnusedMedia=recent
     .filter(row=>row.status!=="published")
     .map(row=>String(row.payload?.imageUrl||row.payload?.publicImageUrl||"").trim())
-    .filter(url=>/^https:\/\//i.test(url)&&!usedPublishedMedia.has(mediaKey(url)));
+    .filter(url=>/^https:\/\//i.test(url)
+      &&!usedPublishedMedia.has(mediaKey(url))
+      &&!/\/assets\/ragnar\/nordic-cinema-0[123]\.png(?:[?#]|$)/i.test(url));
   const configuredMedia=Array.isArray(strategy?.standardMediaUrls)?strategy.standardMediaUrls:[];
   const recentSourceIds=new Set(
     recent.filter(row=>row.status==="published")
@@ -532,7 +532,9 @@ async function runCreator(env,client,strategy,options) {
     ? state.radar.mediaCandidates.filter(item=>item?.id&&item?.mediaUrl&&!recentSourceIds.has(String(item.id)))
     : [];
   const mediaPool=[...new Set([...configuredMedia,...queuedUnusedMedia])]
-    .filter(url=>/^https:\/\//i.test(String(url))&&!usedPublishedMedia.has(mediaKey(url)));
+    .filter(url=>/^https:\/\//i.test(String(url))
+      &&!usedPublishedMedia.has(mediaKey(url))
+      &&!/\/assets\/ragnar\/nordic-cinema-0[123]\.png(?:[?#]|$)/i.test(String(url)));
 
   const times=(Array.isArray(strategy?.recommendedPostTimes)&&strategy.recommendedPostTimes.length
     ?strategy.recommendedPostTimes
@@ -569,6 +571,7 @@ async function runCreator(env,client,strategy,options) {
       &&Date.parse(String(row.scheduled_for||""))<=Date.now()
       &&!String(row.payload?.imageUrl||row.payload?.publicImageUrl||"")
       &&/^https:\/\//i.test(String(row.payload?.blockedDesignerMedia||""))
+      &&!/\/assets\/ragnar\/nordic-cinema-0[123]\.png(?:[?#]|$)/i.test(String(row.payload?.blockedDesignerMedia||""))
       &&!row.payload?.blockedDesignerRecoveryAttemptedAt)
     .sort((a,b)=>Date.parse(a.scheduled_for)-Date.parse(b.scheduled_for));
   for(const pending of dueRecoveries.slice(0,1)){
@@ -630,9 +633,11 @@ async function runCreator(env,client,strategy,options) {
         &&localDay(scheduledFor)===localDay()
         &&!existingPayload.blockedDesignerRecoveryAttemptedAt
         &&/^https:\/\//i.test(blockedMedia);
+      const safeRecheck=canRecheckBlocked
+        &&!/\/assets\/ragnar\/nordic-cinema-0[123]\.png(?:[?#]|$)/i.test(blockedMedia);
       const replacementInfo=existingMedia
         ?{url:"",source:"",sourceInstagramMediaId:""}
-        :canRecheckBlocked
+        :safeRecheck
           ?{url:blockedMedia,source:"blocked-media-recheck",sourceInstagramMediaId:""}
           :await nextMedia(id);
       const replacement=String(replacementInfo.url||"");
@@ -642,7 +647,7 @@ async function runCreator(env,client,strategy,options) {
         existingPayload.retryCount=0;
         existingPayload.recoveredAt=new Date().toISOString();
         existingPayload.recoveryReason="missing_media_repaired_by_creator";
-        if(canRecheckBlocked)existingPayload.blockedDesignerRecoveryAttemptedAt=new Date().toISOString();
+        if(safeRecheck)existingPayload.blockedDesignerRecoveryAttemptedAt=new Date().toISOString();
         existingPayload.intelligence={
           ...(existingPayload.intelligence||{}),
           mediaSource:replacementInfo.source||"standard-media-pool-recovery"

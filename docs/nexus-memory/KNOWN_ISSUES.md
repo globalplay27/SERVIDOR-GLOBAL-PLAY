@@ -1,5 +1,9 @@
 # Problemas conhecidos
 
+## 2026-09-28 — três mídias padrão Ragnar inválidas
+- `PIL.Image.verify()` falhou nos três PNGs `nordic-cinema-01..03.png` com checksum IDAT inválido. A revisão OpenAI retornou HTTP 400 `invalid_value`; o Publisher não vê candidatos. A substituição por mídia válida do proprietário está preparada, mas post real ainda pendente.
+- O novo pool possui só uma mídia inédita confirmada. Depois da primeira publicação, será necessária uma fonte contínua de outras imagens originais; não repetir o mesmo criativo nem liberar revisão.
+
 ## 2026-09-28 — resposta 400 na revisão Ragnar
 - Reduzido o consumo de requisições externas; status OpenAI mudou de `openai_transport_error` para HTTP 400 `invalid_value` às 16:17:59 UTC. Imagem pública Ragnar respondeu HTTP 200 / image/png a HEAD. O campo rejeitado não é exposto pelo diagnóstico atual; correção preparada para expor apenas parâmetro sanitizado.
 
