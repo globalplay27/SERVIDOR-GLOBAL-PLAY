@@ -893,6 +893,10 @@ export async function runAgentCoreCycle(env, clientId, options = {}) {
       result.agents.estrategistaFeedback=await runStrategist(env,client,{radar,auditor},{...options,feedback:true});
     }
     if(run("odin")&&config.modules.odin)result.agents.odin=await runOdin(env,client,options);
+    if(requested==="all"&&config.modules.suporte){
+      const support=await runExtendedAgents(env,client.id,{...options,agent:"suporte",phase:"post-cycle"});
+      Object.assign(result.agents,support);
+    }
     if(requested!=="all"){
       const extended=await runExtendedAgents(env,client.id,options);
       Object.assign(result.agents,extended);
