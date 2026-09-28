@@ -146,6 +146,85 @@ async function health(env) {
   }, d1 ? 200 : 503);
 }
 
+async function autonomyHealth(env) {
+  const expectedAgents = [
+    "RADAR","ESTRATEGISTA","PESQUISADOR","ANALISTA","CREATOR","COPY CHIEF",
+    "DESIGNER","VIDEO","PUBLISHER","ODIN","SUPORTE","AUDITOR","GROWTH"
+  ];
+  try {
+    const [heartbeatRow, clientsResult, executionsResult] = await Promise.all([
+      env.DB.prepare(
+        "SELECT value_json,updated_at FROM nexus_state WHERE namespace='scheduler' AND item_key='heartbeat' AND client_id='' LIMIT 1"
+      ).first(),
+      env.DB.prepare(
+        "SELECT id,name,status FROM clients WHERE status='online' ORDER BY id"
+      ).all(),
+      env.DB.prepare(
+        "SELECT client_id,agent,status,detail_json,created_at FROM agent_executions ORDER BY created_at DESC LIMIT 500"
+      ).all()
+    ]);
+
+    const heartbeat = (() => {
+      try { return JSON.parse(String(heartbeatRow?.value_json || "{}")); } catch { return {}; }
+    })();
+    const now = Date.now();
+    const heartbeatMs = Date.parse(String(heartbeatRow?.updated_at || heartbeat?.at || ""));
+    const heartbeatAgeSeconds = Number.isFinite(heartbeatMs) ? Math.max(0, Math.round((now - heartbeatMs) / 1000)) : null;
+
+    const latest = new Map();
+    for (const row of executionsResult?.results || []) {
+      const key = String(row.client_id || "") + "::" + String(row.agent || "").toUpperCase();
+      if (!latest.has(key)) latest.set(key, row);
+    }
+
+    const clients = (clientsResult?.results || []).map(client => {
+      const agents = expectedAgents.map(agent => {
+        const row = latest.get(String(client.id) + "::" + agent);
+        const at = row?.created_at || null;
+        const ageMinutes = at && Number.isFinite(Date.parse(at))
+          ? Math.max(0, Math.round((now - Date.parse(at)) / 60000))
+          : null;
+        return {
+          agent,
+          status: row?.status || "never",
+          lastRunAt: at,
+          ageMinutes
+        };
+      });
+      const missing = agents.filter(item => item.status === "never").map(item => item.agent);
+      return {
+        clientId: client.id,
+        clientName: client.name,
+        status: client.status,
+        agents,
+        allAgentsSeen: missing.length === 0,
+        missingAgents: missing
+      };
+    });
+
+    const schedulerHealthy = heartbeatAgeSeconds !== null && heartbeatAgeSeconds <= 180;
+    return json({
+      ok: schedulerHealthy && clients.every(client => client.allAgentsSeen),
+      runtime: "cloudflare-workers",
+      automationActive: String(env.CLOUDFLARE_AUTOMATION_ACTIVE || "").toLowerCase() === "true",
+      expectedAgents: expectedAgents.length,
+      scheduler: {
+        healthy: schedulerHealthy,
+        lastHeartbeatAt: heartbeatRow?.updated_at || heartbeat?.at || null,
+        ageSeconds: heartbeatAgeSeconds,
+        summary: heartbeat
+      },
+      clients
+    }, 200);
+  } catch (error) {
+    return json({
+      ok: false,
+      runtime: "cloudflare-workers",
+      error: String(error instanceof Error ? error.message : error).slice(0, 500)
+    }, 503);
+  }
+}
+
 async function handleState(request, env, url) {
   const denied = requireAuth(request, env);
   if (denied) return denied;
@@ -286,6 +365,10 @@ export default {
 
     if (url.pathname === "/health" || url.pathname === "/api/health") {
       return health(env);
+    }
+
+    if (url.pathname === "/api/autonomy-health" && request.method === "GET") {
+      return autonomyHealth(env);
     }
 
     if (url.pathname === "/api/system/openai-routing" && request.method === "GET") {
