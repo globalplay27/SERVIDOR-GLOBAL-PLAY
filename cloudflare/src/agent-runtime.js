@@ -588,6 +588,7 @@ async function runCreator(env,client,strategy,options) {
     &&row.approval_status==="approved"
     &&row.payload?.qualityGates?.copyChief==="approved"
     &&row.payload?.qualityGates?.designer==="approved"
+    &&!usedPublishedMedia.has(mediaKey(row.payload?.imageUrl||row.payload?.publicImageUrl||""))
     &&visualApproval(client.id,row.payload));
   if(["globalplay-streaming","ragnar-one"].includes(client.id)
     &&config.autoPublish&&!publishedToday&&!dueValid){
@@ -598,6 +599,7 @@ async function runCreator(env,client,strategy,options) {
         &&Date.parse(String(row.scheduled_for||""))>Date.now()
         &&row.payload?.qualityGates?.copyChief==="approved"
         &&row.payload?.qualityGates?.designer==="approved"
+        &&!usedPublishedMedia.has(mediaKey(row.payload?.imageUrl||row.payload?.publicImageUrl||""))
         &&visualApproval(client.id,row.payload))
       .sort((a,b)=>Date.parse(a.scheduled_for)-Date.parse(b.scheduled_for))[0];
     if(future){
