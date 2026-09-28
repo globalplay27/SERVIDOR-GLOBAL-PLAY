@@ -1,5 +1,11 @@
 # Próximas ações, em ordem
 
+## 2026-09-28, incidente de publicação
+1. Validar a alteração de timeout do Graph em CI e produção. Confirmar que os jobs deixam de virar `stale_running_job_recovered` e que Publisher volta a registrar execução recente.
+2. Integrar/observar PR #31 e ler no health a categoria efetiva da falha OpenAI do Ragnar. Corrigir transporte, orçamento ou modelo conforme evidência; manter revisão visual obrigatória.
+3. Providenciar mídia original inédita e revisável para Global Play; o pool padrão está vazio. Não reutilizar mídia já publicada nem supor que imagem será gerada automaticamente.
+4. Confirmar post elegível e, só após execução real, `publishedAt`, `media_id` e permalink. Nenhum post de teste foi enviado nesta sessão.
+
 ## Captação, após implantação
 1. Verificar CI/deploy do commit novo e consultar `/api/autonomy-health`: `leadCapture.autoEnabled`, `lastRunAt`, `lastRunStatus`, `lastAnalyzed`, `lastNew`, `totalLeads` por conta.
 2. Se `autoEnabled:false`, verificar configuração salva no portal sem sobrepor escolha explícita. Se `lastRunStatus:warning`, ler erros autenticados da última varredura e conferir permissão `instagram_business_manage_comments`.
