@@ -88,6 +88,16 @@ async function runDesigner(env,client,options){
       if(status==="failed")return fresh&&retryCount<3;
       return false;
     })
+    .sort((a,b)=>{
+      const priority=row=>{
+        const due=Date.parse(String(row.scheduled_for||""));
+        const media=String(row.payload?.imageUrl||row.payload?.publicImageUrl||"");
+        return media && Number.isFinite(due) && due<=now ? 0 : 1;
+      };
+      return priority(a)-priority(b)
+        || Date.parse(String(a.scheduled_for||a.created_at||""))
+         - Date.parse(String(b.scheduled_for||b.created_at||""));
+    })
     .slice(0,30);
   let ready=0,missing=0,repairQueued=0;
   const checks=[];
@@ -121,13 +131,23 @@ async function runDesigner(env,client,options){
     const tvFilled=policy.tvScreenMustBeFilled!==false;
     let ok=mediaReady&&singleScene&&noSplitScreen&&noCollage&&tvFilled;
 
-    if(client.id==="globalplay-streaming"){
+    if(["globalplay-streaming","ragnar-one"].includes(client.id)){
       const prior=payload.visualReview;
-      const cached=prior?.version==="visual-review-v1"&&prior.media===media;
+      const cached=prior?.version==="visual-review-v2"&&prior.media===media;
       const settled=cached&&(["approved","rejected"].includes(prior.status)||Number(prior.attempts)>=3||Date.parse(prior.retryAt)>Date.now());
+      if(mediaReady&&!settled&&visualCalls>=1)continue;
       if(settled||visualCalls<1){
         if(!settled&&mediaReady)visualCalls++;
         payload.visualReview=await reviewImage(env,client,media,prior);
+      }
+      if(mediaReady&&payload.visualReview?.status==="unavailable"){
+        payload.qualityGates={...(payload.qualityGates||{}),designer:"pending"};
+        await env.DB.prepare(
+          "UPDATE post_ledger SET payload_json=?2,error='visual_review_unavailable',updated_at=CURRENT_TIMESTAMP WHERE id=?1"
+        ).bind(row.id,JSON.stringify(payload)).run();
+        missing++;
+        checks.push({id:row.id,mediaReady,ok:false,reason:"visual_review_unavailable"});
+        continue;
       }
       ok=mediaReady&&visualApproval(client.id,payload);
     }
