@@ -162,6 +162,7 @@ async function runDesigner(env,client,options){
       missing++;
       repairQueued++;
       payload.blockedDesignerMedia=media||payload.blockedDesignerMedia||"";
+      payload.blockedDesignerReviewStatus=payload.visualReview?.status||"unknown";
       payload.imageUrl="";
       payload.publicImageUrl="";
       payload.visualReview=null;
