@@ -1,5 +1,9 @@
 # Estado do Nexus 2.0
 
+## 2026-09-28 ~13h BRT — implantação parcial
+- PR #32 integrado como `922c65b`; GitHub Actions 36447607442 concluiu deploy com sucesso. Isso limita as chamadas Graph do Radar/Auditor a 8 segundos; primeira leitura do Worker após deploy ainda mostrou Publisher antigo, e uma consulta subsequente expirou. Não declarar publicação restaurada.
+- Próximo diagnóstico: observar execução recente de Publisher e falha categorizada da revisão Ragnar após PR #31; prover fonte de mídia original e única Global Play. Manter gates.
+
 ## 2026-09-28 12h50 BRT — publicação parada
 - Produção: heartbeat do cron atualizado, mas Publisher das duas contas sem nova execução havia cerca de três horas; vários `agent-core-cycle` e `lead-hunter` marcados `stale_running_job_recovered`. Global Play tem posts aprovados sem mídia e `designer_replacement_queued`; Ragnar tem posts com imagem, mas revisão visual indisponível ou parecer ausente. `candidates:0` não significa publicação bem-sucedida.
 - Correção preparada nesta sessão: limite de 8 segundos em cada consulta Graph do Radar/Auditor; não altera gates nem envia posts. A hipótese de requisições Graph presas como causa dos jobs longos exige validação após deploy.
