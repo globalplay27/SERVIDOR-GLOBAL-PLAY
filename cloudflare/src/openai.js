@@ -180,12 +180,21 @@ export async function openAIResponses(env, clientId, input) {
   if (!response.ok) {
     const code = String(data?.error?.code || data?.error?.type || "");
     const message = String(data?.error?.message || "");
+    // Never expose the provider\x27s free-form message; it can contain media URLs.
+    const rawField = String(data?.error?.param || "");
+    const field = rawField
+      ? rawField.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 64)
+      : /image[_\s-]?url/i.test(message) ? "image_url"
+      : /json[_\s-]?schema|text\.format/i.test(message) ? "text_format"
+      : /\bmodel\b/i.test(message) ? "model"
+      : /\bdetail\b/i.test(message) ? "detail"
+      : "";
     const quota = code === "insufficient_quota" || /insufficient[_ ]quota|quota.*exceeded|billing/i.test(code + " " + message);
     await setRuntimeStatus(
       env,
       clientId,
       quota ? "quota_exhausted" : (response.status === 429 ? "rate_limited" : "error"),
-      code || message || `HTTP ${response.status}`
+      field ? `${code || "http_" + response.status}_field_${field}` : (code || `http_${response.status}`)
     );
     const error = new Error(quota ? "openai_quota_exhausted" : `openai_http_${response.status}`);
     error.status = response.status;
