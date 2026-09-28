@@ -1,5 +1,10 @@
 # Testes e evidências
 
+## 2026-09-28 ~13h BRT — timeout Graph
+- PR #32: 15/15 testes locais, `node --check` e `git diff --check` aprovados; CI do PR 36447459567 aprovado. Merge `922c65b`; deploy workflow 36447607442 concluído com sucesso.
+- Após deploy, primeira leitura pública ainda mostrou última execução Publisher ~09h44 BRT e jobs em `running`/`stale_running_job_recovered`; consulta posterior ao endpoint expirou em 15 segundos. Não há publicação nova confirmada. A correção do timeout não está validada como solução suficiente.
+- PR #31 de diagnóstico de transporte OpenAI permanece separado e aberto nesta observação. Nenhuma postagem de teste ou chamada Meta de publicação foi enviada nesta sessão.
+
 ## 2026-09-27 23h BRT — alteração de captação
 - Antes: resposta pública de `/api/autonomy-health` mostrou cron saudável, 13 agentes por conta e `leadHunterRuns:0` no tick observado. Não havia resumo público das coletas.
 - Local: `node --test cloudflare/test/*.test.mjs` passou 15/15 após atualizar testes antigos para o fiscal visual v2 e o estado atual do Suporte; `node --check` passou em todos os módulos; Wrangler dry-run gerou bundle. Nenhum comentário sintético, publicação ou mensagem Meta foi enviado.
