@@ -1,5 +1,8 @@
 # Estado do Nexus 2.0
 
+## 2026-09-28 14h19 BRT — recuperação executada, Designer rejeitou novamente
+- PR #37 integrado e deploy 36455812092 aprovado. Ciclo Ragnar 17:05 UTC ficou preso e foi recuperado em 17:16. No ciclo 17:18 Creator/Designer/Publisher rodaram, mas o post vencido `2026-09-28:1000` terminou sem mídia e com `designer_replacement_queued`; OpenAI reportou sucesso em 17:19. Falta distinguir os critérios visuais rejeitados. Não houve publicação Ragnar confirmada.
+
 ## 2026-09-28 13h53 BRT — Ragnar ainda sem postagem
 - Após PR #36 implantado, `/api/autonomy-health` às 16:52 UTC mostrou Creator e Copy Chief ativos, mas Publisher Ragnar ainda com `candidates:0`, `published:0`; posts vencidos do dia continuavam sem imagem. A imagem válida foi alocada a uma postagem futura, demonstrando falha na prioridade de recuperação. Correção preparada para priorizar um post vencido e filtrar URLs antigas também da configuração salva. Publicação Ragnar ainda não confirmada.
 
