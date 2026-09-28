@@ -558,6 +558,28 @@ async function runCreator(env,client,strategy,options) {
     return {url:"",source:"awaiting-unique-media",sourceInstagramMediaId:""};
   }
 
+  // Adaptive times may change between cycles. Recover one due post from
+  // today's earlier timing plan even when its slot is no longer selected.
+  const dueRecoveries=recent
+    .filter(row=>row.status==="ready"
+      &&localDay(row.scheduled_for)===localDay()
+      &&Date.parse(String(row.scheduled_for||""))<=Date.now()
+      &&!String(row.payload?.imageUrl||row.payload?.publicImageUrl||"")
+      &&/^https:\/\//i.test(String(row.payload?.blockedDesignerMedia||""))
+      &&!row.payload?.blockedDesignerRecoveryAttemptedAt)
+    .sort((a,b)=>Date.parse(a.scheduled_for)-Date.parse(b.scheduled_for));
+  for(const pending of dueRecoveries.slice(0,1)){
+    const payload={...pending.payload};
+    payload.imageUrl=String(payload.blockedDesignerMedia);
+    payload.blockedDesignerRecoveryAttemptedAt=new Date().toISOString();
+    payload.qualityGates={copyChief:"pending",designer:"pending"};
+    payload.visualReview=null;
+    await env.DB.prepare(
+      "UPDATE post_ledger SET status='ready',error='',payload_json=?2,updated_at=CURRENT_TIMESTAMP WHERE id=?1"
+    ).bind(pending.id,JSON.stringify(payload)).run();
+    repaired.push({id:pending.id,scheduledFor:pending.scheduled_for,imageUrl:payload.imageUrl});
+  }
+
   for(let index=0;index<times.length;index++){
     const time=times[index];
     const publishedToday=recent.some(row=>row.status==="published"&&localDay(row.scheduled_for||row.created_at)===localDay());
@@ -570,7 +592,16 @@ async function runCreator(env,client,strategy,options) {
     if(exists){
       const existingPayload=parseJson(exists.payload_json,{});
       const existingMedia=String(existingPayload.imageUrl||existingPayload.publicImageUrl||"").trim();
-      const replacementInfo=existingMedia?{url:"",source:"",sourceInstagramMediaId:""}:await nextMedia(id);
+      const blockedMedia=String(existingPayload.blockedDesignerMedia||"");
+      const canRecheckBlocked=!existingMedia
+        &&localDay(scheduledFor)===localDay()
+        &&!existingPayload.blockedDesignerRecoveryAttemptedAt
+        &&/^https:\/\//i.test(blockedMedia);
+      const replacementInfo=existingMedia
+        ?{url:"",source:"",sourceInstagramMediaId:""}
+        :canRecheckBlocked
+          ?{url:blockedMedia,source:"blocked-media-recheck",sourceInstagramMediaId:""}
+          :await nextMedia(id);
       const replacement=String(replacementInfo.url||"");
       if(replacement){
         existingPayload.imageUrl=replacement;
@@ -578,6 +609,7 @@ async function runCreator(env,client,strategy,options) {
         existingPayload.retryCount=0;
         existingPayload.recoveredAt=new Date().toISOString();
         existingPayload.recoveryReason="missing_media_repaired_by_creator";
+        if(canRecheckBlocked)existingPayload.blockedDesignerRecoveryAttemptedAt=new Date().toISOString();
         existingPayload.intelligence={
           ...(existingPayload.intelligence||{}),
           mediaSource:replacementInfo.source||"standard-media-pool-recovery"
@@ -695,6 +727,8 @@ async function runPublisher(env,client,options) {
        AND approval_status='approved'
        AND COALESCE(json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.retryCount'),0) < 3
        AND (scheduled_for IS NULL OR scheduled_for<=?2)
+       AND (client_id NOT IN ('globalplay-streaming','ragnar-one')
+         OR date(scheduled_for,'-3 hours')=date(?2,'-3 hours'))
        AND json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.qualityGates.copyChief')='approved'
        AND json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.qualityGates.designer')='approved'
        AND COALESCE(json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.imageUrl'),'')<>''

@@ -11,7 +11,7 @@ function parseJson(raw, fallback = {}) {
 
 async function ledgerRows(env, clientId, limit = 160) {
   const r = await env.DB.prepare(
-    `SELECT id,status,approval_status,caption,error,payload_json,created_at,updated_at
+    `SELECT id,scheduled_for,status,approval_status,caption,error,payload_json,created_at,updated_at
      FROM post_ledger WHERE client_id=?1
      ORDER BY COALESCE(updated_at,created_at) DESC LIMIT ?2`
   ).bind(String(clientId), Math.max(1, Math.min(500, Number(limit || 160)))).all();
@@ -88,6 +88,19 @@ async function runDesigner(env,client,options){
       if(status==="failed")return fresh&&retryCount<3;
       return false;
     })
+    .sort((a,b)=>{
+      const priority=row=>{
+        const due=Date.parse(String(row.scheduled_for||""));
+        const media=String(row.payload?.imageUrl||row.payload?.publicImageUrl||"");
+        const localDate=ms=>new Date(ms-3*60*60*1000).toISOString().slice(0,10);
+        if(media && Number.isFinite(due) && due<=now && localDate(due)===localDate(now))return 0;
+        if(media && Number.isFinite(due) && due>now)return 1;
+        return 2;
+      };
+      return priority(a)-priority(b)
+        || Date.parse(String(a.scheduled_for||a.created_at||""))
+         - Date.parse(String(b.scheduled_for||b.created_at||""));
+    })
     .slice(0,30);
   let ready=0,missing=0,repairQueued=0;
   const checks=[];
@@ -121,13 +134,23 @@ async function runDesigner(env,client,options){
     const tvFilled=policy.tvScreenMustBeFilled!==false;
     let ok=mediaReady&&singleScene&&noSplitScreen&&noCollage&&tvFilled;
 
-    if(client.id==="globalplay-streaming"){
+    if(["globalplay-streaming","ragnar-one"].includes(client.id)){
       const prior=payload.visualReview;
-      const cached=prior?.version==="visual-review-v1"&&prior.media===media;
+      const cached=prior?.version==="visual-review-v2"&&prior.media===media;
       const settled=cached&&(["approved","rejected"].includes(prior.status)||Number(prior.attempts)>=3||Date.parse(prior.retryAt)>Date.now());
+      if(mediaReady&&!settled&&visualCalls>=1)continue;
       if(settled||visualCalls<1){
         if(!settled&&mediaReady)visualCalls++;
         payload.visualReview=await reviewImage(env,client,media,prior);
+      }
+      if(mediaReady&&payload.visualReview?.status==="unavailable"){
+        payload.qualityGates={...(payload.qualityGates||{}),designer:"pending"};
+        await env.DB.prepare(
+          "UPDATE post_ledger SET payload_json=?2,error='visual_review_unavailable',updated_at=CURRENT_TIMESTAMP WHERE id=?1"
+        ).bind(row.id,JSON.stringify(payload)).run();
+        missing++;
+        checks.push({id:row.id,mediaReady,ok:false,reason:"visual_review_unavailable"});
+        continue;
       }
       ok=mediaReady&&visualApproval(client.id,payload);
     }
@@ -142,6 +165,7 @@ async function runDesigner(env,client,options){
       missing++;
       repairQueued++;
       payload.blockedDesignerMedia=media||payload.blockedDesignerMedia||"";
+      payload.blockedDesignerReviewStatus=payload.visualReview?.status||"unknown";
       payload.imageUrl="";
       payload.publicImageUrl="";
       payload.visualReview=null;
