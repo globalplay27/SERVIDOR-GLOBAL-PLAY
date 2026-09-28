@@ -11,7 +11,9 @@ test("Instagram insights are part of autonomous feedback", () => {
   assert.match(runtime, /instagramMediaInsights/);
 });
 
-test("Creator replenishes exhausted media pool from own Instagram into R2", () => {
+test("Ragnar excludes recycled Instagram media while other accounts retain R2 replenishment", () => {
+  assert.match(runtime, /if\(client\.id==="ragnar-one"\)return \{url:"",source:"awaiting-new-original-media"/);
+  assert.match(runtime, /recycled_instagram_media_blocked/);
   assert.match(runtime, /own-instagram-r2-replenishment/);
   assert.match(runtime, /stageOwnInstagramImage/);
   assert.match(runtime, /sourceInstagramMediaId/);

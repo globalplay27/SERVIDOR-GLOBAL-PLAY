@@ -1,4 +1,5 @@
 import { visualApproval } from "./visual-review.js";
+import { mediaFingerprint } from "./media-fingerprint.js";
 import { getClient } from "./clients.js";
 import { resolveInstagramCredentials } from "./instagram-credentials.js";
 import { publishInstagramImage } from "./publisher.js";
@@ -522,7 +523,8 @@ async function runCreator(env,client,strategy,options) {
       .filter(Boolean)
   );
   const queuedUnusedMedia=recent
-    .filter(row=>row.status!=="published")
+    .filter(row=>row.status!=="published"
+      &&!(client.id==="ragnar-one"&&row.payload?.sourceInstagramMediaId))
     .map(row=>String(row.payload?.imageUrl||row.payload?.publicImageUrl||"").trim())
     .filter(url=>/^https:\/\//i.test(url)
       &&!usedPublishedMedia.has(mediaKey(url))
@@ -557,6 +559,9 @@ async function runCreator(env,client,strategy,options) {
   async function nextMedia(postId) {
     const pooled=String(mediaPool.shift()||"");
     if(pooled) return {url:pooled,source:"standard-media-pool",sourceInstagramMediaId:""};
+    // Reposting a copy of a prior Instagram post is repetition, even when
+    // staging it to R2 gives it a fresh URL.
+    if(client.id==="ragnar-one")return {url:"",source:"awaiting-new-original-media",sourceInstagramMediaId:""};
     while(instagramCandidates.length){
       const candidate=instagramCandidates.shift();
       const staged=await stageOwnInstagramImage(env,client.id,postId,candidate.mediaUrl);
@@ -588,7 +593,7 @@ async function runCreator(env,client,strategy,options) {
       :await nextMedia(pending.id);
     if(!mediaInfo.url)continue;
     payload.imageUrl=mediaInfo.url;
-    payload.sourceInstagramMediaId=mediaInfo.sourceInstagramMediaId||payload.sourceInstagramMediaId||"";
+    payload.sourceInstagramMediaId=mediaInfo.sourceInstagramMediaId||"";
     payload.intelligence={...(payload.intelligence||{}),mediaSource:mediaInfo.source};
     if(safeRecheck)payload.blockedDesignerRecoveryAttemptedAt=new Date().toISOString();
     payload.qualityGates={copyChief:"pending",designer:"pending"};
@@ -657,7 +662,7 @@ async function runCreator(env,client,strategy,options) {
       const replacement=String(replacementInfo.url||"");
       if(replacement){
         existingPayload.imageUrl=replacement;
-        existingPayload.sourceInstagramMediaId=replacementInfo.sourceInstagramMediaId||existingPayload.sourceInstagramMediaId||"";
+        existingPayload.sourceInstagramMediaId=replacementInfo.sourceInstagramMediaId||"";
         existingPayload.retryCount=0;
         existingPayload.recoveredAt=new Date().toISOString();
         existingPayload.recoveryReason="missing_media_repaired_by_creator";
@@ -802,6 +807,19 @@ async function runPublisher(env,client,options) {
     if(published>0)break;
     let approval=String(row.approval_status||"pending");
     const payload=parseJson(row.payload_json,{});
+    if(client.id==="ragnar-one"&&(payload.sourceInstagramMediaId
+      ||payload.intelligence?.mediaSource==="own-instagram-r2-replenishment")){
+      payload.blockedDuplicateMedia=payload.imageUrl||payload.publicImageUrl||"";
+      payload.imageUrl="";
+      payload.publicImageUrl="";
+      payload.qualityGates={...(payload.qualityGates||{}),designer:"pending"};
+      await env.DB.prepare(
+        "UPDATE post_ledger SET payload_json=?2,error='recycled_instagram_media_blocked',updated_at=CURRENT_TIMESTAMP WHERE id=?1"
+      ).bind(row.id,JSON.stringify(payload)).run();
+      duplicateMediaBlocked+=1;
+      awaitingMedia+=1;
+      continue;
+    }
 
     // Mandatory quality gates. Autonomous publishing must never bypass the
     // reviewers just because autoPublish is enabled.
@@ -846,6 +864,35 @@ async function runPublisher(env,client,options) {
       duplicateMediaBlocked+=1;
       awaitingMedia+=1;
       continue;
+    }
+
+    if(client.id==="ragnar-one"){
+      const fingerprint=await mediaFingerprint(env,imageUrl);
+      if(!fingerprint){
+        await env.DB.prepare(
+          "UPDATE post_ledger SET error='media_fingerprint_unavailable',updated_at=CURRENT_TIMESTAMP WHERE id=?1"
+        ).bind(row.id).run();
+        awaitingMedia+=1;
+        continue;
+      }
+      let repeated=false;
+      for(const prior of recentPublished.filter(item=>item.status==="published").slice(0,6)){
+        const priorUrl=prior.payload?.imageUrl||prior.payload?.publicImageUrl||"";
+        const priorHash=prior.payload?.mediaFingerprint||await mediaFingerprint(env,priorUrl);
+        if(priorHash===fingerprint){repeated=true;break;}
+      }
+      if(repeated){
+        payload.blockedDuplicateMedia=imageUrl;
+        payload.imageUrl="";
+        payload.qualityGates={...(payload.qualityGates||{}),designer:"pending"};
+        await env.DB.prepare(
+          "UPDATE post_ledger SET payload_json=?2,error='duplicate_media_content_blocked',updated_at=CURRENT_TIMESTAMP WHERE id=?1"
+        ).bind(row.id,JSON.stringify(payload)).run();
+        duplicateMediaBlocked+=1;
+        awaitingMedia+=1;
+        continue;
+      }
+      payload.mediaFingerprint=fingerprint;
     }
 
     const caption=String(row.caption||"");
