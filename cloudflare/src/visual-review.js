@@ -30,8 +30,11 @@ export async function reviewImage(env, client, media, previous, request = openAI
     const message = String(error?.message || '');
     const reason = /^openai_(quota_exhausted|daily_budget_reached|not_configured_for_client|http_[0-9]{3})$/.test(message)
       ? message
-      : (error?.name === 'TimeoutError' ? 'openai_timeout' : 'visual_review_unavailable');
-    return { ...base, status: 'unavailable', reason, retryAt: new Date(Date.now() + 30 * 60 * 1000).toISOString() };
+      : (message === 'invalid_review' || error instanceof SyntaxError ? 'openai_invalid_review'
+        : (error?.name === 'TimeoutError' ? 'openai_timeout'
+          : (/fetch|network|connect/i.test(message) ? 'openai_network_error' : 'visual_review_unavailable')));
+    const backoffMinutes = reason === 'openai_quota_exhausted' || reason === 'openai_daily_budget_reached' ? 30 : 2;
+    return { ...base, status: 'unavailable', reason, retryAt: new Date(Date.now() + backoffMinutes * 60 * 1000).toISOString() };
   }
 }
 
