@@ -1,5 +1,8 @@
 # Testes e evidências
 
+## 2026-09-28 — arte Ragnar inspecionada
+- JPEG extraído de `main`, 900×1125, SHA-256 `93ec7bbe06be6783beb197e1bcfd838ef66064b4fe3f66d9a37a0b7bf7ae68e2`; inspecionado visualmente. Sete testes `visual-review.test.mjs` passaram, incluindo aprovação com bytes idênticos e bloqueio após troca dos bytes mesmo quando existia aprovação anterior. Ainda sem evidência de publicação real.
+
 ## 2026-09-28 ~13h BRT — timeout Graph
 - PR #32: 15/15 testes locais, `node --check` e `git diff --check` aprovados; CI do PR 36447459567 aprovado. Merge `922c65b`; deploy workflow 36447607442 concluído com sucesso.
 - Após deploy, primeira leitura pública ainda mostrou última execução Publisher ~09h44 BRT e jobs em `running`/`stale_running_job_recovered`; consulta posterior ao endpoint expirou em 15 segundos. Não há publicação nova confirmada. A correção do timeout não está validada como solução suficiente.

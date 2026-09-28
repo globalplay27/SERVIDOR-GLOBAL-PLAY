@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { reviewImage, visualApproval } from '../src/visual-review.js';
 const client={id:'globalplay-streaming',name:'Global Play'};
 const url='https://example.com/image.png';
@@ -54,4 +55,24 @@ test('Global Play and Ragnar require matching real visual review',async()=>{
   const ragnar={id:'ragnar-one',name:'Ragnar One'};
   const ragnarReview=await reviewImage({},ragnar,url,null,async()=>response(verdict));
   assert.equal(visualApproval('ragnar-one',{imageUrl:url,visualReview:ragnarReview}),true);
+});
+
+test('only the inspected Ragnar artwork bytes receive pinned approval without spending tokens',async()=>{
+  const ragnar={id:'ragnar-one',name:'Ragnar One'};
+  const artwork='https://servidor-nexus.diamantehinode2015.workers.dev/assets/ragnar/saga-sofa-20260928.jpg';
+  const bytes=await readFile(new URL('../../public/assets/ragnar/saga-sofa-20260928.jpg',import.meta.url));
+  const neverUseProvider=()=>{throw new Error('unexpected paid review');};
+  const approved=await reviewImage({},ragnar,artwork,
+    {version:'visual-review-v2',media:artwork,status:'unavailable',retryAt:'2099-01-01'},
+    neverUseProvider,async()=>new Response(bytes,{status:200}));
+  assert.equal(approved.status,'approved');
+  assert.equal(approved.method,'inspected-pinned-owner-artwork');
+  assert.equal(visualApproval(ragnar.id,{imageUrl:artwork,visualReview:approved}),true);
+  const changed=await reviewImage({},ragnar,artwork,null,neverUseProvider,
+    async()=>new Response(new Uint8Array([1,2,3]),{status:200}));
+  assert.equal(changed.status,'unavailable');
+  assert.equal(changed.reason,'pinned_asset_mismatch');
+  const replacedAfterApproval=await reviewImage({},ragnar,artwork,approved,neverUseProvider,
+    async()=>new Response(new Uint8Array([1,2,3]),{status:200}));
+  assert.equal(replacedAfterApproval.status,'unavailable');
 });

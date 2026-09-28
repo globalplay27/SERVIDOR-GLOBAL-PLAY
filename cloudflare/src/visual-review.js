@@ -2,14 +2,38 @@ import { openAIResponses } from './openai.js';
 
 const VERSION = 'visual-review-v2';
 const fields = ['singleScene', 'noCollage', 'tvFilled', 'legibleText', 'brandCorrect', 'originalGenericVisual'];
+const REVIEWED_RAGNAR_MEDIA = 'https://servidor-nexus.diamantehinode2015.workers.dev/assets/ragnar/saga-sofa-20260928.jpg';
+const REVIEWED_RAGNAR_SHA256 = '93ec7bbe06be6783beb197e1bcfd838ef66064b4fe3f66d9a37a0b7bf7ae68e2';
 
-export async function reviewImage(env, client, media, previous, request = openAIResponses) {
+export async function reviewImage(env, client, media, previous, request = openAIResponses, fetchAsset = fetch) {
   const same = previous?.version === VERSION && previous?.media === media;
-  if (same && ['approved', 'rejected'].includes(previous.status)) return previous;
+  const pinnedArtwork = client.id === 'ragnar-one' && media === REVIEWED_RAGNAR_MEDIA;
+  if (same && previous.status === 'approved' && !pinnedArtwork) return previous;
   const attempts = same ? Number(previous.attempts || 0) : 0;
-  if (attempts >= 3 || (same && Date.parse(previous.retryAt) > Date.now())) return previous;
   const base = { version: VERSION, media, attempts: attempts + 1, reviewedAt: new Date().toISOString() };
   if (!/^https:\/\//i.test(media)) return { ...base, status: 'rejected', reason: 'missing_image' };
+  // This single owner-provided artwork was visually inspected on 2026-09-28.
+  // Verify its actual bytes so a replaced asset cannot inherit that approval.
+  if (pinnedArtwork) {
+    try {
+      const asset = await fetchAsset(media, { signal: AbortSignal.timeout(8000) });
+      if (!asset.ok || Number(asset.headers.get('content-length') || 0) > 3_000_000) throw new Error('pinned_asset_unavailable');
+      const bytes = await asset.arrayBuffer();
+      if (bytes.byteLength > 3_000_000) throw new Error('pinned_asset_unavailable');
+      const digest = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))]
+        .map(byte => byte.toString(16).padStart(2, '0')).join('');
+      if (digest !== REVIEWED_RAGNAR_SHA256) throw new Error('pinned_asset_mismatch');
+      return { ...base, status: 'approved', method: 'inspected-pinned-owner-artwork',
+        checks: Object.fromEntries(fields.map(field => [field, true])),
+        reason: 'Arte do proprietário inspecionada e bytes verificados.' };
+    } catch (error) {
+      return { ...base, status: 'unavailable',
+        reason: error?.message === 'pinned_asset_mismatch' ? 'pinned_asset_mismatch' : 'pinned_asset_unavailable',
+        retryAt: new Date(Date.now() + 2 * 60_000).toISOString() };
+    }
+  }
+  if (same && previous.status === 'rejected') return previous;
+  if (attempts >= 3 || (same && Date.parse(previous.retryAt) > Date.now())) return previous;
   try {
     const response = await request(env, client.id, {
       model: env.NEXUS_VISUAL_MODEL || 'gpt-4.1-mini',

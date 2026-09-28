@@ -1,5 +1,8 @@
 # Estado do Nexus 2.0
 
+## 2026-09-28 14h25 BRT — orçamento visual diário esgotado
+- Post vencido Ragnar `2026-09-28:1000` recebeu nova mídia após PR #37, mas `visualReview:unavailable`, motivo `openai_daily_budget_reached`. Não elevar limite de tokens. A arte original do usuário, convertida a JPEG 900×1125, foi inspecionada: cena única de sala, TV com navio nórdico genérico, marca Ragnar One e CTA legíveis. SHA-256 `93ec7bbe06be6783beb197e1bcfd838ef66064b4fe3f66d9a37a0b7bf7ae68e2`. Aprovação exclusiva por URL/hash preparada; publicação ainda não confirmada.
+
 ## 2026-09-28 14h19 BRT — recuperação executada, Designer rejeitou novamente
 - PR #37 integrado e deploy 36455812092 aprovado. Ciclo Ragnar 17:05 UTC ficou preso e foi recuperado em 17:16. No ciclo 17:18 Creator/Designer/Publisher rodaram, mas o post vencido `2026-09-28:1000` terminou sem mídia e com `designer_replacement_queued`; OpenAI reportou sucesso em 17:19. Falta distinguir os critérios visuais rejeitados. Não houve publicação Ragnar confirmada.
 
