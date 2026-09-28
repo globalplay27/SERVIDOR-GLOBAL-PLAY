@@ -695,6 +695,8 @@ async function runPublisher(env,client,options) {
        AND approval_status='approved'
        AND COALESCE(json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.retryCount'),0) < 3
        AND (scheduled_for IS NULL OR scheduled_for<=?2)
+       AND (client_id NOT IN ('globalplay-streaming','ragnar-one')
+         OR date(scheduled_for,'-3 hours')=date(?2,'-3 hours'))
        AND json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.qualityGates.copyChief')='approved'
        AND json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.qualityGates.designer')='approved'
        AND COALESCE(json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.imageUrl'),'')<>''
