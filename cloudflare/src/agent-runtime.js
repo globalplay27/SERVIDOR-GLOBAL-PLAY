@@ -558,6 +558,28 @@ async function runCreator(env,client,strategy,options) {
     return {url:"",source:"awaiting-unique-media",sourceInstagramMediaId:""};
   }
 
+  // Adaptive times may change between cycles. Recover one due post from
+  // today's earlier timing plan even when its slot is no longer selected.
+  const dueRecoveries=recent
+    .filter(row=>row.status==="ready"
+      &&localDay(row.scheduled_for)===localDay()
+      &&Date.parse(String(row.scheduled_for||""))<=Date.now()
+      &&!String(row.payload?.imageUrl||row.payload?.publicImageUrl||"")
+      &&/^https:\/\//i.test(String(row.payload?.blockedDesignerMedia||""))
+      &&!row.payload?.blockedDesignerRecoveryAttemptedAt)
+    .sort((a,b)=>Date.parse(a.scheduled_for)-Date.parse(b.scheduled_for));
+  for(const pending of dueRecoveries.slice(0,1)){
+    const payload={...pending.payload};
+    payload.imageUrl=String(payload.blockedDesignerMedia);
+    payload.blockedDesignerRecoveryAttemptedAt=new Date().toISOString();
+    payload.qualityGates={copyChief:"pending",designer:"pending"};
+    payload.visualReview=null;
+    await env.DB.prepare(
+      "UPDATE post_ledger SET status='ready',error='',payload_json=?2,updated_at=CURRENT_TIMESTAMP WHERE id=?1"
+    ).bind(pending.id,JSON.stringify(payload)).run();
+    repaired.push({id:pending.id,scheduledFor:pending.scheduled_for,imageUrl:payload.imageUrl});
+  }
+
   for(let index=0;index<times.length;index++){
     const time=times[index];
     const publishedToday=recent.some(row=>row.status==="published"&&localDay(row.scheduled_for||row.created_at)===localDay());
