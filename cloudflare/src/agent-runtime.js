@@ -580,6 +580,34 @@ async function runCreator(env,client,strategy,options) {
     repaired.push({id:pending.id,scheduledFor:pending.scheduled_for,imageUrl:payload.imageUrl});
   }
 
+  const publishedToday=recent.some(row=>row.status==="published"
+    &&localDay(row.payload?.publishedAt||row.updated_at||row.created_at)===localDay());
+  const dueValid=recent.some(row=>["ready","scheduled","failed"].includes(row.status)
+    &&localDay(row.scheduled_for)===localDay()
+    &&Date.parse(String(row.scheduled_for||""))<=Date.now()
+    &&row.approval_status==="approved"
+    &&row.payload?.qualityGates?.copyChief==="approved"
+    &&row.payload?.qualityGates?.designer==="approved"
+    &&visualApproval(client.id,row.payload));
+  if(["globalplay-streaming","ragnar-one"].includes(client.id)
+    &&config.autoPublish&&!publishedToday&&!dueValid){
+    const future=recent
+      .filter(row=>["ready","scheduled"].includes(row.status)
+        &&row.approval_status==="approved"
+        &&localDay(row.scheduled_for)===localDay()
+        &&Date.parse(String(row.scheduled_for||""))>Date.now()
+        &&row.payload?.qualityGates?.copyChief==="approved"
+        &&row.payload?.qualityGates?.designer==="approved"
+        &&visualApproval(client.id,row.payload))
+      .sort((a,b)=>Date.parse(a.scheduled_for)-Date.parse(b.scheduled_for))[0];
+    if(future){
+      const payload={...future.payload,scheduledRecoveryAt:new Date().toISOString()};
+      await env.DB.prepare(
+        "UPDATE post_ledger SET scheduled_for=?2,payload_json=?3,updated_at=CURRENT_TIMESTAMP WHERE id=?1"
+      ).bind(future.id,new Date().toISOString(),JSON.stringify(payload)).run();
+    }
+  }
+
   for(let index=0;index<times.length;index++){
     const time=times[index];
     const publishedToday=recent.some(row=>row.status==="published"&&localDay(row.scheduled_for||row.created_at)===localDay());
