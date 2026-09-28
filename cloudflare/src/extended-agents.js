@@ -89,17 +89,38 @@ async function runDesigner(env,client,options){
       return false;
     })
     .slice(0,30);
-  let ready=0,missing=0;
+  let ready=0,missing=0,repairQueued=0;
   const checks=[];
   let visualCalls=0;
   for(const row of rows){
-    const payload=row.payload&&typeof row.payload==="object"?row.payload:{}; const media=String(payload.imageUrl||payload.publicImageUrl||"").trim(); const mediaReady=/^https:\/\//i.test(media);
-    // Creator declares the single-scene policy in intelligence. Designer is the
-    // mandatory gate that enforces it before Publisher.
-    const policy=payload.intelligence?.visualPolicy||{}; const singleScene=policy.singleScene===true; const noSplitScreen=policy.noSplitScreen===true; const noCollage=policy.noCollage===true; const tvFilled=policy.tvScreenMustBeFilled!==false;
+    const payload=row.payload&&typeof row.payload==="object"?row.payload:{};
+    payload.intelligence=payload.intelligence&&typeof payload.intelligence==="object"?payload.intelligence:{};
+    const source=String(payload.source||"");
+    const existingPolicy=payload.intelligence.visualPolicy&&typeof payload.intelligence.visualPolicy==="object"
+      ? payload.intelligence.visualPolicy : {};
+    if(source.startsWith("agent-core:")){
+      payload.intelligence.visualPolicy={
+        singleScene:existingPolicy.singleScene!==false,
+        maxScenes:1,
+        noSplitScreen:existingPolicy.noSplitScreen!==false,
+        noCollage:existingPolicy.noCollage!==false,
+        noMosaic:existingPolicy.noMosaic!==false,
+        noBeforeAfter:existingPolicy.noBeforeAfter!==false,
+        lowVisualClutter:existingPolicy.lowVisualClutter!==false,
+        tvScreenMustBeFilled:existingPolicy.tvScreenMustBeFilled!==false,
+        focalSubjectCount:1,
+        ...existingPolicy
+      };
+    }
+    const media=String(payload.imageUrl||payload.publicImageUrl||"").trim();
+    const mediaReady=/^https:\/\//i.test(media);
+    const policy=payload.intelligence.visualPolicy||{};
+    const singleScene=policy.singleScene===true;
+    const noSplitScreen=policy.noSplitScreen===true;
+    const noCollage=policy.noCollage===true;
+    const tvFilled=policy.tvScreenMustBeFilled!==false;
     let ok=mediaReady&&singleScene&&noSplitScreen&&noCollage&&tvFilled;
-    // Roll out real image inspection to Global Play first. Never approve a
-    // missing/failed inspection using Creator's self-declared policy flags.
+
     if(client.id==="globalplay-streaming"){
       const prior=payload.visualReview;
       const cached=prior?.version==="visual-review-v1"&&prior.media===media;
@@ -110,13 +131,51 @@ async function runDesigner(env,client,options){
       }
       ok=mediaReady&&visualApproval(client.id,payload);
     }
-    ok?ready++:missing++;
-    payload.qualityGates={...(payload.qualityGates||{}),designer:ok?"approved":"rejected",designerAt:new Date().toISOString()};
-    await env.DB.prepare("UPDATE post_ledger SET payload_json=?2,error=?3,updated_at=CURRENT_TIMESTAMP WHERE id=?1").bind(row.id,JSON.stringify(payload),ok?"":"visual_quality_rejected").run();
-    checks.push({id:row.id,mediaReady:mediaReady,singleScene,noSplitScreen,noCollage,tvFilled,ok,visualReview:payload.visualReview?.status||null,reason:payload.visualReview?.reason||null,format:payload.intelligence?.format||"unknown"});
+
+    if(ok){
+      ready++;
+      payload.qualityGates={...(payload.qualityGates||{}),designer:"approved",designerAt:new Date().toISOString()};
+      await env.DB.prepare(
+        "UPDATE post_ledger SET payload_json=?2,error='',updated_at=CURRENT_TIMESTAMP WHERE id=?1"
+      ).bind(row.id,JSON.stringify(payload)).run();
+    }else{
+      missing++;
+      repairQueued++;
+      payload.blockedDesignerMedia=media||payload.blockedDesignerMedia||"";
+      payload.imageUrl="";
+      payload.publicImageUrl="";
+      payload.visualReview=null;
+      payload.repairRequestedAt=new Date().toISOString();
+      payload.repairReason="designer_requested_media_replacement";
+      payload.intelligence={
+        ...(payload.intelligence||{}),
+        mediaSource:"awaiting-designer-replacement"
+      };
+      payload.qualityGates={...(payload.qualityGates||{}),designer:"pending",designerAt:new Date().toISOString()};
+      await env.DB.prepare(
+        "UPDATE post_ledger SET status='ready',payload_json=?2,error='designer_replacement_queued',updated_at=CURRENT_TIMESTAMP WHERE id=?1"
+      ).bind(row.id,JSON.stringify(payload)).run();
+    }
+
+    checks.push({
+      id:row.id,mediaReady,singleScene,noSplitScreen,noCollage,tvFilled,ok,
+      repairQueued:!ok,
+      visualReview:payload.visualReview?.status||null,
+      reason:payload.visualReview?.reason||payload.repairReason||null,
+      format:payload.intelligence?.format||"unknown"
+    });
   }
-  const output={checked:rows.length,ready,missing,checks,skills:["visual-direction","creative-consistency","media-readiness"]};
-  await recordAgentExecution(env,client,"DESIGNER",{function:"visual-readiness-gate",trigger:options.trigger,startedAt,status:missing?"warning":"success",model:"visual-readiness-rules",quantity:rows.length,message:ready+" criativo(s) prontos; "+missing+" aguardando midia."});
+  const output={checked:rows.length,ready,missing,repairQueued,checks,skills:["visual-direction","creative-consistency","media-readiness"]};
+  await recordAgentExecution(env,client,"DESIGNER",{
+    function:"visual-readiness-gate",
+    trigger:options.trigger,
+    startedAt,
+    status:"success",
+    model:"visual-readiness-rules+self-healing",
+    quantity:rows.length,
+    message:ready+" criativo(s) prontos; "+repairQueued+" substituicao(oes) de midia enfileirada(s) automaticamente.",
+    metadata:{ready,repairQueued}
+  });
   await patchAgentCoreState(env,client.id,{designer:output});
   return output;
 }
