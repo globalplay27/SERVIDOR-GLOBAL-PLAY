@@ -56,3 +56,50 @@ jobs:
             exit 1
           fi
           npm run deploy
+
+      - name: Verify Nexus production autonomy
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          NEXUS_HEALTH_URL: https://servidor-nexus.diamantehinode2015.workers.dev/api/autonomy-health
+        run: |
+          set -euo pipefail
+          ok=0
+          last=""
+          for attempt in $(seq 1 12); do
+            last="$(curl --fail --silent --show-error --max-time 15 "$NEXUS_HEALTH_URL" || true)"
+            if [ -n "$last" ]; then
+              echo "$last" | jq '{
+                ok,
+                automationActive,
+                expectedAgents,
+                scheduler: {
+                  healthy: .scheduler.healthy,
+                  lastHeartbeatAt: .scheduler.lastHeartbeatAt,
+                  ageSeconds: .scheduler.ageSeconds
+                },
+                clients: [.clients[]? | {
+                  clientId,
+                  allAgentsSeen,
+                  missingAgents
+                }]
+              }'
+              if echo "$last" | jq -e '
+                .ok == true and
+                .automationActive == true and
+                .expectedAgents == 13 and
+                .scheduler.healthy == true and
+                ([.clients[]? | .allAgentsSeen == true] | all)
+              ' >/dev/null; then
+                ok=1
+                break
+              fi
+            fi
+            sleep 15
+          done
+          if [ "$ok" -ne 1 ]; then
+            echo "::error::Nexus production autonomy check failed after deploy."
+            echo "$last" | jq . || true
+            exit 1
+          fi
+          echo "Nexus production autonomy verified."
