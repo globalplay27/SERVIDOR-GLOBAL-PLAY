@@ -77,7 +77,18 @@ async function runCopyChief(env,client,options){
 
 async function runDesigner(env,client,options){
   const startedAt=new Date().toISOString();
-  const rows=(await ledgerRows(env,client.id,120)).filter(x=>["ready","scheduled","failed"].includes(String(x.status||""))).slice(0,30);
+  const now=Date.now();
+  const rows=(await ledgerRows(env,client.id,120))
+    .filter(row=>{
+      const status=String(row.status||"");
+      const retryCount=Math.max(0,Number(row.payload?.retryCount||0));
+      const updatedMs=Date.parse(String(row.updated_at||row.created_at||""));
+      const fresh=!Number.isFinite(updatedMs)||(now-updatedMs)<=72*60*60*1000;
+      if(status==="ready"||status==="scheduled")return fresh;
+      if(status==="failed")return fresh&&retryCount<3;
+      return false;
+    })
+    .slice(0,30);
   let ready=0,missing=0;
   const checks=[];
   let visualCalls=0;
@@ -133,13 +144,35 @@ async function runGrowth(env,client,options){
 
 async function runSupport(env,client,options){
   const startedAt=new Date().toISOString();
-  const [state,ledger,tickets]=await Promise.all([agentCoreState(env,client.id),ledgerRows(env,client.id,120),env.DB.prepare("SELECT id,status,subject,created_at FROM support_tickets WHERE client_id=?1 ORDER BY created_at DESC LIMIT 50").bind(client.id).all().catch(()=>({results:[]}))]);
-  const postErrors=ledger.filter(row=>row.status==="failed"||row.error).slice(0,20);
+  const [state,ledger,tickets]=await Promise.all([
+    agentCoreState(env,client.id),
+    ledgerRows(env,client.id,120),
+    env.DB.prepare("SELECT id,status,subject,created_at FROM support_tickets WHERE client_id=?1 ORDER BY created_at DESC LIMIT 50").bind(client.id).all().catch(()=>({results:[]}))
+  ]);
+  const now=Date.now();
+  const transientErrors=new Set([
+    "quality_gate_pending",
+    "visual_quality_rejected",
+    "copy_quality_rejected",
+    "unique_media_required",
+    "duplicate_media_blocked",
+    "duplicate_caption_blocked"
+  ]);
+  const postErrors=ledger.filter(row=>{
+    const error=String(row.error||"").trim();
+    if(!error)return false;
+    const retryCount=Math.max(0,Number(row.payload?.retryCount||0));
+    const updatedMs=Date.parse(String(row.updated_at||row.created_at||""));
+    const fresh=!Number.isFinite(updatedMs)||(now-updatedMs)<=24*60*60*1000;
+    if(!fresh)return false;
+    if(transientErrors.has(error)&&retryCount<3)return false;
+    return String(row.status||"")==="failed"&&retryCount>=3;
+  }).slice(0,20);
   const openTickets=(tickets?.results||[]).filter(row=>String(row.status||"open")!=="closed");
-  const lastCycleError=String(state?.lastCycleError||"");
+  const lastCycleError=String(state?.lastCycleStatus||"")==="failed"?String(state?.lastCycleError||""):"";
   const issues=postErrors.length+openTickets.length+(lastCycleError?1:0);
   const output={issues,postErrors:postErrors.map(row=>({id:row.id,error:String(row.error||"").slice(0,240)})),openTickets,lastCycleError,skills:["operational-health","integration-issues","incident-triage"]};
-  await recordAgentExecution(env,client,"SUPORTE",{function:"operational-health-check",trigger:options.trigger,startedAt,status:issues?"warning":"success",model:"ops-health-rules",quantity:issues,message:issues?issues+" pendencia(s) operacional(is) detectada(s).":"Nenhuma pendencia operacional critica detectada."});
+  await recordAgentExecution(env,client,"SUPORTE",{function:"operational-health-check",trigger:options.trigger,startedAt,status:issues?"warning":"success",model:"ops-health-rules",quantity:issues,message:issues?issues+" pendencia(s) operacional(is) real(is) detectada(s).":"Nenhuma pendencia operacional critica detectada."});
   await patchAgentCoreState(env,client.id,{suporte:output});
   return output;
 }
