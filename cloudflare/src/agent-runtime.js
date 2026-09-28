@@ -89,7 +89,9 @@ function postingProfile(client) {
   const current = client?.config?.postingProfile && typeof client.config.postingProfile === "object"
     ? client.config.postingProfile : {};
   const ragnarMedia = [
-    "https://servidor-nexus.diamantehinode2015.workers.dev/assets/ragnar/saga-sofa-20260928.jpg"
+    "https://servidor-nexus.diamantehinode2015.workers.dev/assets/ragnar/saga-sofa-20260928.jpg",
+    "https://servidor-nexus.diamantehinode2015.workers.dev/assets/ragnar/fjord-dia-20260928.jpg",
+    "https://servidor-nexus.diamantehinode2015.workers.dev/assets/ragnar/fjord-noite-20260928.jpg"
   ];
   const configuredMedia = Array.isArray(current.standardMediaUrls)
     ? current.standardMediaUrls.map(String).map(v => v.trim())
