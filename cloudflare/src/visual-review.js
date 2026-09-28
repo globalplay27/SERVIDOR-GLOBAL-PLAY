@@ -28,7 +28,7 @@ export async function reviewImage(env, client, media, previous, request = openAI
     return { ...base, status: fields.every(k => result[k]) ? 'approved' : 'rejected', checks: Object.fromEntries(fields.map(k => [k, result[k]])), reason: result.reason.slice(0, 300) };
   } catch (error) {
     const message = String(error?.message || '');
-    const reason = /^openai_(quota_exhausted|daily_budget_reached|not_configured_for_client|http_[0-9]{3})$/.test(message)
+    const reason = /^openai_(quota_exhausted|daily_budget_reached|not_configured_for_client|http_[0-9]{3}|budget_lookup_failed|transport_timeout|transport_error)$/.test(message)
       ? message
       : (message === 'invalid_review' || error instanceof SyntaxError ? 'openai_invalid_review'
         : (error?.name === 'TimeoutError' ? 'openai_timeout'
