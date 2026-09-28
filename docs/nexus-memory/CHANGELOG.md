@@ -1,5 +1,8 @@
 # Histórico de alterações feitas pelo Work
 
+## 2026-09-28 — revisão fixada de uma arte Ragnar (preparado)
+- Arte JPEG fornecida pelo proprietário foi inspecionada visualmente no Work. Revisão do Designer reconhece exclusivamente sua URL exata e SHA-256 conferido nos bytes antes de aprovar os seis critérios; troca do arquivo falha fechada. Demais imagens continuam com revisão OpenAI. Evita elevar o limite de gasto diário, atingido nesta tarde.
+
 ## 2026-09-28 — diagnóstico objetivo do bloqueio visual (preparado)
 - Designer persiste os seis pareceres booleanos quando rejeita uma mídia. Health expõe apenas estado, campos booleanos e indicador da URL antiga corrompida; não expõe imagem, texto livre da avaliação nem credenciais. Necessário para saber por que a nova imagem de Ragnar segue sem aprovação.
 

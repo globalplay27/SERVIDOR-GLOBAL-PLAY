@@ -1,5 +1,8 @@
 # Próximas ações, em ordem
 
+## Arte verificada Ragnar, 2026-09-28 14h25 BRT
+- Implantar aprovação restrita à arte inspecionada e conferir CI/deploy. Observar o post vencido atravessar Designer e Publisher; exigir media ID e horário da Meta em produção. Se hash divergir, não liberar. Depois prover novas artes únicas, sem geração paga automática, para sustentar postagem contínua.
+
 ## Diagnóstico Ragnar, 2026-09-28 14h19 BRT
 - Implantar campos booleanos de revisão, observar motivo objetivo da rejeição da nova mídia e corrigir a peça ou a falha de estado correspondente. Repassar gates completos e comprovar `mediaIdPresent:true`/`publishedAt` antes de declarar publicação. Evitar repetição de arte em futuros posts.
 
