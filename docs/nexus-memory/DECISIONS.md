@@ -1,5 +1,7 @@
 # Decisões e limites
 
+- 2026-09-27: ligar coleta automática apenas nas duas contas autônomas existentes, em frequência horária e com prioridade inferior ao Publisher; respeitar `autoRun:false` já salvo. Não disparar DMs não solicitadas. Medir alcance, comentários e leads reais antes de atribuir queda de conversão ao criativo.
+
 - Fonte operacional identificada em 2026-09-27: `globalplay27/SERVIDOR-GLOBAL-PLAY`, pasta `cloudflare/`. Revalidar GitHub e deploy em toda sessão.
 - Manter inteligência/orquestração em um Nexus central com configuração e credenciais por cliente.
 - Escopo: autorização Instagram, postagens automáticas, acompanhamento de postagens e desempenho.
