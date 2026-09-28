@@ -177,6 +177,7 @@ export async function runSchedulerTick(env, scheduledAt = new Date()) {
         `SELECT id FROM post_ledger WHERE client_id=?1
          AND status IN ('ready','scheduled','failed') AND approval_status='approved'
          AND scheduled_for<=?2
+         AND date(scheduled_for,'-3 hours')=date(?2,'-3 hours')
          AND COALESCE(json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.retryCount'),0)<3
          AND json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.qualityGates.copyChief')='approved'
          AND json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.qualityGates.designer')='approved'
