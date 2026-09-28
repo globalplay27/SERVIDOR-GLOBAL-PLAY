@@ -1,5 +1,9 @@
 # Estado do Nexus 2.0
 
+## 2026-09-28 13h20 BRT — erro OpenAI mudou após limite
+- Após PR #34, Ragnar voltou a receber resposta HTTP da OpenAI, mas `400 invalid_value`; revisão ainda não aprovada e nenhuma postagem nova. Isso sustenta que o limite de subrequests era um bloqueio, mas revela uma segunda falha no payload ou acesso à imagem.
+- Preparado diagnóstico seguro do parâmetro inválido: só o campo estruturado do erro ou uma categoria fixa é registrado, jamais mensagem livre, URL ou chave. Confirmar campo em produção antes de modificar o pedido visual.
+
 ## 2026-09-28 13h15 BRT — orçamento de chamadas externas
 - Produção após PR #33: Ragnar executa Designer/Publisher, mas zero posts elegíveis. `openai.status:transport_error` / `openai_transport_error` apareceu em 16:11 UTC; revisão permanece indisponível, sem postagem. Global Play permanece sem mídia válida para posts do dia.
 - Causa estrutural identificada por código e limite oficial: plano gratuito do Cloudflare permite 50 subrequests externos por invocação; o ciclo fazia Radar e Auditor, cada qual consultando até 25 mídias × cinco métricas, e o executor rodava até três jobs na mesma invocação. Exceder o limite é hipótese forte para a falha de transporte OpenAI; deve ser confirmado após reduzir a contagem e observar produção.
