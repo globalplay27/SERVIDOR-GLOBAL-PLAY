@@ -1,5 +1,10 @@
 # Testes e evidências
 
+## 2026-09-27 23h BRT — alteração de captação
+- Antes: resposta pública de `/api/autonomy-health` mostrou cron saudável, 13 agentes por conta e `leadHunterRuns:0` no tick observado. Não havia resumo público das coletas.
+- Local: `node --test cloudflare/test/*.test.mjs` passou 15/15 após atualizar testes antigos para o fiscal visual v2 e o estado atual do Suporte; `node --check` passou em todos os módulos; Wrangler dry-run gerou bundle. Nenhum comentário sintético, publicação ou mensagem Meta foi enviado.
+- Pendente: CI/deploy da mudança e verificação da primeira varredura Meta real de cada conta.
+
 | Horário (UTC, 2026-09-27) | Componente | Resultado | Evidência / limite |
 |---|---|---|---|
 | ~17:48 | Autorrecuperação do Creator | Validação local aprovada | Post diário existente sem mídia passa a receber mídia nova do pool, volta a `ready` e exige nova fiscalização. Sintaxe e bundle Wrangler aprovados; produção ainda não observada. |
