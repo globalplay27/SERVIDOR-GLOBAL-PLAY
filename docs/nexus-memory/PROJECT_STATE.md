@@ -1,5 +1,10 @@
 # Estado do Nexus 2.0
 
+## 2026-09-28 13h10 BRT — confirmação do bloqueio
+- Proprietário verificou Instagram sem postagem. Produção às 13h06: Ragnar voltou a completar ciclos e executar Publisher, mas `candidates:0`; mídia presente e revisões `visual_review_unavailable` ou ausentes. Global Play continua com mídia ausente e Publisher sem execução recente.
+- PR #31 implantado com diagnóstico de transporte OpenAI. Postagens antigas com três tentativas esgotadas não fazem nova chamada, logo a causa continua `unknown`. Preparada uma única tentativa diagnóstica por mídia antiga com erro genérico, sujeita ao limite de uma chamada visual por ciclo e sem relaxar aprovação.
+- Banner recente do Global Play examinado: muitos quadros e textos pequenos, inadequado para contornar a revisão visual. Não foi posto no pool nem publicado.
+
 ## 2026-09-28 ~13h BRT — implantação parcial
 - PR #32 integrado como `922c65b`; GitHub Actions 36447607442 concluiu deploy com sucesso. Isso limita as chamadas Graph do Radar/Auditor a 8 segundos; primeira leitura do Worker após deploy ainda mostrou Publisher antigo, e uma consulta subsequente expirou. Não declarar publicação restaurada.
 - Próximo diagnóstico: observar execução recente de Publisher e falha categorizada da revisão Ragnar após PR #31; prover fonte de mídia original e única Global Play. Manter gates.

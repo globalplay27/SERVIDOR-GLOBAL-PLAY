@@ -1,5 +1,8 @@
 # Problemas conhecidos
 
+## 2026-09-28 13h10 — revisão Ragnar esgotada
+- PR #31 foi implantado, mas `openai.status: unknown` persistia; imagens de Ragnar continuaram sem parecer aprovado. A lógica anterior vedava diagnóstico adicional ao chegar a três tentativas. Correção limitada a uma nova tentativa por mídia antiga com falha genérica, com `diagnosticRetry` persistido. Resultado real pendente.
+
 ## 2026-09-28 — dois bloqueios de publicação
 - Health ao vivo às ~12h45 BRT: cron saudável, Publisher das duas contas com última execução ~09h44 BRT, jobs de ciclo recuperados como obsoletos repetidamente. Consultas Graph do Radar/Auditor sem timeout identificadas no código; timeout de 8 segundos preparado, efeito em produção ainda pendente.
 - Global Play: posts aprovados sem `imageUrl` e Designer pendente (`designer_replacement_queued`); não há pool padrão Global Play. Correção de timeout não cria mídia.

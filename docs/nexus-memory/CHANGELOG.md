@@ -1,5 +1,8 @@
 # Histórico de alterações feitas pelo Work
 
+## 2026-09-28 — diagnóstico limitado de revisão antiga (preparado)
+- Erros antigos `visual_review_unavailable` com tentativas esgotadas poderão ser diagnosticados uma vez adicional após PR #31, com no máximo uma chamada visual no ciclo e marca persistente. Health passa a mostrar contagem de tentativas e marca diagnóstica sem expor imagem/token.
+
 ## 2026-09-28 — limites nas consultas Graph (preparado)
 - Acrescentado timeout de 8 segundos nas leituras de mídia, insights e perfil do Radar/Auditor. Essas consultas antes aguardavam rede indefinidamente. Sem alteração no gate visual ou na seleção de posts; efeito em produção ainda não confirmado.
 

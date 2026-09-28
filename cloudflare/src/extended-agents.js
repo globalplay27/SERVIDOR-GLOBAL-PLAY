@@ -138,16 +138,17 @@ async function runDesigner(env,client,options){
       const prior=payload.visualReview;
       const cached=prior?.version==="visual-review-v2"&&prior.media===media;
       const settled=cached&&(["approved","rejected"].includes(prior.status)||Number(prior.attempts)>=3||Date.parse(prior.retryAt)>Date.now());
-      const diagnosticRetry=prior?.status==="unavailable"
+      const diagnosticRetry=cached&&prior?.status==="unavailable"
         &&prior.reason==="visual_review_unavailable"
-        &&!prior.diagnosticRetry
-        &&Number(prior.attempts||0)<3;
-      if(mediaReady&&!settled&&visualCalls>=1)continue;
+        &&!prior.diagnosticRetry;
+      // Legacy generic failures may have exhausted all three attempts before
+      // transport errors were classified. Allow one bounded diagnostic retry.
+      if(mediaReady&&(!settled||diagnosticRetry)&&visualCalls>=1)continue;
       if(settled||visualCalls<1){
         if((!settled||diagnosticRetry)&&mediaReady)visualCalls++;
         payload.visualReview=await reviewImage(
           env,client,media,
-          diagnosticRetry?{...prior,retryAt:"2000-01-01"}:prior
+          diagnosticRetry?{...prior,attempts:0,retryAt:"2000-01-01"}:prior
         );
         if(diagnosticRetry)payload.visualReview={...payload.visualReview,diagnosticRetry:true};
       }

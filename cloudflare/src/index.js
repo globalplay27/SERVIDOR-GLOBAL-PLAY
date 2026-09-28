@@ -251,6 +251,8 @@ async function autonomyHealth(env) {
           copyChief: payload.qualityGates?.copyChief || null,
           designer: payload.qualityGates?.designer || null,
           reviewStatus: payload.visualReview?.status || null,
+          reviewAttempts: Math.max(0, Number(payload.visualReview?.attempts || 0)),
+          diagnosticRetry: payload.visualReview?.diagnosticRetry === true,
           reviewReason: /^[a-z_0-9]+$/.test(String(payload.visualReview?.reason || ""))
             ? String(payload.visualReview.reason).slice(0, 80) : null,
           blockedMediaPresent: Boolean(payload.blockedDesignerMedia),
