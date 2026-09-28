@@ -1,5 +1,10 @@
 # Estado do Nexus 2.0
 
+## 2026-09-28 13h15 BRT — orçamento de chamadas externas
+- Produção após PR #33: Ragnar executa Designer/Publisher, mas zero posts elegíveis. `openai.status:transport_error` / `openai_transport_error` apareceu em 16:11 UTC; revisão permanece indisponível, sem postagem. Global Play permanece sem mídia válida para posts do dia.
+- Causa estrutural identificada por código e limite oficial: plano gratuito do Cloudflare permite 50 subrequests externos por invocação; o ciclo fazia Radar e Auditor, cada qual consultando até 25 mídias × cinco métricas, e o executor rodava até três jobs na mesma invocação. Exceder o limite é hipótese forte para a falha de transporte OpenAI; deve ser confirmado após reduzir a contagem e observar produção.
+- Correção preparada: manter metadados de até 25 mídias, buscar insights detalhados de até três por snapshot e executar um job por invocação do cron. Nenhum gate dispensado, imagem gerada ou postagem de teste enviada.
+
 ## 2026-09-28 13h10 BRT — confirmação do bloqueio
 - Proprietário verificou Instagram sem postagem. Produção às 13h06: Ragnar voltou a completar ciclos e executar Publisher, mas `candidates:0`; mídia presente e revisões `visual_review_unavailable` ou ausentes. Global Play continua com mídia ausente e Publisher sem execução recente.
 - PR #31 implantado com diagnóstico de transporte OpenAI. Postagens antigas com três tentativas esgotadas não fazem nova chamada, logo a causa continua `unknown`. Preparada uma única tentativa diagnóstica por mídia antiga com erro genérico, sujeita ao limite de uma chamada visual por ciclo e sem relaxar aprovação.
