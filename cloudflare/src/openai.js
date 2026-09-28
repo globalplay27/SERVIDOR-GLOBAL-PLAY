@@ -134,7 +134,13 @@ export async function openAIResponses(env, clientId, input) {
     throw new Error("openai_not_configured_for_client");
   }
 
-  const budget = await tokenUsageToday(env, clientId);
+  let budget;
+  try {
+    budget = await tokenUsageToday(env, clientId);
+  } catch {
+    await setRuntimeStatus(env, clientId, "runtime_error", "budget_lookup_failed");
+    throw new Error("openai_budget_lookup_failed");
+  }
   if (budget.blocked) {
     const error = new Error(budget.quotaExhausted ? "openai_quota_exhausted" : "openai_daily_budget_reached");
     error.status = 429;
@@ -150,17 +156,25 @@ export async function openAIResponses(env, clientId, input) {
     payload.max_output_tokens = Math.max(128, Math.min(4000, Number(env.NEXUS_OPENAI_MAX_OUTPUT_TOKENS || 1200)));
   }
 
-  const response = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${apiKey}`,
-      "content-type": "application/json",
-      accept: "application/json",
-      "user-agent": "Servidor-Nexus/1.0"
-    },
-    body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(20000)
-  });
+  let response;
+  try {
+    response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+        "content-type": "application/json",
+        accept: "application/json",
+        "user-agent": "Servidor-Nexus/1.0"
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(20000)
+    });
+  } catch (cause) {
+    const reason = cause?.name === "TimeoutError" || cause?.name === "AbortError"
+      ? "openai_transport_timeout" : "openai_transport_error";
+    await setRuntimeStatus(env, clientId, "transport_error", reason);
+    throw new Error(reason);
+  }
 
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
