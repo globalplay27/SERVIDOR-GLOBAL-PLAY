@@ -408,7 +408,9 @@ async function runStrategist(env,client,context,options) {
     recommendedPostTimes:Array.isArray(radar.recommendedPostTimes)&&radar.recommendedPostTimes.length===3
       ?radar.recommendedPostTimes
       :recommendedTimes([]),
-    contentMix:{reels:80,carousel:15,static:5},
+    // The current publisher sends a single image through Instagram Graph.
+    // Do not claim a Reel or carousel unless a real media pipeline exists.
+    contentMix:{image:100},
     niche:client.niche||"Outro",
     audience:profile.targetAudience,
     objective:profile.contentStrategy,
@@ -416,7 +418,11 @@ async function runStrategist(env,client,context,options) {
     themes,
     contentFocus:profile.contentFocus,
     cta:profile.cta,
-    ctaRotation:[profile.followerCta,profile.shareCta,profile.cta],
+    ctaRotation:[
+      profile.cta,
+      profile.cta + " " + profile.followerCta,
+      profile.cta + " " + profile.shareCta
+    ],
     hashtags:profile.hashtags,
     avoidTopics:profile.avoidTopics,
     brandSafety:profile.brandSafety,
@@ -628,8 +634,8 @@ async function runCreator(env,client,strategy,options) {
       creativeFingerprint:normalizeCreativeText([day,index,hook,theme,cta].join("|")).slice(0,240),
       growthCampaign:strategy?.growthCampaign||null,
       intelligence:{
-        format:index===0?"reel":index===1?"carousel":"story",
-        skill:index===0?"ig-reel":index===1?"ig-carousel":"ig-story",
+        format:"image",
+        skill:"ig-image",
         mediaSource:mediaInfo.source||"awaiting-unique-media",
         antiRepeat:true,
         visualPolicy:{
