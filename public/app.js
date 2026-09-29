@@ -758,6 +758,45 @@ $("[data-instagram-token-form]").forEach(form=>form.addEventListener("submit",as
   }
 }));
 
+$("[data-instagram-oauth]").forEach(button=>button.addEventListener("click",async()=>{
+  const clientId=button.dataset.clientId||"";
+  const status=$('[data-instagram-oauth-status="'+clientId+'"]');
+  const original=button.textContent;
+  button.disabled=true;
+  if(status)status.textContent="Abrindo autorização do Instagram…";
+  try{
+    const result=await api("/api/master/instagram/oauth-start?clientId="+encodeURIComponent(clientId));
+    const popup=window.open(result.url,"nexus-instagram-oauth","width=560,height=760,noopener=false");
+    if(!popup){
+      if(status)status.textContent="O navegador bloqueou a janela. Libere pop-ups e tente novamente.";
+      button.disabled=false;
+      return;
+    }
+    if(status)status.textContent="Autorize a conta correta na janela do Instagram.";
+  }catch(error){
+    if(status)status.textContent="Não foi possível iniciar a autorização.";
+    button.disabled=false;
+    button.textContent=original;
+  }
+}));
+
+window.addEventListener("message",async event=>{
+  if(event.origin!==location.origin)return;
+  if(event.data?.type!=="nexus-instagram-oauth")return;
+  const ok=event.data?.ok===true;
+  $("[data-instagram-oauth]").forEach(button=>{button.disabled=false;});
+  if(ok){
+    $("[data-instagram-oauth-status]").forEach(status=>status.textContent="Instagram conectado com sucesso.");
+    try{
+      state.clients=await api("/api/clients");
+      render();
+      await loadIntegrations();
+    }catch{}
+  }else{
+    $("[data-instagram-oauth-status]").forEach(status=>status.textContent="A autorização não foi concluída.");
+  }
+});
+
 const openaiMasterForm=$("#openai-master-form");
 if(openaiMasterForm)openaiMasterForm.addEventListener("submit",async event=>{
   event.preventDefault();
