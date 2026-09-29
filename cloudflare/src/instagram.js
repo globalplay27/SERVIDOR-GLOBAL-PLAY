@@ -274,3 +274,94 @@ export async function instagramMasterConfigStatus(env) {
     updatedAt: record.updatedAt || null
   };
 }
+
+
+export async function connectInstagramWithToken(env, clientId, suppliedToken) {
+  const client = await getClient(env, clientId);
+  if (!client) throw new Error("client_not_found");
+
+  let accessToken = String(suppliedToken || "").trim();
+  if (accessToken.length < 20) throw new Error("instagram_token_required");
+
+  let expiresIn = 0;
+  try {
+    const { appSecret } = await masterInstagramCredentials(env);
+    if (appSecret) {
+      const exchangeUrl = new URL("https://graph.instagram.com/access_token");
+      exchangeUrl.searchParams.set("grant_type", "ig_exchange_token");
+      exchangeUrl.searchParams.set("client_secret", appSecret);
+      exchangeUrl.searchParams.set("access_token", accessToken);
+      const exchange = await fetch(exchangeUrl, { signal: AbortSignal.timeout(15000) });
+      if (exchange.ok) {
+        const payload = await exchange.json().catch(() => ({}));
+        if (payload?.access_token) accessToken = String(payload.access_token);
+        if (payload?.expires_in) expiresIn = Number(payload.expires_in || 0);
+      }
+    }
+  } catch {}
+
+  const meUrl = new URL("https://graph.instagram.com/me");
+  meUrl.searchParams.set("fields", "id,username,account_type");
+  meUrl.searchParams.set("access_token", accessToken);
+  const me = await fetch(meUrl, { signal: AbortSignal.timeout(15000) });
+  const profile = await me.json().catch(() => ({}));
+  if (!me.ok || !profile?.id) throw new Error("instagram_token_invalid");
+
+  const username = String(profile.username || "").replace(/^@/, "").trim();
+  const expectedUsername = String(client.instagram || "").replace(/^@/, "").trim();
+  if (expectedUsername && username && expectedUsername.toLowerCase() !== username.toLowerCase()) {
+    const error = new Error("instagram_account_mismatch");
+    error.expected = expectedUsername;
+    error.received = username;
+    throw error;
+  }
+
+  const connectionPayload = {
+    accessToken: await encryptSecret(env, accessToken),
+    expiresAt: expiresIn > 0 ? new Date(Date.now() + expiresIn * 1000).toISOString() : null,
+    igUserId: String(profile.id),
+    accountType: String(profile.account_type || ""),
+    scopes: INSTAGRAM_SCOPES,
+    label: username ? "@" + username : "Instagram conectado",
+    username,
+    source: "manual-nexus-token"
+  };
+
+  await env.DB.prepare(
+    `INSERT INTO connections(client_id, provider, payload_json, connected_at, updated_at)
+     VALUES(?1, 'meta', ?2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+     ON CONFLICT(client_id, provider) DO UPDATE SET
+       payload_json = excluded.payload_json,
+       connected_at = CURRENT_TIMESTAMP,
+       updated_at = CURRENT_TIMESTAMP`
+  ).bind(client.id, JSON.stringify(connectionPayload)).run();
+
+  const onboarding = {
+    ...(client.config?.onboarding && typeof client.config.onboarding === "object"
+      ? client.config.onboarding
+      : {}),
+    instagram: true
+  };
+  const integrationState = {
+    ...(client.config?.integrationState && typeof client.config.integrationState === "object"
+      ? client.config.integrationState
+      : {}),
+    meta: "connected"
+  };
+
+  const updated = await upsertClient(env, {
+    ...client,
+    instagram: username ? "@" + username : client.instagram,
+    config: { ...client.config, onboarding, integrationState }
+  });
+
+  return {
+    ok: true,
+    clientId: updated.id,
+    instagram: updated.instagram,
+    igUserId: String(profile.id),
+    accountType: String(profile.account_type || ""),
+    expiresAt: connectionPayload.expiresAt,
+    source: "d1-oauth"
+  };
+}
