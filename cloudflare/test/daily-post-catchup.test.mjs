@@ -30,3 +30,11 @@ test("scheduler heals only an exact approved visual review before publisher swee
   assert.match(scheduler, /visualReview\.media'/);
   assert.match(scheduler, /designerGateRecoveredAt/);
 });
+
+
+test("Ragnar owner-pinned recovery avoids the two most recent media", () => {
+  assert.match(scheduler, /ragnar-owner-pinned-recovery/);
+  assert.match(scheduler, /DESC LIMIT 2/);
+  assert.match(scheduler, /candidates\.find\(url => !recentMedia\.has\(url\)\)/);
+  assert.match(scheduler, /reviewImage\(env, client, recoveryMedia, null\)/);
+});
