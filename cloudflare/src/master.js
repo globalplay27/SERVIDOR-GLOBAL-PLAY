@@ -13,7 +13,7 @@ import {
   clearLoginFailures
 } from "./auth.js";
 import { listClients, getClient, upsertClient } from "./clients.js";
-import { getMasterInstagramSummary, saveMasterInstagramConfig } from "./instagram.js";
+import { getMasterInstagramSummary, saveMasterInstagramConfig, connectInstagramWithToken } from "./instagram.js";
 import { agentCoreDashboard, agentCoreClientView, saveAgentCoreConfig, queueManualAgentRun } from "./agent-core.js";
 import { masterLeadSummary } from "./leads.js";
 
@@ -663,6 +663,24 @@ export async function handleMaster(request, env, url) {
       return json(await saveMasterInstagramConfig(env, request, body));
     } catch (error) {
       return json({ error: error instanceof Error ? error.message : String(error) }, 400);
+    }
+  }
+
+  if (url.pathname === "/api/master/instagram/connect-token" && request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    const clientId = String(body?.clientId || "").trim();
+    const accessToken = String(body?.accessToken || "").trim();
+    if (!clientId || !accessToken) return json({ error: "client_id_and_token_required" }, 400);
+
+    try {
+      return json(await connectInstagramWithToken(env, clientId, accessToken));
+    } catch (error) {
+      const code = error instanceof Error ? error.message : String(error);
+      return json({
+        error: code || "instagram_reconnect_failed",
+        expected: code === "instagram_account_mismatch" ? String(error?.expected || "") : undefined,
+        received: code === "instagram_account_mismatch" ? String(error?.received || "") : undefined
+      }, code === "client_not_found" ? 404 : 400);
     }
   }
 
