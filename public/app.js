@@ -63,7 +63,7 @@ function render() {
       ? `<button type="button" class="small-danger" data-delete-client="${escapeHtml(client.id)}" data-client-name="${escapeHtml(client.name)}">Excluir</button>`
       : "";
     const action = `<div class="client-action-stack"><button type="button" class="small-primary" data-assume-client="${escapeHtml(client.id)}">Assumir painel</button><button type="button" class="small-primary" data-portal-access="${escapeHtml(client.id)}" data-client-name="${escapeHtml(client.name)}">Definir acesso</button>${remove}${protect}</div>`;
-    return `<tr><td><strong>${escapeHtml(client.name)}</strong><br><small>${escapeHtml(client.niche || "Outro")}</small></td><td>${badge(client.status === "online" ? "ONLINE" : "SETUP", client.status === "online")}</td><td>${escapeHtml(client.instagram || "Aguardando conexão")}</td><td>${client.odin ? badge("ATIVO") : badge("DESLIGADO", false)}</td><td>${(client.postTimes || []).join(" · ") || "—"}</td><td><strong>${mode}</strong>${extra}</td><td>${action}</td></tr>`;
+    return `<tr><td><strong>${escapeHtml(client.name)}</strong><br><small>${escapeHtml(client.niche || "Outro")}</small></td><td>${badge(client.status === "online" ? "ONLINE" : "SETUP", client.status === "online")}</td><td>${escapeHtml(client.instagram || "Aguardando conexão")}</td><td>${client.odin ? badge("ATIVO") : badge("DESLIGADO", false)}</td><td><strong>Automático</strong><br><small>horário definido pelos agentes</small></td><td><strong>${mode}</strong>${extra}</td><td>${action}</td></tr>`;
   }).join("");
   renderAgentProfiles();
   renderPortalSelector();
@@ -85,7 +85,6 @@ function renderAgentProfiles() {
     const logo = `<div class="master-profile-logo fallback" style="--profile-color:${escapeHtml(p.primaryColor||client.primaryColor||"#22c55e")}">${initials(p.brandName||client.name)}</div>`;
     const status = p.status === "configured" ? "CONFIGURADO" : "NOVO PERFIL";
     const post = client.postingProfile || {};
-    const times = Array.isArray(client.postTimes) ? client.postTimes : ["09:00","12:00","18:00"];
     return `<article class="master-profile-card" data-master-profile="${escapeHtml(client.id)}">
       <div class="master-profile-head">
         ${logo}
@@ -105,9 +104,7 @@ function renderAgentProfiles() {
       <details class="master-agent-config" ${p.status!=="configured"?"open":""}>
         <summary>Configurar operação do agente</summary>
         <div class="master-config-grid">
-          <label>Horário 1<input data-master-time="0" type="time" value="${escapeHtml(times[0]||"09:00")}"></label>
-          <label>Horário 2<input data-master-time="1" type="time" value="${escapeHtml(times[1]||"12:00")}"></label>
-          <label>Horário 3<input data-master-time="2" type="time" value="${escapeHtml(times[2]||"18:00")}"></label>
+          <div class="wide"><span>Agendamento</span><strong>Automático pelo NEXUS</strong><small>RADAR e ESTRATEGISTA escolhem os melhores horários conforme o desempenho da conta.</small></div>
           <label>Estratégia<input data-master-field="contentStrategy" value="${escapeHtml(post.contentStrategy||"Vendas + engajamento")}"></label>
           <label>Estilo visual<input data-master-field="visualStyle" value="${escapeHtml(post.visualStyle||"Tecnológico premium")}"></label>
           <label>Tom<input data-master-field="tone" value="${escapeHtml(post.tone||p.tone||"Firme, direto e profissional")}"></label>
@@ -152,11 +149,11 @@ function renderClientPortal(client) {
   $("#portal-status").textContent = online ? "Agente online" : "Em configuração";
   $("#portal-leads").textContent = client.leads?.total || 0;
   $("#portal-hot").textContent = client.leads?.hot || 0;
-  $("#portal-next-post").textContent = client.postTimes?.[0] || "—";
+  $("#portal-next-post").textContent = "Automática";
   $("#portal-odin").textContent = client.odin ? "Ativa" : "Pausada";
   $("#portal-instagram").textContent = client.instagram || "Pendente";
   $("#portal-niche").textContent = client.niche || "Outro";
-  $("#portal-times").textContent = (client.postTimes || []).join(" · ") || "—";
+  $("#portal-times").textContent = "Horários adaptativos";
   const agentBadge = $("#portal-agent-badge");
   agentBadge.textContent = online ? "ONLINE" : "SETUP";
   agentBadge.classList.toggle("off", !online);
@@ -727,13 +724,12 @@ document.addEventListener("click", async event => {
     const message = card?.querySelector("[data-master-profile-message]");
     const fields = {};
     card?.querySelectorAll("[data-master-field]").forEach(input => { fields[input.dataset.masterField] = input.value; });
-    const postTimes = [...(card?.querySelectorAll("[data-master-time]") || [])].map(input=>input.value).filter(Boolean);
     masterProfileSave.disabled = true;
     if (message) message.textContent = "Salvando configuração…";
     try {
       await api("/api/master/agent-config/" + encodeURIComponent(clientId), {
         method: "PATCH",
-        body: JSON.stringify({ postTimes, postingProfile: fields })
+        body: JSON.stringify({ postingProfile: fields })
       });
       state.clients = await api("/api/clients");
       render();
