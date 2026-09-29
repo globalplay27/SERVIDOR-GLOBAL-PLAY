@@ -264,7 +264,6 @@
         <div class="panel master-instagram-panel">
           <div class="panel-head">
             <div><p class="eyebrow">AUTORIZAÇÃO CENTRAL</p><h2>Instagram NEXUS</h2><p class="muted">Configure uma única vez. Depois cada cliente apenas entra no Instagram e autoriza a própria conta.</p></div>
-            <span id="instagram-master-state" class="badge off">NÃO CONFIGURADO</span>
           </div>
           <div class="integration" style="margin:14px 0 18px">
             <div><strong>NEXUS IA CENTRAL</strong><small>App ID e App Secret protegidos na Cloudflare. Não é necessário inserir token de conta aqui.</small></div>
@@ -278,8 +277,20 @@
           </div>
 
           <div class="openai-master-form instagram-oauth-actions">
-            <a class="primary link-button" href="/api/master/instagram/authorize?clientId=globalplay-streaming">Autorizar conta principal · @globalplay_streaming</a>
-            <a class="primary link-button" href="/api/master/instagram/authorize?clientId=ragnar-one">Autorizar Ragnar One · @ragnarplay1</a>
+            <div class="integration" data-instagram-account-row="globalplay-streaming">
+              <div><strong>Conta principal · @globalplay_streaming</strong><small data-instagram-account-detail="globalplay-streaming">Verificando conexão…</small></div>
+              <div class="integration-actions">
+                <span class="badge off" data-instagram-account-badge="globalplay-streaming">VERIFICANDO</span>
+                <a class="primary link-button" data-instagram-account-link="globalplay-streaming" href="/api/master/instagram/authorize?clientId=globalplay-streaming">Autorizar</a>
+              </div>
+            </div>
+            <div class="integration" data-instagram-account-row="ragnar-one">
+              <div><strong>Ragnar One · @ragnarplay1</strong><small data-instagram-account-detail="ragnar-one">Verificando conexão…</small></div>
+              <div class="integration-actions">
+                <span class="badge off" data-instagram-account-badge="ragnar-one">VERIFICANDO</span>
+                <a class="primary link-button" data-instagram-account-link="ragnar-one" href="/api/master/instagram/authorize?clientId=ragnar-one">Autorizar</a>
+              </div>
+            </div>
             <span id="instagram-oauth-message" class="form-status"></span>
           </div>
 
@@ -304,6 +315,6 @@
       <span id="portal-access-status" class="form-status"></span>
     </form>
   </dialog>
-  <script src="/app.js?v=23" defer></script>
+  <script src="/app.js?v=24" defer></script>
 </body>
 </html>
