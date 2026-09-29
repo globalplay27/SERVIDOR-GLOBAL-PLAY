@@ -731,6 +731,33 @@ if(instagramMasterForm)instagramMasterForm.addEventListener("submit",async event
   }
 });
 
+$("[data-instagram-token-form]").forEach(form=>form.addEventListener("submit",async event=>{
+  event.preventDefault();
+  const current=event.currentTarget;
+  const clientId=current.dataset.clientId||"";
+  const input=current.querySelector('input[name="accessToken"]');
+  const status=current.querySelector("[data-instagram-token-status]");
+  const button=current.querySelector('button[type="submit"]');
+  const accessToken=String(input?.value||"").trim();
+  if(!accessToken){if(status)status.textContent="Cole o token antes de conectar.";return;}
+  if(status)status.textContent="Validando na Meta…";
+  if(button)button.disabled=true;
+  try{
+    const result=await api("/api/master/instagram/connect-token",{
+      method:"POST",
+      body:JSON.stringify({clientId,accessToken})
+    });
+    if(input)input.value="";
+    if(status)status.textContent=(result.instagram||"Instagram")+" conectado com sucesso.";
+    state.clients=await api("/api/clients");
+    render();
+  }catch(error){
+    if(status)status.textContent="Token recusado ou não corresponde a esta conta.";
+  }finally{
+    if(button)button.disabled=false;
+  }
+}));
+
 const openaiMasterForm=$("#openai-master-form");
 if(openaiMasterForm)openaiMasterForm.addEventListener("submit",async event=>{
   event.preventDefault();
