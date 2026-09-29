@@ -30,7 +30,7 @@ function aiModeLabel(mode) {
 }
 
 function render() {
-  const clients = state.clients;
+  const clients = state.clients.filter(client => !client.ownerAccount);
   const online = clients.filter(client => client.status === "online").length;
   const totals = state.leadData?.summary || { total:0, hot:0, warm:0, cold:0, needsHuman:0 };
   const alerts = clients.filter(client => Number(client.usage?.openaiPercent || 0) >= 80).length;
@@ -72,7 +72,7 @@ function render() {
 function renderAgentProfiles() {
   const root = $("#master-agent-profiles");
   if (!root) return;
-  const clients = state.clients.filter(client => client.id !== "ragnar-one");
+  const clients = state.clients.filter(client => client.id !== "ragnar-one" && !client.ownerAccount);
   if (!clients.length) {
     root.innerHTML = '<div class="master-profile-empty">Os perfis enviados pelos clientes aparecerão aqui.</div>';
     return;
@@ -127,15 +127,16 @@ function renderAgentProfiles() {
 
 function renderPortalSelector() {
   const select = $("#portal-client");
-  if (!state.clients.length) {
+  const clients = state.clients.filter(client => !client.ownerAccount);
+  if (!clients.length) {
     select.innerHTML = "<option>Nenhum cliente</option>";
     $("#portal-empty").hidden = false;
     $("#client-portal").hidden = true;
     return;
   }
-  if (!state.portalClientId || !state.clients.some(client => client.id === state.portalClientId)) state.portalClientId = state.clients[0].id;
-  select.innerHTML = state.clients.map(client => `<option value="${escapeHtml(client.id)}" ${client.id === state.portalClientId ? "selected" : ""}>${escapeHtml(client.name)}</option>`).join("");
-  renderClientPortal(state.clients.find(client => client.id === state.portalClientId));
+  if (!state.portalClientId || !clients.some(client => client.id === state.portalClientId)) state.portalClientId = clients[0].id;
+  select.innerHTML = clients.map(client => `<option value="${escapeHtml(client.id)}" ${client.id === state.portalClientId ? "selected" : ""}>${escapeHtml(client.name)}</option>`).join("");
+  renderClientPortal(clients.find(client => client.id === state.portalClientId));
 }
 
 function renderClientPortal(client) {
@@ -438,6 +439,21 @@ async function load() {
     renderPostLedger();
     renderMasterLeads();
     renderAgentCore();
+    const params = new URLSearchParams(location.search);
+    const requestedView = params.get("view");
+    if (requestedView && document.getElementById(requestedView)) {
+      showView(requestedView);
+      if (requestedView === "settings") await loadIntegrations();
+    }
+    const oauthResult = params.get("oauth");
+    const oauthMessage = $("#instagram-oauth-message");
+    if (oauthMessage && oauthResult) {
+      oauthMessage.textContent = oauthResult === "success"
+        ? "Instagram conectado com sucesso."
+        : oauthResult === "account_mismatch"
+          ? "Você autorizou uma conta diferente da esperada."
+          : "A autorização não foi concluída.";
+    }
   } catch (error) { console.error(error); }
 }
 
