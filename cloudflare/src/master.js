@@ -69,7 +69,8 @@ function masterClientView(client) {
     primaryColor: config.primaryColor || "#22c55e",
     secondaryColor: config.secondaryColor || "#050807",
     odin: config.odin !== false,
-    postTimes: Array.isArray(config.postTimes) ? config.postTimes : ["09:00","12:00","18:00"],
+    postTimes: [],
+    adaptiveTiming: true,
     leads: config.leads && typeof config.leads === "object" ? config.leads : { total:0, hot:0, warm:0, cold:0 },
     usage: { openaiPercent: Number(config.usage?.openaiPercent || 0) },
     aiMode: client.id === "ragnar-one" ? "own-key" : "shared",
@@ -476,7 +477,8 @@ export async function handleMaster(request, env, url) {
       primaryColor: body.primaryColor || "#18c96e",
       secondaryColor: body.secondaryColor || "#07140c",
       odin: true,
-      postTimes: ["09:00", "12:00", "18:00"],
+      postTimes: [],
+      adaptiveTiming: true,
       leads: { total: 0, hot: 0, warm: 0, cold: 0 },
       usage: { openaiPercent: 0 },
       aiMode: id === "ragnar-one" ? "own-key" : "shared",
@@ -588,13 +590,6 @@ export async function handleMaster(request, env, url) {
       ? currentConfig.postingProfile
       : {};
 
-    const postTimes = Array.isArray(body.postTimes)
-      ? body.postTimes
-          .map(value => String(value || "").trim())
-          .filter(value => /^([01]\d|2[0-3]):[0-5]\d$/.test(value))
-          .slice(0, 8)
-      : (Array.isArray(currentConfig.postTimes) ? currentConfig.postTimes : ["09:00", "12:00", "18:00"]);
-
     const postingProfile = body.postingProfile && typeof body.postingProfile === "object"
       ? { ...currentProfile, ...body.postingProfile }
       : currentProfile;
@@ -603,7 +598,8 @@ export async function handleMaster(request, env, url) {
       ...client,
       config: {
         ...currentConfig,
-        postTimes: postTimes.length ? postTimes : ["09:00", "12:00", "18:00"],
+        postTimes: [],
+        adaptiveTiming: true,
         postingProfile
       }
     });
