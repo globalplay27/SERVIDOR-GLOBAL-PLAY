@@ -34,9 +34,12 @@ async function runResearcher(env,client,options){
   const [state,ledger]=await Promise.all([agentCoreState(env,client.id),ledgerRows(env,client.id,180)]);
   const radarTerms=Array.isArray(state?.radar?.topTerms)?state.radar.topTerms:[];
   const local=topTerms(ledger.map(x=>x.caption).filter(Boolean),16);
-  const opportunities=[...new Map([...radarTerms,...local].map(x=>[String(x.term||""),x])).values()].filter(x=>x.term).slice(0,12);
-  const output={source:"nexus-first-party-signals",niche:client.niche||"Outro",opportunities,winningFormats:state?.radar?.winningFormats||[],questionsForContent:state?.odin?.questionsForContent||[],skills:["trend-research","niche-signals","content-opportunities"]};
-  await recordAgentExecution(env,client,"PESQUISADOR",{function:"content-opportunity-research",trigger:options.trigger,startedAt,status:"success",model:"first-party-signal-research",quantity:ledger.length,message:opportunities.length+" oportunidade(s) de tema consolidada(s)."});
+  const aiTerms=Array.isArray(state?.aiGrowth?.researchOpportunities)
+    ?state.aiGrowth.researchOpportunities.map(term=>({term:String(term||""),count:1,source:"openai-growth-brain"}))
+    :[];
+  const opportunities=[...new Map([...aiTerms,...radarTerms,...local].map(x=>[String(x.term||""),x])).values()].filter(x=>x.term).slice(0,12);
+  const output={source:aiTerms.length?"openai-growth-brain+first-party-signals":"nexus-first-party-signals",niche:client.niche||"Outro",opportunities,winningFormats:state?.radar?.winningFormats||[],questionsForContent:state?.odin?.questionsForContent||[],aiDiagnosis:Array.isArray(state?.aiGrowth?.diagnosis)?state.aiGrowth.diagnosis.slice(0,5):[],skills:["trend-research","niche-signals","content-opportunities","openai-growth-intelligence"]};
+  await recordAgentExecution(env,client,"PESQUISADOR",{function:"content-opportunity-research",trigger:options.trigger,startedAt,status:"success",model:state?.aiGrowth?.model?"openai-growth-brain+first-party-signals":"first-party-signal-research",quantity:ledger.length,message:opportunities.length+" oportunidade(s) de tema consolidada(s)."});
   await patchAgentCoreState(env,client.id,{pesquisador:output});
   return output;
 }
@@ -52,8 +55,8 @@ async function runAnalyst(env,client,options){
   const ratio=baseline>0?top/baseline:(top>0?1.5:0);
   const viralScore=Math.round(clamp((ratio*35)+(Math.max(0,followerDelta)*2)+(published*1.5)-(failed*6),0,100));
   const potential=viralScore>=70?"alto":viralScore>=40?"medio":"baixo";
-  const output={viralScore,potential,published,failed,followerDelta,baseline,topEngagement:top,skills:["performance-analysis","viral-score","funnel-metrics"]};
-  await recordAgentExecution(env,client,"ANALISTA",{function:"viral-potential-analysis",trigger:options.trigger,startedAt,status:"success",model:"nexus-performance-score-v1",quantity:ledger.length,message:"Potencial atual: "+potential+" ("+viralScore+"/100)."});
+  const output={viralScore,potential,published,failed,followerDelta,baseline,topEngagement:top,aiDiagnosis:Array.isArray(state?.aiGrowth?.diagnosis)?state.aiGrowth.diagnosis.slice(0,5):[],aiStrategyChanges:Array.isArray(state?.aiGrowth?.strategyChanges)?state.aiGrowth.strategyChanges.slice(0,5):[],skills:["performance-analysis","viral-score","funnel-metrics","openai-growth-intelligence"]};
+  await recordAgentExecution(env,client,"ANALISTA",{function:"viral-potential-analysis",trigger:options.trigger,startedAt,status:"success",model:state?.aiGrowth?.model?"nexus-score+openai-growth-brain":"nexus-performance-score-v1",quantity:ledger.length,message:"Potencial atual: "+potential+" ("+viralScore+"/100)."});
   await patchAgentCoreState(env,client.id,{analista:output});
   return output;
 }
@@ -64,10 +67,21 @@ async function runCopyChief(env,client,options){
   let strong=0,needsWork=0;
   const reviews=[];
   for(const row of rows){
-    const c=String(row.caption||""); const hasCta=/quero|comente|siga|salva|envie|compartilh/i.test(c); const first=c.split(/\n/)[0].trim(); const hookStrong=first.length>=18&&first.length<=140; const ok=hasCta&&hookStrong&&c.length<=2200; ok?strong++:needsWork++;
+    const c=String(row.caption||"");
+    const hasCta=/quero|comente|siga|salva|envie|compartilh/i.test(c);
+    const first=c.split(/\n/)[0].trim();
+    const hookStrong=first.length>=18&&first.length<=140;
+    const genericFiller=/descoberta,? entretenimento,? utilidade|motivo claro para seguir o perfil|ângulo \d+:|voce escolheria qual opcao|você escolheria qual opção/i.test(c);
+    const brandSpecific=client.id==="globalplay-streaming"
+      ?/global\s*play|fam[ií]lia|desenho|filme|s[eé]rie|assistir|pipoca|streaming/i.test(c)
+      :client.id==="ragnar-one"
+        ?/ragnar\s*one|n[oó]rdic|saga|aventura|cinema|streaming|sof[aá]/i.test(c)
+        :true;
+    const ok=hasCta&&hookStrong&&c.length<=2200&&!genericFiller&&brandSpecific;
+    ok?strong++:needsWork++;
     const payload=row.payload&&typeof row.payload==="object"?row.payload:{}; payload.qualityGates={...(payload.qualityGates||{}),copyChief:ok?"approved":"rejected",copyChiefAt:new Date().toISOString()};
     await env.DB.prepare("UPDATE post_ledger SET payload_json=?2,error=?3,updated_at=CURRENT_TIMESTAMP WHERE id=?1").bind(row.id,JSON.stringify(payload),ok?"":"copy_quality_rejected").run();
-    reviews.push({id:row.id,ok,hasCta,hookStrong,length:c.length});
+    reviews.push({id:row.id,ok,hasCta,hookStrong,genericFiller,brandSpecific,length:c.length});
   }
   const output={reviewed:rows.length,strong,needsWork,reviews,skills:["hook-review","cta-review","caption-quality"]};
   await recordAgentExecution(env,client,"COPY CHIEF",{function:"caption-quality-gate",trigger:options.trigger,startedAt,status:needsWork?"warning":"success",model:"copy-quality-rules",quantity:rows.length,message:strong+" copy(s) fortes; "+needsWork+" precisam ajuste."});
@@ -231,8 +245,13 @@ async function runGrowth(env,client,options){
   const startedAt=new Date().toISOString();
   const state=await agentCoreState(env,client.id);
   const score=Number(state?.analista?.viralScore||0);
-  const experiment=score>=70?"Escalar formato vencedor com variacao de gancho e criativo.":score>=40?"Executar teste A/B de gancho, CTA e horario.":"Explorar novos temas e formatos antes de escalar.";
-  const output={viralScore:score,experiment,scaleMode:score>=70?"scale":score>=40?"test":"explore",skills:["growth-experiments","scale-winners","follower-velocity"]};
+  const aiChanges=Array.isArray(state?.aiGrowth?.strategyChanges)?state.aiGrowth.strategyChanges.filter(Boolean):[];
+  const experiment=aiChanges[0]||(
+    score>=70?"Escalar formato vencedor com variacao de gancho e criativo."
+    :score>=40?"Executar teste A/B de gancho, CTA e horario."
+    :"Explorar novos temas e formatos antes de escalar."
+  );
+  const output={viralScore:score,experiment,aiChanges:aiChanges.slice(0,5),scaleMode:score>=70?"scale":score>=40?"test":"explore",skills:["growth-experiments","scale-winners","follower-velocity","openai-growth-intelligence"]};
   await recordAgentExecution(env,client,"GROWTH",{function:"growth-experiment-loop",trigger:options.trigger,startedAt,status:"success",model:"growth-loop-v1",quantity:1,message:experiment});
   await patchAgentCoreState(env,client.id,{growth:output});
   return output;
