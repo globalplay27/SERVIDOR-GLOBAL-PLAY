@@ -21,7 +21,7 @@ test("Ragnar excludes recycled Instagram media while other accounts retain R2 re
 
 
 test("publisher anti-repeat uses a recent rolling window and Ragnar does not recycle blocked media", () => {
-  const matches = runtime.match(/filter\(row=>row\.status==="published"\)\.slice\(0,2\)/g) || [];
-  assert.ok(matches.length >= 2, "creator and publisher should both use a two-post rolling window");
+  assert.match(runtime, /recentlyPublished\.slice\(0,2\)/);
+  assert.match(runtime, /filter\(row=>row\.status==="published"\)\.slice\(0,2\)/);
   assert.match(runtime, /const safeRecheck=client\.id!=="ragnar-one"/);
 });
