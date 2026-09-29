@@ -138,14 +138,35 @@ export async function runSchedulerTick(env, scheduledAt = new Date()) {
     let cycleIsDue = due(state.lastCycleQueuedAt, config.cycleMinutes, nowMs);
     if (["ragnar-one", "globalplay-streaming"].includes(client.id)) {
       const publishedToday = await env.DB.prepare(
-        `SELECT id FROM post_ledger
+        `SELECT COUNT(*) AS published_count,
+                MAX(COALESCE(
+                  json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.publishedAt'),
+                  updated_at, scheduled_for, created_at
+                )) AS last_published_at
+         FROM post_ledger
          WHERE client_id=?1 AND status='published'
-           AND date(COALESCE(scheduled_for,created_at),'-3 hours')=date(?2,'-3 hours')
-         LIMIT 1`
+           AND date(COALESCE(
+             json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.publishedAt'),
+             updated_at, scheduled_for, created_at
+           ),'-3 hours')=date(?2,'-3 hours')`
       ).bind(client.id, now.toISOString()).first();
-      // Recovery rule: if an autonomous account has not posted today, do not wait
-      // for the normal agent interval. Queue a full cycle on the next cron tick.
-      if (!publishedToday) cycleIsDue = true;
+      const publishedCount = Math.max(0, Number(publishedToday?.published_count || 0));
+      const lastPublishedMs = Date.parse(String(publishedToday?.last_published_at || ""));
+      const spacingReady = publishedCount === 0
+        || (Number.isFinite(lastPublishedMs) && nowMs - lastPublishedMs >= 90 * 60 * 1000);
+      const recoveryIntervalMinutes = Math.min(config.cycleMinutes, 15);
+
+      // Three posts/day is the target, while RADAR still chooses the preferred
+      // windows. If the account is behind and the last publication is at least
+      // 90 minutes old, run a bounded catch-up cycle instead of waiting until
+      // tomorrow. The 15-minute recovery throttle prevents token/cron storms.
+      if (publishedCount < 3 && spacingReady
+        && due(state.lastCycleQueuedAt, recoveryIntervalMinutes, nowMs)) {
+        cycleIsDue = true;
+      }
+      next.publishedToday = publishedCount;
+      next.lastPublishedAt = Number.isFinite(lastPublishedMs)
+        ? new Date(lastPublishedMs).toISOString() : null;
     }
 
     const hunterConfig = await leadHunterConfig(env, client);
