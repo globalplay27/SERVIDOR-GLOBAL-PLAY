@@ -266,11 +266,17 @@
             <div><p class="eyebrow">AUTORIZAÇÃO CENTRAL</p><h2>Instagram NEXUS</h2><p class="muted">Configure uma única vez. Depois cada cliente apenas entra no Instagram e autoriza a própria conta.</p></div>
           </div>
           <div class="integration" style="margin:14px 0 18px">
-            <div><strong>NEXUS IA CENTRAL</strong><small>App ID e App Secret protegidos na Cloudflare. Não é necessário inserir token de conta aqui.</small></div>
+            <div><strong>NEXUS IA CENTRAL</strong><small>O App ID é fixo do NEXUS. O App Secret pode ser atualizado aqui e é salvo criptografado.</small></div>
             <span id="instagram-master-state" class="badge">CONFIGURADO</span>
           </div>
+          <form id="instagram-secret-form" class="openai-master-form">
+            <label>Instagram App ID<input id="instagram-current-app-id" readonly value="Carregando..."></label>
+            <label>App Secret do NEXUS IA CENTRAL<input name="appSecret" type="password" autocomplete="off" placeholder="Cole o App Secret correto do NEXUS" required></label>
+            <button class="primary" type="submit">Salvar App Secret do NEXUS</button>
+            <span id="instagram-secret-message" class="form-status"></span>
+          </form>
           <label>OAuth Redirect URL<input id="instagram-callback-url" readonly value="Carregando..."></label>
-          <p class="disclaimer">As credenciais centrais pertencem ao aplicativo NEXUS. Cada Instagram apenas autoriza o acesso abaixo.</p>
+          <p class="disclaimer">Não use token de Global Play ou Ragnar neste campo. Use somente o App Secret do aplicativo NEXUS IA CENTRAL.</p>
 
           <div class="panel-head" style="margin-top:24px">
             <div><p class="eyebrow">RECONECTAR CONTAS</p><h3>Autorizar pelo Instagram</h3><p class="muted">Sem copiar token. O NEXUS abre o login oficial do Instagram, recebe a autorização e salva a conexão criptografada automaticamente.</p></div>
@@ -315,6 +321,6 @@
       <span id="portal-access-status" class="form-status"></span>
     </form>
   </dialog>
-  <script src="/app.js?v=24" defer></script>
+  <script src="/app.js?v=25" defer></script>
 </body>
 </html>
