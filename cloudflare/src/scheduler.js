@@ -1,5 +1,6 @@
 import { leadHunterConfig } from "./lead-hunter.js";
 import { ensureLeadSchema } from "./leads.js";
+import { reviewImage } from "./visual-review.js";
 
 function parseJson(raw, fallback = {}) {
   try {
@@ -239,6 +240,73 @@ export async function runSchedulerTick(env, scheduledAt = new Date()) {
         `UPDATE scheduled_jobs SET status='failed', last_error='lead_hunter_automatic_disabled', updated_at=CURRENT_TIMESTAMP
          WHERE client_id=?1 AND kind='lead-hunter' AND status IN ('scheduled','running')`
       ).bind(client.id).run();
+    }
+
+    // Ragnar emergency recovery: use one of the three owner-inspected
+    // pinned artworks when the due queue lost its media to anti-repeat.
+    // Pick an artwork not used in the two most recent published posts, verify
+    // its pinned bytes through visual-review-v2, then let Publisher send it.
+    if (client.id === "ragnar-one") {
+      const dueNeedsMedia = await env.DB.prepare(
+        `SELECT id,payload_json FROM post_ledger
+         WHERE client_id=?1
+           AND status IN ('ready','scheduled','failed')
+           AND approval_status='approved'
+           AND scheduled_for<=?2
+           AND date(scheduled_for,'-3 hours')=date(?2,'-3 hours')
+           AND json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.qualityGates.copyChief')='approved'
+           AND (
+             COALESCE(json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.imageUrl'),'')=''
+             OR error IN ('duplicate_media_blocked','designer_replacement_queued')
+           )
+         ORDER BY scheduled_for ASC LIMIT 1`
+      ).bind(client.id, now.toISOString()).first();
+
+      if (dueNeedsMedia?.id) {
+        const recentMediaRows = await env.DB.prepare(
+          `SELECT json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.imageUrl') AS image_url
+           FROM post_ledger
+           WHERE client_id=?1 AND status='published'
+           ORDER BY COALESCE(
+             json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.publishedAt'),
+             updated_at, scheduled_for, created_at
+           ) DESC LIMIT 2`
+        ).bind(client.id).all();
+        const recentMedia = new Set((recentMediaRows?.results || []).map(row => String(row.image_url || "")).filter(Boolean));
+        const candidates = [
+          "https://servidor-nexus.diamantehinode2015.workers.dev/assets/ragnar/saga-sofa-20260928.jpg",
+          "https://servidor-nexus.diamantehinode2015.workers.dev/assets/ragnar/fjord-dia-20260928.jpg",
+          "https://servidor-nexus.diamantehinode2015.workers.dev/assets/ragnar/fjord-noite-20260928.jpg"
+        ];
+        const recoveryMedia = candidates.find(url => !recentMedia.has(url)) || "";
+        if (recoveryMedia) {
+          const review = await reviewImage(env, client, recoveryMedia, null);
+          if (review?.status === "approved") {
+            let payload = {};
+            try { payload = JSON.parse(String(dueNeedsMedia.payload_json || "{}")); } catch {}
+            payload.imageUrl = recoveryMedia;
+            payload.publicImageUrl = "";
+            payload.sourceInstagramMediaId = "";
+            payload.visualReview = review;
+            payload.blockedDuplicateMedia = "";
+            payload.blockedDesignerMedia = "";
+            payload.intelligence = {
+              ...(payload.intelligence || {}),
+              mediaSource: "ragnar-owner-pinned-recovery"
+            };
+            payload.qualityGates = {
+              ...(payload.qualityGates || {}),
+              copyChief: "approved",
+              designer: "approved",
+              designerAt: now.toISOString()
+            };
+            payload.ragnarPinnedRecoveryAt = now.toISOString();
+            await env.DB.prepare(
+              "UPDATE post_ledger SET payload_json=?2,error='',updated_at=CURRENT_TIMESTAMP WHERE id=?1"
+            ).bind(dueNeedsMedia.id, JSON.stringify(payload)).run();
+          }
+        }
+      }
     }
 
     // A slow full cycle must not suppress publishing content that already
