@@ -16,6 +16,7 @@ import { listClients, getClient, upsertClient } from "./clients.js";
 import { getMasterInstagramSummary, saveMasterInstagramConfig, connectInstagramWithToken, startInstagramOAuth } from "./instagram.js";
 import { agentCoreDashboard, agentCoreClientView, saveAgentCoreConfig, queueManualAgentRun } from "./agent-core.js";
 import { masterLeadSummary } from "./leads.js";
+import { instagramCredentialStatus } from "./instagram-credentials.js";
 
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
@@ -656,6 +657,29 @@ export async function handleMaster(request, env, url) {
 
   if (url.pathname === "/api/master/instagram" && request.method === "GET") {
     return json(await getMasterInstagramSummary(env, request));
+  }
+
+  if (url.pathname === "/api/master/instagram/accounts-status" && request.method === "GET") {
+    const [globalplay, ragnar] = await Promise.all([
+      instagramCredentialStatus(env, "globalplay-streaming"),
+      instagramCredentialStatus(env, "ragnar-one")
+    ]);
+    const safe = value => ({
+      connected: Boolean(value?.connected),
+      source: String(value?.source || "none"),
+      expired: Boolean(value?.expired),
+      expiresAt: value?.expiresAt || null,
+      tokenValid: Boolean(value?.tokenValid),
+      accountMatches: Boolean(value?.accountMatches),
+      validation: String(value?.validation || "not_connected")
+    });
+    return json({
+      ok: true,
+      accounts: {
+        "globalplay-streaming": safe(globalplay),
+        "ragnar-one": safe(ragnar)
+      }
+    });
   }
 
   if (url.pathname === "/api/master/instagram" && request.method === "POST") {
