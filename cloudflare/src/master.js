@@ -217,8 +217,9 @@ async function tokenUsage(env) {
 export async function handleMaster(request, env, url) {
   if ((url.pathname === "/master" || url.pathname === "/master/" || url.pathname === "/index.html")
       && request.method === "GET") {
-    // Temporary diagnostic bypass: expose only the Master UI shell.
-    // Administrative APIs remain protected by requireMaster below.
+    if (!await requireMaster(request, env)) {
+      return redirect("/api/master/access");
+    }
     return asset(env, request, "/index.html");
   }
 
