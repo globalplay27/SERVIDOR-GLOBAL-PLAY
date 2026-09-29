@@ -87,3 +87,5 @@
 .dialog-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:6px}
 .dialog-actions .ghost,.dialog-actions .primary{min-width:120px}
 @media(max-width:600px){.dialog-actions{flex-direction:column}.dialog-actions .ghost,.dialog-actions .primary{width:100%}}
+
+.link-button[hidden]{display:none!important}
