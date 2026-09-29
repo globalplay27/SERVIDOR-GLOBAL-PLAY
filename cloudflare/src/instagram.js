@@ -43,9 +43,9 @@ async function masterInstagramRecord(env) {
 
 export async function getMasterInstagramSummary(env, request) {
   const record = await masterInstagramRecord(env);
-  const appId = String(env.INSTAGRAM_APP_ID || record.appId || "").trim();
+  const appId = String(record.appId || env.INSTAGRAM_APP_ID || "").trim();
   const encrypted = String(record.appSecret || "");
-  const hasSecret = Boolean(String(env.INSTAGRAM_APP_SECRET || "").trim() || encrypted);
+  const hasSecret = Boolean(encrypted || String(env.INSTAGRAM_APP_SECRET || "").trim());
   return {
     configured: Boolean(appId && hasSecret),
     appId,
@@ -86,9 +86,10 @@ export async function saveMasterInstagramConfig(env, request, body = {}) {
 
 async function masterInstagramCredentials(env) {
   const record = await masterInstagramRecord(env);
-  const appId = String(env.INSTAGRAM_APP_ID || record.appId || "").trim();
+  const appId = String(record.appId || env.INSTAGRAM_APP_ID || "").trim();
   const envSecret = String(env.INSTAGRAM_APP_SECRET || "").trim();
-  const appSecret = envSecret || (record.appSecret ? await decryptSecret(env, record.appSecret) : "");
+  const storedSecret = record.appSecret ? await decryptSecret(env, record.appSecret).catch(() => "") : "";
+  const appSecret = storedSecret || envSecret;
   return { appId, appSecret };
 }
 
@@ -295,12 +296,12 @@ export async function instagramMasterConfigStatus(env) {
   const storedSecret = String(record.appSecret || "").trim();
 
   return {
-    configured: Boolean((envAppId || storedAppId) && (envAppSecret || storedSecret)),
-    appId: envAppId || storedAppId || "",
-    appIdConfigured: Boolean(envAppId || storedAppId),
-    appSecretConfigured: Boolean(envAppSecret || storedSecret),
-    appIdSource: envAppId ? "cloudflare-env" : storedAppId ? "nexus-d1" : "none",
-    appSecretSource: envAppSecret ? "cloudflare-secret" : storedSecret ? "nexus-d1" : "none",
+    configured: Boolean((storedAppId || envAppId) && (storedSecret || envAppSecret)),
+    appId: storedAppId || envAppId || "",
+    appIdConfigured: Boolean(storedAppId || envAppId),
+    appSecretConfigured: Boolean(storedSecret || envAppSecret),
+    appIdSource: storedAppId ? "nexus-d1" : envAppId ? "cloudflare-env" : "none",
+    appSecretSource: storedSecret ? "nexus-d1" : envAppSecret ? "cloudflare-secret" : "none",
     updatedAt: record.updatedAt || null
   };
 }
