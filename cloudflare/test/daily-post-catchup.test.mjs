@@ -22,3 +22,11 @@ test("catch-up keeps one-at-a-time publishing instead of dumping multiple posts"
   assert.match(runtime, /if\(published>0\|\|publishedTodayCount>=3\)break/);
   assert.match(runtime, /recoveryPulledForward=true/);
 });
+
+
+test("scheduler heals only an exact approved visual review before publisher sweep", () => {
+  assert.match(scheduler, /visual-review-v2/);
+  assert.match(scheduler, /visualReview\.status'\)='approved'/);
+  assert.match(scheduler, /visualReview\.media'/);
+  assert.match(scheduler, /designerGateRecoveredAt/);
+});
