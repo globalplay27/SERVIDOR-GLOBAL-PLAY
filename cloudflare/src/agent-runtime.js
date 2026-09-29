@@ -609,8 +609,16 @@ async function runCreator(env,client,strategy,options) {
     break;
   }
 
-  const publishedToday=recent.some(row=>row.status==="published"
-    &&localDay(row.payload?.publishedAt||row.updated_at||row.created_at)===localDay());
+  const publishedTodayRows=recent.filter(row=>row.status==="published"
+    &&localDay(row.payload?.publishedAt||row.updated_at||row.scheduled_for||row.created_at)===localDay());
+  const publishedTodayCount=publishedTodayRows.length;
+  const lastPublishedMs=publishedTodayRows.reduce((latest,row)=>{
+    const value=Date.parse(String(row.payload?.publishedAt||row.updated_at||row.scheduled_for||row.created_at||""));
+    return Number.isFinite(value)?Math.max(latest,value):latest;
+  },0);
+  const dailyPublishTarget=Math.max(1,Math.min(3,Number(strategy?.dailySlots||3)));
+  const catchUpSpacingReady=publishedTodayCount===0
+    || (lastPublishedMs>0&&Date.now()-lastPublishedMs>=90*60*1000);
   const dueValid=recent.some(row=>["ready","scheduled","failed"].includes(row.status)
     &&localDay(row.scheduled_for)===localDay()
     &&Date.parse(String(row.scheduled_for||""))<=Date.now()
@@ -619,8 +627,9 @@ async function runCreator(env,client,strategy,options) {
     &&row.payload?.qualityGates?.designer==="approved"
     &&!usedPublishedMedia.has(mediaKey(row.payload?.imageUrl||row.payload?.publicImageUrl||""))
     &&visualApproval(client.id,row.payload));
+  let recoveryPulledForward=false;
   if(["globalplay-streaming","ragnar-one"].includes(client.id)
-    &&config.autoPublish&&!publishedToday&&!dueValid){
+    &&config.autoPublish&&publishedTodayCount<dailyPublishTarget&&catchUpSpacingReady&&!dueValid){
     const future=recent
       .filter(row=>["ready","scheduled"].includes(row.status)
         &&row.approval_status==="approved"
@@ -632,17 +641,19 @@ async function runCreator(env,client,strategy,options) {
         &&visualApproval(client.id,row.payload))
       .sort((a,b)=>Date.parse(a.scheduled_for)-Date.parse(b.scheduled_for))[0];
     if(future){
-      const payload={...future.payload,scheduledRecoveryAt:new Date().toISOString()};
+      const payload={...future.payload,scheduledRecoveryAt:new Date().toISOString(),scheduledRecoveryReason:"daily_target_catch_up"};
       await env.DB.prepare(
         "UPDATE post_ledger SET scheduled_for=?2,payload_json=?3,updated_at=CURRENT_TIMESTAMP WHERE id=?1"
       ).bind(future.id,new Date().toISOString(),JSON.stringify(payload)).run();
+      recoveryPulledForward=true;
     }
   }
 
   for(let index=0;index<times.length;index++){
     const time=times[index];
-    const publishedToday=recent.some(row=>row.status==="published"&&localDay(row.scheduled_for||row.created_at)===localDay());
-    const scheduledFor=(!publishedToday&&index===0)?new Date().toISOString():scheduleIso(time,index);
+    const scheduledFor=(publishedTodayCount===0&&!recoveryPulledForward&&index===0)
+      ?new Date().toISOString()
+      :scheduleIso(time,index);
     const day=localDay(scheduledFor);
     const id="agentcore:"+client.id+":"+day+":"+String(time).replace(":","");
     const exists=await env.DB.prepare(
