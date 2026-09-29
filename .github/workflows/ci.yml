@@ -81,7 +81,8 @@ jobs:
                 clients: [.clients[]? | {
                   clientId,
                   allAgentsSeen,
-                  missingAgents
+                  missingAgents,
+                  instagramConnection
                 }]
               }'
               if echo "$last" | jq -e '

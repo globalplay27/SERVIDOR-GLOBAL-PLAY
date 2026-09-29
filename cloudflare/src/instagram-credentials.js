@@ -103,3 +103,46 @@ export async function resolveInstagramCredentials(env, clientId) {
     connectedAt: null
   };
 }
+
+
+export async function instagramCredentialStatus(env, clientId) {
+  const credentials = await resolveInstagramCredentials(env, clientId);
+  const status = {
+    connected: Boolean(credentials?.connected),
+    source: String(credentials?.source || "none"),
+    expired: Boolean(credentials?.expired),
+    expiresAt: credentials?.expiresAt || null,
+    fallbackReason: String(credentials?.fallbackReason || ""),
+    tokenValid: false,
+    accountMatches: false,
+    validation: "not_connected"
+  };
+
+  if (!credentials?.connected || !credentials?.accessToken || !credentials?.igUserId) {
+    return status;
+  }
+
+  try {
+    const url = new URL("https://graph.instagram.com/me");
+    url.searchParams.set("fields", "id");
+    url.searchParams.set("access_token", credentials.accessToken);
+    const response = await fetch(url, { signal: AbortSignal.timeout(12000) });
+
+    if (!response.ok) {
+      return { ...status, validation: `http_${response.status}` };
+    }
+
+    const profile = await response.json().catch(() => ({}));
+    const tokenValid = Boolean(profile?.id);
+    const accountMatches = tokenValid && String(profile.id) === String(credentials.igUserId);
+
+    return {
+      ...status,
+      tokenValid,
+      accountMatches,
+      validation: !tokenValid ? "invalid_response" : accountMatches ? "ok" : "account_mismatch"
+    };
+  } catch {
+    return { ...status, validation: "transport_error" };
+  }
+}
