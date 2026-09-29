@@ -6,6 +6,7 @@ import { handlePortalApi } from "./portal.js";
 import { handleMaster } from "./master.js";
 import { runSchedulerTick } from "./scheduler.js";
 import { processDueJobs } from "./executor.js";
+import { handleWhatsAppWebhook, handleWhatsAppProtected, whatsappConfigStatus } from "./whatsapp-agent.js";
 import { masterCredentialsValid, createMasterSession, authenticatePortalUser, createPortalSession, masterSessionCookie, portalSessionCookie, loginRateLimitStatus, recordLoginFailure, clearLoginFailures, resolvePortalSession, resolveMasterSession } from "./auth.js";
 
 // Keep the exact legacy export name until Cloudflare removes its existing Durable Objects.
@@ -142,7 +143,8 @@ async function health(env) {
     openai: {
       shared: openAIKeyStatus(env, "shared-client").configured,
       ragnar: openAIKeyStatus(env, env.RAGNAR_CLIENT_ID || "ragnar-one").configured
-    }
+    },
+    whatsapp: whatsappConfigStatus(env)
   }, d1 ? 200 : 503);
 }
 
@@ -397,6 +399,10 @@ export default {
       return mediaResponse(request, env, url);
     }
 
+    if (url.pathname === "/api/whatsapp/webhook") {
+      return handleWhatsAppWebhook(request, env, url, ctx);
+    }
+
 
     if (url.pathname === "/login" && request.method === "GET") {
       return asset(env, request, "/portal.html");
@@ -489,6 +495,13 @@ export default {
 
     if (url.pathname === "/api/openai/responses") {
       return handleOpenAIResponses(request, env);
+    }
+
+    if (url.pathname.startsWith("/api/whatsapp/")) {
+      const denied = requireAuth(request, env);
+      if (denied) return denied;
+      const response = await handleWhatsAppProtected(request, env, url);
+      if (response) return response;
     }
 
     if (url.pathname === "/api/state") {
