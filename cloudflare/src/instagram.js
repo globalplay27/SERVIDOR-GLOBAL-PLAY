@@ -296,6 +296,7 @@ export async function instagramMasterConfigStatus(env) {
 
   return {
     configured: Boolean((envAppId || storedAppId) && (envAppSecret || storedSecret)),
+    appId: envAppId || storedAppId || "",
     appIdConfigured: Boolean(envAppId || storedAppId),
     appSecretConfigured: Boolean(envAppSecret || storedSecret),
     appIdSource: envAppId ? "cloudflare-env" : storedAppId ? "nexus-d1" : "none",
