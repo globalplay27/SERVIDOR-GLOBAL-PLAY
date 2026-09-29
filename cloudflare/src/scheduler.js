@@ -137,6 +137,25 @@ export async function runSchedulerTick(env, scheduledAt = new Date()) {
     const state = await schedulerState(env, client.id);
     const next = { ...state };
     let cycleIsDue = due(state.lastCycleQueuedAt, config.cycleMinutes, nowMs);
+
+    // Force a fresh intelligence cycle when the shared OpenAI growth brain is
+    // missing or stale. This keeps agents learning from real Instagram signals
+    // instead of running indefinitely on hard-coded fallback rules.
+    const aiState = await env.DB.prepare(
+      `SELECT json_extract(CASE WHEN json_valid(value_json) THEN value_json ELSE '{}' END,'$.aiGrowth.generatedAt') AS generated_at
+       FROM nexus_state
+       WHERE namespace='agent-core' AND item_key='state' AND client_id=?1
+       LIMIT 1`
+    ).bind(client.id).first();
+    const aiGeneratedMs = Date.parse(String(aiState?.generated_at || ""));
+    if (!Number.isFinite(aiGeneratedMs) || nowMs - aiGeneratedMs >= 90 * 60 * 1000) {
+      cycleIsDue = true;
+      next.aiRefreshDue = true;
+    } else {
+      next.aiRefreshDue = false;
+      next.lastAiGrowthAt = new Date(aiGeneratedMs).toISOString();
+    }
+
     if (["ragnar-one", "globalplay-streaming"].includes(client.id)) {
       const publishedToday = await env.DB.prepare(
         `SELECT COUNT(*) AS published_count,
