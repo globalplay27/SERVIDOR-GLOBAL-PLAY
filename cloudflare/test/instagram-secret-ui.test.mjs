@@ -9,7 +9,7 @@ test("Master exposes only a password field for the NEXUS Instagram App Secret", 
   assert.match(html, /id="instagram-secret-form"/);
   assert.match(html, /name="appSecret" type="password"/);
   assert.match(html, /id="instagram-current-app-id" readonly/);
-  assert.doesNotMatch(html, /token de Global Play ou Ragnar neste campo[^<]*$/m);
+  assert.doesNotMatch(html, /data-instagram-token-form/);
 });
 
 test("Master saves the NEXUS App Secret through the protected Instagram settings endpoint", () => {
