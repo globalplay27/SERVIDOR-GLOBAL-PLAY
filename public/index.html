@@ -280,13 +280,12 @@
           </div>
 
           <div class="openai-master-form instagram-oauth-actions">
-            <button class="primary" type="button" data-instagram-oauth data-client-id="globalplay-streaming">Autorizar Global Play · @globalplay_streaming</button>
-            <span class="form-status" data-instagram-oauth-status="globalplay-streaming"></span>
-            <button class="primary" type="button" data-instagram-oauth data-client-id="ragnar-one">Autorizar Ragnar One · @ragnarplay1</button>
-            <span class="form-status" data-instagram-oauth-status="ragnar-one"></span>
+            <a class="primary link-button" href="/api/master/instagram/authorize?clientId=globalplay-streaming">Autorizar conta principal · @globalplay_streaming</a>
+            <a class="primary link-button" href="/api/master/instagram/authorize?clientId=ragnar-one">Autorizar Ragnar One · @ragnarplay1</a>
+            <span id="instagram-oauth-message" class="form-status"></span>
           </div>
 
-          <p class="disclaimer">Entre na conta indicada em cada botão. Se autorizar outra conta por engano, o NEXUS recusa a conexão.</p>
+          <p class="disclaimer">A Global Play é a conta principal do NEXUS e não aparece mais como cliente. A autorização abre diretamente no Instagram e volta para esta tela.</p>
         </div>
       </section>
     </main>
@@ -307,6 +306,6 @@
       <span id="portal-access-status" class="form-status"></span>
     </form>
   </dialog>
-  <script src="/app.js?v=21" defer></script>
+  <script src="/app.js?v=22" defer></script>
 </body>
 </html>
