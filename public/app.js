@@ -766,7 +766,7 @@ $("[data-instagram-oauth]").forEach(button=>button.addEventListener("click",asyn
   if(status)status.textContent="Abrindo autorização do Instagram…";
   try{
     const result=await api("/api/master/instagram/oauth-start?clientId="+encodeURIComponent(clientId));
-    const popup=window.open(result.url,"nexus-instagram-oauth","width=560,height=760,noopener=false");
+    const popup=window.open(result.url,"nexus-instagram-oauth","width=560,height=760");
     if(!popup){
       if(status)status.textContent="O navegador bloqueou a janela. Libere pop-ups e tente novamente.";
       button.disabled=false;
