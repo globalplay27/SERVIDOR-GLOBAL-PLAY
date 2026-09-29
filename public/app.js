@@ -564,6 +564,7 @@ async function loadIntegrations() {
       igState.textContent=instagram.configured?"CONFIGURADO":"NÃO CONFIGURADO";
       igState.classList.toggle("off",!instagram.configured);
     }
+    if($("#instagram-current-app-id"))$("#instagram-current-app-id").value=instagram.appId||"";
     if($("#instagram-callback-url"))$("#instagram-callback-url").value=instagram.callbackUrl||"";
 
     const accountStates=instagramAccounts?.accounts||{};
@@ -749,6 +750,33 @@ document.addEventListener("click", async event => {
     state.supportFilter = filterButton.dataset.supportFilter || "all";
     $("[data-support-filter]").forEach(btn => btn.classList.toggle("active", btn === filterButton));
     renderSupportNotifications();
+  }
+});
+
+const instagramSecretForm=$("#instagram-secret-form");
+if(instagramSecretForm)instagramSecretForm.addEventListener("submit",async event=>{
+  event.preventDefault();
+  const form=event.currentTarget;
+  const input=form.querySelector('input[name="appSecret"]');
+  const message=$("#instagram-secret-message");
+  const button=form.querySelector('button[type="submit"]');
+  const appSecret=String(input?.value||"").trim();
+  if(!appSecret){if(message)message.textContent="Cole o App Secret do NEXUS.";return;}
+  if(button)button.disabled=true;
+  if(message)message.textContent="Salvando com criptografia…";
+  try{
+    const result=await api("/api/master/instagram",{
+      method:"POST",
+      body:JSON.stringify({appSecret})
+    });
+    if(input)input.value="";
+    if($("#instagram-current-app-id"))$("#instagram-current-app-id").value=result.appId||"";
+    if(message)message.textContent="App Secret do NEXUS salvo com segurança.";
+    await loadIntegrations();
+  }catch(error){
+    if(message)message.textContent="Não foi possível salvar o App Secret.";
+  }finally{
+    if(button)button.disabled=false;
   }
 });
 
