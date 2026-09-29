@@ -19,7 +19,10 @@
     "PUBLIC_BASE_URL": "https://servidor-nexus.diamantehinode2015.workers.dev",
     "NEXUS_AI_PROVIDER": "local-first",
     "NEXUS_OPENAI_DAILY_TOKEN_LIMIT": "30000",
-    "NEXUS_OPENAI_MAX_OUTPUT_TOKENS": "1200"
+    "NEXUS_OPENAI_MAX_OUTPUT_TOKENS": "1200",
+    "WHATSAPP_CLIENT_ID": "globalplay-streaming",
+    "WHATSAPP_GRAPH_VERSION": "v26.0",
+    "WHATSAPP_SEND_LIMIT_PER_HOUR": "30"
   },
   "assets": {
     "directory": "../public",
