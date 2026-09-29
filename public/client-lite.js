@@ -40,8 +40,7 @@ function showDashboard(data) {
   $("#dashboard").hidden = false;
   $("#client-label").textContent = data.name || "Cliente";
   $("#client-name").textContent = data.name || "Seu painel";
-  $("#next-post").textContent = Array.isArray(data.postTimes) && data.postTimes.length
-    ? data.postTimes.join(" · ") : "Sem horário configurado";
+  $("#next-post").textContent = "Automática pelo NEXUS";
 }
 
 function showTab(name) {
