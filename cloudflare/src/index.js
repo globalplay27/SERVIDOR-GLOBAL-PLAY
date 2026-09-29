@@ -8,7 +8,7 @@ import { runSchedulerTick } from "./scheduler.js";
 import { processDueJobs } from "./executor.js";
 import { handleWhatsAppWebhook, handleWhatsAppProtected, whatsappConfigStatus } from "./whatsapp-agent.js";
 import { instagramCredentialStatus } from "./instagram-credentials.js";
-import { instagramMasterConfigStatus, handleInstagramOAuthCallback } from "./instagram.js";
+import { instagramMasterConfigStatus, handleInstagramOAuthCallback, handleInstagramComplianceRequest } from "./instagram.js";
 import { masterCredentialsValid, createMasterSession, authenticatePortalUser, createPortalSession, masterSessionCookie, portalSessionCookie, loginRateLimitStatus, recordLoginFailure, clearLoginFailures, resolvePortalSession, resolveMasterSession } from "./auth.js";
 
 // Keep the exact legacy export name until Cloudflare removes its existing Durable Objects.
@@ -443,6 +443,9 @@ export default {
 
     const instagramOAuthResponse = await handleInstagramOAuthCallback(env, request, url);
     if (instagramOAuthResponse) return instagramOAuthResponse;
+
+    const instagramComplianceResponse = await handleInstagramComplianceRequest(env, request, url);
+    if (instagramComplianceResponse) return instagramComplianceResponse;
 
 
     if (url.pathname === "/login" && request.method === "GET") {
