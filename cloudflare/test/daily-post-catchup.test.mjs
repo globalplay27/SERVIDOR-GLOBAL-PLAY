@@ -9,6 +9,8 @@ test("autonomous accounts catch up toward three daily posts with spacing", () =>
   assert.match(scheduler, /publishedCount < 3/);
   assert.match(scheduler, /90 \* 60 \* 1000/);
   assert.match(scheduler, /Math\.min\(config\.cycleMinutes, 15\)/);
+  assert.match(scheduler, /scheduledRecoveryReason = "daily_target_catch_up"/);
+  assert.match(scheduler, /UPDATE post_ledger SET scheduled_for=\?2/);
   assert.match(runtime, /publishedTodayCount<dailyPublishTarget/);
   assert.match(runtime, /scheduledRecoveryReason:"daily_target_catch_up"/);
 });
