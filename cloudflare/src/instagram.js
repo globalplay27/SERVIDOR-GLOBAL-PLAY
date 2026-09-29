@@ -396,3 +396,207 @@ export async function connectInstagramWithToken(env, clientId, suppliedToken) {
     source: "d1-oauth"
   };
 }
+
+
+function base64UrlToBytes(value) {
+  let input = String(value || "").replace(/-/g, "+").replace(/_/g, "/");
+  while (input.length % 4) input += "=";
+  const binary = atob(input);
+  return Uint8Array.from(binary, ch => ch.charCodeAt(0));
+}
+
+function base64UrlToText(value) {
+  const bytes = base64UrlToBytes(value);
+  return new TextDecoder().decode(bytes);
+}
+
+function timingSafeEqualBytes(a, b) {
+  if (!(a instanceof Uint8Array) || !(b instanceof Uint8Array) || a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i += 1) diff |= a[i] ^ b[i];
+  return diff === 0;
+}
+
+async function verifyMetaSignedRequest(env, signedRequest) {
+  const raw = String(signedRequest || "").trim();
+  const parts = raw.split(".");
+  if (parts.length !== 2) throw new Error("invalid_signed_request");
+
+  const [signaturePart, payloadPart] = parts;
+  const { appSecret } = await masterInstagramCredentials(env);
+  if (!appSecret) throw new Error("instagram_nexus_not_configured");
+
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(appSecret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const expectedBuffer = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    new TextEncoder().encode(payloadPart)
+  );
+  const expected = new Uint8Array(expectedBuffer);
+  const supplied = base64UrlToBytes(signaturePart);
+  if (!timingSafeEqualBytes(expected, supplied)) throw new Error("invalid_signed_request_signature");
+
+  const payload = JSON.parse(base64UrlToText(payloadPart));
+  if (!payload || typeof payload !== "object") throw new Error("invalid_signed_request_payload");
+  return payload;
+}
+
+async function disconnectInstagramUser(env, userId) {
+  const target = String(userId || "").trim();
+  if (!target) return [];
+
+  const rows = await env.DB.prepare(
+    `SELECT client_id, provider, payload_json
+     FROM connections
+     WHERE provider IN ('meta','instagram')`
+  ).all();
+
+  const disconnected = [];
+  for (const row of rows?.results || []) {
+    const payload = parseJson(row.payload_json, {});
+    if (String(payload?.igUserId || "") !== target) continue;
+
+    await env.DB.prepare(
+      "DELETE FROM connections WHERE client_id = ?1 AND provider = ?2"
+    ).bind(String(row.client_id), String(row.provider)).run();
+
+    const client = await getClient(env, row.client_id).catch(() => null);
+    if (client) {
+      const onboarding = {
+        ...(client.config?.onboarding && typeof client.config.onboarding === "object"
+          ? client.config.onboarding
+          : {}),
+        instagram: false
+      };
+      const integrationState = {
+        ...(client.config?.integrationState && typeof client.config.integrationState === "object"
+          ? client.config.integrationState
+          : {}),
+        meta: "disconnected"
+      };
+      await upsertClient(env, {
+        ...client,
+        config: { ...client.config, onboarding, integrationState }
+      }).catch(() => {});
+    }
+    disconnected.push(String(row.client_id));
+  }
+
+  await env.DB.prepare(
+    "DELETE FROM leads WHERE instagram_user_id = ?1"
+  ).bind(target).run().catch(() => {});
+
+  return disconnected;
+}
+
+async function requestBodyValue(request, key) {
+  const contentType = String(request.headers.get("content-type") || "").toLowerCase();
+  if (contentType.includes("application/json")) {
+    const body = await request.json().catch(() => ({}));
+    return String(body?.[key] || "");
+  }
+  const text = await request.text().catch(() => "");
+  return String(new URLSearchParams(text).get(key) || "");
+}
+
+export async function handleInstagramComplianceRequest(env, request, url) {
+  const path = url.pathname;
+  const deauthorizePath = "/api/meta/instagram/deauthorize";
+  const deletionPath = "/api/meta/instagram/data-deletion";
+  const statusPath = "/api/meta/instagram/data-deletion/status";
+
+  if (![deauthorizePath, deletionPath, statusPath].includes(path)) return null;
+
+  if (path === statusPath && request.method === "GET") {
+    const code = String(url.searchParams.get("code") || "").trim();
+    if (!code) {
+      return new Response("Código de confirmação ausente.", {
+        status: 400,
+        headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" }
+      });
+    }
+    const row = await env.DB.prepare(
+      `SELECT value_json, updated_at
+       FROM nexus_state
+       WHERE namespace='instagram-data-deletion' AND item_key=?1 AND client_id=''
+       LIMIT 1`
+    ).bind(code).first();
+    if (!row) {
+      return new Response("Solicitação não encontrada.", {
+        status: 404,
+        headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" }
+      });
+    }
+    const record = parseJson(row.value_json, {});
+    return new Response(
+      `<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>NEXUS AI · Exclusão de dados</title><body style="font-family:system-ui;background:#050807;color:#f4f8f5;display:grid;place-items:center;min-height:100vh"><main style="max-width:620px;padding:28px;border:1px solid #173549;border-radius:18px;background:#071018"><h1>Solicitação de exclusão</h1><p>Status: <strong>${String(record.status || "concluída")}</strong></p><p>Código: <code>${code.replace(/[<>&"]/g, "")}</code></p><p>Dados de autorização e registros vinculados ao identificador recebido da Meta foram removidos do NEXUS.</p></main></body></html>`,
+      { status: 200, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } }
+    );
+  }
+
+  if (request.method !== "POST") {
+    return new Response(JSON.stringify({ error: "method_not_allowed" }), {
+      status: 405,
+      headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }
+    });
+  }
+
+  try {
+    const signedRequest = await requestBodyValue(request, "signed_request");
+    const payload = await verifyMetaSignedRequest(env, signedRequest);
+    const userId = String(payload?.user_id || payload?.userId || "").trim();
+    if (!userId) throw new Error("user_id_missing");
+
+    const disconnectedClients = await disconnectInstagramUser(env, userId);
+
+    if (path === deauthorizePath) {
+      return new Response(JSON.stringify({
+        ok: true,
+        disconnected: disconnectedClients.length
+      }), {
+        status: 200,
+        headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }
+      });
+    }
+
+    const confirmationCode = "del_" + randomToken(18);
+    const statusUrl = new URL(statusPath, new URL(request.url).origin);
+    statusUrl.searchParams.set("code", confirmationCode);
+
+    await env.DB.prepare(
+      `INSERT INTO nexus_state(namespace, item_key, client_id, value_json, updated_at)
+       VALUES('instagram-data-deletion', ?1, '', ?2, CURRENT_TIMESTAMP)
+       ON CONFLICT(namespace, item_key, client_id) DO UPDATE SET
+         value_json=excluded.value_json,
+         updated_at=CURRENT_TIMESTAMP`
+    ).bind(
+      confirmationCode,
+      JSON.stringify({
+        status: "concluída",
+        requestedAt: new Date().toISOString(),
+        disconnectedClients
+      })
+    ).run();
+
+    return new Response(JSON.stringify({
+      url: statusUrl.toString(),
+      confirmation_code: confirmationCode
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }
+    });
+  } catch (error) {
+    return new Response(JSON.stringify({
+      error: error instanceof Error ? error.message : String(error)
+    }), {
+      status: 400,
+      headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }
+    });
+  }
+}
