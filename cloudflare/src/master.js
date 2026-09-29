@@ -13,7 +13,7 @@ import {
   clearLoginFailures
 } from "./auth.js";
 import { listClients, getClient, upsertClient } from "./clients.js";
-import { getMasterInstagramSummary, saveMasterInstagramConfig, connectInstagramWithToken } from "./instagram.js";
+import { getMasterInstagramSummary, saveMasterInstagramConfig, connectInstagramWithToken, startInstagramOAuth } from "./instagram.js";
 import { agentCoreDashboard, agentCoreClientView, saveAgentCoreConfig, queueManualAgentRun } from "./agent-core.js";
 import { masterLeadSummary } from "./leads.js";
 
@@ -664,6 +664,17 @@ export async function handleMaster(request, env, url) {
       return json(await saveMasterInstagramConfig(env, request, body));
     } catch (error) {
       return json({ error: error instanceof Error ? error.message : String(error) }, 400);
+    }
+  }
+
+  if (url.pathname === "/api/master/instagram/oauth-start" && request.method === "GET") {
+    const clientId = String(url.searchParams.get("clientId") || "").trim();
+    if (!clientId) return json({ error: "client_id_required" }, 400);
+    try {
+      return json({ ok: true, ...(await startInstagramOAuth(env, request, clientId)) });
+    } catch (error) {
+      const code = error instanceof Error ? error.message : String(error);
+      return json({ error: code || "instagram_oauth_start_failed" }, code === "client_not_found" ? 404 : 400);
     }
   }
 

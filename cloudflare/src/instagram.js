@@ -208,6 +208,11 @@ export async function handleInstagramOAuthCallback(env, request, url) {
     if (!client) throw new Error("client_not_found");
 
     const username = String(profile.username || "").replace(/^@/, "");
+    const expectedUsername = String(client.instagram || "").replace(/^@/, "").trim();
+    if (expectedUsername && username && expectedUsername.toLowerCase() !== username.toLowerCase()) {
+      throw new Error("oauth_account_mismatch");
+    }
+
     const connectionPayload = {
       accessToken: await encryptSecret(env, accessToken),
       expiresAt: new Date(Date.now() + Math.max(3600, expiresIn) * 1000).toISOString(),
@@ -253,7 +258,7 @@ export async function handleInstagramOAuthCallback(env, request, url) {
     );
   } catch (error) {
     await env.DB.prepare("DELETE FROM oauth_states WHERE state_hash = ?1").bind(stateHash).run().catch(() => {});
-    return oauthHtml(false, "Não foi possível concluir a autorização do Instagram.");
+    return oauthHtml(false, error?.message === "oauth_account_mismatch" ? "Você autorizou uma conta diferente da conta cadastrada neste cliente." : "Não foi possível concluir a autorização do Instagram.");
   }
 }
 
