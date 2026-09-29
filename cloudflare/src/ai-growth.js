@@ -1,7 +1,7 @@
 import { openAIResponses } from "./openai.js";
 
 const VERSION = "openai-growth-brain-v1";
-const CACHE_MS = 45 * 60 * 1000;
+const CACHE_MS = 90 * 60 * 1000;
 
 function extractText(response) {
   if (response?.output_text) return String(response.output_text);
@@ -65,7 +65,7 @@ export async function consultGrowthAI(env, client, signals = {}, previous = null
   try {
     const response = await openAIResponses(env, client.id, {
       model: env.NEXUS_GROWTH_MODEL || "gpt-5.6-luna",
-      max_output_tokens: 1600,
+      max_output_tokens: 1100,
       instructions: [
         "Você é o cérebro de crescimento do NEXUS para Instagram.",
         "Analise SOMENTE os sinais reais fornecidos. Não invente alcance, views, curtidas, tendências ou resultados.",
