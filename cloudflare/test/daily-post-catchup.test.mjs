@@ -11,11 +11,14 @@ test("autonomous accounts catch up toward three daily posts with spacing", () =>
   assert.match(scheduler, /Math\.min\(config\.cycleMinutes, 15\)/);
   assert.match(scheduler, /scheduledRecoveryReason = "daily_target_catch_up"/);
   assert.match(scheduler, /UPDATE post_ledger SET scheduled_for=\?2/);
+  assert.match(scheduler, /if \(!dueReady\)/);
+  assert.match(scheduler, /due\(state\.lastPublisherQueuedAt, 1, nowMs\)/);
+  assert.match(runtime, /publishedTodayCount\+=1/);
   assert.match(runtime, /publishedTodayCount<dailyPublishTarget/);
   assert.match(runtime, /scheduledRecoveryReason:"daily_target_catch_up"/);
 });
 
 test("catch-up keeps one-at-a-time publishing instead of dumping multiple posts", () => {
-  assert.match(runtime, /if\(published>0\)break/);
+  assert.match(runtime, /if\(published>0\|\|publishedTodayCount>=3\)break/);
   assert.match(runtime, /recoveryPulledForward=true/);
 });
