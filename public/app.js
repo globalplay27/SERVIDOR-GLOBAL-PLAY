@@ -15,7 +15,7 @@ function api(path, options = {}) {
   const headers = { "content-type": "application/json", ...(options.headers || {}) };
   return fetch(path, { ...options, headers, credentials: "same-origin" }).then(async response => {
     if (response.status === 401) {
-      location.href = "/master";
+      location.href = "/api/master/access";
       throw new Error("Sessão administrativa expirada");
     }
     if (!response.ok) throw new Error(`Erro ${response.status}`);
