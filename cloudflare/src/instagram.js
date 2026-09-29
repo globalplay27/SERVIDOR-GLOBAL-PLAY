@@ -92,7 +92,7 @@ async function masterInstagramCredentials(env) {
   return { appId, appSecret };
 }
 
-export async function startInstagramOAuth(env, request, clientId) {
+export async function startInstagramOAuth(env, request, clientId, returnTo = "") {
   const client = await getClient(env, clientId);
   if (!client) throw new Error("client_not_found");
 
@@ -110,7 +110,7 @@ export async function startInstagramOAuth(env, request, clientId) {
   ).bind(
     stateHash,
     client.id,
-    JSON.stringify({ redirectUri: instagramRedirectUri(request) }),
+    JSON.stringify({ redirectUri: instagramRedirectUri(request), returnTo: String(returnTo || "") }),
     expiresAt
   ).run();
 
@@ -157,12 +157,15 @@ export async function handleInstagramOAuthCallback(env, request, url) {
     return oauthHtml(false, "Esta autorização expirou. Inicie novamente pelo painel.");
   }
 
+  let returnTo = "";
   try {
     const { appId, appSecret } = await masterInstagramCredentials(env);
     if (!appId || !appSecret) throw new Error("instagram_nexus_not_configured");
 
     const payload = parseJson(saved.payload_json, {});
     const redirectUri = String(payload.redirectUri || instagramRedirectUri(request));
+    returnTo = String(payload.returnTo || "");
+    if (returnTo && !returnTo.startsWith("/master")) returnTo = "";
     const tokenBody = new URLSearchParams({
       client_id: appId,
       client_secret: appSecret,
@@ -252,12 +255,33 @@ export async function handleInstagramOAuthCallback(env, request, url) {
     });
 
     await env.DB.prepare("DELETE FROM oauth_states WHERE state_hash = ?1").bind(stateHash).run();
+    if (returnTo) {
+      const separator = returnTo.includes("?") ? "&" : "?";
+      return new Response(null, {
+        status: 303,
+        headers: {
+          location: returnTo + separator + "oauth=success",
+          "cache-control": "no-store"
+        }
+      });
+    }
     return oauthHtml(
       true,
       username ? "Conta @" + username + " autorizada com sucesso." : "Conta autorizada com sucesso."
     );
   } catch (error) {
     await env.DB.prepare("DELETE FROM oauth_states WHERE state_hash = ?1").bind(stateHash).run().catch(() => {});
+    if (returnTo) {
+      const separator = returnTo.includes("?") ? "&" : "?";
+      const reason = error?.message === "oauth_account_mismatch" ? "account_mismatch" : "failed";
+      return new Response(null, {
+        status: 303,
+        headers: {
+          location: returnTo + separator + "oauth=" + encodeURIComponent(reason),
+          "cache-control": "no-store"
+        }
+      });
+    }
     return oauthHtml(false, error?.message === "oauth_account_mismatch" ? "Você autorizou uma conta diferente da conta cadastrada neste cliente." : "Não foi possível concluir a autorização do Instagram.");
   }
 }

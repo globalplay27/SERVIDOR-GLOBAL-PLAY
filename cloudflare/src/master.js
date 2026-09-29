@@ -667,6 +667,17 @@ export async function handleMaster(request, env, url) {
     }
   }
 
+  if (url.pathname === "/api/master/instagram/authorize" && request.method === "GET") {
+    const clientId = String(url.searchParams.get("clientId") || "").trim();
+    if (!clientId) return redirect("/master?view=settings&oauth=missing_client");
+    try {
+      const result = await startInstagramOAuth(env, request, clientId, "/master?view=settings&instagram=" + encodeURIComponent(clientId));
+      return redirect(result.url);
+    } catch (error) {
+      return redirect("/master?view=settings&oauth=start_failed");
+    }
+  }
+
   if (url.pathname === "/api/master/instagram/oauth-start" && request.method === "GET") {
     const clientId = String(url.searchParams.get("clientId") || "").trim();
     if (!clientId) return json({ error: "client_id_required" }, 400);

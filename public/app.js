@@ -30,7 +30,7 @@ function aiModeLabel(mode) {
 }
 
 function render() {
-  const clients = state.clients;
+  const clients = state.clients.filter(client => !client.ownerAccount);
   const online = clients.filter(client => client.status === "online").length;
   const totals = state.leadData?.summary || { total:0, hot:0, warm:0, cold:0, needsHuman:0 };
   const alerts = clients.filter(client => Number(client.usage?.openaiPercent || 0) >= 80).length;
@@ -72,7 +72,7 @@ function render() {
 function renderAgentProfiles() {
   const root = $("#master-agent-profiles");
   if (!root) return;
-  const clients = state.clients.filter(client => client.id !== "ragnar-one");
+  const clients = state.clients.filter(client => client.id !== "ragnar-one" && !client.ownerAccount);
   if (!clients.length) {
     root.innerHTML = '<div class="master-profile-empty">Os perfis enviados pelos clientes aparecerão aqui.</div>';
     return;
@@ -127,15 +127,16 @@ function renderAgentProfiles() {
 
 function renderPortalSelector() {
   const select = $("#portal-client");
-  if (!state.clients.length) {
+  const clients = state.clients.filter(client => !client.ownerAccount);
+  if (!clients.length) {
     select.innerHTML = "<option>Nenhum cliente</option>";
     $("#portal-empty").hidden = false;
     $("#client-portal").hidden = true;
     return;
   }
-  if (!state.portalClientId || !state.clients.some(client => client.id === state.portalClientId)) state.portalClientId = state.clients[0].id;
-  select.innerHTML = state.clients.map(client => `<option value="${escapeHtml(client.id)}" ${client.id === state.portalClientId ? "selected" : ""}>${escapeHtml(client.name)}</option>`).join("");
-  renderClientPortal(state.clients.find(client => client.id === state.portalClientId));
+  if (!state.portalClientId || !clients.some(client => client.id === state.portalClientId)) state.portalClientId = clients[0].id;
+  select.innerHTML = clients.map(client => `<option value="${escapeHtml(client.id)}" ${client.id === state.portalClientId ? "selected" : ""}>${escapeHtml(client.name)}</option>`).join("");
+  renderClientPortal(clients.find(client => client.id === state.portalClientId));
 }
 
 function renderClientPortal(client) {
@@ -438,6 +439,21 @@ async function load() {
     renderPostLedger();
     renderMasterLeads();
     renderAgentCore();
+    const params = new URLSearchParams(location.search);
+    const requestedView = params.get("view");
+    if (requestedView && document.getElementById(requestedView)) {
+      showView(requestedView);
+      if (requestedView === "settings") await loadIntegrations();
+    }
+    const oauthResult = params.get("oauth");
+    const oauthMessage = $("#instagram-oauth-message");
+    if (oauthMessage && oauthResult) {
+      oauthMessage.textContent = oauthResult === "success"
+        ? "Instagram conectado com sucesso."
+        : oauthResult === "account_mismatch"
+          ? "Você autorizou uma conta diferente da esperada."
+          : "A autorização não foi concluída.";
+    }
   } catch (error) { console.error(error); }
 }
 
@@ -547,7 +563,6 @@ async function loadIntegrations() {
       igState.textContent=instagram.configured?"CONFIGURADO":"NÃO CONFIGURADO";
       igState.classList.toggle("off",!instagram.configured);
     }
-    if($("#instagram-app-id"))$("#instagram-app-id").value=instagram.appId||"";
     if($("#instagram-callback-url"))$("#instagram-callback-url").value=instagram.callbackUrl||"";
   } catch (error) {
     console.error(error);
@@ -709,91 +724,6 @@ document.addEventListener("click", async event => {
     state.supportFilter = filterButton.dataset.supportFilter || "all";
     $("[data-support-filter]").forEach(btn => btn.classList.toggle("active", btn === filterButton));
     renderSupportNotifications();
-  }
-});
-
-const instagramMasterForm=$("#instagram-master-form");
-if(instagramMasterForm)instagramMasterForm.addEventListener("submit",async event=>{
-  event.preventDefault();
-  const form=event.currentTarget;
-  const message=$("#instagram-master-message");
-  if(message)message.textContent="Salvando…";
-  const data=Object.fromEntries(new FormData(form));
-  try{
-    const result=await api("/api/master/instagram",{method:"POST",body:JSON.stringify(data)});
-    form.querySelector('input[name="appSecret"]').value="";
-    if(message)message.textContent="Instagram NEXUS configurado.";
-    if($("#instagram-master-state")){$("#instagram-master-state").textContent="CONFIGURADO";$("#instagram-master-state").classList.remove("off");}
-    if($("#instagram-callback-url"))$("#instagram-callback-url").value=result.callbackUrl||"";
-    await loadIntegrations();
-  }catch(error){
-    if(message)message.textContent="Não foi possível salvar a integração.";
-  }
-});
-
-$("[data-instagram-token-form]").forEach(form=>form.addEventListener("submit",async event=>{
-  event.preventDefault();
-  const current=event.currentTarget;
-  const clientId=current.dataset.clientId||"";
-  const input=current.querySelector('input[name="accessToken"]');
-  const status=current.querySelector("[data-instagram-token-status]");
-  const button=current.querySelector('button[type="submit"]');
-  const accessToken=String(input?.value||"").trim();
-  if(!accessToken){if(status)status.textContent="Cole o token antes de conectar.";return;}
-  if(status)status.textContent="Validando na Meta…";
-  if(button)button.disabled=true;
-  try{
-    const result=await api("/api/master/instagram/connect-token",{
-      method:"POST",
-      body:JSON.stringify({clientId,accessToken})
-    });
-    if(input)input.value="";
-    if(status)status.textContent=(result.instagram||"Instagram")+" conectado com sucesso.";
-    state.clients=await api("/api/clients");
-    render();
-  }catch(error){
-    if(status)status.textContent="Token recusado ou não corresponde a esta conta.";
-  }finally{
-    if(button)button.disabled=false;
-  }
-}));
-
-$("[data-instagram-oauth]").forEach(button=>button.addEventListener("click",async()=>{
-  const clientId=button.dataset.clientId||"";
-  const status=$('[data-instagram-oauth-status="'+clientId+'"]');
-  const original=button.textContent;
-  button.disabled=true;
-  if(status)status.textContent="Abrindo autorização do Instagram…";
-  try{
-    const result=await api("/api/master/instagram/oauth-start?clientId="+encodeURIComponent(clientId));
-    const popup=window.open(result.url,"nexus-instagram-oauth","width=560,height=760");
-    if(!popup){
-      if(status)status.textContent="O navegador bloqueou a janela. Libere pop-ups e tente novamente.";
-      button.disabled=false;
-      return;
-    }
-    if(status)status.textContent="Autorize a conta correta na janela do Instagram.";
-  }catch(error){
-    if(status)status.textContent="Não foi possível iniciar a autorização.";
-    button.disabled=false;
-    button.textContent=original;
-  }
-}));
-
-window.addEventListener("message",async event=>{
-  if(event.origin!==location.origin)return;
-  if(event.data?.type!=="nexus-instagram-oauth")return;
-  const ok=event.data?.ok===true;
-  $("[data-instagram-oauth]").forEach(button=>{button.disabled=false;});
-  if(ok){
-    $("[data-instagram-oauth-status]").forEach(status=>status.textContent="Instagram conectado com sucesso.");
-    try{
-      state.clients=await api("/api/clients");
-      render();
-      await loadIntegrations();
-    }catch{}
-  }else{
-    $("[data-instagram-oauth-status]").forEach(status=>status.textContent="A autorização não foi concluída.");
   }
 });
 

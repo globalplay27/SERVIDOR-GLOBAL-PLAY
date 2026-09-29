@@ -16,9 +16,8 @@ test("OAuth callback rejects authorization for the wrong Instagram username", ()
   assert.match(instagram, /expectedUsername/);
 });
 
-test("Master OAuth uses popup callback instead of manual token copy", () => {
-  assert.match(app, /data-instagram-oauth/);
-  assert.match(app, /window\.open\(result\.url/);
-  assert.match(app, /nexus-instagram-oauth/);
-  assert.match(app, /event\.data\?\.type/);
+test("Master OAuth uses direct redirect instead of popup or manual token copy", () => {
+  assert.doesNotMatch(app, /window\.open\(result\.url/);
+  assert.doesNotMatch(app, /data-instagram-token-form/);
+  assert.match(master, /\/api\/master\/instagram\/authorize/);
 });
