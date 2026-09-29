@@ -12,6 +12,7 @@ import {
 } from "./agent-core.js";
 import { leadsForClient, leadHunterSummary } from "./leads.js";
 import { runExtendedAgents } from "./extended-agents.js";
+import { consultGrowthAI } from "./ai-growth.js";
 
 function parseJson(raw, fallback = {}) {
   try {
@@ -100,27 +101,37 @@ function postingProfile(client) {
         && !/\/assets\/ragnar\/nordic-cinema-0[123]\.png(?:[?#]|$)/i.test(v))
       .slice(0, 30)
     : [];
+  const isGlobal = String(client?.id || "") === "globalplay-streaming";
+  const isRagnar = String(client?.id || "") === "ragnar-one";
   return {
-    contentStrategy: current.contentStrategy || "Crescimento acelerado de seguidores + engajamento qualificado",
-    targetAudience: current.targetAudience || "Misto",
-    contentFocus: current.contentFocus || "Descoberta, entretenimento, utilidade e motivo claro para seguir o perfil",
-    morningTheme: current.morningTheme || "Descoberta, curiosidade e gancho compartilhável",
-    afternoonTheme: current.afternoonTheme || "Conteúdo útil, entretenimento e valor para salvar",
-    eveningTheme: current.eveningTheme || "Comunidade, opinião e motivo para acompanhar o perfil",
-    tone: current.tone || "Firme, direto e profissional",
-    cta: current.cta || 'Comente "QUERO" para saber mais',
-    followerCta: current.followerCta || "Siga o perfil para não perder as próximas indicações.",
-    shareCta: current.shareCta || "Envie para alguém que também curte esse tipo de conteúdo.",
-    hashtags: current.hashtags || "#Entretenimento #Streaming #FilmesESeries #Dicas",
-    avoidTopics: current.avoidTopics || "Venda agressiva, promessas irreais, poluição visual e repetição de criativos",
+    contentStrategy: isGlobal
+      ? "Crescimento orgânico com entretenimento familiar e campanha visual de desenhos 3D até 12/10/2026"
+      : isRagnar
+        ? "Crescimento orgânico com entretenimento premium e identidade nórdica original"
+        : (current.contentStrategy || "Crescimento acelerado de seguidores + engajamento qualificado"),
+    targetAudience: isGlobal ? "Famílias e fãs de entretenimento" : isRagnar ? "Adultos fãs de entretenimento e estética nórdica" : (current.targetAudience || "Misto"),
+    contentFocus: isGlobal
+      ? "Desenhos, filmes, séries e momentos de diversão em família com mensagem simples e visual alegre"
+      : isRagnar
+        ? "Entretenimento premium em casa, aventura e atmosfera nórdica original com variedade visual"
+        : (current.contentFocus || "Conteúdo útil e específico para o público"),
+    morningTheme: isGlobal ? "Diversão em família e desenhos" : isRagnar ? "Aventura nórdica original" : (current.morningTheme || "Descoberta e curiosidade"),
+    afternoonTheme: isGlobal ? "Escolhas para assistir com a família" : isRagnar ? "Entretenimento premium no sofá" : (current.afternoonTheme || "Conteúdo útil para salvar"),
+    eveningTheme: isGlobal ? "Sessão em família, pipoca e entretenimento" : isRagnar ? "Noite de cinema com atmosfera nórdica" : (current.eveningTheme || "Comunidade e opinião"),
+    tone: isGlobal ? "Alegre, familiar, simples e direto" : isRagnar ? "Premium, convidativo e direto" : (current.tone || "Firme, direto e profissional"),
+    cta: 'Comente "QUERO" para saber mais.',
+    followerCta: isGlobal ? "Siga a Global Play para ver as próximas sugestões." : isRagnar ? "Siga a Ragnar One para acompanhar as próximas sagas." : (current.followerCta || "Siga o perfil para não perder as próximas indicações."),
+    shareCta: isGlobal ? "Envie para alguém que vai curtir essa sessão em família." : isRagnar ? "Envie para quem também curte esse clima de aventura." : (current.shareCta || "Envie para alguém que também curte esse tipo de conteúdo."),
+    hashtags: isGlobal ? "#GlobalPlay #Streaming #Entretenimento #Familia #Desenhos" : isRagnar ? "#RagnarOne #Streaming #Entretenimento #CinemaEmCasa #Nordico" : (current.hashtags || "#Entretenimento #Streaming #Dicas"),
+    avoidTopics: "Texto genérico, repetição de criativos, poluição visual, tela vazia, collage/split-screen, promessas irreais e referências protegidas",
     creativeRotation: String(client?.id || "") === "globalplay-streaming"
       ? {
           enabled:true,
-          mode:"seasonal-until-2026-10-13",
-          seasonalCampaign:{name:"Dia das Crianças",start:"2026-09-27",endInclusive:"2026-10-13",scope:"globalplay-streaming-only",theme:"3d-cartoon-entertainment",after:"performance-adaptive"},
+          mode:"seasonal-until-2026-10-12",
+          seasonalCampaign:{name:"Dia das Crianças",start:"2026-09-27",endInclusive:"2026-10-12",scope:"globalplay-streaming-only",theme:"3d-cartoon-entertainment",after:"performance-adaptive"},
           illustratedTheme:{
             name:"3D cartoon entertainment",
-            frequency:"Use as the primary visual theme on every Global Play creative through 2026-10-13 inclusive. From 2026-10-14 return automatically to performance-adaptive rotation.",
+            frequency:"Use as the primary visual theme on every Global Play creative through 2026-10-12 inclusive. From 2026-10-13 return automatically to performance-adaptive rotation.",
             direction:"Original premium 3D cartoon/animated illustration, warm home entertainment environment, one coherent scene, expressive generic characters, filled TV screen with generic entertainment categories, strong Global Play branding and highly legible offer/CTA.",
             avoid:"Do not copy Disney, Pixar or any named studio style; no recognizable copyrighted characters, movie/series frames, team logos, split screens, collages or excessive visual clutter."
           },
@@ -295,6 +306,8 @@ async function runRadar(env, client, options) {
   const followersCount=Math.max(0,Number(snapshot.followersCount||previousFollowers||0));
   const followerDelta=followersCount&&previousFollowers?followersCount-previousFollowers:0;
 
+  const leadSummary=await leadHunterSummary(env,client.id).catch(()=>({total:0,hot:0,warm:0,cold:0}));
+
   const campaignStartedAt=String(state?.radar?.growthCampaign?.startedAt||startedAt);
   const campaignStartMs=new Date(campaignStartedAt).getTime();
   const elapsedDays=Number.isFinite(campaignStartMs)?Math.max(0,Math.floor((Date.now()-campaignStartMs)/86400000)):0;
@@ -313,6 +326,37 @@ async function runRadar(env, client, options) {
   const winningFormats=[...formatTotals.values()]
     .map(row=>({...row,averageEngagement:row.count?row.engagement/row.count:0}))
     .sort((a,b)=>b.averageEngagement-a.averageEngagement);
+
+  const aiGrowth=await consultGrowthAI(env,client,{
+    metrics:{
+      medianEngagement:median(engagement),
+      topEngagement:scored[0]?.engagement||0,
+      reach:scored.reduce((sum,item)=>sum+Number(item.insights?.reach||0),0),
+      views:scored.reduce((sum,item)=>sum+Number(item.insights?.views||0),0),
+      saves:scored.reduce((sum,item)=>sum+Number(item.insights?.saved||0),0),
+      shares:scored.reduce((sum,item)=>sum+Number(item.insights?.shares||0),0),
+      totalInteractions:scored.reduce((sum,item)=>sum+Number(item.insights?.total_interactions||0),0)
+    },
+    followersCount,
+    followersDelta,
+    recommendedPostTimes:postTimes,
+    topMedia:scored.slice(0,5).map(item=>({
+      mediaType:item.mediaType,engagement:item.engagement,
+      caption:String(item.caption||"").slice(0,260),
+      insights:item.insights||{}
+    })),
+    recentCaptions:captions.slice(0,10),
+    leadSummary,
+    profile:{
+      contentStrategy:profile.contentStrategy,
+      contentFocus:profile.contentFocus,
+      tone:profile.tone,
+      hashtags:profile.hashtags,
+      avoidTopics:profile.avoidTopics,
+      creativeRotation:profile.creativeRotation,
+      brandSafety:profile.brandSafety
+    }
+  },state?.aiGrowth||null);
 
   const output={
     source:snapshot.source,
@@ -362,12 +406,13 @@ async function runRadar(env, client, options) {
           "Repetição de mídia e legenda recente deve ser bloqueada.",
           "Reaproveitar o mecanismo dos conteúdos vencedores sem reutilizar o mesmo criativo."
         ],
-    skills:["ig-viral","ig-audit","ig-profile","lead-hunter"]
+    aiGrowth,
+    skills:["ig-viral","ig-audit","ig-profile","lead-hunter","openai-growth-intelligence"]
   };
   await recordAgentExecution(env,client,"RADAR",{
     function:"growth-30d-scan",trigger:options.trigger,startedAt,
     status:snapshot.error&&!(snapshot.items||[]).length?"warning":"success",
-    model:"instagram-api+growth-rules",quantity:(snapshot.items||[]).length+ledger.length,
+    model:"instagram-api+openai-growth-brain",quantity:(snapshot.items||[]).length+ledger.length,
     message:(snapshot.items||[]).length
       ?"RADAR recalculou ritmo de crescimento, formatos vencedores e horários."
       :"RADAR analisou o histórico local; aguardando mais dados do Instagram.",
@@ -376,10 +421,13 @@ async function runRadar(env, client, options) {
       apiError:snapshot.error||"",
       recommendedPostTimes:postTimes,
       topTerms:terms,
-      growthCampaign:output.growthCampaign
+      growthCampaign:output.growthCampaign,
+      aiModel:aiGrowth?.model||"",
+      aiCached:Boolean(aiGrowth?.cached),
+      aiError:aiGrowth?.error||""
     }
   });
-  await patchAgentCoreState(env,client.id,{radar:output});
+  await patchAgentCoreState(env,client.id,{radar:output,aiGrowth});
   return output;
 }
 
@@ -757,7 +805,7 @@ async function runCreator(env,client,strategy,options) {
           brandSafety:strategy?.brandSafety||null,
           creativeRotation:strategy?.creativeRotation||null,
           creativeTheme:String(client.id)==="globalplay-streaming"
-            ?((localDay()>="2026-09-27"&&localDay()<="2026-10-13")?"3d-cartoon-entertainment":(index%2===0?"3d-cartoon-entertainment":"standard"))
+            ?((localDay()>="2026-09-27"&&localDay()<="2026-10-12")?"3d-cartoon-entertainment":(index%2===0?"3d-cartoon-entertainment":"standard"))
             :"standard"
         }
       },
