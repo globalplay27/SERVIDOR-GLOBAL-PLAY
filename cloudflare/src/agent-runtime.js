@@ -517,8 +517,12 @@ async function runCreator(env,client,strategy,options) {
   const state=await agentCoreState(env,client.id);
   const recent=await ledgerRows(env,client.id,Math.max(60,Number(strategy?.antiRepeat?.recentWindow||120)));
   const recentCaptions=recent.map(row=>String(row.caption||"")).filter(Boolean);
+  // Anti-repeat is a recent-window guard, not a permanent blacklist.
+  // With a finite approved media pool, blacklisting every historical image
+  // eventually starves Creator and stops autonomous publishing entirely.
+  const recentlyPublished=recent.filter(row=>row.status==="published");
   const usedPublishedMedia=new Set(
-    recent.filter(row=>row.status==="published")
+    recentlyPublished.slice(0,2)
       .map(row=>mediaKey(row.payload?.imageUrl||row.payload?.publicImageUrl||""))
       .filter(Boolean)
   );
@@ -531,7 +535,7 @@ async function runCreator(env,client,strategy,options) {
       &&!/\/assets\/ragnar\/nordic-cinema-0[123]\.png(?:[?#]|$)/i.test(url));
   const configuredMedia=Array.isArray(strategy?.standardMediaUrls)?strategy.standardMediaUrls:[];
   const recentSourceIds=new Set(
-    recent.filter(row=>row.status==="published")
+    recentlyPublished.slice(0,12)
       .map(row=>String(row.payload?.sourceInstagramMediaId||""))
       .filter(Boolean)
   );
@@ -876,7 +880,7 @@ async function runPublisher(env,client,options) {
         continue;
       }
       let repeated=false;
-      for(const prior of recentPublished.filter(item=>item.status==="published").slice(0,6)){
+      for(const prior of recentPublished.filter(item=>item.status==="published").slice(0,2)){
         const priorUrl=prior.payload?.imageUrl||prior.payload?.publicImageUrl||"";
         const priorHash=prior.payload?.mediaFingerprint||await mediaFingerprint(env,priorUrl);
         if(priorHash===fingerprint){repeated=true;break;}
