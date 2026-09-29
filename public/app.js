@@ -587,6 +587,7 @@ async function loadIntegrations() {
       }
       if(linkEl){
         linkEl.hidden=valid;
+        linkEl.style.display=valid?"none":"inline-flex";
         linkEl.setAttribute("aria-hidden",valid?"true":"false");
       }
     });
