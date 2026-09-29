@@ -444,12 +444,18 @@ async function runStrategist(env,client,context,options) {
   const researcher=state.pesquisador||{};
   const analyst=state.analista||{};
   const growth=state.growth||{};
-  const researchTerms=Array.isArray(researcher.opportunities)
-    ? researcher.opportunities.map(item=>String(item?.term||"")).filter(Boolean).slice(0,8)
-    : [];
-  const themes=researchTerms.length
-    ? researchTerms.slice(0,3)
-    : [profile.morningTheme,profile.afternoonTheme,profile.eveningTheme];
+  const aiGrowth=state.aiGrowth||radar.aiGrowth||{};
+  const aiBatch=Array.isArray(aiGrowth.creativeBatch)?aiGrowth.creativeBatch.slice(0,3):[];
+  const researchTerms=Array.isArray(aiGrowth.researchOpportunities)&&aiGrowth.researchOpportunities.length
+    ? aiGrowth.researchOpportunities.slice(0,8)
+    : Array.isArray(researcher.opportunities)
+      ? researcher.opportunities.map(item=>String(item?.term||"")).filter(Boolean).slice(0,8)
+      : [];
+  const themes=aiBatch.length===3
+    ? aiBatch.map(item=>String(item?.theme||"")).filter(Boolean).slice(0,3)
+    : researchTerms.length
+      ? researchTerms.slice(0,3)
+      : [profile.morningTheme,profile.afternoonTheme,profile.eveningTheme];
   const plan={
     primaryKpi:"followers",
     secondaryKpis:["shares","saves","profile_visits","reach","comments"],
@@ -483,8 +489,12 @@ async function runStrategist(env,client,context,options) {
     brandSafety:profile.brandSafety,
     creativeRotation:profile.creativeRotation,
     radarTerms:Array.isArray(radar.topTerms)?radar.topTerms.slice(0,8):[],
-    radarDiagnosis:Array.isArray(radar.diagnosis)?radar.diagnosis.slice(0,6):[],
-    researchOpportunities:Array.isArray(researcher.opportunities)?researcher.opportunities.slice(0,12):[],
+    radarDiagnosis:Array.isArray(aiGrowth.diagnosis)&&aiGrowth.diagnosis.length
+      ? aiGrowth.diagnosis.slice(0,6)
+      : Array.isArray(radar.diagnosis)?radar.diagnosis.slice(0,6):[],
+    researchOpportunities:researchTerms,
+    strategyChanges:Array.isArray(aiGrowth.strategyChanges)?aiGrowth.strategyChanges.slice(0,6):[],
+    aiCreativeBatch:aiBatch,
     analyst:{
       viralScore:Number(analyst.viralScore||0),
       potential:String(analyst.potential||""),
@@ -500,7 +510,9 @@ async function runStrategist(env,client,context,options) {
       scaleMode:String(growth.scaleMode||""),
       experiment:String(growth.experiment||"")
     },
-    decisionMode:Number(analyst.viralScore||0)>=70?"scale-winner":Number(analyst.viralScore||0)>=40?"test-and-learn":"explore",
+    decisionMode:["explore","test-and-learn","scale-winner"].includes(String(aiGrowth.decisionMode||""))
+      ? String(aiGrowth.decisionMode)
+      : Number(analyst.viralScore||0)>=70?"scale-winner":Number(analyst.viralScore||0)>=40?"test-and-learn":"explore",
     standardMediaUrls:profile.standardMediaUrls,
     antiRepeat:{
       media:true,
@@ -522,11 +534,11 @@ async function runStrategist(env,client,context,options) {
   };
   await recordAgentExecution(env,client,"ESTRATEGISTA",{
     function:options.feedback?"growth-feedback-loop":"growth-30d-plan",trigger:options.trigger,startedAt,status:"success",
-    model:"instagram-growth-skills",quantity:1,
+    model:aiGrowth?.model?"openai-growth-brain+instagram-signals":"instagram-growth-skills",quantity:1,
     message:options.feedback
       ?"Estratégia ajustada com o desempenho mais recente."
       :"Plano de crescimento de 30 dias atualizado com 3 slots, CTA rotativo e anti-repetição.",
-    metadata:{recommendedPostTimes:plan.recommendedPostTimes,leads,growthCampaign:plan.growthCampaign}
+    metadata:{recommendedPostTimes:plan.recommendedPostTimes,leads,growthCampaign:plan.growthCampaign,aiModel:aiGrowth?.model||"",aiCached:Boolean(aiGrowth?.cached),aiDecisionMode:plan.decisionMode}
   });
   await patchAgentCoreState(env,client.id,{strategy:plan});
   return plan;
@@ -604,6 +616,7 @@ async function runCreator(env,client,strategy,options) {
   const ctas=Array.isArray(strategy?.ctaRotation)&&strategy.ctaRotation.length
     ?strategy.ctaRotation
     :[strategy?.cta||'Comente "QUERO" para saber mais'];
+  const aiBatch=Array.isArray(strategy?.aiCreativeBatch)?strategy.aiCreativeBatch.slice(0,3):[];
   const created=[];
   const repaired=[];
   const approval=config.autoPublish&&!config.approvalRequired?"approved":"pending";
@@ -706,10 +719,29 @@ async function runCreator(env,client,strategy,options) {
     const day=localDay(scheduledFor);
     const id="agentcore:"+client.id+":"+day+":"+String(time).replace(":","");
     const exists=await env.DB.prepare(
-      "SELECT id,status,approval_status,payload_json FROM post_ledger WHERE id=?1 LIMIT 1"
+      "SELECT id,status,approval_status,caption,payload_json FROM post_ledger WHERE id=?1 LIMIT 1"
     ).bind(id).first();
     if(exists){
       const existingPayload=parseJson(exists.payload_json,{});
+      const aiCreative=aiBatch[index]||null;
+      const aiCaption=String(aiCreative?.caption||"").trim();
+      const shouldRefreshCopy=Boolean(aiCreative&&aiCaption&&exists.status!=="published"
+        &&existingPayload.aiCreativeVersion!==String(state?.aiGrowth?.generatedAt||""));
+      if(shouldRefreshCopy){
+        existingPayload.title=String(aiCreative.theme||existingPayload.title||"Conteúdo").slice(0,160);
+        existingPayload.visualBrief=String(aiCreative.visualBrief||"").slice(0,1200);
+        existingPayload.aiCreativeVersion=String(state?.aiGrowth?.generatedAt||new Date().toISOString());
+        existingPayload.intelligence={
+          ...(existingPayload.intelligence||{}),
+          source:"openai-growth-brain",
+          adaptive:true
+        };
+        existingPayload.qualityGates={copyChief:"pending",designer:"pending"};
+        existingPayload.visualReview=null;
+        await env.DB.prepare(
+          "UPDATE post_ledger SET caption=?2,status='ready',error='',payload_json=?3,updated_at=CURRENT_TIMESTAMP WHERE id=?1"
+        ).bind(id,aiCaption.slice(0,2200),JSON.stringify(existingPayload)).run();
+      }
       const existingMedia=String(existingPayload.imageUrl||existingPayload.publicImageUrl||"").trim();
       const blockedMedia=String(existingPayload.blockedDesignerMedia||"");
       const canRecheckBlocked=!existingMedia
@@ -747,25 +779,31 @@ async function runCreator(env,client,strategy,options) {
       continue;
     }
 
-    const theme=String(themes[index%themes.length]||"Conteúdo");
-    const hook=pickUniqueHook(index,day,strategy?.radarTerms||[],recentCaptions);
-    const cta=String(ctas[index%ctas.length]||strategy?.cta||'Comente "QUERO" para saber mais');
-    const tags=String(strategy?.hashtags||"").trim().split(/\s+/).filter(Boolean).slice(0,5).join(" ");
-    let caption=[
-      hook,
-      "",
-      theme+". "+String(strategy?.contentFocus||"Conteúdo relevante para o público.")+".",
-      "",
-      cta,
-      tags?"":null,
-      tags||null
-    ].filter(x=>x!==null).join("\n").slice(0,2200);
+    const aiCreative=aiBatch[index]||null;
+    const theme=String(aiCreative?.theme||themes[index%themes.length]||"Conteúdo");
+    const hook=String(aiCreative?.hook||pickUniqueHook(index,day,strategy?.radarTerms||[],recentCaptions)).trim();
+    const cta=String(aiCreative?.cta||ctas[index%ctas.length]||strategy?.cta||'Comente "QUERO" para saber mais').trim();
+    const tags=String(aiCreative?.hashtags||strategy?.hashtags||"").trim().split(/\s+/).filter(Boolean).slice(0,6).join(" ");
+    let caption=String(aiCreative?.caption||"").trim();
+    if(!caption){
+      caption=[
+        hook,
+        "",
+        theme+". "+String(strategy?.contentFocus||"Conteúdo relevante para o público.")+".",
+        "",
+        cta,
+        tags?"":null,
+        tags||null
+      ].filter(x=>x!==null).join("\n");
+    }
+    if(tags&&!caption.includes(tags))caption=(caption+"\n\n"+tags).trim();
+    caption=caption.slice(0,2200);
 
     if(recentCaptions.some(previous=>textSimilarity(caption,previous)>=Number(strategy?.antiRepeat?.captionSimilarityThreshold||0.72))){
       caption=[
         hook,
         "",
-        "Ângulo "+(index+1)+": "+theme+". "+String(strategy?.contentFocus||"Conteúdo relevante para o público.")+".",
+        String(aiCreative?.visualBrief||theme),
         "",
         cta,
         tags?"":null,
@@ -781,6 +819,8 @@ async function runCreator(env,client,strategy,options) {
       imageUrl,
       sourceInstagramMediaId:String(mediaInfo.sourceInstagramMediaId||""),
       title:theme.slice(0,160),
+      visualBrief:String(aiCreative?.visualBrief||"").slice(0,1200),
+      aiCreativeVersion:String(state?.aiGrowth?.generatedAt||""),
       source:"agent-core:creator-growth-30d",
       model:"instagram-growth-skill-layer",
       retryCount:0,
@@ -790,6 +830,7 @@ async function runCreator(env,client,strategy,options) {
         format:"image",
         skill:"ig-image",
         mediaSource:mediaInfo.source||"awaiting-unique-media",
+        strategySource:aiCreative?"openai-growth-brain":"fallback-rules",
         antiRepeat:true,
         visualPolicy:{
           singleScene:true,
