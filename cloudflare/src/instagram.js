@@ -256,3 +256,21 @@ export async function handleInstagramOAuthCallback(env, request, url) {
     return oauthHtml(false, "Não foi possível concluir a autorização do Instagram.");
   }
 }
+
+
+export async function instagramMasterConfigStatus(env) {
+  const record = await masterInstagramRecord(env);
+  const envAppId = String(env.INSTAGRAM_APP_ID || "").trim();
+  const envAppSecret = String(env.INSTAGRAM_APP_SECRET || "").trim();
+  const storedAppId = String(record.appId || "").trim();
+  const storedSecret = String(record.appSecret || "").trim();
+
+  return {
+    configured: Boolean((envAppId || storedAppId) && (envAppSecret || storedSecret)),
+    appIdConfigured: Boolean(envAppId || storedAppId),
+    appSecretConfigured: Boolean(envAppSecret || storedSecret),
+    appIdSource: envAppId ? "cloudflare-env" : storedAppId ? "nexus-d1" : "none",
+    appSecretSource: envAppSecret ? "cloudflare-secret" : storedSecret ? "nexus-d1" : "none",
+    updatedAt: record.updatedAt || null
+  };
+}
