@@ -274,6 +274,28 @@
             <span id="instagram-master-message" class="form-status"></span>
           </form>
           <p class="disclaimer">Cadastre exatamente a URL acima em “Valid OAuth Redirect URIs” no aplicativo Meta/Instagram do NEXUS. Esta configuração é única; os clientes não criam aplicativo.</p>
+
+          <div class="panel-head" style="margin-top:24px">
+            <div><p class="eyebrow">RECONECTAR CONTAS</p><h3>Tokens do NEXUS IA CENTRAL</h3><p class="muted">Cole aqui os tokens gerados no app NEXUS. Eles são validados na Meta e armazenados criptografados no D1.</p></div>
+          </div>
+
+          <form class="openai-master-form instagram-token-form" data-instagram-token-form data-client-id="globalplay-streaming">
+            <label>Global Play · @globalplay_streaming
+              <input id="instagram-token-globalplay" name="accessToken" type="password" autocomplete="off" placeholder="Cole o token gerado para @globalplay_streaming" required>
+            </label>
+            <button class="primary" type="submit">Conectar Global Play</button>
+            <span class="form-status" data-instagram-token-status></span>
+          </form>
+
+          <form class="openai-master-form instagram-token-form" data-instagram-token-form data-client-id="ragnar-one">
+            <label>Ragnar One · @ragnarplay1
+              <input id="instagram-token-ragnar" name="accessToken" type="password" autocomplete="off" placeholder="Cole o token gerado para @ragnarplay1" required>
+            </label>
+            <button class="primary" type="submit">Conectar Ragnar One</button>
+            <span class="form-status" data-instagram-token-status></span>
+          </form>
+
+          <p class="disclaimer">O NEXUS confere o usuário do Instagram antes de salvar. Se um token for colado no campo da conta errada, a conexão é recusada.</p>
         </div>
       </section>
     </main>
@@ -294,6 +316,6 @@
       <span id="portal-access-status" class="form-status"></span>
     </form>
   </dialog>
-  <script src="/app.js?v=18" defer></script>
+  <script src="/app.js?v=19" defer></script>
 </body>
 </html>
