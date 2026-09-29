@@ -73,6 +73,7 @@ jobs:
                 ok,
                 automationActive,
                 expectedAgents,
+                instagramCentral,
                 scheduler: {
                   healthy: .scheduler.healthy,
                   lastHeartbeatAt: .scheduler.lastHeartbeatAt,
