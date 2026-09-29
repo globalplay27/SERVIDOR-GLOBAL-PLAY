@@ -8,6 +8,7 @@ import { runSchedulerTick } from "./scheduler.js";
 import { processDueJobs } from "./executor.js";
 import { handleWhatsAppWebhook, handleWhatsAppProtected, whatsappConfigStatus } from "./whatsapp-agent.js";
 import { instagramCredentialStatus } from "./instagram-credentials.js";
+import { instagramMasterConfigStatus } from "./instagram.js";
 import { masterCredentialsValid, createMasterSession, authenticatePortalUser, createPortalSession, masterSessionCookie, portalSessionCookie, loginRateLimitStatus, recordLoginFailure, clearLoginFailures, resolvePortalSession, resolveMasterSession } from "./auth.js";
 
 // Keep the exact legacy export name until Cloudflare removes its existing Durable Objects.
@@ -333,11 +334,21 @@ async function autonomyHealth(env) {
     });
 
     const schedulerHealthy = heartbeatAgeSeconds !== null && heartbeatAgeSeconds <= 180;
+    const instagramCentral = await instagramMasterConfigStatus(env).catch(() => ({
+      configured: false,
+      appIdConfigured: false,
+      appSecretConfigured: false,
+      appIdSource: "unknown",
+      appSecretSource: "unknown",
+      updatedAt: null
+    }));
+
     return json({
       ok: schedulerHealthy && clients.every(client => client.allAgentsSeen),
       runtime: "cloudflare-workers",
       automationActive: String(env.CLOUDFLARE_AUTOMATION_ACTIVE || "").toLowerCase() === "true",
       expectedAgents: expectedAgents.length,
+      instagramCentral,
       scheduler: {
         healthy: schedulerHealthy,
         lastHeartbeatAt: heartbeatRow?.updated_at || heartbeat?.at || null,
