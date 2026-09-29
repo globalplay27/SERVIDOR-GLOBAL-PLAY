@@ -266,14 +266,12 @@
             <div><p class="eyebrow">AUTORIZAÇÃO CENTRAL</p><h2>Instagram NEXUS</h2><p class="muted">Configure uma única vez. Depois cada cliente apenas entra no Instagram e autoriza a própria conta.</p></div>
             <span id="instagram-master-state" class="badge off">NÃO CONFIGURADO</span>
           </div>
-          <form id="instagram-master-form" class="openai-master-form">
-            <label>Instagram App ID<input name="appId" id="instagram-app-id" autocomplete="off" placeholder="App ID do Instagram"></label>
-            <label>Instagram App Secret<input name="appSecret" type="password" autocomplete="off" placeholder="Deixe vazio para manter o atual"></label>
-            <label>OAuth Redirect URL<input id="instagram-callback-url" readonly value="Carregando..."></label>
-            <button class="primary" type="submit">Salvar Instagram NEXUS</button>
-            <span id="instagram-master-message" class="form-status"></span>
-          </form>
-          <p class="disclaimer">Cadastre exatamente a URL acima em “Valid OAuth Redirect URIs” no aplicativo Meta/Instagram do NEXUS. Esta configuração é única; os clientes não criam aplicativo.</p>
+          <div class="integration" style="margin:14px 0 18px">
+            <div><strong>NEXUS IA CENTRAL</strong><small>App ID e App Secret protegidos na Cloudflare. Não é necessário inserir token de conta aqui.</small></div>
+            <span id="instagram-master-state" class="badge">CONFIGURADO</span>
+          </div>
+          <label>OAuth Redirect URL<input id="instagram-callback-url" readonly value="Carregando..."></label>
+          <p class="disclaimer">As credenciais centrais pertencem ao aplicativo NEXUS. Cada Instagram apenas autoriza o acesso abaixo.</p>
 
           <div class="panel-head" style="margin-top:24px">
             <div><p class="eyebrow">RECONECTAR CONTAS</p><h3>Autorizar pelo Instagram</h3><p class="muted">Sem copiar token. O NEXUS abre o login oficial do Instagram, recebe a autorização e salva a conexão criptografada automaticamente.</p></div>
@@ -306,6 +304,6 @@
       <span id="portal-access-status" class="form-status"></span>
     </form>
   </dialog>
-  <script src="/app.js?v=22" defer></script>
+  <script src="/app.js?v=23" defer></script>
 </body>
 </html>
