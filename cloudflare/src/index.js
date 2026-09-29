@@ -7,6 +7,7 @@ import { handleMaster } from "./master.js";
 import { runSchedulerTick } from "./scheduler.js";
 import { processDueJobs } from "./executor.js";
 import { handleWhatsAppWebhook, handleWhatsAppProtected, whatsappConfigStatus } from "./whatsapp-agent.js";
+import { instagramCredentialStatus } from "./instagram-credentials.js";
 import { masterCredentialsValid, createMasterSession, authenticatePortalUser, createPortalSession, masterSessionCookie, portalSessionCookie, loginRateLimitStatus, recordLoginFailure, clearLoginFailures, resolvePortalSession, resolveMasterSession } from "./auth.js";
 
 // Keep the exact legacy export name until Cloudflare removes its existing Durable Objects.
@@ -206,6 +207,22 @@ async function autonomyHealth(env) {
     }));
     const leadCounts = new Map((leadCountsResult?.results || []).map(row => [row.client_id, Number(row.total || 0)]));
 
+    const instagramHealth = new Map(await Promise.all(
+      (clientsResult?.results || []).map(async client => [
+        String(client.id),
+        await instagramCredentialStatus(env, client.id).catch(() => ({
+          connected: false,
+          source: "unknown",
+          expired: false,
+          expiresAt: null,
+          fallbackReason: "",
+          tokenValid: false,
+          accountMatches: false,
+          validation: "diagnostic_error"
+        }))
+      ])
+    ));
+
     const clients = (clientsResult?.results || []).map(client => {
       const agents = expectedAgents.map(agent => {
         const row = latest.get(String(client.id) + "::" + agent);
@@ -285,6 +302,16 @@ async function autonomyHealth(env) {
         agents,
         allAgentsSeen: missing.length === 0,
         missingAgents: missing,
+        instagramConnection: instagramHealth.get(String(client.id)) || {
+          connected: false,
+          source: "unknown",
+          expired: false,
+          expiresAt: null,
+          fallbackReason: "",
+          tokenValid: false,
+          accountMatches: false,
+          validation: "unknown"
+        },
         publishingDiagnostic: {
           posts, jobs,
           openai: {
