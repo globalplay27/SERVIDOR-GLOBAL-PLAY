@@ -589,7 +589,8 @@ async function runCreator(env,client,strategy,options) {
   for(const pending of dueRecoveries){
     const payload={...pending.payload};
     const blocked=String(payload.blockedDesignerMedia||"");
-    const safeRecheck=/^https:\/\//i.test(blocked)
+    const safeRecheck=client.id!=="ragnar-one"
+      &&/^https:\/\//i.test(blocked)
       &&!/\/assets\/ragnar\/nordic-cinema-0[123]\.png(?:[?#]|$)/i.test(blocked)
       &&!payload.blockedDesignerRecoveryAttemptedAt;
     const mediaInfo=safeRecheck
@@ -667,7 +668,7 @@ async function runCreator(env,client,strategy,options) {
         &&localDay(scheduledFor)===localDay()
         &&!existingPayload.blockedDesignerRecoveryAttemptedAt
         &&/^https:\/\//i.test(blockedMedia);
-      const safeRecheck=canRecheckBlocked
+      const safeRecheck=client.id!=="ragnar-one"&&canRecheckBlocked
         &&!/\/assets\/ragnar\/nordic-cinema-0[123]\.png(?:[?#]|$)/i.test(blockedMedia);
       const replacementInfo=existingMedia
         ?{url:"",source:"",sourceInstagramMediaId:""}
@@ -809,7 +810,7 @@ async function runPublisher(env,client,options) {
 
   const recentPublished=await ledgerRows(env,client.id,150);
   const usedMedia=new Set(
-    recentPublished.filter(row=>row.status==="published")
+    recentPublished.filter(row=>row.status==="published").slice(0,2)
       .map(row=>mediaKey(row.payload?.imageUrl||row.payload?.publicImageUrl||""))
       .filter(Boolean)
   );
