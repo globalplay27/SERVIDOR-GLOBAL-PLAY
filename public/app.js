@@ -503,10 +503,11 @@ async function updateSupportTicket(ticketId, status) {
 
 async function loadIntegrations() {
   try {
-    const [status, openai, instagram] = await Promise.all([
+    const [status, openai, instagram, instagramAccounts] = await Promise.all([
       api("/api/system/status"),
       api("/api/master/openai"),
-      api("/api/master/instagram")
+      api("/api/master/instagram"),
+      api("/api/master/instagram/accounts-status")
     ]);
 
     const items = [
@@ -564,6 +565,30 @@ async function loadIntegrations() {
       igState.classList.toggle("off",!instagram.configured);
     }
     if($("#instagram-callback-url"))$("#instagram-callback-url").value=instagram.callbackUrl||"";
+
+    const accountStates=instagramAccounts?.accounts||{};
+    ["globalplay-streaming","ragnar-one"].forEach(clientId=>{
+      const account=accountStates[clientId]||{};
+      const valid=Boolean(account.tokenValid&&account.accountMatches);
+      const badgeEl=$('[data-instagram-account-badge="'+clientId+'"]');
+      const detailEl=$('[data-instagram-account-detail="'+clientId+'"]');
+      const linkEl=$('[data-instagram-account-link="'+clientId+'"]');
+      if(badgeEl){
+        badgeEl.textContent=valid?"CONECTADO":"NÃO CONECTADO";
+        badgeEl.classList.toggle("off",!valid);
+      }
+      if(detailEl){
+        detailEl.textContent=valid
+          ? "Token válido e conta confirmada pelo Instagram."
+          : account.expired
+            ? "Autorização expirada. Autorize novamente."
+            : "Aguardando autorização válida do Instagram.";
+      }
+      if(linkEl){
+        linkEl.hidden=valid;
+        linkEl.setAttribute("aria-hidden",valid?"true":"false");
+      }
+    });
   } catch (error) {
     console.error(error);
   }
