@@ -814,12 +814,14 @@ async function runPublisher(env,client,options) {
       .filter(Boolean)
   );
   const usedCaptions=recentPublished.filter(row=>row.status==="published").map(row=>String(row.caption||"")).filter(Boolean);
+  let publishedTodayCount=recentPublished.filter(row=>row.status==="published"
+    &&localDay(row.payload?.publishedAt||row.updated_at||row.scheduled_for||row.created_at)===localDay()).length;
 
   let published=0,failed=0,awaitingApproval=0,awaitingMedia=0,repairedApproval=0;
   let duplicateMediaBlocked=0,duplicateCaptionBlocked=0;
 
   for(const row of rows?.results||[]){
-    if(published>0)break;
+    if(published>0||publishedTodayCount>=3)break;
     let approval=String(row.approval_status||"pending");
     const payload=parseJson(row.payload_json,{});
     if(client.id==="ragnar-one"&&(payload.sourceInstagramMediaId
@@ -930,6 +932,7 @@ async function runPublisher(env,client,options) {
       await env.DB.prepare("UPDATE post_ledger SET status='published',media_id=?2,error='',payload_json=?3,updated_at=CURRENT_TIMESTAMP WHERE id=?1")
         .bind(row.id,String(result.mediaId||""),JSON.stringify(payload)).run();
       published+=1;
+      publishedTodayCount+=1;
       if(key)usedMedia.add(key);
       usedCaptions.push(caption);
     }catch(error){
