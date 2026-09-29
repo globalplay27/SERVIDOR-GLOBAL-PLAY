@@ -173,31 +173,48 @@ export async function runSchedulerTick(env, scheduledAt = new Date()) {
       // approved creative. Normal days still use RADAR's adaptive schedule;
       // this path only prevents a silent day when the queue has valid content.
       if (publishedCount < 3 && spacingReady) {
-        const promoted = await env.DB.prepare(
-          `SELECT id,payload_json FROM post_ledger
+        const dueReady = await env.DB.prepare(
+          `SELECT id FROM post_ledger
            WHERE client_id=?1
              AND status IN ('ready','scheduled','failed')
              AND approval_status='approved'
-             AND scheduled_for>?2
+             AND scheduled_for<=?2
+             AND date(scheduled_for,'-3 hours')=date(?2,'-3 hours')
              AND COALESCE(json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.retryCount'),0)<3
              AND json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.qualityGates.copyChief')='approved'
              AND json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.qualityGates.designer')='approved'
              AND json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.visualReview.status')='approved'
              AND COALESCE(json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.imageUrl'),'')<>''
-           ORDER BY scheduled_for ASC
            LIMIT 1`
         ).bind(client.id, now.toISOString()).first();
 
-        if (promoted?.id) {
-          let payload = {};
-          try { payload = JSON.parse(String(promoted.payload_json || "{}")); } catch {}
-          payload.scheduledRecoveryAt = now.toISOString();
-          payload.scheduledRecoveryReason = "daily_target_catch_up";
-          await env.DB.prepare(
-            "UPDATE post_ledger SET scheduled_for=?2,payload_json=?3,error='',updated_at=CURRENT_TIMESTAMP WHERE id=?1"
-          ).bind(promoted.id, now.toISOString(), JSON.stringify(payload)).run();
-          next.lastCatchUpPromotedAt = now.toISOString();
-          next.lastCatchUpPostId = String(promoted.id);
+        if (!dueReady) {
+          const promoted = await env.DB.prepare(
+            `SELECT id,payload_json FROM post_ledger
+             WHERE client_id=?1
+               AND status IN ('ready','scheduled','failed')
+               AND approval_status='approved'
+               AND scheduled_for>?2
+               AND COALESCE(json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.retryCount'),0)<3
+               AND json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.qualityGates.copyChief')='approved'
+               AND json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.qualityGates.designer')='approved'
+               AND json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.visualReview.status')='approved'
+               AND COALESCE(json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.imageUrl'),'')<>''
+             ORDER BY scheduled_for ASC
+             LIMIT 1`
+          ).bind(client.id, now.toISOString()).first();
+
+          if (promoted?.id) {
+            let payload = {};
+            try { payload = JSON.parse(String(promoted.payload_json || "{}")); } catch {}
+            payload.scheduledRecoveryAt = now.toISOString();
+            payload.scheduledRecoveryReason = "daily_target_catch_up";
+            await env.DB.prepare(
+              "UPDATE post_ledger SET scheduled_for=?2,payload_json=?3,error='',updated_at=CURRENT_TIMESTAMP WHERE id=?1"
+            ).bind(promoted.id, now.toISOString(), JSON.stringify(payload)).run();
+            next.lastCatchUpPromotedAt = now.toISOString();
+            next.lastCatchUpPostId = String(promoted.id);
+          }
         }
       }
     }
@@ -226,7 +243,7 @@ export async function runSchedulerTick(env, scheduledAt = new Date()) {
 
     // A slow full cycle must not suppress publishing content that already
     // passed both quality gates. Queue the sweep independently.
-    if (config.modules.publisher && due(state.lastPublisherQueuedAt, 5, nowMs)) {
+    if (config.modules.publisher && due(state.lastPublisherQueuedAt, 1, nowMs)) {
       const ready = await env.DB.prepare(
         `SELECT id FROM post_ledger WHERE client_id=?1
          AND status IN ('ready','scheduled','failed') AND approval_status='approved'
