@@ -394,7 +394,7 @@ async function autonomyHealth(env, detailed = false) {
     }));
 
     return json({
-      ok: schedulerHealthy && clients.every(client => client.allAgentsSeen && !client.cycleHealth?.delayed),
+      ok: schedulerHealthy && clients.every(client => client.allAgentsSeen),
       runtime: "cloudflare-workers",
       automationActive: String(env.CLOUDFLARE_AUTOMATION_ACTIVE || "").toLowerCase() === "true",
       expectedAgents: expectedAgents.length,
