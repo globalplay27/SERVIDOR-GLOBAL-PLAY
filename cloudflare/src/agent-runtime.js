@@ -623,8 +623,6 @@ async function runCreator(env,client,strategy,options) {
   }
 
   async function nextMedia(postId,visualBrief="") {
-    const pooled=String(mediaPool.shift()||"");
-    if(pooled) return {url:pooled,source:"standard-media-pool",sourceInstagramMediaId:""};
     if(["globalplay-streaming","ragnar-one"].includes(client.id)){
       try{
         const generated=await generateOriginalMedia(env,client,postId,visualBrief,{
@@ -635,6 +633,8 @@ async function runCreator(env,client,strategy,options) {
         return {url:"",source:"media-generation-failed",sourceInstagramMediaId:"",error:String(error?.message||error)};
       }
     }
+    const pooled=String(mediaPool.shift()||"");
+    if(pooled) return {url:pooled,source:"standard-media-pool",sourceInstagramMediaId:""};
     while(instagramCandidates.length){
       const candidate=instagramCandidates.shift();
       const staged=await stageOwnInstagramImage(env,client.id,postId,candidate.mediaUrl);
@@ -744,7 +744,7 @@ async function runCreator(env,client,strategy,options) {
     const day=localDay(scheduledFor);
     const id="agentcore:"+client.id+":"+day+":"+String(time).replace(":","");
     const exists=await env.DB.prepare(
-      "SELECT id,status,approval_status,caption,payload_json FROM post_ledger WHERE id=?1 LIMIT 1"
+      "SELECT id,status,approval_status,caption,error,payload_json FROM post_ledger WHERE id=?1 LIMIT 1"
     ).bind(id).first();
     if(exists){
       const existingPayload=parseJson(exists.payload_json,{});
