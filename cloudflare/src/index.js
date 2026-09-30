@@ -5,6 +5,7 @@ import { getState, putState, deleteState } from "./storage.js";
 import { handlePortalApi } from "./portal.js";
 import { handleMaster } from "./master.js";
 import { runSchedulerTick, recordSchedulerFailure } from "./scheduler.js";
+import { runCronIteration } from "./cron-runtime.js";
 import { processDueJobs } from "./executor.js";
 import { handleWhatsAppWebhook, handleWhatsAppProtected, whatsappConfigStatus } from "./whatsapp-agent.js";
 import { instagramCredentialStatus } from "./instagram-credentials.js";
@@ -478,15 +479,12 @@ async function handleOpenAIResponses(request, env) {
 export default {
   async scheduled(event, env, ctx) {
     const at = new Date(event.scheduledTime || Date.now());
-    ctx.waitUntil((async () => {
-      try {
-        await runSchedulerTick(env, at);
-      } catch (error) {
-        await recordSchedulerFailure(env, at, error).catch(() => {});
-      }
-      // A scheduler planning failure must not freeze jobs that are already queued.
-      await processDueJobs(env, at);
-    })());
+    ctx.waitUntil(runCronIteration({
+      at,
+      runScheduler: current => runSchedulerTick(env, current),
+      recordFailure: (current, error) => recordSchedulerFailure(env, current, error).catch(() => "scheduler_tick_error"),
+      processJobs: current => processDueJobs(env, current)
+    }));
   },
 
   async fetch(request, env, ctx) {
