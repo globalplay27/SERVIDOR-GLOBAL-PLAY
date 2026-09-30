@@ -1,4 +1,4 @@
-const state = { clients: [], auth: sessionStorage.getItem("nexus-auth"), portalClientId: null, supportTickets: [], supportFilter: "all", postLedger: { posts: [], byClient: [], totalCostUsd: 0, totalPosts: 0, published: 0, failed: 0 }, postClientFilter: "", leadData: { summary:{total:0,hot:0,warm:0,cold:0,needsHuman:0}, leads:[], byClient:[] }, leadClientFilter:"", agentCore: { modules:[], clients:[], totalExecutionsToday:0, totalCostTodayUsd:0, totalCostMonthUsd:0 }, agentCoreClientId:"" };
+const state = { clients: [], auth: sessionStorage.getItem("nexus-auth"), portalClientId: null, supportTickets: [], supportFilter: "all", postLedger: { posts: [], byClient: [], totalCostUsd: 0, totalPosts: 0, published: 0, failed: 0 }, postClientFilter: "", leadData: { summary:{total:0,hot:0,warm:0,cold:0,needsHuman:0}, leads:[], byClient:[] }, leadClientFilter:"", agentCore: { modules:[], clients:[], totalExecutionsToday:0, totalCostTodayUsd:0, totalCostMonthUsd:0 }, agentCoreClientId:"", campaignClientId:"", workspace:{campaigns:[],directives:[]} };
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
 
@@ -416,10 +416,51 @@ async function runAgentCore(agent="all",button=null){
   finally{if(button){button.disabled=false;button.textContent=original;}}
 }
 
+
+function workspaceClient(){
+  const clients=(state.clients||[]).filter(client=>!client.ownerAccount);
+  if(!clients.length)return null;
+  if(!state.campaignClientId||!clients.some(c=>c.id===state.campaignClientId))state.campaignClientId=clients[0].id;
+  return clients.find(c=>c.id===state.campaignClientId)||clients[0];
+}
+function renderWorkspaceSelector(){
+  const select=$("#campaign-client");if(!select)return;
+  const clients=(state.clients||[]).filter(client=>!client.ownerAccount);
+  select.innerHTML=clients.map(c=>`<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join("");
+  if(clients.length){workspaceClient();select.value=state.campaignClientId;}
+}
+function campaignStatusLabel(status){
+  const map={received:"RECEBIDO",in_production:"EM PRODUÇÃO",approved:"APROVADO",adjust:"AJUSTAR",scheduled:"AGENDADO",published:"PUBLICADO"};
+  return map[status]||String(status||"RECEBIDO").toUpperCase();
+}
+function renderWorkspace(){
+  renderWorkspaceSelector();
+  const campaigns=state.workspace?.campaigns||[];
+  const directives=state.workspace?.directives||[];
+  const campaignList=$("#campaign-list");
+  if(campaignList)campaignList.innerHTML=campaigns.length?campaigns.map(item=>`
+    <article class="campaign-card">
+      <div class="campaign-card-head"><div><strong>${escapeHtml(item.title||"Campanha")}</strong><small>${escapeHtml(item.startDate||"")} · 7 dias</small></div><span class="badge">${campaignStatusLabel(item.creativeStatus)}</span></div>
+      ${item.assetUrl?`<img src="${escapeHtml(item.assetUrl)}" alt="Criativo da campanha">`:""}
+      <p>${escapeHtml(item.brief||"")}</p>
+      <div class="campaign-flow"><span>Recebido</span><span>Produção</span><span>Aprovação</span><span>Agendado</span><span>Publicado</span></div>
+    </article>`).join(""):'<p class="muted">Nenhuma campanha criada para este cliente.</p>';
+  const directiveList=$("#directive-list");
+  if(directiveList)directiveList.innerHTML=directives.length?directives.map(item=>`
+    <article class="directive-card"><div><strong>${escapeHtml((item.appliesTo||["all"]).join(", ").toUpperCase())}</strong><small>${formatSupportDate(item.createdAt)}</small></div><p>${escapeHtml(item.text||"")}</p></article>`).join(""):'<p class="muted">Nenhuma orientação registrada.</p>';
+}
+async function loadWorkspace(){
+  const client=workspaceClient();if(!client){renderWorkspace();return;}
+  try{
+    state.workspace=await api("/api/master/workspace?clientId="+encodeURIComponent(client.id));
+    renderWorkspace();
+  }catch(error){console.error(error);}
+}
+
 function showView(id) {
   $$(".view").forEach(view => view.classList.toggle("active", view.id === id));
   $$(".nav-item").forEach(item => item.classList.toggle("active", item.dataset.view === id));
-  const titles = { dashboard: "Visão geral", clients: "Clientes", agents: "Agent Core", posts: "Postagens & custos", notifications: "Notificações", portal: "Portal do cliente", odin: "Odin & Leads", onboarding: "Novo cliente", settings: "Integrações" };
+  const titles = { dashboard: "Visão geral", clients: "Clientes", agents: "Agent Core", posts: "Postagens & custos", campaigns: "Campanhas & comandos", notifications: "Notificações", portal: "Portal do cliente", odin: "Odin & Leads", onboarding: "Novo cliente", settings: "Integrações" };
   $("#page-title").textContent = titles[id] || "NEXUS AI";
 }
 
@@ -599,6 +640,7 @@ $$('[data-view]').forEach(button => button.addEventListener("click", async () =>
   if (button.dataset.view === "agents") loadAgentCore();
   if (button.dataset.view === "posts") loadPostLedger();
   if (button.dataset.view === "odin") loadMasterLeads();
+  if (button.dataset.view === "campaigns") loadWorkspace();
   if (button.dataset.view === "notifications") {
     try {
       const support = await api("/api/master/support");
@@ -812,3 +854,36 @@ if(copyAccessButton)copyAccessButton.addEventListener("click",async()=>{
   try{await navigator.clipboard.writeText(text);copyAccessButton.textContent="Acesso copiado";setTimeout(()=>copyAccessButton.textContent="Copiar acesso",1500);}
   catch{alert(text);}
 });
+
+const campaignClient=$("#campaign-client");
+campaignClient?.addEventListener("change",async event=>{state.campaignClientId=event.target.value||"";await loadWorkspace();});
+$("#campaign-refresh")?.addEventListener("click",loadWorkspace);
+$("#campaign-form")?.addEventListener("submit",async event=>{
+  event.preventDefault();
+  const client=workspaceClient(),message=$("#campaign-message");
+  if(!client)return;
+  if(message)message.textContent="Criando e distribuindo…";
+  try{
+    const data=new FormData(event.currentTarget);
+    data.set("clientId",client.id);
+    const response=await fetch("/api/master/campaigns",{method:"POST",body:data,credentials:"same-origin"});
+    if(!response.ok)throw new Error("Erro "+response.status);
+    event.currentTarget.reset();
+    if(message)message.textContent="Campanha distribuída aos agentes.";
+    await loadWorkspace();
+  }catch(error){if(message)message.textContent="Não foi possível criar a campanha.";}
+});
+$("#directive-form")?.addEventListener("submit",async event=>{
+  event.preventDefault();
+  const client=workspaceClient(),message=$("#directive-message");
+  if(!client)return;
+  const data=Object.fromEntries(new FormData(event.currentTarget));
+  if(message)message.textContent="Enviando orientação…";
+  try{
+    await api("/api/master/directives",{method:"POST",body:JSON.stringify({clientId:client.id,text:data.text,appliesTo:[data.appliesTo||"all"]})});
+    event.currentTarget.reset();
+    if(message)message.textContent="Comando ativo nos próximos ciclos.";
+    await loadWorkspace();
+  }catch(error){if(message)message.textContent="Não foi possível enviar o comando.";}
+});
+setInterval(()=>{if(document.getElementById("campaigns")?.classList.contains("active"))loadWorkspace();},15000);
