@@ -866,7 +866,15 @@ async function runCreator(env,client,strategy,options) {
         ?{url:"",source:"",sourceInstagramMediaId:""}
         :allowBlockedRecheck
           ?{url:blockedMedia,source:"blocked-media-recheck",sourceInstagramMediaId:""}
-          :await nextMedia(id,String(existingPayload.visualBrief||aiCreative?.visualBrief||""));
+          :await nextMedia(
+            id,
+            [
+              String(existingPayload.visualBrief || aiCreative?.visualBrief || ""),
+              existingPayload.revisionRequest
+                ? "Client requested revision: " + String(existingPayload.revisionRequest)
+                : ""
+            ].filter(Boolean).join(" | ")
+          );
       const replacement=String(replacementInfo.url||"");
       if(replacement){
         existingPayload.imageUrl=replacement;
@@ -886,7 +894,11 @@ async function runCreator(env,client,strategy,options) {
           `UPDATE post_ledger
            SET status='ready', approval_status=?2, error='', payload_json=?3, updated_at=CURRENT_TIMESTAMP
            WHERE id=?1`
-        ).bind(id,approval,JSON.stringify(existingPayload)).run();
+        ).bind(
+          id,
+          String(exists.approval_status || "") === "correction_requested" ? "pending" : approval,
+          JSON.stringify(existingPayload)
+        ).run();
         repaired.push({id,scheduledFor,scheduledHour:time,imageUrl:replacement});
         usedPublishedMedia.add(mediaKey(replacement));
       }else if(!existingMedia&&existingGenerationAttempts<3&&replacementInfo.error){
