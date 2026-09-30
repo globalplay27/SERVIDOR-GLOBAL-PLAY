@@ -78,7 +78,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          curl --fail --silent --show-error --max-time 15 https://servidor-nexus.diamantehinode2015.workers.dev/api/master/diagnostic | jq '{ok,d1Ready,masterUsers,canonicalMasterConfigured,legacyMasterConfigured,nexusSecretConfigured}'
+          curl --fail --silent --show-error --max-time 15 https://servidor-nexus.diamantehinode2015.workers.dev/api/master/diagnostic | jq '{ok,d1Ready,masterUsers,canonicalMasterConfigured,canonicalMasterUsername,legacyMasterConfigured,legacyMasterUsername,nexusSecretConfigured}'
           curl --silent --show-error --max-time 15 https://servidor-nexus.diamantehinode2015.workers.dev/api/master/self-test | jq '{ok,configured,credentialsValid,sessionCreated,sessionResolved,assetsBound,databaseBound,error}'
 
 
