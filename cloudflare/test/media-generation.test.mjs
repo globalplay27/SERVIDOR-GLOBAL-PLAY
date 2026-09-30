@@ -9,11 +9,11 @@ test("Global Play prompt requires original family cartoon and excludes protected
   assert.match(p,/Avoid lonely sad men/);
 });
 
-test("Ragnar keeps streaming subject contemporary and Viking identity in branding only",()=>{
+test("Ragnar stays contemporary with no Nordic or Viking identity",()=>{
   const p=buildVisualPrompt({id:"ragnar-one"},"noite de streaming em casa","b");
   assert.match(p,/ordinary streaming entertainment in a modern home/i);
-  assert.match(p,/Nordic\/Viking identity is BRANDING ONLY/i);
-  assert.match(p,/Do NOT use Vikings, warriors, longships, shields, fjords/i);
+  assert.match(p,/clean, contemporary commercial streaming aesthetic/i);
+  assert.match(p,/Do not use Viking, Nordic, medieval, longship, shield, fjord/i);
   assert.match(p,/Avoid repeating the same person sitting on a sofa/i);
 });
 
