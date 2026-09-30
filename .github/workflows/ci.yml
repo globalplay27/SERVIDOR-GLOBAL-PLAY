@@ -59,6 +59,15 @@ jobs:
           # Keep production deploy independent; migrations are applied separately when needed.
           npm run deploy
 
+      - name: Verify Master access page
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          body="$(curl --fail --silent --show-error --max-time 15 https://servidor-nexus.diamantehinode2015.workers.dev/api/master/access)"
+          echo "$body" | grep -F "Acesso administrativo" >/dev/null
+          echo "Master access page verified."
+
       - name: Verify Nexus production autonomy
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: bash
