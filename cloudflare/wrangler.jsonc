@@ -1,5 +1,5 @@
 {
-  // deploy-refresh: 2026-09-25-r2-media-bindings-ready
+  // deploy-refresh: 2026-09-30-d1-read-budget
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "servidor-nexus",
   "main": "src/index.js",
@@ -10,7 +10,7 @@
     "enabled": true
   },
   "triggers": {
-    "crons": ["*/5 * * * *"]
+    "crons": ["*/15 * * * *"]
   },
   "vars": {
     "APP_NAME": "Servidor Nexus",
@@ -28,30 +28,14 @@
   "assets": {
     "directory": "../public",
     "binding": "ASSETS",
-    "run_worker_first": [
-      "/",
-      "/login",
-      "/master*",
-      "/portal-login",
-      "/api/*",
-      "/index.html"
-    ]
+    "run_worker_first": ["/", "/login", "/master*", "/portal-login", "/api/*", "/index.html"]
   },
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "servidor-nexus",
-      "database_id": "3d440c4a-8925-4526-8d29-03f9eb227d60",
-      "migrations_dir": "migrations"
-    }
-  ],
-  "images": {
-    "binding": "IMAGES"
-  },
-  "r2_buckets": [
-    {
-      "binding": "MEDIA",
-      "bucket_name": "servidor-nexus-media"
-    }
-  ]
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "servidor-nexus",
+    "database_id": "3d440c4a-8925-4526-8d29-03f9eb227d60",
+    "migrations_dir": "migrations"
+  }],
+  "images": {"binding": "IMAGES"},
+  "r2_buckets": [{"binding": "MEDIA", "bucket_name": "servidor-nexus-media"}]
 }
