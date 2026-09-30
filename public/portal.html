@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#080d15"><title>NEXUS AI · Acompanhamento</title>
-  <link rel="stylesheet" href="/client-lite.css?v=1"><script src="/client-lite.js?v=1" defer></script>
+  <link rel="stylesheet" href="/client-lite.css?v=2"><script src="/client-lite.js?v=2" defer></script>
 </head>
 <body><main class="shell">
   <section id="login" class="login card" hidden>
@@ -24,6 +24,7 @@
     <nav class="tabs" aria-label="Seções do painel">
       <button data-tab="overview" class="active" type="button">Visão geral</button>
       <button data-tab="posts" type="button">Postagens</button>
+      <button data-tab="agents" type="button">Agentes</button>
       <button data-tab="performance" type="button">Desempenho</button>
       <button data-tab="instagram" type="button">Instagram</button>
     </nav>
@@ -42,6 +43,16 @@
     <section id="tab-posts" class="tab" hidden>
       <div class="section-title"><div><p class="eyebrow">PUBLICAÇÕES</p><h1>Postagens</h1><p class="muted">Agenda, confirmação do Instagram e falhas registradas.</p></div><button data-refresh="posts" type="button">Atualizar</button></div>
       <div id="post-list" class="list" aria-live="polite"></div>
+    </section>
+    <section id="tab-agents" class="tab" hidden>
+      <div class="section-title"><div><p class="eyebrow">OPERAÇÃO AO VIVO</p><h1>Agentes em atividade</h1><p class="muted">Veja quais agentes estão trabalhando, o que fizeram e quando executaram pela última vez.</p></div><button data-refresh="agents" type="button">Atualizar</button></div>
+      <div class="metrics">
+        <article class="card"><span>Agentes disponíveis</span><strong id="agent-count">—</strong></article>
+        <article class="card"><span>Execuções recentes</span><strong id="execution-count">—</strong></article>
+        <article class="card"><span>Aguardando aprovação</span><strong id="agent-pending-count">—</strong></article>
+        <article class="card"><span>Correções solicitadas</span><strong id="agent-correction-count">—</strong></article>
+      </div>
+      <div id="agent-list" class="list" aria-live="polite"></div>
     </section>
     <section id="tab-performance" class="tab" hidden>
       <div class="section-title"><div><p class="eyebrow">RESULTADOS</p><h1>Desempenho</h1><p class="muted">Dados coletados da conta profissional conectada.</p></div><button data-refresh="performance" type="button">Atualizar</button></div>
