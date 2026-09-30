@@ -9,8 +9,8 @@ test("catch-up is allowed only in useful Sao Paulo hours",()=>{
   assert.equal(isPublishingWindow("2026-09-30T01:05:00Z"),false);
 });
 
-test("catch-up cannot publish a burst or exceed three daily posts",()=>{
-  assert.equal(publishingGate({now:"2026-09-29T15:00:00Z",publishedToday:3}).ok,false);
+test("catch-up cannot publish a burst but has no fixed daily cap",()=>{
+  assert.equal(publishingGate({now:"2026-09-29T15:00:00Z",publishedToday:12,lastPublishedAt:"2026-09-29T12:00:00Z"}).ok,true);
   assert.equal(publishingGate({now:"2026-09-29T15:00:00Z",publishedToday:1,lastPublishedAt:"2026-09-29T14:15:00Z"}).reason,"minimum_spacing_not_reached");
   assert.equal(publishingGate({now:"2026-09-29T15:45:00Z",publishedToday:1,lastPublishedAt:"2026-09-29T14:15:00Z"}).ok,true);
 });
