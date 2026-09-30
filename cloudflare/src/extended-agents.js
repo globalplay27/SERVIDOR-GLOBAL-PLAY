@@ -236,9 +236,54 @@ async function runDesigner(env,client,options){
 async function runVideo(env,client,options){
   const startedAt=new Date().toISOString();
   const rows=await ledgerRows(env,client.id,140);
-  const videoItems=rows.filter(row=>["reel","story","video"].includes(String(row.payload?.intelligence?.format||"").toLowerCase()));
-  const output={candidates:videoItems.length,priorities:videoItems.slice(0,12).map(row=>({id:row.id,format:row.payload?.intelligence?.format||"video",status:row.status})),playbook:{hookSeconds:3,vertical:"9:16",priority:"retencao-compartilhamento",avoidRepeat:true},skills:["reel-structure","video-adaptation","short-form"]};
-  await recordAgentExecution(env,client,"VIDEO",{function:"short-form-video-readiness",trigger:options.trigger,startedAt,status:"success",model:"short-form-rules",quantity:videoItems.length,message:videoItems.length+" pauta(s) de video priorizada(s)."});
+  const candidates=rows.filter(row=>{
+    const planned=String(row.payload?.intelligence?.plannedFormat||row.payload?.creativeFeatures?.requestedFormat||"").toLowerCase();
+    return planned==="reel";
+  }).slice(0,20);
+  const plans=[];
+  for(const row of candidates){
+    const payload=row.payload&&typeof row.payload==="object"?row.payload:{};
+    const caption=String(row.caption||"");
+    const firstLine=caption.split(/\n/).map(x=>x.trim()).find(Boolean)||String(payload.title||"");
+    const cta=String(payload.creativeFeatures?.cta||'Digite "QUERO"').slice(0,120);
+    const imageUrl=String(payload.imageUrl||payload.publicImageUrl||"");
+    const plan={
+      version:"reel-plan-v1",
+      status:imageUrl?"script-assets-ready":"awaiting-visual-asset",
+      durationSeconds:10,
+      aspectRatio:"9:16",
+      rendererAvailable:false,
+      hook:{from:0,to:2,text:firstLine.slice(0,90)},
+      body:{from:2,to:7,direction:String(payload.visualBrief||payload.title||"").slice(0,420)},
+      cta:{from:7,to:10,text:cta},
+      onScreenText:[firstLine.slice(0,70),cta].filter(Boolean),
+      assets:imageUrl?[{type:"image",url:imageUrl}]:[],
+      assemblyNotes:"Movimento suave de parallax/push-in, cortes limpos, sem zoom agressivo; manter marca e CTA legíveis."
+    };
+    payload.videoPlan=plan;
+    await env.DB.prepare(
+      "UPDATE post_ledger SET payload_json=?2,updated_at=CURRENT_TIMESTAMP WHERE id=?1"
+    ).bind(row.id,JSON.stringify(payload)).run();
+    plans.push({id:row.id,status:plan.status,durationSeconds:plan.durationSeconds});
+  }
+  const output={
+    candidates:candidates.length,
+    plans,
+    rendererAvailable:false,
+    fallback:"O Publisher continua enviando imagem estática até existir renderizador MP4; nunca rotula imagem como Reel publicado.",
+    playbook:{hookSeconds:2,vertical:"9:16",durationSeconds:10,priority:"retencao-compartilhamento",avoidRepeat:true},
+    skills:["reel-structure","video-adaptation","short-form","asset-packaging"]
+  };
+  await recordAgentExecution(env,client,"VIDEO",{
+    function:"short-form-video-plan",
+    trigger:options.trigger,
+    startedAt,
+    status:"success",
+    model:"short-form-rules+growth-plan",
+    quantity:candidates.length,
+    message:candidates.length+" plano(s) de Reel com roteiro e assets preparados; renderização MP4 permanece separada.",
+    metadata:{rendererAvailable:false,plansReady:plans.filter(x=>x.status==="script-assets-ready").length}
+  });
   await patchAgentCoreState(env,client.id,{video:output});
   return output;
 }
