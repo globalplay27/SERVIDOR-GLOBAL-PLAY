@@ -19,6 +19,26 @@ function automationEnabled(env) {
 
 const MAX_PUBLISH_RETRIES = 3;
 
+const JOB_KIND_PRIORITY = Object.freeze({
+  "publisher-sweep": 0,
+  "agent-core-cycle": 1,
+  "lead-hunter": 2
+});
+
+export function compareDueJobs(a = {}, b = {}) {
+  const aDue = Date.parse(String(a.due_at || ""));
+  const bDue = Date.parse(String(b.due_at || ""));
+  const aTime = Number.isFinite(aDue) ? aDue : Number.MAX_SAFE_INTEGER;
+  const bTime = Number.isFinite(bDue) ? bDue : Number.MAX_SAFE_INTEGER;
+  if (aTime !== bTime) return aTime - bTime;
+
+  const aPriority = JOB_KIND_PRIORITY[String(a.kind || "")] ?? 99;
+  const bPriority = JOB_KIND_PRIORITY[String(b.kind || "")] ?? 99;
+  if (aPriority !== bPriority) return aPriority - bPriority;
+
+  return String(a.id || "").localeCompare(String(b.id || ""));
+}
+
 function publishGuard(payload = {}, clientId) {
   const quality = payload?.qualityGates && typeof payload.qualityGates === "object"
     ? payload.qualityGates : {};
@@ -177,7 +197,9 @@ export async function processDueJobs(env, scheduledAt = new Date()) {
 
   const summary = { active: true, processed: 0, completed: 0, failed: 0, deferred: 0 };
 
-  for (const job of result?.results || []) {
+  const dueJobs = [...(result?.results || [])].sort(compareDueJobs).slice(0, 1);
+
+  for (const job of dueJobs) {
     const attempts = Math.max(0, Number(job.attempts || 0)) + 1;
     await updateJob(env, job.id, "running", attempts);
 

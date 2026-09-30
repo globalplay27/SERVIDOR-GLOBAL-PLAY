@@ -9,11 +9,12 @@ test("Global Play prompt requires original family cartoon and excludes protected
   assert.match(p,/Avoid lonely sad men/);
 });
 
-test("Ragnar prompt varies Nordic scenes and rejects series references",()=>{
-  const p=buildVisualPrompt({id:"ragnar-one"},"cabana e lareira","b");
-  assert.match(p,/fjord sunrise/);
-  assert.match(p,/Do not depict Ragnar Lothbrok/);
-  assert.match(p,/Avoid repeating the same man sitting on a sofa/);
+test("Ragnar keeps streaming subject contemporary and Viking identity in branding only",()=>{
+  const p=buildVisualPrompt({id:"ragnar-one"},"noite de streaming em casa","b");
+  assert.match(p,/ordinary streaming entertainment in a modern home/i);
+  assert.match(p,/Nordic\/Viking identity is BRANDING ONLY/i);
+  assert.match(p,/Do NOT use Vikings, warriors, longships, shields, fjords/i);
+  assert.match(p,/Avoid repeating the same person sitting on a sofa/i);
 });
 
 test("generated image is stored in R2 and returns public URL",async()=>{

@@ -61,6 +61,12 @@ function due(lastIso, intervalMinutes, nowMs) {
   return nowMs - last >= intervalMinutes * 60000;
 }
 
+export function queueTimestamp(previousIso, now, enqueued) {
+  if (!enqueued) return previousIso || null;
+  const value = now instanceof Date ? now : new Date(now);
+  return Number.isFinite(value.getTime()) ? value.toISOString() : (previousIso || null);
+}
+
 async function schedulerState(env, clientId) {
   const row = await env.DB.prepare(
     `SELECT value_json FROM nexus_state
@@ -266,11 +272,12 @@ export async function runSchedulerTick(env, scheduledAt = new Date()) {
       ).bind(client.id).first();
       lastHunterAt = lastHunter?.finished_at || null;
       if (due(lastHunterAt || state.lastHunterQueuedAt, hunterConfig.scanIntervalMinutes, nowMs)) {
-        if (await enqueue(env, client.id, "lead-hunter", now, { trigger: "scheduler" })) {
+        const hunterQueued = await enqueue(env, client.id, "lead-hunter", now, { trigger: "scheduler" });
+        if (hunterQueued) {
           summary.queued += 1;
           summary.leadHunterRuns += 1;
         }
-        next.lastHunterQueuedAt = now.toISOString();
+        next.lastHunterQueuedAt = queueTimestamp(state.lastHunterQueuedAt, now, hunterQueued);
       }
     } else {
       await env.DB.prepare(
@@ -346,22 +353,26 @@ export async function runSchedulerTick(env, scheduledAt = new Date()) {
          AND COALESCE(json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.imageUrl'),'')<>''
          LIMIT 1`
       ).bind(client.id, now.toISOString()).first();
-      if (ready && await enqueue(env, client.id, "publisher-sweep", now, { trigger: "scheduler" })) {
+      const publisherQueued = ready
+        ? await enqueue(env, client.id, "publisher-sweep", now, { trigger: "scheduler" })
+        : false;
+      if (publisherQueued) {
         summary.queued += 1;
         summary.publisherSweeps += 1;
       }
-      next.lastPublisherQueuedAt = now.toISOString();
+      next.lastPublisherQueuedAt = queueTimestamp(state.lastPublisherQueuedAt, now, publisherQueued);
     }
 
     if (cycleIsDue) {
-      if (await enqueue(env, client.id, "agent-core-cycle", now, {
+      const cycleQueued = await enqueue(env, client.id, "agent-core-cycle", now, {
         trigger: "scheduler",
         agent: "all"
-      })) {
+      });
+      if (cycleQueued) {
         summary.queued += 1;
         summary.cycles += 1;
       }
-      next.lastCycleQueuedAt = now.toISOString();
+      next.lastCycleQueuedAt = queueTimestamp(state.lastCycleQueuedAt, now, cycleQueued);
     }
 
     next.lastCronAt = now.toISOString();
