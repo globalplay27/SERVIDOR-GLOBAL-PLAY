@@ -61,6 +61,14 @@ function due(lastIso, intervalMinutes, nowMs) {
   return nowMs - last >= intervalMinutes * 60000;
 }
 
+function saoPauloDayRange(now) {
+  const day = saoPauloDay(now);
+  const [y,m,d] = day.split("-").map(Number);
+  const start = new Date(Date.UTC(y, m - 1, d, 3, 0, 0));
+  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+  return { start: start.toISOString(), end: end.toISOString() };
+}
+
 export function queueTimestamp(previousIso, now, enqueued) {
   if (!enqueued) return previousIso || null;
   const value = now instanceof Date ? now : new Date(now);
@@ -179,6 +187,7 @@ export async function runSchedulerTick(env, scheduledAt = new Date()) {
     }
 
     if (["ragnar-one", "globalplay-streaming"].includes(client.id)) {
+      const dayRange = saoPauloDayRange(now);
       const publishedToday = await env.DB.prepare(
         `SELECT COUNT(*) AS published_count,
                 MAX(COALESCE(
@@ -187,11 +196,8 @@ export async function runSchedulerTick(env, scheduledAt = new Date()) {
                 )) AS last_published_at
          FROM post_ledger
          WHERE client_id=?1 AND status='published'
-           AND date(COALESCE(
-             json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.publishedAt'),
-             updated_at, scheduled_for, created_at
-           ),'-3 hours')=date(?2,'-3 hours')`
-      ).bind(client.id, now.toISOString()).first();
+           AND updated_at>=?2 AND updated_at<?3`
+      ).bind(client.id, dayRange.start, dayRange.end).first();
       const publishedCount = Math.max(0, Number(publishedToday?.published_count || 0));
       const lastPublishedMs = Date.parse(String(publishedToday?.last_published_at || ""));
       const spacingReady = publishedCount === 0
