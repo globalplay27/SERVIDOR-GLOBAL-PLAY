@@ -15,6 +15,7 @@ import { runExtendedAgents } from "./extended-agents.js";
 import { consultGrowthAI } from "./ai-growth.js";
 import { generateOriginalMedia } from "./media-generation.js";
 import { isPublishingWindow, publishingGate, sameSaoPauloDay } from "./publishing-policy.js";
+import { upsertPostFeatures, recordMetricCheckpoints } from "./post-learning.js";
 
 function parseJson(raw, fallback = {}) {
   try {
@@ -149,20 +150,24 @@ function postingProfile(client) {
   };
 }
 
-async function instagramMediaInsights(mediaId, headers) {
-  const metrics = ["reach","views","saved","shares","total_interactions"];
+async function instagramMediaInsights(mediaId, headers, mediaType="") {
   const out = {};
-  for (const metric of metrics) {
-    try {
-      const url = "https://graph.instagram.com/" + encodeURIComponent(mediaId) + "/insights?metric=" + encodeURIComponent(metric);
-      const response = await fetch(url, { headers, signal: AbortSignal.timeout(8000) });
-      const payload = await response.json().catch(()=>({}));
-      if (!response.ok) continue;
-      const row = Array.isArray(payload?.data) ? payload.data[0] : null;
-      const value = Array.isArray(row?.values) ? row.values[0]?.value : row?.value;
-      const number = Number(value);
-      if (Number.isFinite(number)) out[metric] = Math.max(0, number);
-    } catch {}
+  async function fetchMetrics(metrics){
+    try{
+      const url="https://graph.instagram.com/"+encodeURIComponent(mediaId)+"/insights?metric="+encodeURIComponent(metrics.join(","));
+      const response=await fetch(url,{headers,signal:AbortSignal.timeout(8000)});
+      const payload=await response.json().catch(()=>({}));
+      if(!response.ok)return;
+      for(const row of Array.isArray(payload?.data)?payload.data:[]){
+        const value=Array.isArray(row?.values)?row.values[0]?.value:row?.value;
+        const number=Number(value);
+        if(Number.isFinite(number))out[String(row.name||"")]=Math.max(0,number);
+      }
+    }catch{}
+  }
+  await fetchMetrics(["reach","views","saved","shares","total_interactions"]);
+  if(String(mediaType||"").toUpperCase()==="VIDEO"){
+    await fetchMetrics(["ig_reels_video_view_total_time"]);
   }
   return out;
 }
@@ -200,7 +205,7 @@ async function instagramSnapshot(env, client) {
     // three recent media in detail while retaining basic data for all 25.
     const items = await Promise.all(baseItems.map(async (item,index)=>({
       ...item,
-      insights: item.id && index < 3 ? await instagramMediaInsights(item.id, headers) : {}
+      insights: item.id && index < 6 ? await instagramMediaInsights(item.id, headers, item.mediaType) : {}
     })));
 
     let followersCount=0, mediaCount=items.length, username=String(conn?.username||"");
@@ -760,6 +765,19 @@ async function runCreator(env,client,strategy,options) {
       if(shouldRefreshCopy){
         existingPayload.title=String(aiCreative.theme||existingPayload.title||"Conteúdo").slice(0,160);
         existingPayload.visualBrief=String(aiCreative.visualBrief||"").slice(0,1200);
+        existingPayload.creativeFeatures={
+          format:String(aiCreative.format||existingPayload.creativeFeatures?.format||"image"),
+          theme:String(aiCreative.theme||""),
+          hook:String(aiCreative.hook||""),
+          scene:String(aiCreative.scene||""),
+          composition:String(aiCreative.composition||""),
+          characters:String(aiCreative.characters||""),
+          palette:String(aiCreative.palette||""),
+          action:String(aiCreative.action||""),
+          prop:String(aiCreative.prop||""),
+          cta:String(aiCreative.cta||""),
+          hashtags:String(aiCreative.hashtags||"")
+        };
         existingPayload.aiCreativeVersion=String(state?.aiGrowth?.generatedAt||new Date().toISOString());
         existingPayload.intelligence={
           ...(existingPayload.intelligence||{}),
@@ -771,6 +789,11 @@ async function runCreator(env,client,strategy,options) {
         await env.DB.prepare(
           "UPDATE post_ledger SET caption=?2,status='ready',error='',payload_json=?3,updated_at=CURRENT_TIMESTAMP WHERE id=?1"
         ).bind(id,aiCaption.slice(0,2200),JSON.stringify(existingPayload)).run();
+        await upsertPostFeatures(env,{
+          postId:id,clientId:client.id,...existingPayload.creativeFeatures,
+          scheduledLocalHour:Number(String(time||"0").split(":")[0])||null,
+          payload:{aiCreativeVersion:existingPayload.aiCreativeVersion}
+        }).catch(()=>{});
       }
       const existingMedia=String(existingPayload.imageUrl||existingPayload.publicImageUrl||"").trim();
       const blockedMedia=String(existingPayload.blockedDesignerMedia||"");
@@ -854,7 +877,27 @@ async function runCreator(env,client,strategy,options) {
       ].filter(x=>x!==null).join("\n").slice(0,2200);
     }
 
-    const mediaInfo=await nextMedia(id,String(aiCreative?.visualBrief||""));
+    const creativeFeatures={
+      format:String(aiCreative?.format||"image"),
+      theme,hook,
+      scene:String(aiCreative?.scene||""),
+      composition:String(aiCreative?.composition||""),
+      characters:String(aiCreative?.characters||""),
+      palette:String(aiCreative?.palette||""),
+      action:String(aiCreative?.action||""),
+      prop:String(aiCreative?.prop||""),
+      cta,hashtags:tags
+    };
+    const structuredVisualBrief=[
+      String(aiCreative?.visualBrief||""),
+      creativeFeatures.scene?"Scene: "+creativeFeatures.scene:"",
+      creativeFeatures.composition?"Composition: "+creativeFeatures.composition:"",
+      creativeFeatures.characters?"Characters: "+creativeFeatures.characters:"",
+      creativeFeatures.palette?"Palette: "+creativeFeatures.palette:"",
+      creativeFeatures.action?"Action: "+creativeFeatures.action:"",
+      creativeFeatures.prop?"Prop: "+creativeFeatures.prop:""
+    ].filter(Boolean).join(". ");
+    const mediaInfo=await nextMedia(id,structuredVisualBrief);
     const imageUrl=String(mediaInfo.url||"");
     const payload={
       clientName:client.name||client.id,
@@ -863,7 +906,8 @@ async function runCreator(env,client,strategy,options) {
       sourceInstagramMediaId:String(mediaInfo.sourceInstagramMediaId||""),
       mediaGeneration:{status:imageUrl?"generated":"requested",attempts:imageUrl?1:1,lastError:String(mediaInfo.error||"").slice(0,120),updatedAt:new Date().toISOString()},
       title:theme.slice(0,160),
-      visualBrief:String(aiCreative?.visualBrief||"").slice(0,1200),
+      visualBrief:structuredVisualBrief.slice(0,1600),
+      creativeFeatures,
       aiCreativeVersion:String(state?.aiGrowth?.generatedAt||""),
       source:"agent-core:creator-growth-30d",
       model:"instagram-growth-skill-layer",
@@ -871,8 +915,8 @@ async function runCreator(env,client,strategy,options) {
       creativeFingerprint:normalizeCreativeText([day,index,hook,theme,cta].join("|")).slice(0,240),
       growthCampaign:strategy?.growthCampaign||null,
       intelligence:{
-        format:"image",
-        skill:"ig-image",
+        format:creativeFeatures.format,
+        skill:creativeFeatures.format==="reel"?"ig-reel":creativeFeatures.format==="carousel"?"ig-carousel":"ig-image",
         mediaSource:mediaInfo.source||"awaiting-unique-media",
         strategySource:aiCreative?"openai-growth-brain":"fallback-rules",
         antiRepeat:true,
@@ -899,6 +943,11 @@ async function runCreator(env,client,strategy,options) {
     await env.DB.prepare(
       "INSERT INTO post_ledger(id,client_id,scheduled_for,scheduled_hour,status,approval_status,media_id,caption,image_object_key,error,cost_usd,payload_json,created_at,updated_at) VALUES(?1,?2,?3,?4,'ready',?5,'',?6,'',?7,0,?8,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)"
     ).bind(id,client.id,scheduledFor,time,approval,caption,imageUrl?"":"media_generation_required",JSON.stringify(payload)).run();
+    await upsertPostFeatures(env,{
+      postId:id,clientId:client.id,...creativeFeatures,
+      scheduledLocalHour:Number(String(time||"0").split(":")[0])||null,
+      payload:{aiCreativeVersion:payload.aiCreativeVersion,visualBrief:payload.visualBrief}
+    }).catch(()=>{});
 
     plannedByDay.set(day,(plannedByDay.get(day)||0)+1);
     created.push({id,scheduledFor,scheduledHour:time,approvalStatus:approval,title:theme,caption,...payload});
@@ -1136,7 +1185,27 @@ async function runAuditor(env,client,options) {
   const baseline=median(engagements.map(x=>x.engagement));
   const ranked=[...engagements].sort((a,b)=>b.engagement-a.engagement);
   const top=ranked[0]||null;
-  const published=ledger.filter(x=>x.status==="published").length;
+  const publishedRows=ledger.filter(x=>x.status==="published");
+  const itemByMediaId=new Map((snapshot.items||[]).map(item=>[String(item.id||""),item]));
+  const metricCheckpoints=[];
+  let matureMetric=false;
+  for(const post of publishedRows){
+    const item=itemByMediaId.get(String(post.media_id||""));
+    if(!item||!Object.keys(item.insights||{}).length)continue;
+    const recorded=await recordMetricCheckpoints(env,{
+      post,item,
+      followersCount:Number(snapshot.followersCount||0),
+      previousFollowersCount:Number(state?.radar?.previousFollowersCount||snapshot.followersCount||0)
+    }).catch(()=>({inserted:[],mature:false}));
+    if(recorded.inserted?.length)metricCheckpoints.push({postId:post.id,checkpoints:recorded.inserted});
+    if(recorded.mature)matureMetric=true;
+  }
+  if(matureMetric){
+    await patchAgentCoreState(env,client.id,{
+      aiGrowthInvalidation:{reason:"mature_post_metrics",at:new Date().toISOString()}
+    }).catch(()=>{});
+  }
+  const published=publishedRows.length;
   const failed=ledger.filter(x=>x.status==="failed").length;
   const duplicateBlocks=ledger.filter(x=>["duplicate_media_blocked","duplicate_caption_blocked"].includes(String(x.error||""))).length;
   const output={
@@ -1147,6 +1216,7 @@ async function runAuditor(env,client,options) {
     published,
     failed,
     duplicateBlocks,
+    metricCheckpoints,
     insightTotals:{
       reach:engagements.reduce((sum,item)=>sum+Number(item.insights?.reach||0),0),
       views:engagements.reduce((sum,item)=>sum+Number(item.insights?.views||0),0),
