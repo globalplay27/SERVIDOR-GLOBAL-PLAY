@@ -92,6 +92,33 @@ function topTerms(texts = [], limit = 10) {
   return [...counts.entries()].sort((a,b)=>b[1]-a[1]).slice(0,limit).map(([term,count])=>({term,count}));
 }
 
+export async function clientCreativeReferenceNotes(env, clientId, limit = 6) {
+  if (!env?.MEDIA || !clientId) return [];
+  try {
+    const result = await env.MEDIA.list({
+      prefix: "library/" + String(clientId) + "/",
+      limit: 40,
+      include: ["customMetadata"]
+    });
+    const seen = new Set();
+    const notes = [];
+    for (const object of result?.objects || []) {
+      const metadata = object.customMetadata || {};
+      if (String(metadata.purpose || "reference") !== "reference") continue;
+      const note = String(metadata.note || "").replace(/\s+/g, " ").trim().slice(0, 500);
+      if (!note) continue;
+      const key = normalizeCreativeText(note);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      notes.push(note);
+      if (notes.length >= Math.max(1, Math.min(10, Number(limit || 6)))) break;
+    }
+    return notes;
+  } catch {
+    return [];
+  }
+}
+
 function postingProfile(client) {
   const current = client?.config?.postingProfile && typeof client.config.postingProfile === "object"
     ? client.config.postingProfile : {};
@@ -585,6 +612,7 @@ async function runCreator(env,client,strategy,options) {
   const startedAt=new Date().toISOString();
   const config=normalizeAgentCoreConfig(client);
   const state=await agentCoreState(env,client.id);
+  const clientReferenceNotes=await clientCreativeReferenceNotes(env,client.id,6);
   const recent=await ledgerRows(env,client.id,Math.max(60,Number(strategy?.antiRepeat?.recentWindow||120)));
   const recentCaptions=recent.map(row=>String(row.caption||"")).filter(Boolean);
   // Anti-repeat is a recent-window guard, not a permanent blacklist.
@@ -639,9 +667,15 @@ async function runCreator(env,client,strategy,options) {
   }
 
   async function nextMedia(postId,visualBrief="") {
+    const guidedVisualBrief=[
+      String(visualBrief||"").trim(),
+      clientReferenceNotes.length
+        ? "Client creative preferences: " + clientReferenceNotes.join(" | ")
+        : ""
+    ].filter(Boolean).join(". ").slice(0,1800);
     if(["globalplay-streaming","ragnar-one"].includes(client.id)){
       try{
-        const generated=await generateOriginalMedia(env,client,postId,visualBrief,{
+        const generated=await generateOriginalMedia(env,client,postId,guidedVisualBrief,{
           variationSeed:String(postId)+"|"+String(Date.now()),
           title:String((visualBrief||"").split(".")[0]||"").slice(0,42)
         });
@@ -998,6 +1032,7 @@ async function runCreator(env,client,strategy,options) {
   await recordAgentExecution(env,client,"CREATOR",{
     function:"growth-30d-creative-generation",trigger:options.trigger,startedAt,status:"success",
     model:"instagram-growth-skill-layer",quantity:created.length,
+    metadata:{clientReferenceNotesUsed:clientReferenceNotes.length},
     message:created.length||repaired.length
       ?created.length+" pauta(s) criada(s) e "+repaired.length+" postagem(ns) incompleta(s) recuperada(s)."
       :"Agenda já preparada; nenhuma pauta duplicada criada e nenhuma recuperação necessária.",
