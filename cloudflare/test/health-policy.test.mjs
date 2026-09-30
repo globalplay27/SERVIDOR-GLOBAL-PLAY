@@ -5,7 +5,7 @@ import { autonomyOverallHealthy, clientAutonomyHealthy } from "../src/health-pol
 test("heartbeat saudável não mascara ciclo atrasado", () => {
   const client = {
     allAgentsSeen: true,
-    cycleHealth: { delayed: true }
+    cycleHealth: { status: "success", delayed: true }
   };
   assert.equal(clientAutonomyHealthy(client), false);
   assert.equal(autonomyOverallHealthy({
@@ -18,7 +18,7 @@ test("health exige pelo menos um cliente e agentes observados", () => {
   assert.equal(autonomyOverallHealthy({ schedulerHealthy: true, clients: [] }), false);
   assert.equal(autonomyOverallHealthy({
     schedulerHealthy: true,
-    clients: [{ allAgentsSeen: false, cycleHealth: { delayed: false } }]
+    clients: [{ allAgentsSeen: false, cycleHealth: { status: "success", delayed: false } }]
   }), false);
 });
 
@@ -26,8 +26,15 @@ test("health fica saudável quando heartbeat, agentes e ciclo estão normais", (
   assert.equal(autonomyOverallHealthy({
     schedulerHealthy: true,
     clients: [
-      { allAgentsSeen: true, cycleHealth: { delayed: false } },
-      { allAgentsSeen: true, cycleHealth: { delayed: false } }
+      { allAgentsSeen: true, cycleHealth: { status: "success", delayed: false } },
+      { allAgentsSeen: true, cycleHealth: { status: "success", delayed: false } }
     ]
   }), true);
+});
+
+test("health não aceita último ciclo com falha", () => {
+  assert.equal(clientAutonomyHealthy({
+    allAgentsSeen: true,
+    cycleHealth: { status: "failed", delayed: false }
+  }), false);
 });
