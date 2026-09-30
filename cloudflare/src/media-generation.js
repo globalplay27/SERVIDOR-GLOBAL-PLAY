@@ -7,6 +7,34 @@ function bytesFromBase64(value){
   return out;
 }
 
+export function overlayCopy(client,title=""){
+  const id=String(client?.id||"");
+  const brand=id==="globalplay-streaming"?"GLOBAL PLAY":id==="ragnar-one"?"RAGNAR ONE":String(client?.name||"NEXUS").toUpperCase();
+  const cleanTitle=String(title||"").replace(/\s+/g," ").trim().slice(0,42);
+  return {brand,title:cleanTitle,cta:"DIGITE QUERO"};
+}
+
+async function composeBrandOverlay(env,bytes,client,title=""){
+  if(!env.IMAGES)return {bytes,applied:false,reason:"images_binding_unavailable"};
+  try{
+    const copy=overlayCopy(client,title);
+    let canvas=env.IMAGES.input(bytes).transform({width:1024,height:1536,fit:"cover"});
+    const brand=env.IMAGES.text(copy.brand,{color:"#FFFFFF",size:64});
+    const headline=copy.title?env.IMAGES.text(copy.title,{color:"#FFFFFF",size:52}):null;
+    const cta=env.IMAGES.text(copy.cta,{color:"#FFFFFF",size:54});
+    canvas=canvas.draw(brand,{left:64,top:58});
+    if(headline)canvas=canvas.draw(headline,{left:64,bottom:176});
+    canvas=canvas.draw(cta,{left:64,bottom:72});
+    const response=await canvas.output({format:"image/jpeg",quality:90}).response();
+    if(!response.ok)throw new Error("images_overlay_http_"+response.status);
+    const out=new Uint8Array(await response.arrayBuffer());
+    if(!out.byteLength||out.byteLength>12*1024*1024)throw new Error("images_overlay_invalid_bytes");
+    return {bytes:out,applied:true,reason:""};
+  }catch(error){
+    return {bytes,applied:false,reason:String(error?.message||error).slice(0,120)};
+  }
+}
+
 export function buildVisualPrompt(client, visualBrief="", variationSeed=""){
   const id=String(client?.id||"");
   const common=[
@@ -60,8 +88,10 @@ export async function generateOriginalMedia(env,client,postId,visualBrief="",opt
   });
   const item=(response?.output||[]).find(x=>x?.type==="image_generation_call"&&x?.result);
   if(!item?.result)throw new Error("image_generation_missing_result");
-  const bytes=bytesFromBase64(item.result);
-  if(!bytes.byteLength||bytes.byteLength>12*1024*1024)throw new Error("image_generation_invalid_bytes");
+  const rawBytes=bytesFromBase64(item.result);
+  if(!rawBytes.byteLength||rawBytes.byteLength>12*1024*1024)throw new Error("image_generation_invalid_bytes");
+  const composed=await composeBrandOverlay(env,rawBytes,client,options.title||"");
+  const bytes=composed.bytes;
   const fingerprint=[...new Uint8Array(await crypto.subtle.digest("SHA-256",bytes))]
     .map(byte=>byte.toString(16).padStart(2,"0")).join("");
   const key="posts/"+String(client.id)+"/"+String(postId)+"/generated-"+crypto.randomUUID()+".jpg";
@@ -69,5 +99,5 @@ export async function generateOriginalMedia(env,client,postId,visualBrief="",opt
     httpMetadata:{contentType:"image/jpeg",cacheControl:"public, max-age=31536000, immutable"},
     customMetadata:{clientId:String(client.id),postId:String(postId),kind:"openai-original-media"}
   });
-  return {url:origin+"/media/"+key,key,fingerprint,promptVersion:"scene-grammar-v1"};
+  return {url:origin+"/media/"+key,key,fingerprint,brandingApplied:composed.applied,brandingError:composed.reason,promptVersion:"scene-grammar-v1"};
 }
