@@ -13,6 +13,8 @@ import {
 import { leadsForClient, leadHunterSummary } from "./leads.js";
 import { runExtendedAgents } from "./extended-agents.js";
 import { consultGrowthAI } from "./ai-growth.js";
+import { generateOriginalMedia } from "./media-generation.js";
+import { isPublishingWindow, publishingGate, sameSaoPauloDay } from "./publishing-policy.js";
 
 function parseJson(raw, fallback = {}) {
   try {
@@ -90,11 +92,6 @@ function topTerms(texts = [], limit = 10) {
 function postingProfile(client) {
   const current = client?.config?.postingProfile && typeof client.config.postingProfile === "object"
     ? client.config.postingProfile : {};
-  const ragnarMedia = [
-    "https://servidor-nexus.diamantehinode2015.workers.dev/assets/ragnar/saga-sofa-20260928.jpg",
-    "https://servidor-nexus.diamantehinode2015.workers.dev/assets/ragnar/fjord-dia-20260928.jpg",
-    "https://servidor-nexus.diamantehinode2015.workers.dev/assets/ragnar/fjord-noite-20260928.jpg"
-  ];
   const configuredMedia = Array.isArray(current.standardMediaUrls)
     ? current.standardMediaUrls.map(String).map(v => v.trim())
       .filter(v => /^https:\/\//i.test(v)
@@ -148,9 +145,7 @@ function postingProfile(client) {
       : null,
     growthTargetFollowers: Math.max(1000, Math.min(100000000, Number(current.growthTargetFollowers || 1000000))),
     growthHorizonDays: Math.max(7, Math.min(90, Number(current.growthHorizonDays || 30))),
-    standardMediaUrls: String(client?.id || "") === "ragnar-one"
-      ? [...new Set([...configuredMedia, ...ragnarMedia])]
-      : configuredMedia
+    standardMediaUrls: configuredMedia
   };
 }
 
@@ -620,13 +615,26 @@ async function runCreator(env,client,strategy,options) {
   const created=[];
   const repaired=[];
   const approval=config.autoPublish&&!config.approvalRequired?"approved":"pending";
+  const plannedByDay=new Map();
+  for(const row of recent){
+    if(["published","expired","cancelled"].includes(String(row.status||"")))continue;
+    const day=localDay(row.scheduled_for||row.created_at);
+    plannedByDay.set(day,(plannedByDay.get(day)||0)+1);
+  }
 
-  async function nextMedia(postId) {
+  async function nextMedia(postId,visualBrief="") {
     const pooled=String(mediaPool.shift()||"");
     if(pooled) return {url:pooled,source:"standard-media-pool",sourceInstagramMediaId:""};
-    // Reposting a copy of a prior Instagram post is repetition, even when
-    // staging it to R2 gives it a fresh URL.
-    if(client.id==="ragnar-one")return {url:"",source:"awaiting-new-original-media",sourceInstagramMediaId:""};
+    if(["globalplay-streaming","ragnar-one"].includes(client.id)){
+      try{
+        const generated=await generateOriginalMedia(env,client,postId,visualBrief,{
+          variationSeed:String(postId)+"|"+String(Date.now())
+        });
+        return {url:generated.url,source:"openai-original-media",sourceInstagramMediaId:""};
+      }catch(error){
+        return {url:"",source:"media-generation-failed",sourceInstagramMediaId:"",error:String(error?.message||error)};
+      }
+    }
     while(instagramCandidates.length){
       const candidate=instagramCandidates.shift();
       const staged=await stageOwnInstagramImage(env,client.id,postId,candidate.mediaUrl);
@@ -650,16 +658,32 @@ async function runCreator(env,client,strategy,options) {
   for(const pending of dueRecoveries){
     const payload={...pending.payload};
     const blocked=String(payload.blockedDesignerMedia||"");
-    const safeRecheck=client.id!=="ragnar-one"
+    const duplicateBlocked=["duplicate_media_blocked","duplicate_media_content_blocked","media_generation_required"].includes(String(pending.error||""));
+    const generationAttempts=Math.max(0,Number(payload.mediaGeneration?.attempts||0));
+    if(generationAttempts>=3){
+      await env.DB.prepare(
+        "UPDATE post_ledger SET status='expired',error='media_generation_exhausted',updated_at=CURRENT_TIMESTAMP WHERE id=?1"
+      ).bind(pending.id).run();
+      continue;
+    }
+    const safeRecheck=!duplicateBlocked&&client.id!=="ragnar-one"
       &&/^https:\/\//i.test(blocked)
       &&!/\/assets\/ragnar\/nordic-cinema-0[123]\.png(?:[?#]|$)/i.test(blocked)
       &&!payload.blockedDesignerRecoveryAttemptedAt;
     const mediaInfo=safeRecheck
       ?{url:blocked,source:"blocked-media-recheck",sourceInstagramMediaId:""}
-      :await nextMedia(pending.id);
-    if(!mediaInfo.url)continue;
+      :await nextMedia(pending.id,String(payload.visualBrief||""));
+    if(!mediaInfo.url){
+      payload.mediaGeneration={status:"requested",attempts:generationAttempts+1,lastError:String(mediaInfo.error||"media_generation_failed").slice(0,120),updatedAt:new Date().toISOString()};
+      const exhausted=payload.mediaGeneration.attempts>=3;
+      await env.DB.prepare(
+        "UPDATE post_ledger SET status=?2,error=?3,payload_json=?4,updated_at=CURRENT_TIMESTAMP WHERE id=?1"
+      ).bind(pending.id,exhausted?"expired":"ready",exhausted?"media_generation_exhausted":"media_generation_required",JSON.stringify(payload)).run();
+      continue;
+    }
     payload.imageUrl=mediaInfo.url;
     payload.sourceInstagramMediaId=mediaInfo.sourceInstagramMediaId||"";
+    payload.mediaGeneration={status:"generated",attempts:generationAttempts+(safeRecheck?0:1),lastError:"",updatedAt:new Date().toISOString()};
     payload.intelligence={...(payload.intelligence||{}),mediaSource:mediaInfo.source};
     if(safeRecheck)payload.blockedDesignerRecoveryAttemptedAt=new Date().toISOString();
     payload.qualityGates={copyChief:"pending",designer:"pending"};
@@ -691,11 +715,12 @@ async function runCreator(env,client,strategy,options) {
     &&visualApproval(client.id,row.payload));
   let recoveryPulledForward=false;
   if(["globalplay-streaming","ragnar-one"].includes(client.id)
-    &&config.autoPublish&&publishedTodayCount<dailyPublishTarget&&catchUpSpacingReady&&!dueValid){
+    &&config.autoPublish&&isPublishingWindow(new Date())
+    &&publishedTodayCount<dailyPublishTarget&&catchUpSpacingReady&&!dueValid){
     const future=recent
       .filter(row=>["ready","scheduled"].includes(row.status)
         &&row.approval_status==="approved"
-        &&localDay(row.scheduled_for)===localDay()
+        &&sameSaoPauloDay(row.scheduled_for,new Date())
         &&Date.parse(String(row.scheduled_for||""))>Date.now()
         &&row.payload?.qualityGates?.copyChief==="approved"
         &&row.payload?.qualityGates?.designer==="approved"
@@ -750,16 +775,20 @@ async function runCreator(env,client,strategy,options) {
         &&/^https:\/\//i.test(blockedMedia);
       const safeRecheck=client.id!=="ragnar-one"&&canRecheckBlocked
         &&!/\/assets\/ragnar\/nordic-cinema-0[123]\.png(?:[?#]|$)/i.test(blockedMedia);
-      const replacementInfo=existingMedia
+      const existingGenerationAttempts=Math.max(0,Number(existingPayload.mediaGeneration?.attempts||0));
+      const duplicateBlocked=["duplicate_media_blocked","duplicate_media_content_blocked","media_generation_required"].includes(String(exists.error||""));
+      const allowBlockedRecheck=safeRecheck&&!duplicateBlocked;
+      const replacementInfo=existingMedia||existingGenerationAttempts>=3
         ?{url:"",source:"",sourceInstagramMediaId:""}
-        :safeRecheck
+        :allowBlockedRecheck
           ?{url:blockedMedia,source:"blocked-media-recheck",sourceInstagramMediaId:""}
-          :await nextMedia(id);
+          :await nextMedia(id,String(existingPayload.visualBrief||aiCreative?.visualBrief||""));
       const replacement=String(replacementInfo.url||"");
       if(replacement){
         existingPayload.imageUrl=replacement;
         existingPayload.sourceInstagramMediaId=replacementInfo.sourceInstagramMediaId||"";
         existingPayload.retryCount=0;
+        existingPayload.mediaGeneration={status:"generated",attempts:existingGenerationAttempts+(allowBlockedRecheck?0:1),lastError:"",updatedAt:new Date().toISOString()};
         existingPayload.recoveredAt=new Date().toISOString();
         existingPayload.recoveryReason="missing_media_repaired_by_creator";
         if(safeRecheck)existingPayload.blockedDesignerRecoveryAttemptedAt=new Date().toISOString();
@@ -775,10 +804,19 @@ async function runCreator(env,client,strategy,options) {
         ).bind(id,approval,JSON.stringify(existingPayload)).run();
         repaired.push({id,scheduledFor,scheduledHour:time,imageUrl:replacement});
         usedPublishedMedia.add(mediaKey(replacement));
+      }else if(!existingMedia&&existingGenerationAttempts<3&&replacementInfo.error){
+        existingPayload.mediaGeneration={status:"requested",attempts:existingGenerationAttempts+1,lastError:String(replacementInfo.error).slice(0,120),updatedAt:new Date().toISOString()};
+        const exhausted=existingPayload.mediaGeneration.attempts>=3;
+        existingPayload.qualityGates={...(existingPayload.qualityGates||{}),designer:"pending"};
+        existingPayload.visualReview=null;
+        await env.DB.prepare(
+          "UPDATE post_ledger SET status=?2,error=?3,payload_json=?4,updated_at=CURRENT_TIMESTAMP WHERE id=?1"
+        ).bind(id,exhausted?"expired":"ready",exhausted?"media_generation_exhausted":"media_generation_required",JSON.stringify(existingPayload)).run();
       }
       continue;
     }
 
+    if((plannedByDay.get(day)||0)>=dailyPublishTarget)continue;
     const aiCreative=aiBatch[index]||null;
     const theme=String(aiCreative?.theme||themes[index%themes.length]||"Conteúdo");
     const hook=String(aiCreative?.hook||pickUniqueHook(index,day,strategy?.radarTerms||[],recentCaptions)).trim();
@@ -811,13 +849,14 @@ async function runCreator(env,client,strategy,options) {
       ].filter(x=>x!==null).join("\n").slice(0,2200);
     }
 
-    const mediaInfo=await nextMedia(id);
+    const mediaInfo=await nextMedia(id,String(aiCreative?.visualBrief||""));
     const imageUrl=String(mediaInfo.url||"");
     const payload={
       clientName:client.name||client.id,
       instagram:client.instagram||"",
       imageUrl,
       sourceInstagramMediaId:String(mediaInfo.sourceInstagramMediaId||""),
+      mediaGeneration:{status:imageUrl?"generated":"requested",attempts:imageUrl?1:1,lastError:String(mediaInfo.error||"").slice(0,120),updatedAt:new Date().toISOString()},
       title:theme.slice(0,160),
       visualBrief:String(aiCreative?.visualBrief||"").slice(0,1200),
       aiCreativeVersion:String(state?.aiGrowth?.generatedAt||""),
@@ -853,9 +892,10 @@ async function runCreator(env,client,strategy,options) {
       qualityGates:{copyChief:"pending",designer:"pending"}
     };
     await env.DB.prepare(
-      "INSERT INTO post_ledger(id,client_id,scheduled_for,scheduled_hour,status,approval_status,media_id,caption,image_object_key,error,cost_usd,payload_json,created_at,updated_at) VALUES(?1,?2,?3,?4,'ready',?5,'',?6,'','',0,?7,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)"
-    ).bind(id,client.id,scheduledFor,time,approval,caption,JSON.stringify(payload)).run();
+      "INSERT INTO post_ledger(id,client_id,scheduled_for,scheduled_hour,status,approval_status,media_id,caption,image_object_key,error,cost_usd,payload_json,created_at,updated_at) VALUES(?1,?2,?3,?4,'ready',?5,'',?6,'',?7,0,?8,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)"
+    ).bind(id,client.id,scheduledFor,time,approval,caption,imageUrl?"":"media_generation_required",JSON.stringify(payload)).run();
 
+    plannedByDay.set(day,(plannedByDay.get(day)||0)+1);
     created.push({id,scheduledFor,scheduledHour:time,approvalStatus:approval,title:theme,caption,...payload});
     recentCaptions.push(caption);
     if(imageUrl)usedPublishedMedia.add(mediaKey(imageUrl));
@@ -904,11 +944,26 @@ async function runPublisher(env,client,options) {
       .filter(Boolean)
   );
   const usedCaptions=recentPublished.filter(row=>row.status==="published").map(row=>String(row.caption||"")).filter(Boolean);
-  let publishedTodayCount=recentPublished.filter(row=>row.status==="published"
-    &&localDay(row.payload?.publishedAt||row.updated_at||row.scheduled_for||row.created_at)===localDay()).length;
+  const todayPublished=recentPublished.filter(row=>row.status==="published"
+    &&localDay(row.payload?.publishedAt||row.updated_at||row.scheduled_for||row.created_at)===localDay());
+  let publishedTodayCount=todayPublished.length;
+  const lastPublishedAt=todayPublished
+    .map(row=>String(row.payload?.publishedAt||row.updated_at||row.scheduled_for||row.created_at||""))
+    .filter(Boolean)
+    .sort((a,b)=>Date.parse(b)-Date.parse(a))[0]||null;
 
   let published=0,failed=0,awaitingApproval=0,awaitingMedia=0,repairedApproval=0;
   let duplicateMediaBlocked=0,duplicateCaptionBlocked=0;
+  const gate=publishingGate({now:new Date(),publishedToday:publishedTodayCount,lastPublishedAt});
+  if(!gate.ok){
+    await recordAgentExecution(env,client,"PUBLISHER",{
+      function:"growth-30d-safe-publish",trigger:options.trigger,startedAt,status:"success",
+      model:"anti-repeat+meta-api",quantity:(rows?.results||[]).length,
+      message:"0 publicada(s): "+gate.reason+".",
+      metadata:{published:0,failed:0,awaitingApproval:0,awaitingMedia:0,repairedApproval:0,duplicateMediaBlocked:0,duplicateCaptionBlocked:0,blockedReason:gate.reason}
+    });
+    return {published:0,failed:0,awaitingApproval:0,awaitingMedia:0,repairedApproval:0,duplicateMediaBlocked:0,duplicateCaptionBlocked:0,blockedReason:gate.reason};
+  }
 
   for(const row of rows?.results||[]){
     if(published>0||publishedTodayCount>=3)break;
@@ -965,8 +1020,12 @@ async function runPublisher(env,client,options) {
     if(key&&usedMedia.has(key)){
       payload.blockedDuplicateMedia=imageUrl;
       payload.imageUrl="";
+      payload.publicImageUrl="";
+      payload.visualReview=null;
+      payload.mediaGeneration={...(payload.mediaGeneration||{}),status:"requested",updatedAt:new Date().toISOString()};
+      payload.qualityGates={...(payload.qualityGates||{}),designer:"pending"};
       await env.DB.prepare(
-        "UPDATE post_ledger SET payload_json=?2,error='duplicate_media_blocked',updated_at=CURRENT_TIMESTAMP WHERE id=?1"
+        "UPDATE post_ledger SET payload_json=?2,error='media_generation_required',updated_at=CURRENT_TIMESTAMP WHERE id=?1"
       ).bind(row.id,JSON.stringify(payload)).run();
       duplicateMediaBlocked+=1;
       awaitingMedia+=1;
@@ -992,8 +1051,10 @@ async function runPublisher(env,client,options) {
         payload.blockedDuplicateMedia=imageUrl;
         payload.imageUrl="";
         payload.qualityGates={...(payload.qualityGates||{}),designer:"pending"};
+        payload.visualReview=null;
+        payload.mediaGeneration={...(payload.mediaGeneration||{}),status:"requested",updatedAt:new Date().toISOString()};
         await env.DB.prepare(
-          "UPDATE post_ledger SET payload_json=?2,error='duplicate_media_content_blocked',updated_at=CURRENT_TIMESTAMP WHERE id=?1"
+          "UPDATE post_ledger SET payload_json=?2,error='media_generation_required',updated_at=CURRENT_TIMESTAMP WHERE id=?1"
         ).bind(row.id,JSON.stringify(payload)).run();
         duplicateMediaBlocked+=1;
         awaitingMedia+=1;
