@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {buildVisualPrompt,generateOriginalMedia} from "../src/media-generation.js";
+import {buildVisualPrompt,generateOriginalMedia,overlayCopy} from "../src/media-generation.js";
 
 test("Global Play prompt requires original family cartoon and excludes protected styles",()=>{
   const p=buildVisualPrompt({id:"globalplay-streaming"},"família escolhendo o que assistir","a");
@@ -28,4 +28,12 @@ test("generated image is stored in R2 and returns public URL",async()=>{
   assert.equal(new TextDecoder().decode(stored.bytes),"PNGDATA");
   assert.equal(stored.meta.httpMetadata.contentType,"image/jpeg");
   assert.equal(out.fingerprint.length,64);
+});
+
+
+test("deterministic overlay copy keeps brand and CTA out of the image model",()=>{
+  assert.deepEqual(overlayCopy({id:"globalplay-streaming"},"Noite em família"),{
+    brand:"GLOBAL PLAY",title:"Noite em família",cta:"DIGITE QUERO"
+  });
+  assert.equal(overlayCopy({id:"ragnar-one"},"Saga da noite").brand,"RAGNAR ONE");
 });
