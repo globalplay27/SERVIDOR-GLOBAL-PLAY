@@ -67,7 +67,7 @@ jobs:
           ok=0
           last=""
           for attempt in $(seq 1 12); do
-            last="$(curl --fail --silent --show-error --max-time 15 "$NEXUS_HEALTH_URL" || true)"
+            last="$(curl --silent --show-error --max-time 15 "$NEXUS_HEALTH_URL" || true)"
             if [ -n "$last" ]; then
               echo "$last" | jq '{
                 ok,
