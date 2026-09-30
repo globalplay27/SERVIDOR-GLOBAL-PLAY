@@ -36,9 +36,21 @@ jobs:
           npm install --no-audit --no-fund
           npm run check
 
-      # Production deploy is automatic on main when the repository already has
-      # CLOUDFLARE_API_TOKEN configured as an Actions secret. The account ID is public metadata.
-      # Pull requests and migration branches remain validation-only.
+      - name: Apply D1 production migrations
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        working-directory: cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: d9ecb78dbc0c1b0b61f8caae501f59df
+        run: |
+          set -euo pipefail
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "::error::Cloudflare migration blocked: CLOUDFLARE_API_TOKEN is not configured."
+            exit 1
+          fi
+          npm run d1:migrations:apply
+
+      # Production deploy is automatic on main after database migrations.
       - name: Deploy servidor-nexus to Cloudflare
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         working-directory: cloudflare
@@ -46,17 +58,15 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: d9ecb78dbc0c1b0b61f8caae501f59df
         run: |
+          set -euo pipefail
           if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
             echo "::error::Cloudflare deploy blocked: CLOUDFLARE_API_TOKEN is not configured."
             exit 1
           fi
           if [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
             echo "::error::Cloudflare deploy blocked: CLOUDFLARE_ACCOUNT_ID is not configured."
-            echo "::error::CI must not report success when production was not deployed."
             exit 1
           fi
-          # D1 migrations require a broader API permission than Worker deploys.
-          # Keep production deploy independent; migrations are applied separately when needed.
           npm run deploy
 
       - name: Verify Master access page
