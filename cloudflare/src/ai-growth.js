@@ -35,10 +35,10 @@ function brandRules(client) {
   }
   if (id === "ragnar-one") {
     return [
-      "RAGNAR ONE é marca própria. Criar estética nórdica original, premium e variada.",
-      "Não copiar Vikings, Ragnar Lothbrok, atores, personagens, figurinos, logos, pôsteres ou frames reconhecíveis.",
-      "Evitar repetir o mesmo homem no sofá ou o mesmo enquadramento.",
-      "Alternar interiores premium, paisagens nórdicas originais, símbolos geométricos genéricos e atmosfera cinematográfica limpa.",
+      "RAGNAR ONE é marca própria. Criar conteúdo comercial contemporâneo de streaming para cliente final.",
+      "Não usar estética nórdica, Viking, medieval, fiordes, guerreiros, escudos, navios, sagas temáticas ou cenários de época.",
+      "Evitar repetir a mesma pessoa no sofá ou o mesmo enquadramento.",
+      "Alternar ambientes modernos de entretenimento, pessoas contemporâneas, composições limpas e cenas premium em casa.",
       "Texto mínimo, legível e CTA DIGITE QUERO."
     ].join(" ");
   }
