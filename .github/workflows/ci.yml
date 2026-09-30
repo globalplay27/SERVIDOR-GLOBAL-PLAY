@@ -55,7 +55,8 @@ jobs:
             echo "::error::CI must not report success when production was not deployed."
             exit 1
           fi
-          npx wrangler d1 migrations apply DB --remote
+          # D1 migrations require a broader API permission than Worker deploys.
+          # Keep production deploy independent; migrations are applied separately when needed.
           npm run deploy
 
       - name: Verify Nexus production autonomy
