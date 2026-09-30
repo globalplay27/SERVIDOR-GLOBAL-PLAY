@@ -1,6 +1,6 @@
 import { leadHunterConfig } from "./lead-hunter.js";
 import { ensureLeadSchema } from "./leads.js";
-import { isPublishingWindow } from "./publishing-policy.js";
+import { isPublishingWindow, saoPauloDay } from "./publishing-policy.js";
 
 function parseJson(raw, fallback = {}) {
   try {
@@ -150,22 +150,26 @@ export async function runSchedulerTick(env, scheduledAt = new Date()) {
 
     let cycleIsDue = due(state.lastCycleQueuedAt, config.cycleMinutes, nowMs);
 
-    // Force a fresh intelligence cycle when the shared OpenAI growth brain is
-    // missing or stale. This keeps agents learning from real Instagram signals
-    // instead of running indefinitely on hard-coded fallback rules.
+    // OpenAI strategy refreshes once per Sao Paulo day, or immediately after
+    // an explicit event invalidation (for example a new HOT lead).
     const aiState = await env.DB.prepare(
-      `SELECT json_extract(CASE WHEN json_valid(value_json) THEN value_json ELSE '{}' END,'$.aiGrowth.generatedAt') AS generated_at
+      `SELECT
+         json_extract(CASE WHEN json_valid(value_json) THEN value_json ELSE '{}' END,'$.aiGrowth.dayKey') AS day_key,
+         json_extract(CASE WHEN json_valid(value_json) THEN value_json ELSE '{}' END,'$.aiGrowth.generatedAt') AS generated_at,
+         json_extract(CASE WHEN json_valid(value_json) THEN value_json ELSE '{}' END,'$.aiGrowthInvalidation.reason') AS invalidation_reason
        FROM nexus_state
        WHERE namespace='agent-core' AND item_key='state' AND client_id=?1
        LIMIT 1`
     ).bind(client.id).first();
-    const aiGeneratedMs = Date.parse(String(aiState?.generated_at || ""));
-    if (!Number.isFinite(aiGeneratedMs) || nowMs - aiGeneratedMs >= 90 * 60 * 1000) {
+    const aiInvalidated=Boolean(String(aiState?.invalidation_reason||"").trim());
+    if (String(aiState?.day_key||"")!==saoPauloDay(now) || aiInvalidated) {
       cycleIsDue = true;
       next.aiRefreshDue = true;
+      next.aiRefreshReason = aiInvalidated ? "event_invalidation" : "new_local_day";
     } else {
       next.aiRefreshDue = false;
-      next.lastAiGrowthAt = new Date(aiGeneratedMs).toISOString();
+      next.aiRefreshReason = "";
+      next.lastAiGrowthAt = aiState?.generated_at || null;
     }
 
     if (["ragnar-one", "globalplay-streaming"].includes(client.id)) {
