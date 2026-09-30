@@ -62,6 +62,7 @@ function postStatus(post) {
   const status = String(post.status || "scheduled");
   const approval = String(post.approvalStatus || "pending");
   if (status === "published") return ["Publicada", "published"];
+  if (status === "cancelled") return ["Cancelada", "ready"];
   if (status === "failed") return ["Falhou", "failed"];
   if (status === "publishing") return ["Publicando", "ready"];
   if (approval === "pending") return ["Aguardando aprovação", "ready"];
@@ -82,7 +83,9 @@ function renderPosts() {
   list.replaceChildren();
   $("#published-count").textContent = formatNumber(posts.filter(post => post.status === "published").length);
   $("#attention-count").textContent = formatNumber(posts.filter(post =>
-    post.status === "failed" || ["pending", "rejected", "correction_requested"].includes(post.approvalStatus)
+    post.status === "failed" || (
+      post.status !== "cancelled" && ["pending", "rejected", "correction_requested"].includes(post.approvalStatus)
+    )
   ).length);
 
   const latest = posts.find(post => post.status === "published") || posts[0];
@@ -152,7 +155,7 @@ function renderPosts() {
 
     const approval = String(post.approvalStatus || "pending");
     const status = String(post.status || "scheduled");
-    if (status !== "published" && status !== "publishing") {
+    if (!["published", "publishing", "cancelled", "expired"].includes(status)) {
       const actions = document.createElement("div");
       actions.className = "post-actions";
 
@@ -173,7 +176,7 @@ function renderPosts() {
 
       const revise = document.createElement("button");
       revise.type = "button";
-      revise.textContent = "Pedir ajuste";
+      revise.textContent = "Refazer";
       revise.addEventListener("click", () => requestRevision(post.id, revise));
       actions.append(revise);
 
@@ -185,6 +188,12 @@ function renderPosts() {
         publish.addEventListener("click", () => publishNow(post.id, publish));
         actions.append(publish);
       }
+
+      const cancel = document.createElement("button");
+      cancel.type = "button";
+      cancel.textContent = "Cancelar postagem";
+      cancel.addEventListener("click", () => cancelPost(post.id, cancel));
+      actions.append(cancel);
 
       main.append(actions);
     }
@@ -245,6 +254,26 @@ async function requestRevision(postId, button) {
     if (activeTab === "agents") await loadAgents();
   } catch (error) {
     notice("Correção: " + error.message);
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
+}
+
+async function cancelPost(postId, button) {
+  if (!window.confirm("Cancelar esta postagem? Ela não será enviada ao Instagram.")) return;
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = "Cancelando...";
+  try {
+    const data = await api("/api/portal/posts/" + encodeURIComponent(postId) + "/cancel", {
+      method: "POST"
+    });
+    notice(data.message || "Postagem cancelada.");
+    await loadPosts();
+    if (activeTab === "agents") await loadAgents();
+  } catch (error) {
+    notice("Cancelamento: " + error.message);
   } finally {
     button.disabled = false;
     button.textContent = original;
