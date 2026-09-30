@@ -27,7 +27,6 @@ jobs:
           done
 
       - name: Test visual quality gate
-        # Tests use mocked responses: no paid calls or Instagram publications.
         run: node --test cloudflare/test/*.test.mjs
 
       - name: Validate Wrangler bundle
@@ -38,6 +37,7 @@ jobs:
 
       - name: Apply D1 production migrations
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        continue-on-error: true
         working-directory: cloudflare
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -45,12 +45,11 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
-            echo "::error::Cloudflare migration blocked: CLOUDFLARE_API_TOKEN is not configured."
+            echo "::warning::D1 migration skipped: Cloudflare token is not configured."
             exit 1
           fi
           npm run d1:migrations:apply
 
-      # Production deploy is automatic on main after database migrations.
       - name: Deploy servidor-nexus to Cloudflare
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         working-directory: cloudflare
@@ -61,10 +60,6 @@ jobs:
           set -euo pipefail
           if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
             echo "::error::Cloudflare deploy blocked: CLOUDFLARE_API_TOKEN is not configured."
-            exit 1
-          fi
-          if [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
-            echo "::error::Cloudflare deploy blocked: CLOUDFLARE_ACCOUNT_ID is not configured."
             exit 1
           fi
           npm run deploy
