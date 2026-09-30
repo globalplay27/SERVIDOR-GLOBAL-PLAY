@@ -9,9 +9,6 @@
   "observability": {
     "enabled": true
   },
-  "triggers": {
-    "crons": ["* * * * *"]
-  },
   "vars": {
     "APP_NAME": "Servidor Nexus",
     "RAGNAR_CLIENT_ID": "ragnar-one",
