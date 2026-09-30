@@ -140,7 +140,7 @@ async function collectMetaComments(env, client, config) {
   return { items, errors, source:"meta-comments" };
 }
 
-function localQualification(candidate, config) {
+export function localQualification(candidate, config) {
   const message = String(candidate.message || "").trim();
   const low = message.toLowerCase();
   let score = 12;
@@ -192,7 +192,16 @@ async function qualifyWithAI(env, client, candidates, config) {
   const provider = String(env.NEXUS_AI_PROVIDER || "local-first");
   if (provider === "local-first" || provider === "local-only") return candidates;
 
-  const sample = candidates.slice(0,30).map((item,index)=>({
+  const ambiguous=candidates
+    .map((item,index)=>({item,index}))
+    .filter(({item})=>
+      item.temperature==="warm" ||
+      (item.temperature==="cold" && Number(item.score||0)>=Number(config.minScore||25))
+    )
+    .filter(({item})=>!["QUERO","compra/preço","teste"].includes(String(item.intent||"")))
+    .slice(0,30);
+  if(!ambiguous.length)return candidates;
+  const sample = ambiguous.map(({item,index})=>({
     index,
     username:item.instagramUsername,
     message:item.message,
