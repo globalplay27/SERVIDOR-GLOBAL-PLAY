@@ -433,18 +433,35 @@ function campaignStatusLabel(status){
   const map={received:"RECEBIDO",in_production:"EM PRODUÇÃO",approved:"APROVADO",adjust:"AJUSTAR",scheduled:"AGENDADO",published:"PUBLICADO"};
   return map[status]||String(status||"RECEBIDO").toUpperCase();
 }
+function campaignStep(status){
+  return {received:0,in_production:1,approved:2,adjust:1,scheduled:3,published:4}[status]??0;
+}
 function renderWorkspace(){
   renderWorkspaceSelector();
   const campaigns=state.workspace?.campaigns||[];
   const directives=state.workspace?.directives||[];
   const campaignList=$("#campaign-list");
-  if(campaignList)campaignList.innerHTML=campaigns.length?campaigns.map(item=>`
-    <article class="campaign-card">
-      <div class="campaign-card-head"><div><strong>${escapeHtml(item.title||"Campanha")}</strong><small>${escapeHtml(item.startDate||"")} · 7 dias</small></div><span class="badge">${campaignStatusLabel(item.creativeStatus)}</span></div>
+  if(campaignList)campaignList.innerHTML=campaigns.length?campaigns.map(item=>{
+    const step=campaignStep(item.creativeStatus);
+    const paused=item.status==="paused";
+    return `
+    <article class="campaign-card" data-campaign-card="${escapeHtml(item.id)}">
+      <div class="campaign-card-head"><div><strong>${escapeHtml(item.title||"Campanha")}</strong><small>${escapeHtml(item.startDate||"")} · 7 dias · ${paused?"PAUSADA":"ATIVA"}</small></div><span class="badge ${paused?"off":""}">${campaignStatusLabel(item.creativeStatus)}</span></div>
       ${item.assetUrl?`<img src="${escapeHtml(item.assetUrl)}" alt="Criativo da campanha">`:""}
       <p>${escapeHtml(item.brief||"")}</p>
-      <div class="campaign-flow"><span>Recebido</span><span>Produção</span><span>Aprovação</span><span>Agendado</span><span>Publicado</span></div>
-    </article>`).join(""):'<p class="muted">Nenhuma campanha criada para este cliente.</p>';
+      <div class="campaign-flow">
+        ${["Recebido","Produção","Aprovação","Agendado","Publicado"].map((label,index)=>`<span class="${index<=step?"done":""}">${label}</span>`).join("")}
+      </div>
+      <div class="campaign-actions">
+        <button type="button" class="ghost" data-campaign-status="in_production" data-campaign-id="${escapeHtml(item.id)}">Em produção</button>
+        <button type="button" class="primary" data-campaign-status="approved" data-campaign-id="${escapeHtml(item.id)}">Aprovar</button>
+        <button type="button" class="ghost" data-campaign-status="adjust" data-campaign-id="${escapeHtml(item.id)}">Pedir ajuste</button>
+        <button type="button" class="ghost" data-campaign-status="scheduled" data-campaign-id="${escapeHtml(item.id)}">Agendar</button>
+        <button type="button" class="ghost" data-campaign-status="published" data-campaign-id="${escapeHtml(item.id)}">Publicado</button>
+        <button type="button" class="ghost" data-campaign-lifecycle="${paused?"active":"paused"}" data-campaign-id="${escapeHtml(item.id)}">${paused?"Retomar":"Pausar"}</button>
+      </div>
+    </article>`;
+  }).join(""):'<p class="muted">Nenhuma campanha criada para este cliente.</p>';
   const directiveList=$("#directive-list");
   if(directiveList)directiveList.innerHTML=directives.length?directives.map(item=>`
     <article class="directive-card"><div><strong>${escapeHtml((item.appliesTo||["all"]).join(", ").toUpperCase())}</strong><small>${formatSupportDate(item.createdAt)}</small></div><p>${escapeHtml(item.text||"")}</p></article>`).join(""):'<p class="muted">Nenhuma orientação registrada.</p>';
@@ -717,6 +734,34 @@ $("select[name=theme]").addEventListener("change", event => {
 });
 
 document.addEventListener("click", async event => {
+  const campaignStatusButton=event.target.closest("[data-campaign-status]");
+  if(campaignStatusButton){
+    const client=workspaceClient();
+    if(!client)return;
+    const id=campaignStatusButton.dataset.campaignId||"";
+    const creativeStatus=campaignStatusButton.dataset.campaignStatus||"received";
+    campaignStatusButton.disabled=true;
+    try{
+      await api("/api/master/campaigns/"+encodeURIComponent(id),{method:"PATCH",body:JSON.stringify({clientId:client.id,creativeStatus})});
+      await loadWorkspace();
+    }catch(error){alert("Não foi possível atualizar a campanha.");}
+    finally{campaignStatusButton.disabled=false;}
+    return;
+  }
+  const campaignLifecycleButton=event.target.closest("[data-campaign-lifecycle]");
+  if(campaignLifecycleButton){
+    const client=workspaceClient();
+    if(!client)return;
+    const id=campaignLifecycleButton.dataset.campaignId||"";
+    const status=campaignLifecycleButton.dataset.campaignLifecycle||"active";
+    campaignLifecycleButton.disabled=true;
+    try{
+      await api("/api/master/campaigns/"+encodeURIComponent(id),{method:"PATCH",body:JSON.stringify({clientId:client.id,status})});
+      await loadWorkspace();
+    }catch(error){alert("Não foi possível alterar a campanha.");}
+    finally{campaignLifecycleButton.disabled=false;}
+    return;
+  }
   const runAgentButton=event.target.closest("[data-run-agent]");
   if(runAgentButton){await runAgentCore(runAgentButton.dataset.runAgent||"all",runAgentButton);return;}
   const assumeButton=event.target.closest("[data-assume-client]");if(assumeButton){assumeClient(assumeButton.dataset.assumeClient);return;}
