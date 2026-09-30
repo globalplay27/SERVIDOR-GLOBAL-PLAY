@@ -124,6 +124,22 @@ async function runDesigner(env,client,options){
     payload.intelligence=payload.intelligence&&typeof payload.intelligence==="object"?payload.intelligence:{};
     const media=String(payload.imageUrl||payload.publicImageUrl||"").trim();
     const mediaReady=/^https:\/\//i.test(media);
+    const generatedMedia=payload.intelligence?.mediaSource==="openai-original-media";
+    if(generatedMedia&&payload.mediaGeneration?.brandingApplied!==true){
+      missing++;
+      repairQueued++;
+      payload.blockedDesignerMedia=media;
+      payload.imageUrl="";
+      payload.publicImageUrl="";
+      payload.visualReview=null;
+      payload.mediaGeneration={...(payload.mediaGeneration||{}),status:"requested",updatedAt:new Date().toISOString()};
+      payload.qualityGates={...(payload.qualityGates||{}),designer:"pending",designerAt:new Date().toISOString()};
+      await env.DB.prepare(
+        "UPDATE post_ledger SET status='ready',payload_json=?2,error='media_generation_required',updated_at=CURRENT_TIMESTAMP WHERE id=?1"
+      ).bind(row.id,JSON.stringify(payload)).run();
+      checks.push({id:row.id,mediaReady,ok:false,reason:"brand_overlay_required"});
+      continue;
+    }
 
     if(!mediaReady){
       missing++;
