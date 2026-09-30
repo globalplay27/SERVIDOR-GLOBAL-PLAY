@@ -13,7 +13,7 @@ test("Instagram insights remain part of autonomous feedback", () => {
 
 test("protected accounts request genuinely new generated media",()=>{
   assert.match(buildVisualPrompt({id:"globalplay-streaming"}),/original family-friendly 3D animated\/cartoon/i);
-  assert.match(buildVisualPrompt({id:"ragnar-one"}),/ORIGINAL premium Nordic cinematic/i);
+  assert.match(buildVisualPrompt({id:"ragnar-one"}),/ordinary streaming entertainment in a modern home/i);
   assert.match(runtime,/openai-original-media/);
   assert.match(runtime,/media_generation_required/);
 });
