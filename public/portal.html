@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#080d15"><title>NEXUS AI · Acompanhamento</title>
-  <link rel="stylesheet" href="/client-lite.css?v=2"><script src="/client-lite.js?v=2" defer></script>
+  <link rel="stylesheet" href="/client-lite.css?v=3"><script src="/client-lite.js?v=3" defer></script>
 </head>
 <body><main class="shell">
   <section id="login" class="login card" hidden>
@@ -25,6 +25,7 @@
       <button data-tab="overview" class="active" type="button">Visão geral</button>
       <button data-tab="posts" type="button">Postagens</button>
       <button data-tab="agents" type="button">Agentes</button>
+      <button data-tab="media" type="button">Mídias</button>
       <button data-tab="performance" type="button">Desempenho</button>
       <button data-tab="instagram" type="button">Instagram</button>
     </nav>
@@ -53,6 +54,26 @@
         <article class="card"><span>Correções solicitadas</span><strong id="agent-correction-count">—</strong></article>
       </div>
       <div id="agent-list" class="list" aria-live="polite"></div>
+    </section>
+    <section id="tab-media" class="tab" hidden>
+      <div class="section-title"><div><p class="eyebrow">BIBLIOTECA DO CLIENTE</p><h1>Mídias e referências</h1><p class="muted">Envie imagens e vídeos próprios. Você pode guardar como material de publicação ou como referência do estilo visual que deseja.</p></div><button data-refresh="media" type="button">Atualizar</button></div>
+      <form id="media-upload-form" class="card media-upload">
+        <label>Arquivo
+          <input id="media-file" name="file" type="file" accept="image/png,image/jpeg,image/webp,video/mp4,video/webm,video/quicktime" required>
+        </label>
+        <label>Como usar
+          <select id="media-purpose" name="purpose">
+            <option value="reference">Referência de estilo</option>
+            <option value="publish">Mídia própria para usar em conteúdo</option>
+          </select>
+        </label>
+        <label>Orientação para os agentes
+          <textarea id="media-note" name="note" maxlength="800" placeholder="Ex.: gosto desse tipo de iluminação, composição limpa e foco em família."></textarea>
+        </label>
+        <button class="primary" type="submit">Enviar mídia</button>
+        <p id="media-upload-message" class="muted" role="status"></p>
+      </form>
+      <div id="media-list" class="media-grid" aria-live="polite"></div>
     </section>
     <section id="tab-performance" class="tab" hidden>
       <div class="section-title"><div><p class="eyebrow">RESULTADOS</p><h1>Desempenho</h1><p class="muted">Dados coletados da conta profissional conectada.</p></div><button data-refresh="performance" type="button">Atualizar</button></div>
