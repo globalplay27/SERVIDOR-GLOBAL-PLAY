@@ -150,13 +150,13 @@ async function health(env) {
   }, d1 ? 200 : 503);
 }
 
-async function autonomyHealth(env) {
+async function autonomyHealth(env, detailed = false) {
   const expectedAgents = [
     "RADAR","ESTRATEGISTA","PESQUISADOR","ANALISTA","CREATOR","COPY CHIEF",
     "DESIGNER","VIDEO","PUBLISHER","ODIN","SUPORTE","AUDITOR","GROWTH"
   ];
   try {
-    const [heartbeatRow, clientsResult, executionsResult, leadRunsResult, leadConfigsResult, leadCountsResult, postsResult, jobsResult, openaiResult] = await Promise.all([
+    const [heartbeatRow, clientsResult, executionsResult, leadRunsResult, leadConfigsResult, leadCountsResult, postsResult, jobsResult, openaiResult, tokenUsageResult, agentStateResult] = await Promise.all([
       env.DB.prepare(
         "SELECT value_json,updated_at FROM nexus_state WHERE namespace='scheduler' AND item_key='heartbeat' AND client_id='' LIMIT 1"
       ).first(),
@@ -167,7 +167,7 @@ async function autonomyHealth(env) {
         "SELECT client_id,agent,status,detail_json,created_at FROM agent_executions ORDER BY created_at DESC LIMIT 500"
       ).all(),
       env.DB.prepare(
-        "SELECT client_id,status,finished_at,analyzed,new_leads FROM lead_hunter_runs ORDER BY COALESCE(finished_at,created_at) DESC LIMIT 100"
+        "SELECT client_id,status,finished_at,analyzed,new_leads,payload_json FROM lead_hunter_runs ORDER BY COALESCE(finished_at,created_at) DESC LIMIT 100"
       ).all(),
       env.DB.prepare(
         "SELECT client_id,value_json FROM nexus_state WHERE namespace='lead-hunter' AND item_key='config'"
@@ -183,6 +183,12 @@ async function autonomyHealth(env) {
       ).all(),
       env.DB.prepare(
         "SELECT client_id,status,detail,updated_at FROM openai_runtime_status WHERE client_id IN ('globalplay-streaming','ragnar-one')"
+      ).all().catch(() => ({ results: [] })),
+      env.DB.prepare(
+        "SELECT client_id,day_key,used_tokens,calls,last_model,updated_at FROM token_usage WHERE client_id IN ('globalplay-streaming','ragnar-one') AND day_key=date('now','-3 hours')"
+      ).all().catch(() => ({ results: [] })),
+      env.DB.prepare(
+        "SELECT client_id,value_json,updated_at FROM nexus_state WHERE namespace='agent-core' AND item_key='state' AND client_id IN ('globalplay-streaming','ragnar-one')"
       ).all().catch(() => ({ results: [] }))
     ]);
 
@@ -207,6 +213,11 @@ async function autonomyHealth(env) {
       catch { return [row.client_id, {}]; }
     }));
     const leadCounts = new Map((leadCountsResult?.results || []).map(row => [row.client_id, Number(row.total || 0)]));
+    const tokenUsage = new Map((tokenUsageResult?.results || []).map(row => [row.client_id, row]));
+    const agentStates = new Map((agentStateResult?.results || []).map(row => {
+      try { return [row.client_id, { value: JSON.parse(row.value_json || "{}"), updatedAt: row.updated_at }]; }
+      catch { return [row.client_id, { value: {}, updatedAt: row.updated_at }]; }
+    }));
 
     const instagramHealth = new Map(await Promise.all(
       (clientsResult?.results || []).map(async client => [
@@ -260,6 +271,23 @@ async function autonomyHealth(env) {
       const defaultAuto = ["globalplay-streaming", "ragnar-one"].includes(client.id);
       const autoEnabled = leadSettings.enabled !== false && (leadSettings.autoRun === undefined ? defaultAuto : leadSettings.autoRun === true);
       const leadRun = lastLeadRun.get(client.id);
+      let leadPayload={};
+      try { leadPayload=JSON.parse(String(leadRun?.payload_json||"{}")); } catch {}
+      const leadErrors=Array.isArray(leadPayload.errors)?leadPayload.errors.map(String):[];
+      const leadSources=leadPayload.sources&&typeof leadPayload.sources==="object"?leadPayload.sources:{};
+      const leadDiagnostic=leadErrors.some(x=>/permission|oauth|token|authoriz|scope|forbidden|access/i.test(x))
+        ?"permission_or_auth_error"
+        :Number(leadRun?.analyzed||0)===0&&Number(leadSources.metaComments||0)===0&&leadErrors.length===0
+          ?"no_comments_found"
+          :leadErrors.length?"collection_error":"ok";
+      const usage=tokenUsage.get(client.id)||{};
+      const dailyLimit=Math.max(1,Number(env.NEXUS_OPENAI_DAILY_TOKEN_LIMIT||30000));
+      const usedTokens=Math.max(0,Number(usage.used_tokens||0));
+      const provider=(openaiResult?.results||[]).find(row=>row.client_id===client.id);
+      const openaiBlocked=usedTokens>=dailyLimit||String(provider?.status||"")==="quota_exhausted";
+      const stateEntry=agentStates.get(client.id)||{value:{},updatedAt:null};
+      const nextCycleMs=Date.parse(String(stateEntry.value?.nextCycleAt||""));
+      const cycleDelayed=Number.isFinite(nextCycleMs)&&now-nextCycleMs>5*60*1000;
       const posts = (postsResult?.results || []).filter(row => row.client_id === client.id).slice(0, 12).map(row => {
         let payload = {};
         try { payload = JSON.parse(row.payload_json || "{}"); } catch {}
@@ -295,7 +323,6 @@ async function autonomyHealth(env) {
         dueAt: row.due_at, updatedAt: row.updated_at,
         errorCode: /^[a-z_]+$/.test(String(row.last_error || "")) ? String(row.last_error).slice(0, 80) : (row.last_error ? "execution_error" : "")
       }));
-      const provider = (openaiResult?.results || []).find(row => row.client_id === client.id);
       return {
         clientId: client.id,
         clientName: client.name,
@@ -303,24 +330,45 @@ async function autonomyHealth(env) {
         agents,
         allAgentsSeen: missing.length === 0,
         missingAgents: missing,
-        instagramConnection: instagramHealth.get(String(client.id)) || {
-          connected: false,
-          source: "unknown",
-          expired: false,
-          expiresAt: null,
-          fallbackReason: "",
-          tokenValid: false,
-          accountMatches: false,
-          validation: "unknown"
+        instagramConnection: (() => {
+          const raw=instagramHealth.get(String(client.id)) || {};
+          const safe={
+            connected:Boolean(raw.connected),
+            tokenValid:Boolean(raw.tokenValid),
+            accountMatches:Boolean(raw.accountMatches),
+            validation:String(raw.validation||"unknown")
+          };
+          return detailed?{...safe,source:raw.source||"unknown",expired:Boolean(raw.expired),expiresAt:raw.expiresAt||null,fallbackReason:raw.fallbackReason||""}:safe;
+        })(),
+        cycleHealth:{
+          lastCycleAt:stateEntry.value?.lastCycleAt||null,
+          nextCycleAt:stateEntry.value?.nextCycleAt||null,
+          status:String(stateEntry.value?.lastCycleStatus||"unknown"),
+          delayed:cycleDelayed
         },
         publishingDiagnostic: {
-          posts, jobs,
+          ...(detailed?{posts,jobs}:{}),
           openai: {
-            status: provider?.status || "unknown",
-            code: /^[a-z_0-9]+$/.test(String(provider?.detail || ""))
-              ? String(provider.detail).slice(0, 80) : (provider?.detail ? "provider_error" : ""),
-            updatedAt: provider?.updated_at || null
-          }
+            status: openaiBlocked?"blocked":(provider?.status || "unknown"),
+            budgetBlocked:openaiBlocked,
+            usedTokens,
+            limitTokens:dailyLimit,
+            percent:Math.min(100,Math.round((usedTokens/dailyLimit)*100)),
+            ...(detailed?{
+              code:/^[a-z_0-9]+$/.test(String(provider?.detail||""))?String(provider.detail).slice(0,80):(provider?.detail?"provider_error":""),
+              updatedAt:provider?.updated_at||null
+            }:{})
+          },
+          zeroPublishReason:(()=>{
+            const publisher=agents.find(item=>item.agent==="PUBLISHER");
+            const r=publisher?.result||{};
+            if(Number(r.published||0)>0)return "";
+            if(openaiBlocked)return "openai_budget_blocked";
+            if(Number(r.awaitingMedia||0)>0)return "awaiting_unique_media";
+            if(Number(r.awaitingApproval||0)>0)return "quality_gate_pending";
+            if(cycleDelayed)return "cycle_delayed";
+            return "no_due_approved_post";
+          })()
         },
         leadCapture: {
           autoEnabled,
@@ -328,7 +376,9 @@ async function autonomyHealth(env) {
           lastRunStatus: leadRun?.status || "never",
           lastAnalyzed: Number(leadRun?.analyzed || 0),
           lastNew: Number(leadRun?.new_leads || 0),
-          totalLeads: leadCounts.get(client.id) || 0
+          totalLeads: leadCounts.get(client.id) || 0,
+          diagnostic:leadDiagnostic,
+          ...(detailed?{sources:leadSources,errorCount:leadErrors.length}:{})
         }
       };
     });
@@ -344,11 +394,11 @@ async function autonomyHealth(env) {
     }));
 
     return json({
-      ok: schedulerHealthy && clients.every(client => client.allAgentsSeen),
+      ok: schedulerHealthy && clients.every(client => client.allAgentsSeen && !client.cycleHealth?.delayed),
       runtime: "cloudflare-workers",
       automationActive: String(env.CLOUDFLARE_AUTOMATION_ACTIVE || "").toLowerCase() === "true",
       expectedAgents: expectedAgents.length,
-      instagramCentral,
+      instagramCentral: detailed ? instagramCentral : { configured:Boolean(instagramCentral?.configured) },
       scheduler: {
         healthy: schedulerHealthy,
         lastHeartbeatAt: heartbeatRow?.updated_at || heartbeat?.at || null,
@@ -519,7 +569,12 @@ export default {
     }
 
     if (url.pathname === "/api/autonomy-health" && request.method === "GET") {
-      return autonomyHealth(env);
+      const detailed=url.searchParams.get("detail")==="1";
+      if(detailed){
+        const denied=requireAuth(request,env);
+        if(denied)return denied;
+      }
+      return autonomyHealth(env,detailed);
     }
 
     if (url.pathname === "/api/system/openai-routing" && request.method === "GET") {
