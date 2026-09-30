@@ -1,4 +1,5 @@
 import { openAIResponses } from "./openai.js";
+import { commercialPromptGuard } from "./content-policy.js";
 
 function bytesFromBase64(value){
   const raw=atob(String(value||""));
@@ -63,6 +64,8 @@ export function buildVisualPrompt(client, visualBrief="", variationSeed=""){
       "Avoid repeating the same person sitting on a sofa and avoid literal Viking scenery."
     );
   }
+  const commercialGuard=commercialPromptGuard(client);
+  if(commercialGuard)common.push(commercialGuard);
   if(String(visualBrief||"").trim())common.push("Creative direction: "+String(visualBrief).slice(0,1200));
   return common.join(" ");
 }
