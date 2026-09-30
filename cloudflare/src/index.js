@@ -343,6 +343,11 @@ async function autonomyHealth(env, detailed = false) {
         cycleHealth:{
           status:String(stateEntry.value?.lastCycleStatus||"unknown"),
           delayed:cycleDelayed,
+          errorCode:(()=>{
+            const raw=String(stateEntry.value?.lastCycleError||"").trim();
+            if(!raw)return "";
+            return /^[a-z_0-9:-]+$/i.test(raw)?raw.slice(0,120):"cycle_execution_error";
+          })(),
           ...(detailed?{lastCycleAt:stateEntry.value?.lastCycleAt||null,nextCycleAt:stateEntry.value?.nextCycleAt||null}:{})
         },
         publishingDiagnostic: {
