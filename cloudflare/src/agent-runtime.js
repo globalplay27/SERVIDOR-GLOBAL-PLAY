@@ -237,7 +237,7 @@ async function ledgerRows(env, clientId, limit = 100) {
   }));
 }
 
-function recommendedTimes(items) {
+function recommendedTimes(items,clientId="") {
   // Fully adaptive timing for autonomous accounts: historical engagement decides
   // the posting windows. No configured clock slots are allowed to override RADAR.
   const configured = [];
@@ -261,7 +261,10 @@ function recommendedTimes(items) {
   }
   // Exploration windows are deliberately different from the former 09/12/18
   // schedule. As engagement data accumulates, ranked historical performance wins.
-  for(const h of [10,15,21,8,13,19,23]){
+  const exploration=String(clientId)==="globalplay-streaming"
+    ?[8,11,14,17,19]
+    :[10,14,18,21,8];
+  for(const h of exploration){
     if(chosen.length>=3)break;
     if(chosen.every(x=>Math.abs(x-h)>=4))chosen.push(h);
   }
@@ -302,7 +305,7 @@ async function runRadar(env, client, options) {
     return {...item,engagement};
   }).sort((a,b)=>b.engagement-a.engagement);
   const engagement=scored.map(item=>item.engagement);
-  const postTimes=recommendedTimes(snapshot.items);
+  const postTimes=recommendedTimes(snapshot.items,client.id);
   const previousFollowers=Math.max(0,Number(state?.radar?.followersCount||0));
   const followersCount=Math.max(0,Number(snapshot.followersCount||previousFollowers||0));
   const followerDelta=followersCount&&previousFollowers?followersCount-previousFollowers:0;
@@ -474,7 +477,7 @@ async function runStrategist(env,client,context,options) {
     adaptiveTiming:true,
     recommendedPostTimes:Array.isArray(radar.recommendedPostTimes)&&radar.recommendedPostTimes.length===3
       ?radar.recommendedPostTimes
-      :recommendedTimes([]),
+      :recommendedTimes([],client.id),
     // The current publisher sends a single image through Instagram Graph.
     // Do not claim a Reel or carousel unless a real media pipeline exists.
     contentMix:{image:100},
@@ -615,7 +618,7 @@ async function runCreator(env,client,strategy,options) {
 
   const times=(Array.isArray(strategy?.recommendedPostTimes)&&strategy.recommendedPostTimes.length
     ?strategy.recommendedPostTimes
-    :recommendedTimes([])).slice(0,3);
+    :recommendedTimes([],client.id)).slice(0,3);
   const themes=Array.isArray(strategy?.themes)&&strategy.themes.length
     ?strategy.themes
     :["Descoberta","Utilidade","Comunidade"];
