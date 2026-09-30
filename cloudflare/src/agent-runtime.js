@@ -1018,7 +1018,7 @@ async function runPublisher(env,client,options) {
      ORDER BY COALESCE(scheduled_for,created_at) ASC LIMIT 20`
   ).bind(client.id,new Date().toISOString()).all();
 
-  const recentPublished=await ledgerRows(env,client.id,150);
+  const recentPublished=await ledgerRows(env,client.id,240);
   const usedMedia=new Set(
     recentPublished.filter(row=>row.status==="published").slice(0,2)
       .map(row=>mediaKey(row.payload?.imageUrl||row.payload?.publicImageUrl||""))
@@ -1113,8 +1113,8 @@ async function runPublisher(env,client,options) {
       continue;
     }
 
-    if(client.id==="ragnar-one"){
-      const fingerprint=await mediaFingerprint(env,imageUrl);
+    if(["globalplay-streaming","ragnar-one"].includes(client.id)){
+      const fingerprint=String(payload.mediaFingerprint||"")||await mediaFingerprint(env,imageUrl);
       if(!fingerprint){
         await env.DB.prepare(
           "UPDATE post_ledger SET error='media_fingerprint_unavailable',updated_at=CURRENT_TIMESTAMP WHERE id=?1"
@@ -1122,18 +1122,37 @@ async function runPublisher(env,client,options) {
         awaitingMedia+=1;
         continue;
       }
+      payload.mediaFingerprint=fingerprint;
+      const cutoff=Date.now()-60*86400000;
+      const priorRows=recentPublished.filter(item=>{
+        if(item.status!=="published")return false;
+        const at=Date.parse(String(item.payload?.publishedAt||item.updated_at||item.scheduled_for||item.created_at||""));
+        return Number.isFinite(at)&&at>=cutoff;
+      });
       let repeated=false;
-      for(const prior of recentPublished.filter(item=>item.status==="published").slice(0,2)){
-        const priorUrl=prior.payload?.imageUrl||prior.payload?.publicImageUrl||"";
-        const priorHash=prior.payload?.mediaFingerprint||await mediaFingerprint(env,priorUrl);
-        if(priorHash===fingerprint){repeated=true;break;}
+      let checked=0;
+      for(const prior of priorRows){
+        let priorHash=String(prior.payload?.mediaFingerprint||"");
+        if(!priorHash&&checked<12){
+          const priorUrl=prior.payload?.imageUrl||prior.payload?.publicImageUrl||"";
+          priorHash=await mediaFingerprint(env,priorUrl);
+          checked++;
+          if(priorHash){
+            const priorPayload={...(prior.payload||{}),mediaFingerprint:priorHash};
+            await env.DB.prepare(
+              "UPDATE post_ledger SET payload_json=?2,updated_at=updated_at WHERE id=?1"
+            ).bind(prior.id,JSON.stringify(priorPayload)).run().catch(()=>{});
+          }
+        }
+        if(priorHash&&priorHash===fingerprint){repeated=true;break;}
       }
       if(repeated){
         payload.blockedDuplicateMedia=imageUrl;
         payload.imageUrl="";
-        payload.qualityGates={...(payload.qualityGates||{}),designer:"pending"};
+        payload.publicImageUrl="";
         payload.visualReview=null;
         payload.mediaGeneration={...(payload.mediaGeneration||{}),status:"requested",updatedAt:new Date().toISOString()};
+        payload.qualityGates={...(payload.qualityGates||{}),designer:"pending"};
         await env.DB.prepare(
           "UPDATE post_ledger SET payload_json=?2,error='media_generation_required',updated_at=CURRENT_TIMESTAMP WHERE id=?1"
         ).bind(row.id,JSON.stringify(payload)).run();
@@ -1141,7 +1160,6 @@ async function runPublisher(env,client,options) {
         awaitingMedia+=1;
         continue;
       }
-      payload.mediaFingerprint=fingerprint;
     }
 
     const caption=String(row.caption||"");
