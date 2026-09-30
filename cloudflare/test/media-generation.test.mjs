@@ -26,5 +26,6 @@ test("generated image is stored in R2 and returns public URL",async()=>{
   const out=await generateOriginalMedia(env,{id:"globalplay-streaming"},"post-1","brief",{request,variationSeed:"x"});
   assert.match(out.url,/\/media\/posts\/globalplay-streaming\/post-1\/generated-/);
   assert.equal(new TextDecoder().decode(stored.bytes),"PNGDATA");
-  assert.equal(stored.meta.httpMetadata.contentType,"image/png");
+  assert.equal(stored.meta.httpMetadata.contentType,"image/jpeg");
+  assert.equal(out.fingerprint.length,64);
 });
