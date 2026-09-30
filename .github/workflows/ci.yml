@@ -68,7 +68,7 @@ jobs:
           set -euo pipefail
           ok=0
           last=""
-          for attempt in $(seq 1 12); do
+          for attempt in $(seq 1 6); do
             last="$(curl --silent --show-error --max-time 15 "$NEXUS_HEALTH_URL" || true)"
             if [ -n "$last" ]; then
               echo "$last" | jq '{

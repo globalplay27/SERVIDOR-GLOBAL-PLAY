@@ -13,6 +13,7 @@ import { instagramCredentialStatus } from "./instagram-credentials.js";
 import { instagramMasterConfigStatus, handleInstagramOAuthCallback, handleInstagramComplianceRequest } from "./instagram.js";
 import { masterCredentialsValid, createMasterSession, authenticatePortalUser, createPortalSession, masterSessionCookie, portalSessionCookie, loginRateLimitStatus, recordLoginFailure, clearLoginFailures, resolvePortalSession, resolveMasterSession } from "./auth.js";
 import { autonomyOverallHealthy } from "./health-policy.js";
+import { buildAutonomyHealthSummary } from "./autonomy-health-summary.js";
 
 // Keep the exact legacy export name until Cloudflare removes its existing Durable Objects.
 export class YoutubeDownloader extends DurableObject {
@@ -154,6 +155,20 @@ async function health(env) {
 }
 
 async function autonomyHealth(env, detailed = false) {
+  if (!detailed) {
+    try {
+      return json(await buildAutonomyHealthSummary(env), 200);
+    } catch (error) {
+      return json({
+        ok: false,
+        runtime: "cloudflare-workers",
+        errorCode: /free tier daily row read limit/i.test(String(error?.message || error))
+          ? "d1_daily_read_limit"
+          : "health_summary_error"
+      }, 503);
+    }
+  }
+
   const expectedAgents = [
     "RADAR","ESTRATEGISTA","PESQUISADOR","ANALISTA","CREATOR","COPY CHIEF",
     "DESIGNER","VIDEO","PUBLISHER","ODIN","SUPORTE","AUDITOR","GROWTH"

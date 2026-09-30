@@ -1,6 +1,7 @@
 export function clientAutonomyHealthy(client = {}) {
   return Boolean(
     client?.allAgentsSeen === true &&
+    client?.cycleHealth?.status === "success" &&
     client?.cycleHealth?.delayed !== true
   );
 }
