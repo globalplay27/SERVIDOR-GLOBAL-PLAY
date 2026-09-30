@@ -84,6 +84,8 @@ export async function consultGrowthAI(env, client, signals = {}, previous = null
         "Se views/reach/engajamento estiverem baixos ou zerados, mude de abordagem: não repita a mesma legenda, ângulo, imagem ou promessa.",
         "Evite texto genérico como 'Descoberta, entretenimento, utilidade e motivo claro para seguir o perfil'.",
         "Crie 3 pautas realmente diferentes entre si, com ganchos naturais em português do Brasil.",
+        "Para cada pauta descreva scene, composition, characters, palette, action e prop; não repita a mesma combinação.",
+        "Escolha format entre image, carousel e reel pelo potencial de alcance; Reels devem ter prioridade quando os sinais reais indicarem descoberta por não seguidores.",
         "As legendas devem soar humanas, específicas para a marca e ter no máximo 650 caracteres.",
         "Nunca prometa resultado garantido. CTA principal pode usar QUERO, mas varie a frase.",
         "Respeite integralmente as regras da marca enviadas no JSON.",
@@ -134,9 +136,16 @@ export async function consultGrowthAI(env, client, signals = {}, previous = null
                     caption: { type: "string" },
                     cta: { type: "string" },
                     hashtags: { type: "string" },
-                    visualBrief: { type: "string" }
+                    visualBrief: { type: "string" },
+                    scene: { type: "string" },
+                    composition: { type: "string" },
+                    characters: { type: "string" },
+                    palette: { type: "string" },
+                    action: { type: "string" },
+                    prop: { type: "string" },
+                    format: { type: "string", enum: ["image","carousel","reel"] }
                   },
-                  required: ["theme", "hook", "caption", "cta", "hashtags", "visualBrief"]
+                  required: ["theme", "hook", "caption", "cta", "hashtags", "visualBrief","scene","composition","characters","palette","action","prop","format"]
                 }
               }
             },
