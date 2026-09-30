@@ -54,7 +54,7 @@ export async function generateOriginalMedia(env,client,postId,visualBrief="",opt
       model:env.NEXUS_IMAGE_MODEL||"gpt-image-2",
       quality:String(env.NEXUS_IMAGE_QUALITY||"medium"),
       size:"1024x1536",
-      output_format:"png"
+      output_format:"jpeg"
     }],
     tool_choice:"required"
   });
@@ -62,10 +62,12 @@ export async function generateOriginalMedia(env,client,postId,visualBrief="",opt
   if(!item?.result)throw new Error("image_generation_missing_result");
   const bytes=bytesFromBase64(item.result);
   if(!bytes.byteLength||bytes.byteLength>12*1024*1024)throw new Error("image_generation_invalid_bytes");
-  const key="posts/"+String(client.id)+"/"+String(postId)+"/generated-"+crypto.randomUUID()+".png";
+  const fingerprint=[...new Uint8Array(await crypto.subtle.digest("SHA-256",bytes))]
+    .map(byte=>byte.toString(16).padStart(2,"0")).join("");
+  const key="posts/"+String(client.id)+"/"+String(postId)+"/generated-"+crypto.randomUUID()+".jpg";
   await env.MEDIA.put(key,bytes,{
-    httpMetadata:{contentType:"image/png",cacheControl:"public, max-age=31536000, immutable"},
+    httpMetadata:{contentType:"image/jpeg",cacheControl:"public, max-age=31536000, immutable"},
     customMetadata:{clientId:String(client.id),postId:String(postId),kind:"openai-original-media"}
   });
-  return {url:origin+"/media/"+key,key,promptVersion:"scene-grammar-v1"};
+  return {url:origin+"/media/"+key,key,fingerprint,promptVersion:"scene-grammar-v1"};
 }
