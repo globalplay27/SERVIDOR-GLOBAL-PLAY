@@ -52,6 +52,7 @@ function showTab(name) {
     section.hidden = section.id !== "tab-" + name;
   });
   if (name === "posts") loadPosts();
+  if (name === "agents") loadAgents();
   if (name === "performance") loadPerformance();
   if (name === "instagram") loadInstagram();
 }
@@ -98,10 +99,31 @@ function renderPosts() {
     const when = document.createElement("small");
     when.textContent = "Programada: " + formatDate(post.scheduledFor) + (post.publishedAt ? " · Publicada: " + formatDate(post.publishedAt) : "");
     main.append(heading, document.createElement("br"), when);
+    if (post.imageUrl || post.publicImageUrl) {
+      const preview = document.createElement("img");
+      preview.className = "post-preview";
+      preview.src = post.imageUrl || post.publicImageUrl;
+      preview.alt = "Prévia do criativo";
+      preview.loading = "lazy";
+      main.append(preview);
+    }
     if (post.caption) { const caption = document.createElement("p"); caption.textContent = post.caption; main.append(caption); }
+    if (post.revisionRequest) { const revision = document.createElement("p"); revision.className = "revision-note"; revision.textContent = "Ajuste solicitado: " + post.revisionRequest; main.append(revision); }
     if (post.error) { const error = document.createElement("p"); error.className = "error"; error.textContent = "Detalhe: " + post.error; main.append(error); }
     const permalink = safeInstagramLink(post.permalink);
     if (permalink) { const link = document.createElement("a"); link.href = permalink; link.target = "_blank"; link.rel = "noopener noreferrer"; link.textContent = "Ver no Instagram"; main.append(link); }
+
+    if (post.status !== "published") {
+      const actions = document.createElement("div"); actions.className = "post-actions";
+      const approve = document.createElement("button"); approve.type = "button"; approve.className = "primary"; approve.textContent = "Aprovar";
+      approve.addEventListener("click", () => decidePostAction(post.id, "approved", approve));
+      const reject = document.createElement("button"); reject.type = "button"; reject.textContent = "Reprovar";
+      reject.addEventListener("click", () => decidePostAction(post.id, "rejected", reject));
+      const revise = document.createElement("button"); revise.type = "button"; revise.textContent = "Pedir ajuste";
+      revise.addEventListener("click", () => requestRevisionAction(post.id, revise));
+      actions.append(approve, reject, revise); main.append(actions);
+    }
+
     const badge = document.createElement("span"); const [label, kind] = postStatus(post);
     badge.className = "status " + kind; badge.textContent = label; card.append(main, badge); list.append(card);
   }
@@ -110,6 +132,78 @@ function renderPosts() {
 async function loadPosts() {
   try { posts = (await api("/api/portal/posts")).posts || []; renderPosts(); }
   catch (error) { notice("Postagens: " + error.message); }
+}
+
+async function decidePostAction(postId, decision, button) {
+  button.disabled = true;
+  try {
+    const data = await api("/api/portal/posts/" + encodeURIComponent(postId) + "/decision", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ decision })
+    });
+    notice(data.message || (decision === "approved" ? "Postagem aprovada." : "Postagem reprovada."));
+    await loadPosts();
+  } catch (error) {
+    notice("Postagem: " + error.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function requestRevisionAction(postId, button) {
+  const instructions = window.prompt("O que você quer que o agente corrija?");
+  if (!instructions || !instructions.trim()) return;
+  button.disabled = true;
+  try {
+    const data = await api("/api/portal/posts/" + encodeURIComponent(postId) + "/revision", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ instructions: instructions.trim() })
+    });
+    notice(data.message || "Correção enviada ao NEXUS.");
+    await loadPosts();
+    if (activeTab === "agents") await loadAgents();
+  } catch (error) {
+    notice("Correção: " + error.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function agentLabel(item) {
+  return String(item?.agent || item?.module || item?.name || item?.agentName || "Agente");
+}
+
+function executionTime(item) {
+  return item?.finishedAt || item?.completedAt || item?.updatedAt || item?.createdAt || item?.startedAt || null;
+}
+
+async function loadAgents() {
+  try {
+    const data = await api("/api/portal/agent-core");
+    const modules = Array.isArray(data.modules) ? data.modules : [];
+    const executions = Array.isArray(data.executions) ? data.executions : [];
+    $("#agent-count").textContent = formatNumber(modules.length);
+    $("#execution-count").textContent = formatNumber(executions.length);
+    $("#agent-pending-count").textContent = formatNumber(data.pendingApproval);
+    $("#agent-correction-count").textContent = formatNumber(data.correctionRequested);
+    const root = $("#agent-list"); root.replaceChildren();
+    if (!executions.length) {
+      const empty = document.createElement("div"); empty.className = "card muted";
+      empty.textContent = "Nenhuma execução recente registrada para esta conta."; root.append(empty); return;
+    }
+    for (const item of executions.slice(0, 30)) {
+      const row = document.createElement("article"); row.className = "card agent-row";
+      const title = document.createElement("strong"); title.textContent = agentLabel(item);
+      const detail = document.createElement("p");
+      detail.textContent = String(item.summary || item.action || item.status || item.result || "Execução registrada");
+      const time = document.createElement("small"); time.textContent = "Última atividade: " + formatDate(executionTime(item));
+      row.append(title, detail, time); root.append(row);
+    }
+  } catch (error) {
+    notice("Agentes: " + error.message);
+  }
 }
 
 async function loadPerformance() {
@@ -176,7 +270,7 @@ $("#login-form").addEventListener("submit", async event => {
 });
 
 document.querySelectorAll("[data-tab]").forEach(button => button.addEventListener("click", () => showTab(button.dataset.tab)));
-document.querySelectorAll("[data-refresh]").forEach(button => button.addEventListener("click", () => button.dataset.refresh === "posts" ? loadPosts() : loadPerformance()));
+document.querySelectorAll("[data-refresh]").forEach(button => button.addEventListener("click", () => { const target = button.dataset.refresh; if (target === "posts") return loadPosts(); if (target === "agents") return loadAgents(); return loadPerformance(); }));
 $("#refresh").addEventListener("click", () => refresh().catch(error => notice(error.message)));
 $("#logout").addEventListener("click", async () => {
   await fetch("/api/portal/logout", { method: "POST", credentials: "same-origin" }).catch(() => {});
