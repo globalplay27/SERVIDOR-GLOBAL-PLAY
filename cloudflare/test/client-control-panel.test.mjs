@@ -13,7 +13,7 @@ test("client portal exposes agent activity and post review controls", async () =
   assert.match(html, /id="agent-list"/);
   assert.match(js, /Aprovar/);
   assert.match(js, /Reprovar/);
-  assert.match(js, /Pedir ajuste/);
+  assert.match(js, /Refazer/);
   assert.match(js, /Publicar agora/);
   assert.match(js, /\/api\/portal\/agent-core/);
   assert.match(js, /\/decision/);
