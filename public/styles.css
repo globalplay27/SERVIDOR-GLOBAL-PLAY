@@ -104,3 +104,8 @@
 .campaign-flow{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-top:14px}
 .campaign-flow span{font-size:10px;text-align:center;padding:8px 5px;border-radius:8px;background:#0d1915;color:#93aaa1;border:1px solid #183027}
 @media(max-width:900px){.campaign-master-grid{grid-template-columns:1fr}.campaign-form{grid-template-columns:1fr}.campaign-form .wide{grid-column:auto}.campaign-flow{grid-template-columns:1fr 1fr}}
+
+.campaign-flow span.done{border-color:#2a7a50;background:#0d2a1c;color:#c9ffe0}
+.campaign-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.campaign-actions .primary,.campaign-actions .ghost{min-width:110px}
+@media(max-width:600px){.campaign-actions{display:grid;grid-template-columns:1fr 1fr}.campaign-actions .primary,.campaign-actions .ghost{width:100%;min-width:0}}
