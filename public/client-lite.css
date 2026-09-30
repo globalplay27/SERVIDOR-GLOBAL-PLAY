@@ -9,3 +9,12 @@ button,input{font:inherit}button{cursor:pointer;border:1px solid #30516a;color:#
 @media(max-width:400px){.metrics{grid-template-columns:1fr}.topbar{flex-wrap:wrap}}
 
 .post-preview{display:block;width:min(100%,520px);max-height:620px;object-fit:contain;background:#08111a;border:1px solid #294456;border-radius:14px;margin:16px 0}.post-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}.revision-note{padding:10px 12px;border-left:3px solid #f4d078;background:#172330;border-radius:8px;color:#f4dca2!important}.agent-row{display:grid;gap:8px}.agent-row p{margin:0;color:#c0d1db;overflow-wrap:anywhere}.agent-row small{color:#8fa9b8}
+
+.post-preview{display:block;width:min(100%,360px);max-height:560px;object-fit:cover;border-radius:14px;border:1px solid #2f4b5d;margin:0 0 16px;background:#08111a}
+.post-actions{display:flex;flex-wrap:wrap;gap:9px;margin-top:16px}
+.post-actions button{padding:9px 13px}
+.revision-note{padding:10px 12px;border-left:3px solid #f4d078;background:#18222b;border-radius:7px;color:#f7deb0!important}
+.agent-card{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 16px;align-items:start}
+.agent-card p{grid-column:1/-1;margin:4px 0}
+.agent-card small{grid-column:1/-1;color:#8faaba}
+@media(max-width:760px){.post-actions{display:grid;grid-template-columns:1fr}.post-actions button{width:100%}.agent-card{display:block}.agent-card .status{display:inline-block;margin:8px 0}}
