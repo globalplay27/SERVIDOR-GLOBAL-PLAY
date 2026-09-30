@@ -2,7 +2,7 @@ import { getClient } from "./clients.js";
 import { resolveInstagramCredentials } from "./instagram-credentials.js";
 import { openAIResponses } from "./openai.js";
 import { ensureLeadSchema, leadsForClient, leadHunterSummary, upsertLead } from "./leads.js";
-import { recordAgentExecution } from "./agent-core.js";
+import { recordAgentExecution, patchAgentCoreState } from "./agent-core.js";
 
 function parseJson(raw, fallback = {}) {
   try {
@@ -325,6 +325,12 @@ export async function runLeadHunter(env, clientId, options = {}) {
   let qualified=raw.map(item=>localQualification(item,config));
   qualified=await qualifyWithAI(env,client,qualified,config);
   const merge=await persistQualified(env,client,qualified,config);
+  const newHotLead=merge.newLeads>0&&qualified.some(item=>item.temperature==="hot");
+  if(newHotLead){
+    await patchAgentCoreState(env,client.id,{
+      aiGrowthInvalidation:{reason:"new_hot_lead",at:new Date().toISOString()}
+    }).catch(()=>{});
+  }
 
   const finishedAt=new Date().toISOString();
   const status=errors.length&&!raw.length?"warning":"success";
