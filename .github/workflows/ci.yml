@@ -73,6 +73,15 @@ jobs:
           echo "$body" | grep -F "Acesso administrativo" >/dev/null
           echo "Master access page verified."
 
+      - name: Verify Master authentication configuration
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --max-time 15 https://servidor-nexus.diamantehinode2015.workers.dev/api/master/diagnostic | jq '{ok,d1Ready,masterUsers,canonicalMasterConfigured,legacyMasterConfigured,nexusSecretConfigured}'
+          curl --silent --show-error --max-time 15 https://servidor-nexus.diamantehinode2015.workers.dev/api/master/self-test | jq '{ok,configured,credentialsValid,sessionCreated,sessionResolved,assetsBound,databaseBound,error}'
+
+
       - name: Recover publishing during D1 daily limit
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         continue-on-error: true
