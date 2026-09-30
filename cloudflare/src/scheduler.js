@@ -112,6 +112,15 @@ async function enqueue(env, clientId, kind, dueAt, payload = {}) {
   return Number(result?.meta?.changes || 0) > 0;
 }
 
+export function schedulerErrorCode(error) {
+  const raw = String(error?.message || error || "").toLowerCase();
+  if (/no such (table|column)|has no column|schema/.test(raw)) return "d1_schema_error";
+  if (/d1|sqlite|database|query/.test(raw)) return "d1_query_error";
+  if (/timeout|timed out/.test(raw)) return "scheduler_timeout";
+  if (/subrequest|too many requests|rate limit/.test(raw)) return "scheduler_resource_limit";
+  return "scheduler_tick_error";
+}
+
 async function writeHeartbeat(env, now, summary) {
   await env.DB.prepare(
     `INSERT INTO nexus_state(namespace, item_key, client_id, value_json, updated_at)
@@ -124,6 +133,21 @@ async function writeHeartbeat(env, now, summary) {
     at: now.toISOString(),
     ...summary
   })).run();
+}
+
+export async function recordSchedulerFailure(env, scheduledAt, error) {
+  const now = scheduledAt instanceof Date ? scheduledAt : new Date(scheduledAt || Date.now());
+  const code = schedulerErrorCode(error);
+  await writeHeartbeat(env, now, {
+    clients: 0,
+    queued: 0,
+    cycles: 0,
+    publisherSweeps: 0,
+    leadHunterRuns: 0,
+    failed: true,
+    errorCode: code
+  });
+  return code;
 }
 
 export async function runSchedulerTick(env, scheduledAt = new Date()) {
