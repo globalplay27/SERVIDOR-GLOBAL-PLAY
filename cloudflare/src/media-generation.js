@@ -58,10 +58,10 @@ export function buildVisualPrompt(client, visualBrief="", variationSeed=""){
     common.push(
       "Brand context: Ragnar One, an independent streaming brand.",
       "The SUBJECT must be ordinary streaming entertainment in a modern home: living room, television, friends, couple or family enjoying entertainment.",
-      "Ragnar One's Nordic/Viking identity is BRANDING ONLY: premium dark palette, restrained metallic or wood texture, strong graphic framing and the RAGNAR ONE name added later by the brand overlay.",
-      "Do NOT use Vikings, warriors, longships, shields, fjords, medieval cabins, axes, helmets, battle scenes, Nordic landscapes or Viking props as the subject or setting.",
+      "Use a clean, contemporary commercial streaming aesthetic with modern home entertainment scenes.",
+      "Do not use Viking, Nordic, medieval, longship, shield, fjord, warrior, saga or period-fantasy themes, props or scenery.",
       "Use generic original contemporary people only when useful; vary age, pose, framing and environment.",
-      "Avoid repeating the same person sitting on a sofa and avoid literal Viking scenery."
+      "Avoid repeating the same person sitting on a sofa."
     );
   }
   const commercialGuard=commercialPromptGuard(client);
