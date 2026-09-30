@@ -4,7 +4,8 @@ import { openAIResponses, tokenUsageToday } from "./openai.js";
 import { getState, putState, deleteState } from "./storage.js";
 import { handlePortalApi } from "./portal.js";
 import { handleMaster } from "./master.js";
-import { runSchedulerTick } from "./scheduler.js";
+import { runSchedulerTick, recordSchedulerFailure } from "./scheduler.js";
+import { runCronIteration } from "./cron-runtime.js";
 import { processDueJobs } from "./executor.js";
 import { handleWhatsAppWebhook, handleWhatsAppProtected, whatsappConfigStatus } from "./whatsapp-agent.js";
 import { instagramCredentialStatus } from "./instagram-credentials.js";
@@ -388,7 +389,9 @@ async function autonomyHealth(env, detailed = false) {
       };
     });
 
-    const schedulerHealthy = heartbeatAgeSeconds !== null && heartbeatAgeSeconds <= 180;
+    const schedulerHealthy = heartbeatAgeSeconds !== null
+      && heartbeatAgeSeconds <= 180
+      && heartbeat?.failed !== true;
     const instagramCentral = await instagramMasterConfigStatus(env).catch(() => ({
       configured: false,
       appIdConfigured: false,
@@ -408,6 +411,7 @@ async function autonomyHealth(env, detailed = false) {
         healthy: schedulerHealthy,
         lastHeartbeatAt: heartbeatRow?.updated_at || heartbeat?.at || null,
         ageSeconds: heartbeatAgeSeconds,
+        errorCode: String(heartbeat?.errorCode || ""),
         summary: heartbeat
       },
       clients
@@ -475,10 +479,12 @@ async function handleOpenAIResponses(request, env) {
 export default {
   async scheduled(event, env, ctx) {
     const at = new Date(event.scheduledTime || Date.now());
-    ctx.waitUntil((async () => {
-      await runSchedulerTick(env, at);
-      await processDueJobs(env, at);
-    })());
+    ctx.waitUntil(runCronIteration({
+      at,
+      runScheduler: current => runSchedulerTick(env, current),
+      recordFailure: (current, error) => recordSchedulerFailure(env, current, error).catch(() => "scheduler_tick_error"),
+      processJobs: current => processDueJobs(env, current)
+    }));
   },
 
   async fetch(request, env, ctx) {
