@@ -17,6 +17,7 @@ import { getMasterInstagramSummary, saveMasterInstagramConfig, connectInstagramW
 import { agentCoreDashboard, agentCoreClientView, saveAgentCoreConfig, queueManualAgentRun } from "./agent-core.js";
 import { masterLeadSummary } from "./leads.js";
 import { instagramCredentialStatus } from "./instagram-credentials.js";
+import { addDirective, createCampaign, masterWorkspace, updateCampaign } from "./master-workspace.js";
 
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
@@ -475,6 +476,37 @@ export async function handleMaster(request, env, url) {
 
   if (!protectedApi) return null;
   if (!await requireMaster(request, env)) return json({ error: "unauthorized" }, 401);
+
+  if (url.pathname === "/api/master/workspace" && request.method === "GET") {
+    const clientId=String(url.searchParams.get("clientId")||"").trim();
+    if(!clientId)return json({error:"client_id_required"},400);
+    return json(await masterWorkspace(env,clientId));
+  }
+
+  if (url.pathname === "/api/master/directives" && request.method === "POST") {
+    const body=await request.json().catch(()=>({}));
+    const clientId=String(body.clientId||"").trim();
+    if(!clientId)return json({error:"client_id_required"},400);
+    return json({ok:true,directive:await addDirective(env,clientId,body)},201);
+  }
+
+  if (url.pathname === "/api/master/campaigns" && request.method === "POST") {
+    const form=await request.formData().catch(()=>null);
+    const clientId=String(form?.get("clientId")||"").trim();
+    if(!clientId)return json({error:"client_id_required"},400);
+    const campaign=await createCampaign(env,clientId,{
+      title:form?.get("title"),brief:form?.get("brief"),startDate:form?.get("startDate"),file:form?.get("creative")
+    });
+    return json({ok:true,campaign},201);
+  }
+
+  const campaignMatch=url.pathname.match(/^\/api\/master\/campaigns\/([^/]+)$/);
+  if(campaignMatch && request.method === "PATCH") {
+    const body=await request.json().catch(()=>({}));
+    const clientId=String(body.clientId||"").trim();
+    if(!clientId)return json({error:"client_id_required"},400);
+    return json({ok:true,campaign:await updateCampaign(env,clientId,decodeURIComponent(campaignMatch[1]),body)});
+  }
 
   if (url.pathname === "/api/system/status" && request.method === "GET") {
     const [clientCount, sessionCount, postCount] = await Promise.all([
