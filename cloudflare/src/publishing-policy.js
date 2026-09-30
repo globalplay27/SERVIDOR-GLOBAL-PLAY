@@ -1,6 +1,5 @@
 const TZ="America/Sao_Paulo";
 const MIN_SPACING_MS=90*60*1000;
-const MAX_DAILY_POSTS=3;
 const READY_TTL_MS=24*60*60*1000;
 
 function parts(value){
@@ -34,11 +33,10 @@ export function isPublishingWindow(value=new Date()){
   return minutes>=8*60&&minutes<=22*60;
 }
 
-export function publishingGate({now=new Date(),publishedToday=0,lastPublishedAt=null,maxDaily=MAX_DAILY_POSTS,minSpacingMs=MIN_SPACING_MS}={}){
+export function publishingGate({now=new Date(),publishedToday=0,lastPublishedAt=null,minSpacingMs=MIN_SPACING_MS}={}){
   const current=now instanceof Date?now:new Date(now);
   if(!Number.isFinite(current.getTime()))return {ok:false,reason:"invalid_time"};
   if(!isPublishingWindow(current))return {ok:false,reason:"outside_publishing_window"};
-  if(Number(publishedToday)>=Number(maxDaily))return {ok:false,reason:"daily_limit_reached"};
   const lastMs=lastPublishedAt?Date.parse(String(lastPublishedAt)):NaN;
   if(Number.isFinite(lastMs)&&current.getTime()-lastMs<Number(minSpacingMs)){
     return {ok:false,reason:"minimum_spacing_not_reached"};
@@ -62,6 +60,5 @@ export const PUBLISHING_POLICY=Object.freeze({
   earliest:"08:00",
   latest:"22:00",
   minSpacingMinutes:90,
-  maxDailyPosts:3,
   readyTtlHours:24
 });
