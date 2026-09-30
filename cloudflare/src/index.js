@@ -14,7 +14,7 @@ import { instagramMasterConfigStatus, handleInstagramOAuthCallback, handleInstag
 import { masterCredentialsValid, createMasterSession, authenticatePortalUser, createPortalSession, masterSessionCookie, portalSessionCookie, loginRateLimitStatus, recordLoginFailure, clearLoginFailures, resolvePortalSession, resolveMasterSession } from "./auth.js";
 import { autonomyOverallHealthy } from "./health-policy.js";
 import { buildAutonomyHealthSummary } from "./autonomy-health-summary.js";
-import { isD1Emergency, runEmergencyPublisher } from "./emergency-publisher.js";
+import { emergencyPublisherStatus, isD1Emergency, runEmergencyPublisher } from "./emergency-publisher.js";
 
 // Keep the exact legacy export name until Cloudflare removes its existing Durable Objects.
 export class YoutubeDownloader extends DurableObject {
@@ -514,6 +514,10 @@ export default {
 
     if (url.pathname === "/" && request.method === "GET") {
       return redirect("/login");
+    }
+
+    if (url.pathname === "/api/emergency-publisher-status" && request.method === "GET") {
+      return json(await emergencyPublisherStatus(env, new Date()));
     }
 
     // Keep the Master access page independent from D1 and every downstream
