@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { runCronIteration } from "../src/cron-runtime.js";
@@ -31,4 +32,14 @@ test("scheduler error codes are sanitized into stable categories", () => {
   assert.equal(schedulerErrorCode(new Error("request timed out")), "scheduler_timeout");
   assert.equal(schedulerErrorCode(new Error("Too many subrequests")), "scheduler_resource_limit");
   assert.equal(schedulerErrorCode(new Error("unexpected failure with secret-looking text")), "scheduler_tick_error");
+});
+
+
+test("wrangler keeps the production cron versioned at five-minute cadence", async () => {
+  const [wrangler, schedule] = await Promise.all([
+    readFile(new URL("../wrangler.jsonc", import.meta.url), "utf8"),
+    readFile(new URL("../cron.schedule", import.meta.url), "utf8")
+  ]);
+  assert.match(wrangler, /"triggers"\s*:\s*\{[\s\S]*"crons"\s*:\s*\["\*\/5 \* \* \* \*"\]/);
+  assert.equal(schedule.trim(), "*/5 * * * *");
 });
