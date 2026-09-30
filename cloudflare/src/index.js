@@ -308,7 +308,7 @@ async function autonomyHealth(env, detailed = false) {
           blockedReviewStatus: ["approved","rejected","unavailable"].includes(String(payload.blockedDesignerReviewStatus||""))
             ? payload.blockedDesignerReviewStatus : null,
           blockedReviewChecks: payload.blockedDesignerReviewChecks && typeof payload.blockedDesignerReviewChecks === "object"
-            ? Object.fromEntries(["singleScene","noCollage","tvFilled","legibleText","brandCorrect","originalGenericVisual"]
+            ? Object.fromEntries(["singleScene","noCollage","legibleText","brandCorrect","originalGenericVisual","screenContentCoherent"]
               .filter(key => typeof payload.blockedDesignerReviewChecks[key] === "boolean")
               .map(key => [key,payload.blockedDesignerReviewChecks[key]])) : null,
           recoveryAttempted: Boolean(payload.blockedDesignerRecoveryAttemptedAt),
