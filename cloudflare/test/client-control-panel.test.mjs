@@ -20,8 +20,8 @@ test("client portal exposes agent activity and post review controls", async () =
   assert.match(js, /post-preview/);
   assert.match(portal, /postDecisionMatch/);
   assert.match(portal, /postRevisionMatch/);
-  assert.match(portal, /\\/decision/);
-  assert.match(portal, /\\/revision/);
+  assert.equal(portal.includes("/decision"), true);
+  assert.equal(portal.includes("/revision"), true);
   assert.match(portal, /pendingApproval/);
   assert.match(portal, /correctionRequested/);
 });
