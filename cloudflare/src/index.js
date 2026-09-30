@@ -10,6 +10,7 @@ import { handleWhatsAppWebhook, handleWhatsAppProtected, whatsappConfigStatus } 
 import { instagramCredentialStatus } from "./instagram-credentials.js";
 import { instagramMasterConfigStatus, handleInstagramOAuthCallback, handleInstagramComplianceRequest } from "./instagram.js";
 import { masterCredentialsValid, createMasterSession, authenticatePortalUser, createPortalSession, masterSessionCookie, portalSessionCookie, loginRateLimitStatus, recordLoginFailure, clearLoginFailures, resolvePortalSession, resolveMasterSession } from "./auth.js";
+import { autonomyOverallHealthy } from "./health-policy.js";
 
 // Keep the exact legacy export name until Cloudflare removes its existing Durable Objects.
 export class YoutubeDownloader extends DurableObject {
@@ -392,7 +393,7 @@ async function autonomyHealth(env, detailed = false) {
     }));
 
     return json({
-      ok: schedulerHealthy && clients.every(client => client.allAgentsSeen),
+      ok: autonomyOverallHealthy({ schedulerHealthy, clients }),
       runtime: "cloudflare-workers",
       automationActive: String(env.CLOUDFLARE_AUTOMATION_ACTIVE || "").toLowerCase() === "true",
       expectedAgents: expectedAgents.length,
