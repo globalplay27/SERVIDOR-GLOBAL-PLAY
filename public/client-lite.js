@@ -406,6 +406,63 @@ async function loadMedia() {
         card.append(note);
       }
 
+      if (item.purpose === "publish" && type.startsWith("image/")) {
+        const candidates = posts.filter(post => String(post.status || "") !== "published");
+        const useBox = document.createElement("div");
+        useBox.className = "post-actions";
+        const select = document.createElement("select");
+        const placeholder = document.createElement("option");
+        placeholder.value = "";
+        placeholder.textContent = candidates.length ? "Escolha uma postagem" : "Nenhuma postagem disponível";
+        select.append(placeholder);
+
+        for (const post of candidates) {
+          const option = document.createElement("option");
+          option.value = post.id;
+          option.textContent = (post.title || (post.caption || "Publicação").split("\n")[0] || "Publicação").slice(0, 70)
+            + " · " + formatDate(post.scheduledFor);
+          select.append(option);
+        }
+
+        const use = document.createElement("button");
+        use.type = "button";
+        use.className = "primary";
+        use.textContent = "Usar nesta postagem";
+        use.disabled = !candidates.length;
+        use.addEventListener("click", async () => {
+          if (!select.value) {
+            notice("Mídias: escolha a postagem que receberá esta imagem.");
+            return;
+          }
+          use.disabled = true;
+          const original = use.textContent;
+          use.textContent = "Aplicando...";
+          try {
+            const data = await api("/api/portal/media/use", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ key: item.key, postId: select.value })
+            });
+            notice(data.message || "Mídia aplicada à postagem.");
+            await loadPosts();
+          } catch (error) {
+            notice("Mídias: " + error.message);
+          } finally {
+            use.disabled = false;
+            use.textContent = original;
+          }
+        });
+        useBox.append(select, use);
+        card.append(useBox);
+      }
+
+      if (item.purpose === "publish" && type.startsWith("video/")) {
+        const note = document.createElement("small");
+        note.className = "muted";
+        note.textContent = "Vídeo armazenado. A publicação automática de Reels ainda não usa arquivos da biblioteca.";
+        card.append(note);
+      }
+
       const remove = document.createElement("button");
       remove.type = "button";
       remove.textContent = "Excluir";
