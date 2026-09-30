@@ -520,6 +520,16 @@ export default {
       return json(await emergencyPublisherStatus(env, new Date()));
     }
 
+    if (url.pathname === "/api/emergency-publish-now" && request.method === "POST") {
+      const expected = String(env.EMERGENCY_TRIGGER_TOKEN || "");
+      const provided = String(request.headers.get("x-nexus-emergency-token") || "");
+      if (!expected || !provided || provided !== expected) {
+        return json({ error: "unauthorized" }, 401);
+      }
+      const result = await runEmergencyPublisher(env, new Date());
+      return json({ ok: true, ...result });
+    }
+
     // Keep the Master access page independent from D1 and every downstream
     // integration. This route must remain usable during database quota/outage.
     if (url.pathname === "/api/master/access" && request.method === "GET") {
