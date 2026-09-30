@@ -90,6 +90,17 @@ export async function masterWorkspace(env,clientId){
   const [directives,campaigns]=await Promise.all([listDirectives(env,clientId),listCampaigns(env,clientId)]);
   return {ok:true,clientId:String(clientId),directives,campaigns};
 }
+export function filterMasterGuidance(guidance={},agent="all"){
+  const target=String(agent||"all").toLowerCase();
+  const directives=Array.isArray(guidance?.directives)?guidance.directives:[];
+  const campaigns=Array.isArray(guidance?.campaigns)?guidance.campaigns:[];
+  const normalized=directives.filter(item=>{
+    const applies=Array.isArray(item?.appliesTo)&&item.appliesTo.length?item.appliesTo:["all"];
+    return applies.map(x=>String(x).toLowerCase()).some(x=>x==="all"||x===target);
+  });
+  return {directives:normalized,campaigns};
+}
+
 export async function activeMasterGuidance(env,clientId){
   const [directives,campaigns]=await Promise.all([listDirectives(env,clientId),listCampaigns(env,clientId)]);
   const activeDirectives=directives.filter(x=>x.status==="active").slice(0,12);
