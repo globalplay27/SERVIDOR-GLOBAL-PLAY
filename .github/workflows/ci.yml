@@ -157,6 +157,18 @@ jobs:
             sleep 15
           done
           if [ "$ok" -ne 1 ]; then
+            code="$(echo "$last" | jq -r '.errorCode // ""' 2>/dev/null || true)"
+            if [ "$code" = "d1_daily_read_limit" ]; then
+              emergency="$(curl --fail --silent --show-error --max-time 15 https://servidor-nexus.diamantehinode2015.workers.dev/api/emergency-publisher-status || true)"
+              if echo "$emergency" | jq -e '
+                .ok == true and
+                (.clients | length == 2) and
+                ([.clients[] | .count > 0 and .mediaIdPresent == true] | all)
+              ' >/dev/null 2>&1; then
+                echo "::warning::D1 daily read limit active; emergency publishing is verified for both managed accounts."
+                exit 0
+              fi
+            fi
             echo "::error::Nexus production autonomy check failed after deploy."
             echo "$last" | jq . || true
             exit 1
