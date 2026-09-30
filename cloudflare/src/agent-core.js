@@ -156,10 +156,10 @@ export async function saveAgentCoreConfig(env, clientId, patch = {}) {
   return next;
 }
 
-export async function agentCoreClientView(env, client) {
+export async function agentCoreClientView(env, client, executionLimit = 80) {
   const [state, executions] = await Promise.all([
     agentCoreState(env, client.id),
-    agentExecutions(env, client.id, 200)
+    agentExecutions(env, client.id, Math.max(20, Math.min(160, Number(executionLimit || 80))))
   ]);
   return {
     clientId: client.id,
@@ -180,30 +180,30 @@ function dayKey(date = new Date()) {
 }
 
 export async function agentCoreDashboard(env) {
-  const clients = await listClients(env);
+  const clients = (await listClients(env)).slice(0, 50);
   const views = [];
-  for (const client of clients) views.push(await agentCoreClientView(env, client));
+  for (const client of clients) views.push(await agentCoreClientView(env, client, 120));
 
-  const all = await env.DB.prepare(
-    `SELECT status, detail_json, created_at FROM agent_executions
-     ORDER BY created_at DESC LIMIT 5000`
-  ).all();
   const today = dayKey();
   const month = today.slice(0, 7);
   let totalExecutionsToday = 0;
   let totalCostTodayUsd = 0;
   let totalCostMonthUsd = 0;
+  let statsWindowLimited = false;
 
-  for (const row of all?.results || []) {
-    const detail = parseJson(row.detail_json, {});
-    const created = String(row.created_at || detail.finishedAt || detail.startedAt || "");
-    const localDay = created ? dayKey(new Date(created)) : "";
-    const cost = Math.max(0, Number(detail.costUsd || 0));
-    if (localDay === today) {
-      totalExecutionsToday += 1;
-      totalCostTodayUsd += cost;
+  for (const view of views) {
+    const executions = Array.isArray(view.lastExecutions) ? view.lastExecutions : [];
+    if (executions.length >= 120) statsWindowLimited = true;
+    for (const row of executions) {
+      const created = String(row.createdAt || row.finishedAt || row.startedAt || "");
+      const localDay = created ? dayKey(new Date(created)) : "";
+      const cost = Math.max(0, Number(row.costUsd || 0));
+      if (localDay === today) {
+        totalExecutionsToday += 1;
+        totalCostTodayUsd += cost;
+      }
+      if (localDay.slice(0, 7) === month) totalCostMonthUsd += cost;
     }
-    if (localDay.slice(0, 7) === month) totalCostMonthUsd += cost;
   }
 
   return {
@@ -213,6 +213,7 @@ export async function agentCoreDashboard(env) {
     totalExecutionsToday,
     totalCostTodayUsd,
     totalCostMonthUsd,
+    statsWindowLimited,
     runtime: "cloudflare-workers"
   };
 }

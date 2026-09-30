@@ -124,12 +124,20 @@ export async function leadHunterSummary(env, clientId) {
 
 export async function masterLeadSummary(env) {
   await ensureLeadSchema(env);
-  const clients = await listClients(env);
+  const clients = (await listClients(env)).slice(0, 50);
   const clientMap = new Map(clients.map(client => [client.id, client]));
-  const result = await env.DB.prepare(
-    `SELECT * FROM leads ORDER BY updated_at DESC LIMIT 1000`
-  ).all();
-  const leads = (result?.results || []).map(row => leadView(row, clientMap.get(row.client_id)));
+  const chunks = await Promise.all(clients.map(client =>
+    env.DB.prepare(
+      `SELECT * FROM leads
+       WHERE client_id = ?1
+       ORDER BY updated_at DESC
+       LIMIT 120`
+    ).bind(client.id).all()
+  ));
+  const rows = chunks.flatMap(result => result?.results || [])
+    .sort((a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || "")))
+    .slice(0, 300);
+  const leads = rows.map(row => leadView(row, clientMap.get(row.client_id)));
   const summary = summarizeLeads(leads);
   const byClient = [];
   for (const client of clients) {

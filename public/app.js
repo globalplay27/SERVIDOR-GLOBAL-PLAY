@@ -802,7 +802,7 @@ setInterval(async()=>{
     state.supportTickets=support.tickets||[];
     renderSupportNotifications(support);
   }catch{}
-},20000);
+},60000);
 
 const copyAccessButton=$("#copy-client-access");
 if(copyAccessButton)copyAccessButton.addEventListener("click",async()=>{

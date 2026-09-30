@@ -162,7 +162,7 @@ async function listPosts(env, clientId) {
             media_id, caption, image_object_key, error, cost_usd, payload_json,
             created_at, updated_at
      FROM post_ledger WHERE client_id = ?1
-     ORDER BY COALESCE(scheduled_for, created_at) DESC LIMIT 250`
+     ORDER BY updated_at DESC LIMIT 100`
   ).bind(String(clientId)).all();
   return (result?.results || []).map(row => ({
     id: row.id,
