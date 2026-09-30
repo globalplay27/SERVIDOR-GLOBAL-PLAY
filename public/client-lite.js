@@ -124,6 +124,47 @@ function renderPosts() {
       actions.append(approve, reject, revise); main.append(actions);
     }
 
+    const imageUrl = String(post.imageUrl || post.publicImageUrl || "");
+    if (/^https:\/\//.test(imageUrl)) {
+      const preview = document.createElement("img");
+      preview.className = "post-preview";
+      preview.src = imageUrl;
+      preview.alt = "Prévia do criativo";
+      preview.loading = "lazy";
+      main.prepend(preview);
+    }
+
+    if (post.approvalStatus === "pending" || post.approvalStatus === "rejected" || post.approvalStatus === "correction_requested") {
+      const actions = document.createElement("div");
+      actions.className = "post-actions";
+
+      const approve = document.createElement("button");
+      approve.className = "primary";
+      approve.type = "button";
+      approve.textContent = "Aprovar";
+      approve.addEventListener("click", () => decidePost(post.id, "approved", approve));
+
+      const reject = document.createElement("button");
+      reject.type = "button";
+      reject.textContent = "Reprovar";
+      reject.addEventListener("click", () => decidePost(post.id, "rejected", reject));
+
+      const revise = document.createElement("button");
+      revise.type = "button";
+      revise.textContent = "Pedir correção";
+      revise.addEventListener("click", () => requestRevision(post.id, revise));
+
+      actions.append(approve, reject, revise);
+      main.append(actions);
+    }
+
+    if (post.revisionRequest) {
+      const revision = document.createElement("p");
+      revision.className = "revision-note";
+      revision.textContent = "Correção solicitada: " + post.revisionRequest;
+      main.append(revision);
+    }
+
     const badge = document.createElement("span"); const [label, kind] = postStatus(post);
     badge.className = "status " + kind; badge.textContent = label; card.append(main, badge); list.append(card);
   }
@@ -132,6 +173,102 @@ function renderPosts() {
 async function loadPosts() {
   try { posts = (await api("/api/portal/posts")).posts || []; renderPosts(); }
   catch (error) { notice("Postagens: " + error.message); }
+}
+
+async function decidePost(postId, decision, button) {
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = decision === "approved" ? "Aprovando..." : "Reprovando...";
+  try {
+    const data = await api("/api/portal/posts/" + encodeURIComponent(postId) + "/decision", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ decision })
+    });
+    notice(data.message || (decision === "approved" ? "Postagem aprovada." : "Postagem reprovada."));
+    await loadPosts();
+  } catch (error) {
+    notice("Postagem: " + error.message);
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
+}
+
+async function requestRevision(postId, button) {
+  const instructions = window.prompt("Explique o que precisa ser corrigido neste criativo:");
+  if (!instructions || !instructions.trim()) return;
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = "Enviando...";
+  try {
+    const data = await api("/api/portal/posts/" + encodeURIComponent(postId) + "/revision", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ instructions: instructions.trim() })
+    });
+    notice(data.message || "Correção enviada ao NEXUS.");
+    await loadPosts();
+  } catch (error) {
+    notice("Correção: " + error.message);
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
+}
+
+function agentLabel(value) {
+  return String(value || "Agente").replace(/[_-]+/g, " ").replace(/\b\w/g, letter => letter.toUpperCase());
+}
+
+async function loadAgents() {
+  try {
+    const data = await api("/api/portal/agent-core");
+    const modules = Array.isArray(data.modules) ? data.modules : [];
+    const executions = Array.isArray(data.executions) ? data.executions : [];
+    $("#agent-count").textContent = formatNumber(modules.length);
+    $("#execution-count").textContent = formatNumber(executions.length);
+    $("#agent-pending-count").textContent = formatNumber(data.pendingApproval);
+    $("#agent-correction-count").textContent = formatNumber(data.correctionRequested);
+
+    const root = $("#agent-list");
+    root.replaceChildren();
+    const latestByAgent = new Map();
+    for (const execution of executions) {
+      const key = String(execution.agent || "agent");
+      if (!latestByAgent.has(key)) latestByAgent.set(key, execution);
+    }
+
+    const names = modules.length ? modules.map(item => typeof item === "string" ? item : (item.id || item.name || item.agent)).filter(Boolean) : [...latestByAgent.keys()];
+    if (!names.length) {
+      const empty = document.createElement("div");
+      empty.className = "card muted";
+      empty.textContent = "Nenhuma execução de agente registrada ainda.";
+      root.append(empty);
+      return;
+    }
+
+    for (const name of names) {
+      const execution = latestByAgent.get(String(name)) || {};
+      const card = document.createElement("article");
+      card.className = "card agent-card";
+      const title = document.createElement("strong");
+      title.textContent = agentLabel(name);
+      const status = document.createElement("span");
+      const state = String(execution.status || "aguardando").toLowerCase();
+      status.className = "status " + (state === "success" ? "published" : state === "failed" || state === "error" ? "failed" : "ready");
+      status.textContent = state === "success" ? "Ativo" : state === "failed" || state === "error" ? "Falha" : "Aguardando";
+      const detail = document.createElement("p");
+      detail.className = "muted";
+      detail.textContent = execution.summary || execution.detail || execution.message || "Sem atividade recente detalhada.";
+      const when = document.createElement("small");
+      when.textContent = execution.createdAt ? "Última execução: " + formatDate(execution.createdAt) : "Ainda sem execução registrada.";
+      card.append(title, status, detail, when);
+      root.append(card);
+    }
+  } catch (error) {
+    notice("Agentes: " + error.message);
+  }
 }
 
 async function decidePostAction(postId, decision, button) {
@@ -249,7 +386,12 @@ async function refresh() {
   notice("");
   const data = await api("/api/portal/session");
   showDashboard(data);
-  await Promise.all([loadPosts(), loadInstagram(), activeTab === "performance" ? loadPerformance() : Promise.resolve()]);
+  await Promise.all([
+    loadPosts(),
+    loadInstagram(),
+    activeTab === "performance" ? loadPerformance() : Promise.resolve(),
+    activeTab === "agents" ? loadAgents() : Promise.resolve()
+  ]);
 }
 
 $("#login-form").addEventListener("submit", async event => {
