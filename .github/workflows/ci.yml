@@ -55,6 +55,7 @@ jobs:
             echo "::error::CI must not report success when production was not deployed."
             exit 1
           fi
+          npx wrangler d1 migrations apply DB --remote
           npm run deploy
 
       - name: Verify Nexus production autonomy
