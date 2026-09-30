@@ -1373,25 +1373,29 @@ export async function runAgentCoreCycle(env, clientId, options = {}) {
   const state=await agentCoreState(env,client.id);
   let radar=state.radar||{},strategy=state.strategy||{},auditor=state.auditor||{};
   const run=id=>requested==="all"||requested===id;
+  let cycleStage="start";
 
   try{
-    if(run("radar")&&config.modules.radar)result.agents.radar=radar=await runRadar(env,client,options);
+    if(run("radar")&&config.modules.radar){cycleStage="radar";result.agents.radar=radar=await runRadar(env,client,options);}
 
     // The decision order is explicit and observable:
     // RADAR -> ESTRATEGISTA -> PESQUISADOR -> ANALISTA -> CREATOR.
     // Research/analysis enrich the next cycle; the current strategy already
     // consumes RADAR's fresh OpenAI diagnosis plus prior mature feedback.
     if(run("estrategista")&&config.modules.estrategista){
+      cycleStage="estrategista";
       result.agents.estrategista=strategy=await runStrategist(env,client,{radar,auditor},options);
     }
     if(requested==="all"){
+      cycleStage="pesquisador";
       const research=await runExtendedAgents(env,client.id,{...options,agent:"pesquisador",phase:"pre-creation"});
       Object.assign(result.agents,research);
+      cycleStage="analista";
       const analysis=await runExtendedAgents(env,client.id,{...options,agent:"analista",phase:"pre-creation"});
       Object.assign(result.agents,analysis);
     }
 
-    if(run("creator")&&config.modules.creator)result.agents.creator=await runCreator(env,client,strategy,options);
+    if(run("creator")&&config.modules.creator){cycleStage="creator";result.agents.creator=await runCreator(env,client,strategy,options);}
 
     // Quality agents must review drafts BEFORE Publisher. Previously the extended
     // agents ran after publishing, so COPY CHIEF and DESIGNER could only report
@@ -1401,6 +1405,7 @@ export async function runAgentCoreCycle(env, clientId, options = {}) {
     // publisher-sweep, which requests only the publisher module.
     if(requested==="all"){
       const qualityAgent=requested;
+      cycleStage="quality";
       const prePublish=await runExtendedAgents(env,client.id,{
         ...options,
         agent:qualityAgent,
@@ -1409,16 +1414,19 @@ export async function runAgentCoreCycle(env, clientId, options = {}) {
       Object.assign(result.agents,prePublish);
     }
 
-    if(run("publisher")&&config.modules.publisher)result.agents.publisher=await runPublisher(env,client,options);
+    if(run("publisher")&&config.modules.publisher){cycleStage="publisher";result.agents.publisher=await runPublisher(env,client,options);}
     if(run("auditor")&&config.modules.auditor){
+      cycleStage="auditor";
       result.agents.auditor=auditor=await runAuditor(env,client,options);
     }
     if(requested==="all"&&config.modules.growth){
+      cycleStage="growth";
       const growth=await runExtendedAgents(env,client.id,{...options,agent:"growth",phase:"feedback"});
       Object.assign(result.agents,growth);
     }
-    if(run("odin")&&config.modules.odin)result.agents.odin=await runOdin(env,client,options);
+    if(run("odin")&&config.modules.odin){cycleStage="odin";result.agents.odin=await runOdin(env,client,options);}
     if(requested==="all"&&config.modules.suporte){
+      cycleStage="suporte";
       const support=await runExtendedAgents(env,client.id,{...options,agent:"suporte",phase:"post-cycle"});
       Object.assign(result.agents,support);
     }
@@ -1427,10 +1435,10 @@ export async function runAgentCoreCycle(env, clientId, options = {}) {
       Object.assign(result.agents,extended);
     }
     const now=new Date().toISOString();
-    await patchAgentCoreState(env,client.id,{lastCycleAt:now,nextCycleAt:new Date(Date.now()+config.cycleMinutes*60000).toISOString(),lastCycleStatus:"success",lastCycleError:""});
+    await patchAgentCoreState(env,client.id,{lastCycleAt:now,nextCycleAt:new Date(Date.now()+config.cycleMinutes*60000).toISOString(),lastCycleStatus:"success",lastCycleError:"",lastCycleStage:"completed"});
     return result;
   }catch(error){
-    await patchAgentCoreState(env,client.id,{lastCycleAt:new Date().toISOString(),lastCycleStatus:"failed",lastCycleError:String(error?.message||error).slice(0,500)});
+    await patchAgentCoreState(env,client.id,{lastCycleAt:new Date().toISOString(),lastCycleStatus:"failed",lastCycleError:String(error?.message||error).slice(0,500),lastCycleStage:cycleStage});
     throw error;
   }
 }
