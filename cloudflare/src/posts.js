@@ -218,6 +218,96 @@ export async function saveOwnPostContent(env, client, postId, body = {}, publicO
   };
 }
 
+
+export async function useLibraryImageForPost(env, client, postId, libraryKey, publicOrigin = "") {
+  if (!env.MEDIA) throw new Error("r2_unavailable");
+  const row = await postRow(env, client.id, postId);
+  if (!row) throw new Error("post_not_found");
+  if (row.status === "published") throw new Error("already_published");
+
+  const key = String(libraryKey || "");
+  const prefix = "library/" + String(client.id) + "/";
+  if (!key.startsWith(prefix) || key.includes("..") || key.includes("\\")) {
+    throw new Error("library_media_not_found");
+  }
+
+  const object = await env.MEDIA.get(key);
+  if (!object) throw new Error("library_media_not_found");
+  const contentType = String(object.httpMetadata?.contentType || object.customMetadata?.contentType || "").toLowerCase();
+  if (!["image/png","image/jpeg","image/webp"].includes(contentType)) {
+    throw new Error("library_media_image_required");
+  }
+  const size = Number(object.size || 0);
+  if (!size || size > 10 * 1024 * 1024) throw new Error("image_too_large");
+
+  const origin = String(publicOrigin || "").replace(/\/+$/, "");
+  if (!origin) throw new Error("public_origin_required");
+
+  const extension = contentType === "image/png" ? "png" : contentType === "image/webp" ? "webp" : "jpg";
+  const objectKey = "posts/" + String(client.id) + "/" + String(postId) + "/client-library-" + crypto.randomUUID() + "." + extension;
+  await env.MEDIA.put(objectKey, object.body, {
+    httpMetadata: {
+      contentType,
+      cacheControl: "public, max-age=31536000, immutable"
+    },
+    customMetadata: {
+      clientId: String(client.id),
+      postId: String(postId),
+      kind: "client-library-post-image",
+      sourceLibraryKey: key
+    }
+  });
+
+  const previousObjectKey = String(row.image_object_key || "");
+  const payload = {
+    ...parseJson(row.payload_json, {}),
+    imageUrl: origin + "/media/" + objectKey,
+    publicImageUrl: "",
+    source: "client_library",
+    sourceLibraryKey: key,
+    revisionRequest: "",
+    visualReview: null,
+    qualityGates: {
+      copyChief: "pending",
+      designer: "pending"
+    },
+    mediaGeneration: {
+      status: "client-owned",
+      attempts: 0,
+      lastError: "",
+      updatedAt: new Date().toISOString()
+    }
+  };
+
+  let updated;
+  try {
+    updated = await updateRow(env, row, {
+      approvalStatus: "approved",
+      status: "ready",
+      error: "",
+      imageObjectKey: objectKey,
+      payload
+    });
+  } catch (error) {
+    await env.MEDIA.delete(objectKey).catch(() => {});
+    throw error;
+  }
+
+  if (
+    previousObjectKey &&
+    previousObjectKey !== objectKey &&
+    postImageKeyBelongsToClient(previousObjectKey, client.id)
+  ) {
+    await env.MEDIA.delete(previousObjectKey).catch(() => {});
+  }
+
+  return {
+    ok: true,
+    message: "Mídia aplicada. Copy Chief e Designer vão revisar antes da publicação.",
+    post: view(updated)
+  };
+}
+
 export async function publishPostNow(env, client, postId) {
   const row = await postRow(env, client.id, postId);
   if (!row) throw new Error("post_not_found");

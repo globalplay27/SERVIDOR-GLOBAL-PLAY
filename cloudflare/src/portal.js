@@ -16,7 +16,7 @@ import { startInstagramOAuth, handleInstagramOAuthCallback } from "./instagram.j
 import { AGENT_CORE_MODULES, normalizeAgentCoreConfig, agentCoreState, agentExecutions, saveAgentCoreConfig } from "./agent-core.js";
 import { leadsForClient, leadHunterSummary } from "./leads.js";
 import { leadHunterView, saveLeadHunterConfig, runLeadHunter, discardLead } from "./lead-hunter.js";
-import { decidePost, requestPostRevision, saveOwnPostContent, publishPostNow } from "./posts.js";
+import { decidePost, requestPostRevision, saveOwnPostContent, publishPostNow, useLibraryImageForPost } from "./posts.js";
 
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
@@ -444,6 +444,32 @@ export async function handlePortalApi(request, env, url, ctx) {
         : "Mídia salva na biblioteca do cliente.",
       media: (await listClientMedia(env, client.id, url.origin)).find(item => item.key === key) || { key, url: url.origin + "/media/" + key }
     }, 201);
+  }
+
+  if (url.pathname === "/api/portal/media/use" && request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    try {
+      return json(await useLibraryImageForPost(
+        env,
+        client,
+        String(body.postId || ""),
+        String(body.key || ""),
+        url.origin
+      ));
+    } catch (error) {
+      const code = error instanceof Error ? error.message : String(error);
+      const status = code === "post_not_found" || code === "library_media_not_found" ? 404
+        : code === "already_published" ? 409
+        : code === "image_too_large" ? 413
+        : code === "r2_unavailable" ? 503
+        : 400;
+      const messages = {
+        library_media_image_required: "Escolha uma imagem da biblioteca. Vídeos permanecem armazenados para uso futuro.",
+        already_published: "Esta postagem já foi publicada.",
+        image_too_large: "A imagem deve ter no máximo 10 MB para ser aplicada a uma postagem."
+      };
+      return json({ error: code, message: messages[code] || "Não foi possível aplicar esta mídia à postagem." }, status);
+    }
   }
 
   const mediaDeleteMatch = url.pathname.match(/^\/api\/portal\/media\/(.+)$/);
