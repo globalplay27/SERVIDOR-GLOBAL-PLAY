@@ -3,7 +3,7 @@ import { openAIKeyStatus } from "./openai-routing.js";
 import { openAIResponses, tokenUsageToday } from "./openai.js";
 import { getState, putState, deleteState } from "./storage.js";
 import { handlePortalApi } from "./portal.js";
-import { handleMaster } from "./master.js";
+import { handleMaster, masterLoginPage } from "./master.js";
 import { runSchedulerTick, recordSchedulerFailure } from "./scheduler.js";
 import { runCronIteration } from "./cron-runtime.js";
 import { refreshSchedulerIfStale } from "./watchdog.js";
@@ -510,6 +510,19 @@ export default {
       return redirect("/login");
     }
 
+    // Keep the Master access page independent from D1 and every downstream
+    // integration. This route must remain usable during database quota/outage.
+    if (url.pathname === "/api/master/access" && request.method === "GET") {
+      return new Response(masterLoginPage(false, "/api/master/access"), {
+        status: 200,
+        headers: {
+          "content-type": "text/html; charset=utf-8",
+          "cache-control": "no-store, no-cache, must-revalidate",
+          "pragma": "no-cache"
+        }
+      });
+    }
+
     if (url.pathname.startsWith("/media/") && ["GET","HEAD"].includes(request.method)) {
       return mediaResponse(request, env, url);
     }
@@ -541,7 +554,7 @@ export default {
       // Always allow a valid credential to recover from a previous lockout.
       // Rate limiting is applied only after both Master and client credentials fail.
       if (await masterCredentialsValid(env, username, password)) {
-        await clearLoginFailures(env, request, "login");
+        await clearLoginFailures(env, request, "login").catch(() => {});
         const session = await createMasterSession(env);
         return json({
           ok: true,
@@ -555,7 +568,7 @@ export default {
 
       const clientId = await authenticatePortalUser(env, username, password);
       if (clientId) {
-        await clearLoginFailures(env, request, "login");
+        await clearLoginFailures(env, request, "login").catch(() => {});
         const session = await createPortalSession(env, clientId, {
           persistent: true,
           source: "unified-desktop"
@@ -585,7 +598,23 @@ export default {
     }
 
 
-    const masterResponse = await handleMaster(request, env, url);
+    let masterResponse;
+    try {
+      masterResponse = await handleMaster(request, env, url);
+    } catch (error) {
+      if (url.pathname.startsWith("/api/master/") || url.pathname.startsWith("/master")) {
+        const raw = String(error?.message || error || "");
+        const d1Limited = /free tier daily row read limit|d1_daily_read_limit/i.test(raw);
+        return json({
+          ok: false,
+          error: d1Limited ? "d1_daily_read_limit" : "master_request_failed",
+          message: d1Limited
+            ? "O painel Master está online, mas os dados do D1 estão temporariamente indisponíveis."
+            : "O NEXUS não conseguiu concluir esta operação do Master."
+        }, 503);
+      }
+      throw error;
+    }
     if (masterResponse) return masterResponse;
 
     const portalResponse = await handlePortalApi(request, env, url, ctx);
