@@ -414,7 +414,9 @@ export async function handleMaster(request, env, url) {
       d1Ready,
       masterUsers,
       canonicalMasterConfigured: Boolean(env.NEXUS_ADMIN_USERNAME && env.NEXUS_ADMIN_PASSWORD),
+      canonicalMasterUsername: String(env.NEXUS_ADMIN_USERNAME || "").trim() || null,
       legacyMasterConfigured: Boolean(env.ADMIN_USERNAME && env.ADMIN_PASSWORD),
+      legacyMasterUsername: String(env.ADMIN_USERNAME || "").trim() || null,
       nexusSecretConfigured: Boolean(env.NEXUS_SECRET_KEY)
     }, d1Ready ? 200 : 503);
   }
