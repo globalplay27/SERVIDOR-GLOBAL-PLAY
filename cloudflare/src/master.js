@@ -144,76 +144,111 @@ async function requireMaster(request, env) {
 }
 
 async function allSupportTickets(env) {
-  const result = await env.DB.prepare(
-    `SELECT id, client_id, status, subject, payload_json, created_at, updated_at
-     FROM support_tickets ORDER BY created_at DESC LIMIT 500`
-  ).all();
-  return (result?.results || []).map(row => ({
-    id: row.id,
-    clientId: row.client_id,
-    status: row.status || "open",
-    subject: row.subject || "",
-    ...parseJson(row.payload_json, {}),
-    createdAt: row.created_at || null,
-    updatedAt: row.updated_at || null
-  }));
+  const clients = (await listClients(env)).slice(0, 50);
+  const chunks = await Promise.all(clients.map(client =>
+    env.DB.prepare(
+      `SELECT id, client_id, status, subject, payload_json, created_at, updated_at
+       FROM support_tickets
+       WHERE client_id = ?1
+       ORDER BY created_at DESC
+       LIMIT 40`
+    ).bind(client.id).all()
+  ));
+  return chunks.flatMap(result => result?.results || [])
+    .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")))
+    .slice(0, 200)
+    .map(row => ({
+      id: row.id,
+      clientId: row.client_id,
+      status: row.status || "open",
+      subject: row.subject || "",
+      ...parseJson(row.payload_json, {}),
+      createdAt: row.created_at || null,
+      updatedAt: row.updated_at || null
+    }));
 }
 
 async function allPosts(env) {
-  const result = await env.DB.prepare(
-    `SELECT id, client_id, scheduled_for, scheduled_hour, status, approval_status,
-            media_id, caption, image_object_key, error, cost_usd, payload_json,
-            created_at, updated_at
-     FROM post_ledger ORDER BY COALESCE(scheduled_for, created_at) DESC LIMIT 1000`
-  ).all();
-  return (result?.results || []).map(row => ({
-    id: row.id,
-    clientId: row.client_id,
-    scheduledFor: row.scheduled_for || null,
-    scheduledHour: row.scheduled_hour || "",
-    status: row.status || "scheduled",
-    approvalStatus: row.approval_status || "pending",
-    mediaId: row.media_id || "",
-    caption: row.caption || "",
-    imageObjectKey: row.image_object_key || "",
-    error: row.error || "",
-    costUsd: Number(row.cost_usd || 0),
-    ...parseJson(row.payload_json, {}),
-    createdAt: row.created_at || null,
-    updatedAt: row.updated_at || null
-  }));
+  const clients = (await listClients(env)).slice(0, 50);
+  const chunks = await Promise.all(clients.map(client =>
+    env.DB.prepare(
+      `SELECT id, client_id, scheduled_for, scheduled_hour, status, approval_status,
+              media_id, caption, image_object_key, error, cost_usd, payload_json,
+              created_at, updated_at
+       FROM post_ledger
+       WHERE client_id = ?1
+       ORDER BY updated_at DESC
+       LIMIT 120`
+    ).bind(client.id).all()
+  ));
+  return chunks.flatMap(result => result?.results || [])
+    .sort((a, b) => String(b.updated_at || b.created_at || "").localeCompare(String(a.updated_at || a.created_at || "")))
+    .slice(0, 300)
+    .map(row => ({
+      id: row.id,
+      clientId: row.client_id,
+      scheduledFor: row.scheduled_for || null,
+      scheduledHour: row.scheduled_hour || "",
+      status: row.status || "scheduled",
+      approvalStatus: row.approval_status || "pending",
+      mediaId: row.media_id || "",
+      caption: row.caption || "",
+      imageObjectKey: row.image_object_key || "",
+      error: row.error || "",
+      costUsd: Number(row.cost_usd || 0),
+      ...parseJson(row.payload_json, {}),
+      createdAt: row.created_at || null,
+      updatedAt: row.updated_at || null
+    }));
 }
 
 async function allExecutions(env) {
-  const result = await env.DB.prepare(
-    `SELECT id, client_id, agent, status, detail_json, created_at
-     FROM agent_executions ORDER BY created_at DESC LIMIT 1000`
-  ).all();
-  return (result?.results || []).map(row => ({
-    id: row.id,
-    clientId: row.client_id,
-    agent: row.agent,
-    status: row.status,
-    ...parseJson(row.detail_json, {}),
-    createdAt: row.created_at || null
-  }));
+  const clients = (await listClients(env)).slice(0, 50);
+  const chunks = await Promise.all(clients.map(client =>
+    env.DB.prepare(
+      `SELECT id, client_id, agent, status, detail_json, created_at
+       FROM agent_executions
+       WHERE client_id = ?1
+       ORDER BY created_at DESC
+       LIMIT 80`
+    ).bind(client.id).all()
+  ));
+  return chunks.flatMap(result => result?.results || [])
+    .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")))
+    .slice(0, 240)
+    .map(row => ({
+      id: row.id,
+      clientId: row.client_id,
+      agent: row.agent,
+      status: row.status,
+      ...parseJson(row.detail_json, {}),
+      createdAt: row.created_at || null
+    }));
 }
 
 async function tokenUsage(env) {
-  const result = await env.DB.prepare(
-    `SELECT client_id, day_key, input_tokens, output_tokens, used_tokens, calls, last_model, updated_at
-     FROM token_usage ORDER BY day_key DESC, client_id LIMIT 1000`
-  ).all();
-  return (result?.results || []).map(row => ({
-    clientId: row.client_id,
-    dayKey: row.day_key,
-    inputTokens: Number(row.input_tokens || 0),
-    outputTokens: Number(row.output_tokens || 0),
-    usedTokens: Number(row.used_tokens || 0),
-    calls: Number(row.calls || 0),
-    lastModel: row.last_model || null,
-    updatedAt: row.updated_at || null
-  }));
+  const clients = (await listClients(env)).slice(0, 50);
+  const chunks = await Promise.all(clients.map(client =>
+    env.DB.prepare(
+      `SELECT client_id, day_key, input_tokens, output_tokens, used_tokens, calls, last_model, updated_at
+       FROM token_usage
+       WHERE client_id = ?1
+       ORDER BY day_key DESC
+       LIMIT 31`
+    ).bind(client.id).all()
+  ));
+  return chunks.flatMap(result => result?.results || [])
+    .sort((a, b) => String(b.day_key || "").localeCompare(String(a.day_key || "")))
+    .map(row => ({
+      clientId: row.client_id,
+      dayKey: row.day_key,
+      inputTokens: Number(row.input_tokens || 0),
+      outputTokens: Number(row.output_tokens || 0),
+      usedTokens: Number(row.used_tokens || 0),
+      calls: Number(row.calls || 0),
+      lastModel: row.last_model || null,
+      updatedAt: row.updated_at || null
+    }));
 }
 
 export async function handleMaster(request, env, url) {
