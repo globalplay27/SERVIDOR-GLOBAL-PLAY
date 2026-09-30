@@ -1244,16 +1244,20 @@ export async function runAgentCoreCycle(env, clientId, options = {}) {
   try{
     if(run("radar")&&config.modules.radar)result.agents.radar=radar=await runRadar(env,client,options);
 
-    // Research and analysis must happen before strategy/creation so their findings
-    // can alter the next content decision in the same autonomous cycle.
+    // The decision order is explicit and observable:
+    // RADAR -> ESTRATEGISTA -> PESQUISADOR -> ANALISTA -> CREATOR.
+    // Research/analysis enrich the next cycle; the current strategy already
+    // consumes RADAR's fresh OpenAI diagnosis plus prior mature feedback.
+    if(run("estrategista")&&config.modules.estrategista){
+      result.agents.estrategista=strategy=await runStrategist(env,client,{radar,auditor},options);
+    }
     if(requested==="all"){
-      const research=await runExtendedAgents(env,client.id,{...options,agent:"pesquisador",phase:"pre-strategy"});
+      const research=await runExtendedAgents(env,client.id,{...options,agent:"pesquisador",phase:"pre-creation"});
       Object.assign(result.agents,research);
-      const analysis=await runExtendedAgents(env,client.id,{...options,agent:"analista",phase:"pre-strategy"});
+      const analysis=await runExtendedAgents(env,client.id,{...options,agent:"analista",phase:"pre-creation"});
       Object.assign(result.agents,analysis);
     }
 
-    if(run("estrategista")&&config.modules.estrategista)result.agents.estrategista=strategy=await runStrategist(env,client,{radar,auditor},options);
     if(run("creator")&&config.modules.creator)result.agents.creator=await runCreator(env,client,strategy,options);
 
     // Quality agents must review drafts BEFORE Publisher. Previously the extended
@@ -1279,9 +1283,6 @@ export async function runAgentCoreCycle(env, clientId, options = {}) {
     if(requested==="all"&&config.modules.growth){
       const growth=await runExtendedAgents(env,client.id,{...options,agent:"growth",phase:"feedback"});
       Object.assign(result.agents,growth);
-    }
-    if(requested==="all"&&config.modules.estrategista){
-      result.agents.estrategistaFeedback=await runStrategist(env,client,{radar,auditor},{...options,feedback:true});
     }
     if(run("odin")&&config.modules.odin)result.agents.odin=await runOdin(env,client,options);
     if(requested==="all"&&config.modules.suporte){
