@@ -1032,11 +1032,11 @@ async function runCreator(env,client,strategy,options) {
   await recordAgentExecution(env,client,"CREATOR",{
     function:"growth-30d-creative-generation",trigger:options.trigger,startedAt,status:"success",
     model:"instagram-growth-skill-layer",quantity:created.length,
-    metadata:{clientReferenceNotesUsed:clientReferenceNotes.length},
     message:created.length||repaired.length
       ?created.length+" pauta(s) criada(s) e "+repaired.length+" postagem(ns) incompleta(s) recuperada(s)."
       :"Agenda já preparada; nenhuma pauta duplicada criada e nenhuma recuperação necessária.",
     metadata:{
+      clientReferenceNotesUsed:clientReferenceNotes.length,
       approvalRequired:config.approvalRequired,
       autoPublish:config.autoPublish,
       draftIds:created.map(x=>x.id),
