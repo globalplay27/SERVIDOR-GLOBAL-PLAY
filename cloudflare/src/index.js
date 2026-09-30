@@ -83,11 +83,11 @@ async function mediaResponse(request, env, url) {
   }
 
   const publicMedia = key.startsWith("branding/") || key.startsWith("posts/");
-  const videoMatch = key.match(/^videos\/([^/]+)\//);
-  if (!publicMedia && !videoMatch) return json({ error: "not_found" }, 404);
+  const protectedMatch = key.match(/^(?:videos|library)\/([^/]+)\//);
+  if (!publicMedia && !protectedMatch) return json({ error: "not_found" }, 404);
 
-  if (videoMatch) {
-    const clientId = String(videoMatch[1] || "");
+  if (protectedMatch) {
+    const clientId = String(protectedMatch[1] || "");
     const portal = await resolvePortalSession(env, request).catch(() => null);
     const master = portal ? null : await resolveMasterSession(env, request).catch(() => null);
     if ((!portal || portal.clientId !== clientId) && !master) {
