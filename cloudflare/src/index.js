@@ -6,7 +6,7 @@ import { handlePortalApi } from "./portal.js";
 import { handleMaster } from "./master.js";
 import { runSchedulerTick, recordSchedulerFailure } from "./scheduler.js";
 import { runCronIteration } from "./cron-runtime.js";
-import { kickAutomationIfStale } from "./watchdog.js";
+import { refreshSchedulerIfStale } from "./watchdog.js";
 import { processDueJobs } from "./executor.js";
 import { handleWhatsAppWebhook, handleWhatsAppProtected, whatsappConfigStatus } from "./whatsapp-agent.js";
 import { instagramCredentialStatus } from "./instagram-credentials.js";
@@ -587,8 +587,12 @@ export default {
         if(denied)return denied;
       }
       // Health doubles as a bounded watchdog only when the cron heartbeat is stale.
-      // A D1 lock prevents repeated public health checks from creating a job storm.
-      ctx.waitUntil(kickAutomationIfStale(env).catch(() => null));
+      // Refresh the lightweight scheduler synchronously so the response immediately
+      // exposes success/failure; drain one queued job asynchronously afterwards.
+      const watchdog = await refreshSchedulerIfStale(env).catch(() => ({ kicked:false, reason:"watchdog_error" }));
+      if (watchdog.kicked) {
+        ctx.waitUntil(processDueJobs(env, new Date()).catch(() => null));
+      }
       return autonomyHealth(env,detailed);
     }
 
