@@ -121,6 +121,41 @@ async function listSupport(env, clientId) {
   });
 }
 
+async function listClientMedia(env, clientId, origin = "") {
+  if (!env.MEDIA) return [];
+  const prefix = "library/" + String(clientId) + "/";
+  const result = await env.MEDIA.list({
+    prefix,
+    limit: 100,
+    include: ["httpMetadata", "customMetadata"]
+  });
+  const base = String(origin || "").replace(/\/+$/, "");
+  return (result?.objects || []).map(object => ({
+    key: object.key,
+    name: object.customMetadata?.originalName || object.key.split("/").pop() || "arquivo",
+    purpose: object.customMetadata?.purpose || "reference",
+    note: object.customMetadata?.note || "",
+    contentType: object.httpMetadata?.contentType || "",
+    size: Number(object.size || 0),
+    uploadedAt: object.uploaded || null,
+    url: base ? base + "/media/" + object.key : "/media/" + object.key
+  })).sort((a, b) => String(b.uploadedAt || "").localeCompare(String(a.uploadedAt || "")));
+}
+
+function mediaExtension(contentType, originalName = "") {
+  const byType = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/webp": "webp",
+    "video/mp4": "mp4",
+    "video/webm": "webm",
+    "video/quicktime": "mov"
+  };
+  if (byType[contentType]) return byType[contentType];
+  const match = String(originalName || "").toLowerCase().match(/\.([a-z0-9]{2,5})$/);
+  return match ? match[1] : "bin";
+}
+
 async function listPosts(env, clientId) {
   const result = await env.DB.prepare(
     `SELECT id, client_id, scheduled_for, scheduled_hour, status, approval_status,
@@ -348,6 +383,79 @@ export async function handlePortalApi(request, env, url, ctx) {
       ).bind(id, client.id, subject, JSON.stringify(payload)).run();
       return json({ ok: true, ticket: (await listSupport(env, client.id))[0] }, 201);
     }
+  }
+
+  if (url.pathname === "/api/portal/media" && request.method === "GET") {
+    return json({
+      ok: true,
+      media: await listClientMedia(env, client.id, url.origin),
+      storage: env.MEDIA ? "r2" : "unavailable"
+    });
+  }
+
+  if (url.pathname === "/api/portal/media" && request.method === "POST") {
+    if (!env.MEDIA) return json({ error: "r2_unavailable", message: "O armazenamento de mídia do NEXUS não está disponível." }, 503);
+    const form = await request.formData().catch(() => null);
+    const file = form?.get("file");
+    if (!file || typeof file.arrayBuffer !== "function") {
+      return json({ error: "file_required", message: "Selecione uma imagem ou vídeo." }, 400);
+    }
+
+    const contentType = String(file.type || "").toLowerCase();
+    const allowed = new Set(["image/png","image/jpeg","image/webp","video/mp4","video/webm","video/quicktime"]);
+    if (!allowed.has(contentType)) {
+      return json({ error: "unsupported_media_type", message: "Use PNG, JPG, WEBP, MP4, WEBM ou MOV." }, 415);
+    }
+
+    const maxBytes = 25 * 1024 * 1024;
+    const size = Number(file.size || 0);
+    if (!size || size > maxBytes) {
+      return json({ error: "media_too_large", message: "O arquivo deve ter no máximo 25 MB." }, 413);
+    }
+
+    const purpose = String(form.get("purpose") || "reference") === "publish" ? "publish" : "reference";
+    const note = String(form.get("note") || "").trim().slice(0, 800);
+    const originalName = String(file.name || "midia").replace(/[\r\n]/g, " ").slice(0, 180);
+    const extension = mediaExtension(contentType, originalName);
+    const key = "library/" + String(client.id) + "/" + new Date().toISOString().slice(0, 10) + "/" + crypto.randomUUID() + "." + extension;
+    const bytes = await file.arrayBuffer();
+    if (!bytes.byteLength || bytes.byteLength > maxBytes) {
+      return json({ error: "media_too_large", message: "O arquivo deve ter no máximo 25 MB." }, 413);
+    }
+
+    await env.MEDIA.put(key, bytes, {
+      httpMetadata: {
+        contentType,
+        cacheControl: "private, no-store"
+      },
+      customMetadata: {
+        clientId: String(client.id),
+        originalName,
+        purpose,
+        note,
+        kind: purpose === "reference" ? "creative-reference" : "client-owned-media"
+      }
+    });
+
+    return json({
+      ok: true,
+      message: purpose === "reference"
+        ? "Mídia salva como referência de estilo."
+        : "Mídia salva na biblioteca do cliente.",
+      media: (await listClientMedia(env, client.id, url.origin)).find(item => item.key === key) || { key, url: url.origin + "/media/" + key }
+    }, 201);
+  }
+
+  const mediaDeleteMatch = url.pathname.match(/^\/api\/portal\/media\/(.+)$/);
+  if (mediaDeleteMatch && request.method === "DELETE") {
+    let key = "";
+    try { key = decodeURIComponent(mediaDeleteMatch[1]); } catch {}
+    const prefix = "library/" + String(client.id) + "/";
+    if (!key.startsWith(prefix) || key.includes("..") || key.includes("\\")) {
+      return json({ error: "not_found" }, 404);
+    }
+    await env.MEDIA?.delete(key);
+    return json({ ok: true, deleted: true });
   }
 
   if (url.pathname === "/api/portal/posts" && request.method === "GET") {
