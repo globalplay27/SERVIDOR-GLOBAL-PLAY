@@ -92,7 +92,13 @@ async function runCopyChief(env,client,options){
 async function runDesigner(env,client,options){
   const startedAt=new Date().toISOString();
   const now=Date.now();
-  const rows=(await ledgerRows(env,client.id,120))
+  const allRows=await ledgerRows(env,client.id,160);
+  const recentCreativeSummaries=allRows
+    .filter(row=>row.status==="published")
+    .slice(0,10)
+    .map(row=>String(row.payload?.visualBrief||row.caption||"").slice(0,300))
+    .filter(Boolean);
+  const rows=allRows
     .filter(row=>{
       const status=String(row.status||"");
       const retryCount=Math.max(0,Number(row.payload?.retryCount||0));
@@ -103,84 +109,61 @@ async function runDesigner(env,client,options){
       return false;
     })
     .sort((a,b)=>{
-      const priority=row=>{
-        const due=Date.parse(String(row.scheduled_for||""));
-        const media=String(row.payload?.imageUrl||row.payload?.publicImageUrl||"");
-        const localDate=ms=>new Date(ms-3*60*60*1000).toISOString().slice(0,10);
-        if(media && Number.isFinite(due) && due<=now && localDate(due)===localDate(now))return 0;
-        if(media && Number.isFinite(due) && due>now)return 1;
-        return 2;
-      };
-      return priority(a)-priority(b)
-        || Date.parse(String(a.scheduled_for||a.created_at||""))
-         - Date.parse(String(b.scheduled_for||b.created_at||""));
+      const dueA=Date.parse(String(a.scheduled_for||a.created_at||""));
+      const dueB=Date.parse(String(b.scheduled_for||b.created_at||""));
+      return dueA-dueB;
     })
     .slice(0,30);
+
   let ready=0,missing=0,repairQueued=0;
   const checks=[];
   let visualCalls=0;
+
   for(const row of rows){
     const payload=row.payload&&typeof row.payload==="object"?row.payload:{};
     payload.intelligence=payload.intelligence&&typeof payload.intelligence==="object"?payload.intelligence:{};
-    const source=String(payload.source||"");
-    const existingPolicy=payload.intelligence.visualPolicy&&typeof payload.intelligence.visualPolicy==="object"
-      ? payload.intelligence.visualPolicy : {};
-    if(source.startsWith("agent-core:")){
-      payload.intelligence.visualPolicy={
-        singleScene:existingPolicy.singleScene!==false,
-        maxScenes:1,
-        noSplitScreen:existingPolicy.noSplitScreen!==false,
-        noCollage:existingPolicy.noCollage!==false,
-        noMosaic:existingPolicy.noMosaic!==false,
-        noBeforeAfter:existingPolicy.noBeforeAfter!==false,
-        lowVisualClutter:existingPolicy.lowVisualClutter!==false,
-        tvScreenMustBeFilled:existingPolicy.tvScreenMustBeFilled!==false,
-        focalSubjectCount:1,
-        ...existingPolicy
-      };
-    }
     const media=String(payload.imageUrl||payload.publicImageUrl||"").trim();
     const mediaReady=/^https:\/\//i.test(media);
-    const invalidLegacyMedia=client.id==="ragnar-one"
-      &&/\/assets\/ragnar\/nordic-cinema-0[123]\.png(?:[?#]|$)/i.test(media);
-    if(invalidLegacyMedia)payload.blockedDesignerRecoveryAttemptedAt=new Date().toISOString();
-    const policy=payload.intelligence.visualPolicy||{};
-    const singleScene=policy.singleScene===true;
-    const noSplitScreen=policy.noSplitScreen===true;
-    const noCollage=policy.noCollage===true;
-    const tvFilled=policy.tvScreenMustBeFilled!==false;
-    let ok=mediaReady&&!invalidLegacyMedia&&singleScene&&noSplitScreen&&noCollage&&tvFilled;
 
-    if(["globalplay-streaming","ragnar-one"].includes(client.id)&&!invalidLegacyMedia){
-      const prior=payload.visualReview;
-      const cached=prior?.version==="visual-review-v2"&&prior.media===media;
-      const settled=cached&&(["approved","rejected"].includes(prior.status)||Number(prior.attempts)>=3||Date.parse(prior.retryAt)>Date.now());
-      const diagnosticRetry=cached&&prior?.status==="unavailable"
-        &&prior.reason==="visual_review_unavailable"
-        &&!prior.diagnosticRetry;
-      // Legacy generic failures may have exhausted all three attempts before
-      // transport errors were classified. Allow one bounded diagnostic retry.
-      if(mediaReady&&(!settled||diagnosticRetry)&&visualCalls>=1)continue;
-      if(settled||visualCalls<1){
-        if((!settled||diagnosticRetry)&&mediaReady)visualCalls++;
-        payload.visualReview=await reviewImage(
-          env,client,media,
-          diagnosticRetry?{...prior,attempts:0,retryAt:"2000-01-01"}:prior
-        );
-        if(diagnosticRetry)payload.visualReview={...payload.visualReview,diagnosticRetry:true};
-      }
-      if(mediaReady&&payload.visualReview?.status==="unavailable"){
-        payload.qualityGates={...(payload.qualityGates||{}),designer:"pending"};
-        await env.DB.prepare(
-          "UPDATE post_ledger SET payload_json=?2,error='visual_review_unavailable',updated_at=CURRENT_TIMESTAMP WHERE id=?1"
-        ).bind(row.id,JSON.stringify(payload)).run();
-        missing++;
-        checks.push({id:row.id,mediaReady,ok:false,reason:"visual_review_unavailable"});
-        continue;
-      }
-      ok=mediaReady&&visualApproval(client.id,payload);
+    if(!mediaReady){
+      missing++;
+      payload.visualReview=null;
+      payload.qualityGates={...(payload.qualityGates||{}),designer:"pending",designerAt:new Date().toISOString()};
+      payload.mediaGeneration={...(payload.mediaGeneration||{}),status:"requested",updatedAt:new Date().toISOString()};
+      await env.DB.prepare(
+        "UPDATE post_ledger SET status='ready',payload_json=?2,error='media_generation_required',updated_at=CURRENT_TIMESTAMP WHERE id=?1"
+      ).bind(row.id,JSON.stringify(payload)).run();
+      checks.push({id:row.id,mediaReady:false,ok:false,reason:"media_generation_required"});
+      continue;
     }
 
+    if(["globalplay-streaming","ragnar-one"].includes(client.id)){
+      const prior=payload.visualReview;
+      const cached=prior?.version==="visual-review-v3"&&prior.media===media;
+      const settled=cached&&(
+        ["approved","rejected"].includes(String(prior.status||""))||
+        Number(prior.attempts)>=3||
+        Date.parse(prior.retryAt)>Date.now()
+      );
+      if(!settled&&visualCalls>=1)continue;
+      if(!settled)visualCalls++;
+      payload.visualReview=await reviewImage(
+        env,client,media,prior,undefined,undefined,{recentCreativeSummaries}
+      );
+
+      if(payload.visualReview?.status==="unavailable"){
+        payload.qualityGates={...(payload.qualityGates||{}),designer:"pending"};
+        const exhausted=Number(payload.visualReview?.attempts||0)>=3;
+        await env.DB.prepare(
+          "UPDATE post_ledger SET status=?2,payload_json=?3,error=?4,updated_at=CURRENT_TIMESTAMP WHERE id=?1"
+        ).bind(row.id,exhausted?"expired":"ready",JSON.stringify(payload),exhausted?"visual_review_exhausted":"visual_review_unavailable").run();
+        missing++;
+        checks.push({id:row.id,mediaReady:true,ok:false,reason:exhausted?"visual_review_exhausted":"visual_review_unavailable",attempts:Number(payload.visualReview?.attempts||0)});
+        continue;
+      }
+    }
+
+    const ok=visualApproval(client.id,payload);
     if(ok){
       ready++;
       payload.qualityGates={...(payload.qualityGates||{}),designer:"approved",designerAt:new Date().toISOString()};
@@ -190,42 +173,45 @@ async function runDesigner(env,client,options){
     }else{
       missing++;
       repairQueued++;
-      payload.blockedDesignerMedia=media||payload.blockedDesignerMedia||"";
-      payload.blockedDesignerReviewStatus=payload.visualReview?.status||"unknown";
+      payload.blockedDesignerMedia=media;
+      payload.blockedDesignerReviewStatus=payload.visualReview?.status||"rejected";
       payload.blockedDesignerReviewChecks=payload.visualReview?.checks||null;
+      payload.blockedDesignerQualityScore=Number(payload.visualReview?.qualityScore||0);
       payload.imageUrl="";
       payload.publicImageUrl="";
       payload.visualReview=null;
       payload.repairRequestedAt=new Date().toISOString();
       payload.repairReason="designer_requested_media_replacement";
-      payload.intelligence={
-        ...(payload.intelligence||{}),
-        mediaSource:"awaiting-designer-replacement"
-      };
+      payload.mediaGeneration={...(payload.mediaGeneration||{}),status:"requested",updatedAt:new Date().toISOString()};
+      payload.intelligence={...(payload.intelligence||{}),mediaSource:"awaiting-designer-replacement"};
       payload.qualityGates={...(payload.qualityGates||{}),designer:"pending",designerAt:new Date().toISOString()};
       await env.DB.prepare(
-        "UPDATE post_ledger SET status='ready',payload_json=?2,error='designer_replacement_queued',updated_at=CURRENT_TIMESTAMP WHERE id=?1"
+        "UPDATE post_ledger SET status='ready',payload_json=?2,error='media_generation_required',updated_at=CURRENT_TIMESTAMP WHERE id=?1"
       ).bind(row.id,JSON.stringify(payload)).run();
     }
 
     checks.push({
-      id:row.id,mediaReady,singleScene,noSplitScreen,noCollage,tvFilled,ok,
+      id:row.id,
+      mediaReady,
+      ok,
       repairQueued:!ok,
       visualReview:payload.visualReview?.status||null,
+      qualityScore:Number(payload.visualReview?.qualityScore||payload.blockedDesignerQualityScore||0),
       reason:payload.visualReview?.reason||payload.repairReason||null,
       format:payload.intelligence?.format||"unknown"
     });
   }
-  const output={checked:rows.length,ready,missing,repairQueued,checks,skills:["visual-direction","creative-consistency","media-readiness"]};
+
+  const output={checked:rows.length,ready,missing,repairQueued,checks,skills:["visual-direction","creative-consistency","positive-quality-score","media-readiness"]};
   await recordAgentExecution(env,client,"DESIGNER",{
-    function:"visual-readiness-gate",
+    function:"visual-quality-score-gate",
     trigger:options.trigger,
     startedAt,
-    status:"success",
-    model:"visual-readiness-rules+self-healing",
+    status:repairQueued?"warning":"success",
+    model:"visual-review-v3+self-healing",
     quantity:rows.length,
-    message:ready+" criativo(s) prontos; "+repairQueued+" substituicao(oes) de midia enfileirada(s) automaticamente.",
-    metadata:{ready,repairQueued}
+    message:ready+" criativo(s) aprovados por qualidade; "+repairQueued+" mídia(s) pediram regeneração.",
+    metadata:{ready,repairQueued,visualCalls}
   });
   await patchAgentCoreState(env,client.id,{designer:output});
   return output;
