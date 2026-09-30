@@ -9,8 +9,8 @@ test("publishing window is 08:00 through 22:00 Sao Paulo",()=>{
   assert.equal(isPublishingWindow("2026-09-30T01:01:00Z"),false);
 });
 
-test("publisher gate enforces daily cap and ninety minute spacing",()=>{
-  assert.equal(publishingGate({now:"2026-09-29T15:00:00Z",publishedToday:3}).reason,"daily_limit_reached");
+test("publisher gate has no fixed daily cap and enforces ninety minute spacing",()=>{
+  assert.equal(publishingGate({now:"2026-09-29T15:00:00Z",publishedToday:20,lastPublishedAt:"2026-09-29T12:00:00Z"}).ok,true);
   assert.equal(publishingGate({now:"2026-09-29T15:00:00Z",publishedToday:1,lastPublishedAt:"2026-09-29T14:00:01Z"}).reason,"minimum_spacing_not_reached");
   assert.equal(publishingGate({now:"2026-09-29T15:30:00Z",publishedToday:1,lastPublishedAt:"2026-09-29T14:00:00Z"}).ok,true);
 });
