@@ -464,12 +464,30 @@ export async function deletePortalSession(env, request) {
 }
 
 export async function masterCredentialsValid(env, username, password) {
-  await ensureAuthRuntimeSchema(env);
   const cleanUsername = String(username || "").trim();
   const suppliedPassword = String(password || "");
 
+  // Canonical Cloudflare credentials must remain usable even if D1 is
+  // temporarily unavailable or has reached its daily read quota.
+  const candidates = [
+    [env.NEXUS_ADMIN_USERNAME, env.NEXUS_ADMIN_PASSWORD],
+    [env.ADMIN_USERNAME, env.ADMIN_PASSWORD],
+    [env.MASTER_USERNAME, env.MASTER_PASSWORD]
+  ];
+
+  for (const [configuredUser, configuredPassword] of candidates) {
+    const expectedUser = cleanConfiguredValue(configuredUser);
+    const expectedPassword = String(configuredPassword || "");
+    if (!expectedUser || !expectedPassword) continue;
+    const userOk = await configuredCredentialMatches(cleanUsername, expectedUser);
+    const passwordOk = await configuredCredentialMatches(suppliedPassword, expectedPassword);
+    if (userOk && passwordOk) return true;
+  }
+
+  // D1-backed Master users remain supported when the database is available.
   if (env?.DB && env.NEXUS_SECRET_KEY) {
     try {
+      await ensureAuthRuntimeSchema(env);
       await ensureMasterUserSchema(env);
       const row = cleanUsername
         ? await env.DB.prepare(
@@ -483,42 +501,67 @@ export async function masterCredentialsValid(env, username, password) {
     } catch {}
   }
 
-  const candidates = [
-    [env.NEXUS_ADMIN_USERNAME, env.NEXUS_ADMIN_PASSWORD],
-    [env.ADMIN_USERNAME, env.ADMIN_PASSWORD],
-    [env.MASTER_USERNAME, env.MASTER_PASSWORD]
-  ];
-
-  for (const [configuredUser, configuredPassword] of candidates) {
-    const expectedUser = cleanConfiguredValue(configuredUser);
-    const expectedPassword = String(configuredPassword || "");
-    if (!expectedUser || !expectedPassword) continue;
-    const userOk = await configuredCredentialMatches(cleanUsername, expectedUser);
-    const passwordOk = await configuredCredentialMatches(suppliedPassword, expectedPassword);
-    if (!userOk || !passwordOk) continue;
-    try {
-      await upsertMasterUser(env, expectedUser, cleanConfiguredValue(expectedPassword));
-    } catch {}
-    return true;
-  }
-
   return false;
 }
 
+async function createStatelessMasterToken(env, expiresAt) {
+  const secret = authPepper(env);
+  const expiresEpoch = Math.floor(new Date(expiresAt).getTime() / 1000);
+  const nonce = randomToken(18);
+  const unsigned = "master-session-v1|" + expiresEpoch + "|" + nonce;
+  const signature = await hmacHex(secret, unsigned);
+  return "ms1." + expiresEpoch + "." + nonce + "." + signature;
+}
+
+async function resolveStatelessMasterToken(env, token) {
+  const parts = String(token || "").split(".");
+  if (parts.length !== 4 || parts[0] !== "ms1") return null;
+  const expiresEpoch = Number(parts[1]);
+  const nonce = String(parts[2] || "");
+  const signature = String(parts[3] || "");
+  if (!Number.isFinite(expiresEpoch) || !nonce || !signature) return null;
+  if (expiresEpoch * 1000 <= Date.now()) return null;
+  let expected = "";
+  try {
+    expected = await hmacHex(
+      authPepper(env),
+      "master-session-v1|" + expiresEpoch + "|" + nonce
+    );
+  } catch {
+    return null;
+  }
+  if (!safeEqualHex(expected, signature)) return null;
+  return {
+    token,
+    stateless: true,
+    expiresAt: new Date(expiresEpoch * 1000).toISOString()
+  };
+}
+
 export async function createMasterSession(env) {
+  const expiresAt = new Date(Date.now() + MASTER_SESSION_TTL_SECONDS * 1000).toISOString();
+
+  // Master sessions are intentionally independent from D1 so administrators
+  // can still open the control panel during a D1 quota/outage incident.
+  if (String(env.NEXUS_SECRET_KEY || "").trim()) {
+    return {
+      token: await createStatelessMasterToken(env, expiresAt),
+      expiresAt,
+      stateless: true
+    };
+  }
+
   await ensureAuthRuntimeSchema(env);
   const token = randomToken(32);
   const tokenHash = await sha256Hex(token);
-  const expiresAt = new Date(Date.now() + MASTER_SESSION_TTL_SECONDS * 1000).toISOString();
   await env.DB.prepare(
     `INSERT INTO master_sessions(token_hash, expires_at, created_at)
      VALUES(?1, ?2, CURRENT_TIMESTAMP)`
   ).bind(tokenHash, expiresAt).run();
-  return { token, expiresAt };
+  return { token, expiresAt, stateless: false };
 }
 
 export async function resolveMasterSession(env, request) {
-  await ensureAuthRuntimeSchema(env);
   const authorization = String(request.headers.get("authorization") || "");
   const internalSecret = String(env.NEXUS_SECRET_KEY || "");
   if (internalSecret && authorization === "Bearer " + internalSecret) {
@@ -527,6 +570,12 @@ export async function resolveMasterSession(env, request) {
 
   const token = String(parseCookies(request).nexus_master || "").trim();
   if (!token) return null;
+
+  const stateless = await resolveStatelessMasterToken(env, token);
+  if (stateless) return stateless;
+  if (token.startsWith("ms1.")) return null;
+
+  await ensureAuthRuntimeSchema(env);
   const tokenHash = await sha256Hex(token);
   const row = await env.DB.prepare(
     "SELECT token_hash, expires_at FROM master_sessions WHERE token_hash = ?1 LIMIT 1"
@@ -537,13 +586,15 @@ export async function resolveMasterSession(env, request) {
     await env.DB.prepare("DELETE FROM master_sessions WHERE token_hash = ?1").bind(tokenHash).run().catch(() => {});
     return null;
   }
-  return { token, tokenHash, expiresAt: row.expires_at };
+  return { token, tokenHash, expiresAt: row.expires_at, stateless: false };
 }
 
 export async function deleteMasterSession(env, request) {
-  await ensureAuthRuntimeSchema(env);
   const token = String(parseCookies(request).nexus_master || "").trim();
   if (!token) return false;
+  if (token.startsWith("ms1.")) return true;
+
+  await ensureAuthRuntimeSchema(env);
   const tokenHash = await sha256Hex(token);
   const result = await env.DB.prepare("DELETE FROM master_sessions WHERE token_hash = ?1").bind(tokenHash).run();
   return Number(result?.meta?.changes || 0) > 0;
