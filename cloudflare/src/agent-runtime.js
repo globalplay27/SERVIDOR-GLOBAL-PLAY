@@ -18,7 +18,7 @@ import { isPublishingWindow, publishingGate, sameSaoPauloDay } from "./publishin
 import { upsertPostFeatures, recordMetricCheckpoints, recentPublishedPostFeatures } from "./post-learning.js";
 import { diversifyScene, diversifyHook, diversifyHashtags, repetitionReasons } from "./scene-grammar.js";
 import { commercialPromptGuard } from "./content-policy.js";
-import { activeMasterGuidance } from "./master-workspace.js";
+import { activeMasterGuidance, filterMasterGuidance } from "./master-workspace.js";
 
 function parseJson(raw, fallback = {}) {
   try {
@@ -563,10 +563,7 @@ async function runStrategist(env,client,context,options) {
       rotateFormat:true,
       learnFromTop5:true
     },
-    masterGuidance:{
-      directives:Array.isArray(options.masterGuidance?.directives)?options.masterGuidance.directives:[],
-      campaigns:Array.isArray(options.masterGuidance?.campaigns)?options.masterGuidance.campaigns:[]
-    },
+    masterGuidance:filterMasterGuidance(options.masterGuidance,"estrategista"),
     metrics:{
       published:ledger.filter(x=>x.status==="published").length,
       failed:ledger.filter(x=>x.status==="failed").length,
@@ -672,9 +669,10 @@ async function runCreator(env,client,strategy,options) {
   }
 
   async function nextMedia(postId,visualBrief="") {
+    const creatorGuidance=filterMasterGuidance(options.masterGuidance,"creator");
     const masterNotes=[
-      ...(Array.isArray(options.masterGuidance?.directives)?options.masterGuidance.directives.map(x=>x.text):[]),
-      ...(Array.isArray(options.masterGuidance?.campaigns)?options.masterGuidance.campaigns.map(x=>[x.title,x.brief,x.assetUrl].filter(Boolean).join(" | ")):[])
+      ...creatorGuidance.directives.map(x=>x.text),
+      ...creatorGuidance.campaigns.map(x=>[x.title,x.brief,x.assetUrl].filter(Boolean).join(" | "))
     ].filter(Boolean).slice(0,8);
     const guidedVisualBrief=[
       String(visualBrief||"").trim(),
