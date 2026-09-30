@@ -34,12 +34,11 @@ test("scheduler error codes are sanitized into stable categories", () => {
   assert.equal(schedulerErrorCode(new Error("unexpected failure with secret-looking text")), "scheduler_tick_error");
 });
 
-
-test("wrangler keeps the production cron versioned at five-minute cadence", async () => {
+test("wrangler keeps production cron on a D1-safe fifteen-minute cadence", async () => {
   const [wrangler, schedule] = await Promise.all([
     readFile(new URL("../wrangler.jsonc", import.meta.url), "utf8"),
     readFile(new URL("../cron.schedule", import.meta.url), "utf8")
   ]);
-  assert.match(wrangler, /"triggers"\s*:\s*\{[\s\S]*"crons"\s*:\s*\["\*\/5 \* \* \* \*"\]/);
-  assert.equal(schedule.trim(), "*/5 * * * *");
+  assert.match(wrangler, /"triggers"\s*:\s*\{[\s\S]*"crons"\s*:\s*\["\*\/15 \* \* \* \*"]/);
+  assert.equal(schedule.trim(), "*/15 * * * *");
 });
