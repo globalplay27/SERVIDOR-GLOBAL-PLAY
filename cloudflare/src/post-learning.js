@@ -51,6 +51,24 @@ export async function recentPostFeatures(env,clientId,days=60,limit=200){
   return result?.results||[];
 }
 
+export async function recentPublishedPostFeatures(env,clientId,days=60,limit=200){
+  const result=await env.DB.prepare(
+    `SELECT f.*
+     FROM post_features f
+     JOIN post_ledger p ON p.id=f.post_id
+     WHERE f.client_id=?1 AND p.status='published'
+       AND COALESCE(
+         json_extract(CASE WHEN json_valid(p.payload_json) THEN p.payload_json ELSE '{}' END,'$.publishedAt'),
+         p.updated_at,p.scheduled_for,p.created_at
+       )>=datetime('now',?2)
+     ORDER BY COALESCE(
+       json_extract(CASE WHEN json_valid(p.payload_json) THEN p.payload_json ELSE '{}' END,'$.publishedAt'),
+       p.updated_at,p.scheduled_for,p.created_at
+     ) DESC LIMIT ?3`
+  ).bind(String(clientId),"-"+Math.max(1,Math.min(365,Number(days||60)))+" days",Math.max(1,Math.min(500,Number(limit||200)))).all();
+  return result?.results||[];
+}
+
 export async function recordMetricCheckpoints(env,{post,item,followersCount=0,previousFollowersCount=0,now=new Date()}={}){
   if(!post?.id||!item?.id)return {inserted:[],mature:false};
   const existingResult=await env.DB.prepare(
