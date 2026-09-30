@@ -14,10 +14,15 @@ test("client portal exposes agent activity and post review controls", async () =
   assert.match(js, /Aprovar/);
   assert.match(js, /Reprovar/);
   assert.match(js, /Pedir ajuste/);
+  assert.match(js, /Publicar agora/);
   assert.match(js, /\/api\/portal\/agent-core/);
   assert.match(js, /\/decision/);
   assert.match(js, /\/revision/);
+  assert.match(js, /\/manual/);
   assert.match(js, /post-preview/);
+  assert.equal((js.match(/async function loadAgents\(/g) || []).length, 1);
+  assert.equal((js.match(/className = "post-preview"/g) || []).length, 1);
+  assert.match(js, /target === "media"\) return loadMedia\(\)/);
   assert.match(portal, /postDecisionMatch/);
   assert.match(portal, /postRevisionMatch/);
   assert.equal(portal.includes("/decision"), true);
