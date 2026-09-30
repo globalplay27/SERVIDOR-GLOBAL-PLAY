@@ -16,7 +16,7 @@ import { startInstagramOAuth, handleInstagramOAuthCallback } from "./instagram.j
 import { AGENT_CORE_MODULES, normalizeAgentCoreConfig, agentCoreState, agentExecutions, saveAgentCoreConfig } from "./agent-core.js";
 import { leadsForClient, leadHunterSummary } from "./leads.js";
 import { leadHunterView, saveLeadHunterConfig, runLeadHunter, discardLead } from "./lead-hunter.js";
-import { decidePost, requestPostRevision, saveOwnPostContent, publishPostNow, useLibraryImageForPost } from "./posts.js";
+import { decidePost, requestPostRevision, cancelPost, saveOwnPostContent, publishPostNow, useLibraryImageForPost } from "./posts.js";
 
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
@@ -507,6 +507,23 @@ export async function handlePortalApi(request, env, url, ctx) {
     } catch (error) {
       const code = error instanceof Error ? error.message : String(error);
       return json({ error: code, message: code === "revision_instructions_required" ? "Explique o que precisa ser corrigido." : "Não foi possível pedir a correção." }, code === "post_not_found" ? 404 : 400);
+    }
+  }
+
+  const postCancelMatch = url.pathname.match(/^\/api\/portal\/posts\/([^/]+)\/cancel$/);
+  if (postCancelMatch && request.method === "POST") {
+    try {
+      return json(await cancelPost(env, client, decodeURIComponent(postCancelMatch[1])));
+    } catch (error) {
+      const code = error instanceof Error ? error.message : String(error);
+      const status = code === "post_not_found" ? 404
+        : ["already_published", "publishing_in_progress"].includes(code) ? 409
+        : 400;
+      const messages = {
+        already_published: "A postagem já foi publicada. Abra no Instagram para gerenciá-la.",
+        publishing_in_progress: "A postagem já está em processo de publicação."
+      };
+      return json({ error: code, message: messages[code] || "Não foi possível cancelar esta postagem." }, status);
     }
   }
 
