@@ -109,10 +109,10 @@ const HASHTAG_SETS={
     "#GlobalPlay #Streaming #FimDeTarde #TempoEmFamilia #CurtaEmCasa"
   ],
   "ragnar-one":[
-    "#RagnarOne #Nordico #CinemaEmCasa #Aventura #Atmosfera",
-    "#RagnarOne #Streaming #NoiteDeCinema #EstiloNordico #Entretenimento",
-    "#RagnarOne #Fjord #ExperienciaEmCasa #Cinema #SagaOriginal",
-    "#RagnarOne #AventuraEmCasa #NordicMood #Entretenimento #DicaDoDia"
+    "#RagnarOne #Streaming #CinemaEmCasa #Entretenimento #DicaDoDia",
+    "#RagnarOne #Streaming #NoiteDeCinema #FilmesESeries #EmCasa",
+    "#RagnarOne #Entretenimento #ExperienciaEmCasa #Cinema #OQueAssistir",
+    "#RagnarOne #StreamingEmCasa #Entretenimento #Dicas #CinemaEmCasa"
   ]
 };
 const HOOKS={
@@ -125,9 +125,9 @@ const HOOKS={
   ],
   "ragnar-one":[
     "Sua próxima noite de cinema pode ter outro clima.",
-    "Qual cenário combina com a sua próxima saga?",
-    "Transforme uma noite comum em uma experiência épica.",
-    "Entre o frio do fiorde e o calor da lareira, qual você escolhe?",
+    "O que você escolheria para assistir hoje?",
+    "Uma noite comum pode virar uma ótima sessão em casa.",
+    "Pipoca pronta: qual vai ser a escolha de hoje?",
     "Tem noites que pedem uma atmosfera diferente."
   ]
 };
