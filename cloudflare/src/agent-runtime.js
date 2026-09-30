@@ -17,6 +17,7 @@ import { generateOriginalMedia } from "./media-generation.js";
 import { isPublishingWindow, publishingGate, sameSaoPauloDay } from "./publishing-policy.js";
 import { upsertPostFeatures, recordMetricCheckpoints, recentPublishedPostFeatures } from "./post-learning.js";
 import { diversifyScene, diversifyHook, diversifyHashtags, repetitionReasons } from "./scene-grammar.js";
+import { commercialPromptGuard } from "./content-policy.js";
 
 function parseJson(raw, fallback = {}) {
   try {
@@ -106,23 +107,23 @@ function postingProfile(client) {
     contentStrategy: isGlobal
       ? "Crescimento orgânico com entretenimento familiar e campanha visual de desenhos 3D até 12/10/2026"
       : isRagnar
-        ? "Crescimento orgânico com entretenimento premium e identidade nórdica original"
+        ? "Crescimento orgânico com entretenimento premium para cliente final"
         : (current.contentStrategy || "Crescimento acelerado de seguidores + engajamento qualificado"),
-    targetAudience: isGlobal ? "Famílias e fãs de entretenimento" : isRagnar ? "Adultos fãs de entretenimento e estética nórdica" : (current.targetAudience || "Misto"),
+    targetAudience: isGlobal ? "Famílias e fãs de entretenimento" : isRagnar ? "Adultos fãs de entretenimento, somente cliente final" : (current.targetAudience || "Misto"),
     contentFocus: isGlobal
       ? "Desenhos, filmes, séries e momentos de diversão em família com mensagem simples e visual alegre"
       : isRagnar
-        ? "Entretenimento premium em casa, aventura e atmosfera nórdica original com variedade visual"
+        ? "Entretenimento premium em casa, streaming e variedade visual contemporânea"
         : (current.contentFocus || "Conteúdo útil e específico para o público"),
-    morningTheme: isGlobal ? "Diversão em família e desenhos" : isRagnar ? "Aventura nórdica original" : (current.morningTheme || "Descoberta e curiosidade"),
+    morningTheme: isGlobal ? "Diversão em família e desenhos" : isRagnar ? "Entretenimento e streaming em casa" : (current.morningTheme || "Descoberta e curiosidade"),
     afternoonTheme: isGlobal ? "Escolhas para assistir com a família" : isRagnar ? "Entretenimento premium no sofá" : (current.afternoonTheme || "Conteúdo útil para salvar"),
-    eveningTheme: isGlobal ? "Sessão em família, pipoca e entretenimento" : isRagnar ? "Noite de cinema com atmosfera nórdica" : (current.eveningTheme || "Comunidade e opinião"),
+    eveningTheme: isGlobal ? "Sessão em família, pipoca e entretenimento" : isRagnar ? "Noite de cinema e streaming em casa" : (current.eveningTheme || "Comunidade e opinião"),
     tone: isGlobal ? "Alegre, familiar, simples e direto" : isRagnar ? "Premium, convidativo e direto" : (current.tone || "Firme, direto e profissional"),
     cta: 'Comente "QUERO" para saber mais.',
-    followerCta: isGlobal ? "Siga a Global Play para ver as próximas sugestões." : isRagnar ? "Siga a Ragnar One para acompanhar as próximas sagas." : (current.followerCta || "Siga o perfil para não perder as próximas indicações."),
-    shareCta: isGlobal ? "Envie para alguém que vai curtir essa sessão em família." : isRagnar ? "Envie para quem também curte esse clima de aventura." : (current.shareCta || "Envie para alguém que também curte esse tipo de conteúdo."),
-    hashtags: isGlobal ? "#GlobalPlay #Streaming #Entretenimento #Familia #Desenhos" : isRagnar ? "#RagnarOne #Streaming #Entretenimento #CinemaEmCasa #Nordico" : (current.hashtags || "#Entretenimento #Streaming #Dicas"),
-    avoidTopics: "Texto genérico, repetição de criativos, poluição visual, tela vazia, collage/split-screen, promessas irreais e referências protegidas",
+    followerCta: isGlobal ? "Siga a Global Play para ver as próximas sugestões." : isRagnar ? "Siga a Ragnar One para acompanhar as próximas sugestões." : (current.followerCta || "Siga o perfil para não perder as próximas indicações."),
+    shareCta: isGlobal ? "Envie para alguém que vai curtir essa sessão em família." : isRagnar ? "Envie para quem também curte uma boa noite de entretenimento." : (current.shareCta || "Envie para alguém que também curte esse tipo de conteúdo."),
+    hashtags: isGlobal ? "#GlobalPlay #Streaming #Entretenimento #Familia #Desenhos" : isRagnar ? "#RagnarOne #Streaming #Entretenimento #CinemaEmCasa #Dicas" : (current.hashtags || "#Entretenimento #Streaming #Dicas"),
+    avoidTopics: "Texto genérico, repetição de criativos, poluição visual, tela vazia, collage/split-screen, promessas irreais, referências protegidas e ofertas de revenda. "+commercialPromptGuard(client),
     creativeRotation: String(client?.id || "") === "globalplay-streaming"
       ? {
           enabled:true,
