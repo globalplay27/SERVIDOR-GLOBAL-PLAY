@@ -122,3 +122,17 @@ CREATE TABLE IF NOT EXISTS post_metrics (
 CREATE INDEX IF NOT EXISTS idx_post_features_client_created ON post_features(client_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_post_metrics_client_measured ON post_metrics(client_id, measured_at DESC);
 CREATE INDEX IF NOT EXISTS idx_post_metrics_post_checkpoint ON post_metrics(post_id, checkpoint_hours);
+
+
+CREATE INDEX IF NOT EXISTS idx_post_ledger_scheduler
+  ON post_ledger(client_id, status, approval_status, scheduled_for);
+CREATE INDEX IF NOT EXISTS idx_post_ledger_published_updated
+  ON post_ledger(client_id, status, updated_at);
+CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_client_kind_status
+  ON scheduled_jobs(client_id, kind, status, due_at);
+CREATE INDEX IF NOT EXISTS idx_agent_exec_created
+  ON agent_executions(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_lead_runs_finished
+  ON lead_hunter_runs(finished_at DESC);
+CREATE INDEX IF NOT EXISTS idx_leads_client
+  ON leads(client_id);
