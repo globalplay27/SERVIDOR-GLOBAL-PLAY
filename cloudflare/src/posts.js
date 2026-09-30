@@ -110,15 +110,42 @@ export async function requestPostRevision(env, client, postId, instructions) {
   const row = await postRow(env, client.id, postId);
   if (!row) throw new Error("post_not_found");
 
+  const currentPayload = parseJson(row.payload_json, {});
+  const previousImageUrl = String(currentPayload.imageUrl || currentPayload.publicImageUrl || "");
   const payload = {
-    ...parseJson(row.payload_json, {}),
-    revisionRequest: text
+    ...currentPayload,
+    revisionRequest: text,
+    revisionRequestedAt: new Date().toISOString(),
+    blockedRevisionMedia: previousImageUrl,
+    imageUrl: "",
+    publicImageUrl: "",
+    visualReview: null,
+    qualityGates: { copyChief: "pending", designer: "pending" },
+    mediaGeneration: {
+      status: "requested",
+      attempts: 0,
+      lastError: "",
+      updatedAt: new Date().toISOString()
+    }
   };
   const updated = await updateRow(env, row, {
     approvalStatus: "correction_requested",
-    error: "",
+    status: "ready",
+    error: "media_generation_required",
     payload
   });
+
+  const jobId = "client-revision:" + String(client.id) + ":" + String(row.id) + ":" + Date.now();
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO scheduled_jobs(
+       id, client_id, kind, due_at, status, attempts, payload_json, created_at, updated_at
+     ) VALUES(?1, ?2, 'agent-core-cycle', ?3, 'scheduled', 0, ?4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
+  ).bind(
+    jobId,
+    client.id,
+    new Date().toISOString(),
+    JSON.stringify({ trigger: "client-revision", agent: "all", postId: row.id })
+  ).run();
 
   const ticketId = "sup_" + crypto.randomUUID();
   await env.DB.prepare(
@@ -138,6 +165,31 @@ export async function requestPostRevision(env, client, postId, instructions) {
   return {
     ok: true,
     message: "Correção enviada ao NEXUS.",
+    post: view(updated)
+  };
+}
+
+export async function cancelPost(env, client, postId) {
+  const row = await postRow(env, client.id, postId);
+  if (!row) throw new Error("post_not_found");
+  if (row.status === "published") throw new Error("already_published");
+  if (row.status === "publishing") throw new Error("publishing_in_progress");
+
+  const payload = {
+    ...parseJson(row.payload_json, {}),
+    cancelledAt: new Date().toISOString(),
+    cancelledBy: "client"
+  };
+  const updated = await updateRow(env, row, {
+    status: "cancelled",
+    approvalStatus: "rejected",
+    error: "",
+    payload
+  });
+
+  return {
+    ok: true,
+    message: "Postagem cancelada. Ela não será enviada ao Instagram.",
     post: view(updated)
   };
 }
