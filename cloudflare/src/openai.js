@@ -129,6 +129,7 @@ export async function tokenUsageToday(env, clientId) {
 
 export async function openAIResponses(env, clientId, input) {
   const apiKey = openAIKeyForClient(env, clientId);
+  const purpose = String(input?.nexusPurpose || "general");
   if (!apiKey) {
     await setRuntimeStatus(env, clientId, "not_configured", "OpenAI key not configured");
     throw new Error("openai_not_configured_for_client");
@@ -148,8 +149,19 @@ export async function openAIResponses(env, clientId, input) {
     throw error;
   }
 
+  // Keep part of the daily text-token budget available for diagnosis/copy.
+  // Visual review is useful, but it must never consume the last strategic tokens.
+  const reserveTokens = Math.max(4000, Math.floor(Number(budget.limitTokens || 30000) * 0.25));
+  if (purpose === "visual-review" && Number(budget.remainingTokens || 0) <= reserveTokens) {
+    const error = new Error("openai_visual_budget_reserved");
+    error.status = 429;
+    error.detail = { ...budget, reserveTokens };
+    throw error;
+  }
+
   const payload = { ...(input && typeof input === "object" ? input : {}) };
   delete payload.clientId;
+  delete payload.nexusPurpose;
   if (!payload.model) payload.model = "gpt-5.6-luna";
   if (!Object.prototype.hasOwnProperty.call(payload, "input")) payload.input = "";
   if (!Object.prototype.hasOwnProperty.call(payload, "max_output_tokens")) {
