@@ -56,11 +56,11 @@ export function buildVisualPrompt(client, visualBrief="", variationSeed=""){
   }else if(id==="ragnar-one"){
     common.push(
       "Brand context: Ragnar One, an independent streaming brand.",
-      "Use an ORIGINAL premium Nordic cinematic mood with varied scenes.",
-      "Rotate between fjord sunrise, warm cabin with fireplace, stormy coast, original longship silhouette, mountain lookout and modern Nordic interior.",
-      "Use generic original adult characters only when useful; vary age, pose, framing and environment.",
-      "Do not depict Ragnar Lothbrok, Vikings-series actors or characters, copied costumes, official logos, posters or recognizable protected scenes.",
-      "Avoid repeating the same man sitting on a sofa."
+      "The SUBJECT must be ordinary streaming entertainment in a modern home: living room, television, friends, couple or family enjoying entertainment.",
+      "Ragnar One's Nordic/Viking identity is BRANDING ONLY: premium dark palette, restrained metallic or wood texture, strong graphic framing and the RAGNAR ONE name added later by the brand overlay.",
+      "Do NOT use Vikings, warriors, longships, shields, fjords, medieval cabins, axes, helmets, battle scenes, Nordic landscapes or Viking props as the subject or setting.",
+      "Use generic original contemporary people only when useful; vary age, pose, framing and environment.",
+      "Avoid repeating the same person sitting on a sofa and avoid literal Viking scenery."
     );
   }
   if(String(visualBrief||"").trim())common.push("Creative direction: "+String(visualBrief).slice(0,1200));
