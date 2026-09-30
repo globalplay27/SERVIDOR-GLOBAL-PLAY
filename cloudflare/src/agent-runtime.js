@@ -638,9 +638,15 @@ async function runCreator(env,client,strategy,options) {
     if(["globalplay-streaming","ragnar-one"].includes(client.id)){
       try{
         const generated=await generateOriginalMedia(env,client,postId,visualBrief,{
-          variationSeed:String(postId)+"|"+String(Date.now())
+          variationSeed:String(postId)+"|"+String(Date.now()),
+          title:String((visualBrief||"").split(".")[0]||"").slice(0,42)
         });
-        return {url:generated.url,source:"openai-original-media",sourceInstagramMediaId:"",fingerprint:String(generated.fingerprint||"")};
+        return {
+          url:generated.url,source:"openai-original-media",sourceInstagramMediaId:"",
+          fingerprint:String(generated.fingerprint||""),
+          brandingApplied:generated.brandingApplied===true,
+          brandingError:String(generated.brandingError||"")
+        };
       }catch(error){
         return {url:"",source:"media-generation-failed",sourceInstagramMediaId:"",error:String(error?.message||error)};
       }
@@ -696,7 +702,7 @@ async function runCreator(env,client,strategy,options) {
     payload.imageUrl=mediaInfo.url;
     payload.sourceInstagramMediaId=mediaInfo.sourceInstagramMediaId||"";
     if(mediaInfo.fingerprint)payload.mediaFingerprint=String(mediaInfo.fingerprint);
-    payload.mediaGeneration={status:"generated",attempts:generationAttempts+(safeRecheck?0:1),lastError:"",updatedAt:new Date().toISOString()};
+    payload.mediaGeneration={status:"generated",attempts:generationAttempts+(safeRecheck?0:1),lastError:"",brandingApplied:mediaInfo.brandingApplied===true,brandingError:String(mediaInfo.brandingError||""),updatedAt:new Date().toISOString()};
     payload.intelligence={...(payload.intelligence||{}),mediaSource:mediaInfo.source};
     if(safeRecheck)payload.blockedDesignerRecoveryAttemptedAt=new Date().toISOString();
     payload.qualityGates={copyChief:"pending",designer:"pending"};
@@ -820,7 +826,7 @@ async function runCreator(env,client,strategy,options) {
         existingPayload.sourceInstagramMediaId=replacementInfo.sourceInstagramMediaId||"";
         if(replacementInfo.fingerprint)existingPayload.mediaFingerprint=String(replacementInfo.fingerprint);
         existingPayload.retryCount=0;
-        existingPayload.mediaGeneration={status:"generated",attempts:existingGenerationAttempts+(allowBlockedRecheck?0:1),lastError:"",updatedAt:new Date().toISOString()};
+        existingPayload.mediaGeneration={status:"generated",attempts:existingGenerationAttempts+(allowBlockedRecheck?0:1),lastError:"",brandingApplied:replacementInfo.brandingApplied===true,brandingError:String(replacementInfo.brandingError||""),updatedAt:new Date().toISOString()};
         existingPayload.recoveredAt=new Date().toISOString();
         existingPayload.recoveryReason="missing_media_repaired_by_creator";
         if(safeRecheck)existingPayload.blockedDesignerRecoveryAttemptedAt=new Date().toISOString();
@@ -930,7 +936,7 @@ async function runCreator(env,client,strategy,options) {
       imageUrl,
       sourceInstagramMediaId:String(mediaInfo.sourceInstagramMediaId||""),
       mediaFingerprint:String(mediaInfo.fingerprint||""),
-      mediaGeneration:{status:imageUrl?"generated":"requested",attempts:imageUrl?1:1,lastError:String(mediaInfo.error||"").slice(0,120),updatedAt:new Date().toISOString()},
+      mediaGeneration:{status:imageUrl?"generated":"requested",attempts:1,lastError:String(mediaInfo.error||"").slice(0,120),brandingApplied:mediaInfo.brandingApplied===true,brandingError:String(mediaInfo.brandingError||"").slice(0,120),updatedAt:new Date().toISOString()},
       title:theme.slice(0,160),
       visualBrief:structuredVisualBrief.slice(0,1600),
       creativeFeatures,
