@@ -6,6 +6,7 @@ import { handlePortalApi } from "./portal.js";
 import { handleMaster } from "./master.js";
 import { runSchedulerTick, recordSchedulerFailure } from "./scheduler.js";
 import { runCronIteration } from "./cron-runtime.js";
+import { kickAutomationIfStale } from "./watchdog.js";
 import { processDueJobs } from "./executor.js";
 import { handleWhatsAppWebhook, handleWhatsAppProtected, whatsappConfigStatus } from "./whatsapp-agent.js";
 import { instagramCredentialStatus } from "./instagram-credentials.js";
@@ -585,6 +586,9 @@ export default {
         const denied=requireAuth(request,env);
         if(denied)return denied;
       }
+      // Health doubles as a bounded watchdog only when the cron heartbeat is stale.
+      // A D1 lock prevents repeated public health checks from creating a job storm.
+      ctx.waitUntil(kickAutomationIfStale(env).catch(() => null));
       return autonomyHealth(env,detailed);
     }
 
