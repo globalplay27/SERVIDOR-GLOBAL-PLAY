@@ -1,6 +1,6 @@
 import { leadHunterConfig } from "./lead-hunter.js";
 import { ensureLeadSchema } from "./leads.js";
-import { reviewImage } from "./visual-review.js";
+import { isPublishingWindow } from "./publishing-policy.js";
 
 function parseJson(raw, fallback = {}) {
   try {
@@ -136,6 +136,18 @@ export async function runSchedulerTick(env, scheduledAt = new Date()) {
 
     const state = await schedulerState(env, client.id);
     const next = { ...state };
+
+    const expired = await env.DB.prepare(
+      `UPDATE post_ledger
+       SET status='expired',error='stale_ready_expired',updated_at=CURRENT_TIMESTAMP
+       WHERE client_id=?1
+         AND status IN ('ready','scheduled','failed')
+         AND scheduled_for IS NOT NULL
+         AND scheduled_for<=?2
+         AND created_at<datetime(?2,'-24 hours')`
+    ).bind(client.id,now.toISOString()).run();
+    next.expiredStaleDrafts = Number(expired?.meta?.changes || 0);
+
     let cycleIsDue = due(state.lastCycleQueuedAt, config.cycleMinutes, nowMs);
 
     // Force a fresh intelligence cycle when the shared OpenAI growth brain is
@@ -180,7 +192,8 @@ export async function runSchedulerTick(env, scheduledAt = new Date()) {
       // windows. If the account is behind and the last publication is at least
       // 90 minutes old, run a bounded catch-up cycle instead of waiting until
       // tomorrow. The 15-minute recovery throttle prevents token/cron storms.
-      if (publishedCount < 3 && spacingReady
+      const inPublishingWindow = isPublishingWindow(now);
+      if (publishedCount < 3 && spacingReady && inPublishingWindow
         && due(state.lastCycleQueuedAt, recoveryIntervalMinutes, nowMs)) {
         cycleIsDue = true;
       }
@@ -192,7 +205,7 @@ export async function runSchedulerTick(env, scheduledAt = new Date()) {
       // last post is sufficiently spaced, pull forward exactly one already
       // approved creative. Normal days still use RADAR's adaptive schedule;
       // this path only prevents a silent day when the queue has valid content.
-      if (publishedCount < 3 && spacingReady) {
+      if (publishedCount < 3 && spacingReady && inPublishingWindow) {
         const dueReady = await env.DB.prepare(
           `SELECT id FROM post_ledger
            WHERE client_id=?1
@@ -215,6 +228,7 @@ export async function runSchedulerTick(env, scheduledAt = new Date()) {
                AND status IN ('ready','scheduled','failed')
                AND approval_status='approved'
                AND scheduled_for>?2
+               AND date(scheduled_for,'-3 hours')=date(?2,'-3 hours')
                AND COALESCE(json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.retryCount'),0)<3
                AND json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.qualityGates.copyChief')='approved'
                AND json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.qualityGates.designer')='approved'
@@ -261,76 +275,26 @@ export async function runSchedulerTick(env, scheduledAt = new Date()) {
       ).bind(client.id).run();
     }
 
-    // Ragnar emergency recovery: use one of the three owner-inspected
-    // pinned artworks when the due queue lost its media to anti-repeat.
-    // Pick an artwork not used in the two most recent published posts, verify
-    // its pinned bytes through visual-review-v2, then let Publisher send it.
-    if (client.id === "ragnar-one") {
-      const dueNeedsMedia = await env.DB.prepare(
-        `SELECT id,payload_json FROM post_ledger
-         WHERE client_id=?1
-           AND status IN ('ready','scheduled','failed')
-           AND approval_status='approved'
-           AND scheduled_for<=?2
-           AND date(scheduled_for,'-3 hours')=date(?2,'-3 hours')
-           AND json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.qualityGates.copyChief')='approved'
-           AND (
-             COALESCE(json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.imageUrl'),'')=''
-             OR error IN ('duplicate_media_blocked','designer_replacement_queued')
-           )
-         ORDER BY scheduled_for ASC LIMIT 1`
-      ).bind(client.id, now.toISOString()).first();
-
-      if (dueNeedsMedia?.id) {
-        const recentMediaRows = await env.DB.prepare(
-          `SELECT json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.imageUrl') AS image_url
-           FROM post_ledger
-           WHERE client_id=?1 AND status='published'
-           ORDER BY COALESCE(
-             json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.publishedAt'),
-             updated_at, scheduled_for, created_at
-           ) DESC LIMIT 2`
-        ).bind(client.id).all();
-        const recentMedia = new Set((recentMediaRows?.results || []).map(row => String(row.image_url || "")).filter(Boolean));
-        const candidates = [
-          "https://servidor-nexus.diamantehinode2015.workers.dev/assets/ragnar/saga-sofa-20260928.jpg",
-          "https://servidor-nexus.diamantehinode2015.workers.dev/assets/ragnar/fjord-dia-20260928.jpg",
-          "https://servidor-nexus.diamantehinode2015.workers.dev/assets/ragnar/fjord-noite-20260928.jpg"
-        ];
-        const recoveryMedia = candidates.find(url => !recentMedia.has(url)) || "";
-        if (recoveryMedia) {
-          const review = await reviewImage(env, client, recoveryMedia, null);
-          if (review?.status === "approved") {
-            let payload = {};
-            try { payload = JSON.parse(String(dueNeedsMedia.payload_json || "{}")); } catch {}
-            payload.imageUrl = recoveryMedia;
-            payload.publicImageUrl = "";
-            payload.sourceInstagramMediaId = "";
-            payload.visualReview = review;
-            payload.blockedDuplicateMedia = "";
-            payload.blockedDesignerMedia = "";
-            payload.intelligence = {
-              ...(payload.intelligence || {}),
-              mediaSource: "ragnar-owner-pinned-recovery"
-            };
-            payload.qualityGates = {
-              ...(payload.qualityGates || {}),
-              copyChief: "approved",
-              designer: "approved",
-              designerAt: now.toISOString()
-            };
-            payload.ragnarPinnedRecoveryAt = now.toISOString();
-            await env.DB.prepare(
-              "UPDATE post_ledger SET payload_json=?2,error='',updated_at=CURRENT_TIMESTAMP WHERE id=?1"
-            ).bind(dueNeedsMedia.id, JSON.stringify(payload)).run();
-          }
-        }
-      }
-    }
+    // Missing/duplicate media is owned by CREATOR. It now generates a fresh
+    // original image through the configured OpenAI image tool. Do not inject
+    // owner-pinned fallback artwork here, because that recreates the same feed.
+    const needsFreshMedia = await env.DB.prepare(
+      `SELECT id FROM post_ledger
+       WHERE client_id=?1
+         AND status IN ('ready','scheduled','failed')
+         AND approval_status='approved'
+         AND scheduled_for<=?2
+         AND date(scheduled_for,'-3 hours')=date(?2,'-3 hours')
+         AND error IN ('media_generation_required','duplicate_media_blocked','duplicate_media_content_blocked')
+       LIMIT 1`
+    ).bind(client.id,now.toISOString()).first();
+    if (needsFreshMedia?.id) cycleIsDue = true;
 
     // A slow full cycle must not suppress publishing content that already
     // passed both quality gates. Queue the sweep independently.
-    if (config.modules.publisher && due(state.lastPublisherQueuedAt, 1, nowMs)) {
+    if (config.modules.publisher
+      && (!["globalplay-streaming","ragnar-one"].includes(client.id) || isPublishingWindow(now))
+      && due(state.lastPublisherQueuedAt, 1, nowMs)) {
       // Self-heal a stale Designer flag only when the actual image has already
       // passed visual-review-v2 for the exact same media URL. This does not
       // bypass review; it repairs a gate that was left pending after recovery.
