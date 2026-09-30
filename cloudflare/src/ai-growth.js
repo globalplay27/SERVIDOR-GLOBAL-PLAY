@@ -1,7 +1,17 @@
 import { openAIResponses } from "./openai.js";
 
 const VERSION = "openai-growth-brain-v1";
-const CACHE_MS = 90 * 60 * 1000;
+const TZ = "America/Sao_Paulo";
+
+function localDay(value=new Date()){
+  return new Intl.DateTimeFormat("en-CA",{timeZone:TZ,year:"numeric",month:"2-digit",day:"2-digit"}).format(value instanceof Date?value:new Date(value));
+}
+
+export function shouldRefreshGrowthAI(previous=null,invalidateReason="",now=new Date()){
+  if(String(invalidateReason||"").trim())return true;
+  if(previous?.version!==VERSION)return true;
+  return String(previous?.dayKey||"")!==localDay(now);
+}
 
 function extractText(response) {
   if (response?.output_text) return String(response.output_text);
@@ -36,8 +46,8 @@ function brandRules(client) {
 }
 
 export async function consultGrowthAI(env, client, signals = {}, previous = null) {
-  const previousAt = Date.parse(String(previous?.generatedAt || ""));
-  if (previous?.version === VERSION && Number.isFinite(previousAt) && Date.now() - previousAt < CACHE_MS) {
+  const invalidateReason=String(signals?.invalidateReason||"").trim();
+  if (!shouldRefreshGrowthAI(previous,invalidateReason)) {
     return { ...previous, cached: true };
   }
 
@@ -141,6 +151,7 @@ export async function consultGrowthAI(env, client, signals = {}, previous = null
     return {
       version: VERSION,
       generatedAt: new Date().toISOString(),
+      dayKey: localDay(),
       model: String(env.NEXUS_GROWTH_MODEL || "gpt-5.6-luna"),
       cached: false,
       ...parsed
