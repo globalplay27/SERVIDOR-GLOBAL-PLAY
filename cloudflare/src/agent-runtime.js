@@ -18,6 +18,7 @@ import { isPublishingWindow, publishingGate, sameSaoPauloDay } from "./publishin
 import { upsertPostFeatures, recordMetricCheckpoints, recentPublishedPostFeatures } from "./post-learning.js";
 import { diversifyScene, diversifyHook, diversifyHashtags, repetitionReasons } from "./scene-grammar.js";
 import { commercialPromptGuard } from "./content-policy.js";
+import { activeMasterGuidance } from "./master-workspace.js";
 
 function parseJson(raw, fallback = {}) {
   try {
@@ -562,6 +563,10 @@ async function runStrategist(env,client,context,options) {
       rotateFormat:true,
       learnFromTop5:true
     },
+    masterGuidance:{
+      directives:Array.isArray(options.masterGuidance?.directives)?options.masterGuidance.directives:[],
+      campaigns:Array.isArray(options.masterGuidance?.campaigns)?options.masterGuidance.campaigns:[]
+    },
     metrics:{
       published:ledger.filter(x=>x.status==="published").length,
       failed:ledger.filter(x=>x.status==="failed").length,
@@ -667,8 +672,13 @@ async function runCreator(env,client,strategy,options) {
   }
 
   async function nextMedia(postId,visualBrief="") {
+    const masterNotes=[
+      ...(Array.isArray(options.masterGuidance?.directives)?options.masterGuidance.directives.map(x=>x.text):[]),
+      ...(Array.isArray(options.masterGuidance?.campaigns)?options.masterGuidance.campaigns.map(x=>[x.title,x.brief,x.assetUrl].filter(Boolean).join(" | ")):[])
+    ].filter(Boolean).slice(0,8);
     const guidedVisualBrief=[
       String(visualBrief||"").trim(),
+      masterNotes.length ? "Master campaign/directives: " + masterNotes.join(" | ") : "",
       clientReferenceNotes.length
         ? "Client creative preferences: " + clientReferenceNotes.join(" | ")
         : ""
@@ -1404,7 +1414,11 @@ export async function runAgentCoreCycle(env, clientId, options = {}) {
   if(requested!=="all"&&!AGENT_CORE_MODULES.some(item=>item.id===requested))throw new Error("invalid_agent");
   if(!config.enabled&&options.trigger!=="manual")return {ok:false,skipped:"agent_core_disabled"};
 
-  const result={ok:true,clientId,trigger:options.trigger||"manual",agents:{}};
+  const masterGuidance=await activeMasterGuidance(env,client.id).catch(()=>({directives:[],campaigns:[]}));
+  options={...options,masterGuidance};
+  const result={ok:true,clientId,trigger:options.trigger||"manual",agents:{},masterGuidanceApplied:{
+    directives:masterGuidance.directives?.length||0,campaigns:masterGuidance.campaigns?.length||0
+  }};
   const state=await agentCoreState(env,client.id);
   let radar=state.radar||{},strategy=state.strategy||{},auditor=state.auditor||{};
   const run=id=>requested==="all"||requested===id;
