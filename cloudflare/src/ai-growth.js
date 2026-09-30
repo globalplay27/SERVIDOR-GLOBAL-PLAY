@@ -64,6 +64,7 @@ export async function consultGrowthAI(env, client, signals = {}, previous = null
 
   try {
     const response = await openAIResponses(env, client.id, {
+      nexusPurpose: "strategy",
       model: env.NEXUS_GROWTH_MODEL || "gpt-5.6-luna",
       max_output_tokens: 1100,
       instructions: [
