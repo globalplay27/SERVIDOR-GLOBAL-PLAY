@@ -324,8 +324,7 @@ async function autonomyHealth(env, detailed = false) {
         errorCode: /^[a-z_]+$/.test(String(row.last_error || "")) ? String(row.last_error).slice(0, 80) : (row.last_error ? "execution_error" : "")
       }));
       return {
-        clientId: client.id,
-        clientName: client.name,
+        ...(detailed?{clientId:client.id,clientName:client.name}:{}),
         status: client.status,
         agents,
         allAgentsSeen: missing.length === 0,
@@ -341,20 +340,17 @@ async function autonomyHealth(env, detailed = false) {
           return detailed?{...safe,source:raw.source||"unknown",expired:Boolean(raw.expired),expiresAt:raw.expiresAt||null,fallbackReason:raw.fallbackReason||""}:safe;
         })(),
         cycleHealth:{
-          lastCycleAt:stateEntry.value?.lastCycleAt||null,
-          nextCycleAt:stateEntry.value?.nextCycleAt||null,
           status:String(stateEntry.value?.lastCycleStatus||"unknown"),
-          delayed:cycleDelayed
+          delayed:cycleDelayed,
+          ...(detailed?{lastCycleAt:stateEntry.value?.lastCycleAt||null,nextCycleAt:stateEntry.value?.nextCycleAt||null}:{})
         },
         publishingDiagnostic: {
           ...(detailed?{posts,jobs}:{}),
           openai: {
             status: openaiBlocked?"blocked":(provider?.status || "unknown"),
             budgetBlocked:openaiBlocked,
-            usedTokens,
-            limitTokens:dailyLimit,
             percent:Math.min(100,Math.round((usedTokens/dailyLimit)*100)),
-            ...(detailed?{
+            ...(detailed?{usedTokens,limitTokens:dailyLimit,
               code:/^[a-z_0-9]+$/.test(String(provider?.detail||""))?String(provider.detail).slice(0,80):(provider?.detail?"provider_error":""),
               updatedAt:provider?.updated_at||null
             }:{})
@@ -372,13 +368,15 @@ async function autonomyHealth(env, detailed = false) {
         },
         leadCapture: {
           autoEnabled,
-          lastRunAt: leadRun?.finished_at || null,
-          lastRunStatus: leadRun?.status || "never",
-          lastAnalyzed: Number(leadRun?.analyzed || 0),
-          lastNew: Number(leadRun?.new_leads || 0),
-          totalLeads: leadCounts.get(client.id) || 0,
           diagnostic:leadDiagnostic,
-          ...(detailed?{sources:leadSources,errorCount:leadErrors.length}:{})
+          ...(detailed?{
+            lastRunAt:leadRun?.finished_at||null,
+            lastRunStatus:leadRun?.status||"never",
+            lastAnalyzed:Number(leadRun?.analyzed||0),
+            lastNew:Number(leadRun?.new_leads||0),
+            totalLeads:leadCounts.get(client.id)||0,
+            sources:leadSources,errorCount:leadErrors.length
+          }:{})
         }
       };
     });
