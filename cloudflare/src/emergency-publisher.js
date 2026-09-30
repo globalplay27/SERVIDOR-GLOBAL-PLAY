@@ -155,3 +155,21 @@ export async function runEmergencyPublisher(env, now = new Date()) {
   }
   return summary;
 }
+
+
+export async function emergencyPublisherStatus(env, now = new Date()) {
+  const day = dayKey(now);
+  const clients = [];
+  for (const client of CLIENTS) {
+    const state = await loadState(env, client.id, day);
+    clients.push({
+      clientId: client.id,
+      day,
+      count: Math.max(0, Number(state?.count || 0)),
+      lastPublishedAt: state?.lastPublishedAt || null,
+      mediaIdPresent: Boolean(state?.mediaId),
+      mode: String(state?.mode || "")
+    });
+  }
+  return { ok: true, storage: "r2", clients };
+}
