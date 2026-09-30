@@ -53,6 +53,7 @@ function showTab(name) {
   });
   if (name === "posts") loadPosts();
   if (name === "agents") loadAgents();
+  if (name === "media") loadMedia();
   if (name === "performance") loadPerformance();
   if (name === "instagram") loadInstagram();
 }
@@ -343,6 +344,107 @@ async function loadAgents() {
   }
 }
 
+async function loadMedia() {
+  try {
+    const data = await api("/api/portal/media");
+    const items = Array.isArray(data.media) ? data.media : [];
+    const root = $("#media-list");
+    root.replaceChildren();
+
+    if (!items.length) {
+      const empty = document.createElement("div");
+      empty.className = "card muted";
+      empty.textContent = "Nenhuma mídia enviada ainda.";
+      root.append(empty);
+      return;
+    }
+
+    for (const item of items) {
+      const card = document.createElement("article");
+      card.className = "card media-card";
+      const type = String(item.contentType || "");
+      if (type.startsWith("image/")) {
+        const img = document.createElement("img");
+        img.src = item.url;
+        img.alt = item.name || "Mídia";
+        img.loading = "lazy";
+        card.append(img);
+      } else if (type.startsWith("video/")) {
+        const video = document.createElement("video");
+        video.src = item.url;
+        video.controls = true;
+        video.preload = "metadata";
+        card.append(video);
+      }
+
+      const title = document.createElement("strong");
+      title.textContent = item.name || "Mídia";
+      const purpose = document.createElement("small");
+      purpose.textContent = item.purpose === "reference" ? "Referência de estilo" : "Mídia própria";
+      card.append(title, purpose);
+
+      if (item.note) {
+        const note = document.createElement("p");
+        note.textContent = item.note;
+        card.append(note);
+      }
+
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.textContent = "Excluir";
+      remove.addEventListener("click", async () => {
+        if (!window.confirm("Excluir esta mídia da biblioteca?")) return;
+        remove.disabled = true;
+        try {
+          await api("/api/portal/media/" + encodeURIComponent(item.key), { method: "DELETE" });
+          await loadMedia();
+        } catch (error) {
+          notice("Mídias: " + error.message);
+          remove.disabled = false;
+        }
+      });
+      card.append(remove);
+      root.append(card);
+    }
+  } catch (error) {
+    notice("Mídias: " + error.message);
+  }
+}
+
+async function uploadMedia(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const button = form.querySelector('button[type="submit"]');
+  const message = $("#media-upload-message");
+  const file = $("#media-file").files?.[0];
+  if (!file) {
+    message.textContent = "Selecione uma imagem ou vídeo.";
+    return;
+  }
+  if (file.size > 25 * 1024 * 1024) {
+    message.textContent = "O arquivo deve ter no máximo 25 MB.";
+    return;
+  }
+
+  const body = new FormData();
+  body.append("file", file);
+  body.append("purpose", $("#media-purpose").value);
+  body.append("note", $("#media-note").value.trim());
+
+  button.disabled = true;
+  message.textContent = "Enviando...";
+  try {
+    const data = await api("/api/portal/media", { method: "POST", body });
+    message.textContent = data.message || "Mídia enviada.";
+    form.reset();
+    await loadMedia();
+  } catch (error) {
+    message.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
 async function loadPerformance() {
   try {
     const data = await api("/api/portal/agent-core");
@@ -390,7 +492,8 @@ async function refresh() {
     loadPosts(),
     loadInstagram(),
     activeTab === "performance" ? loadPerformance() : Promise.resolve(),
-    activeTab === "agents" ? loadAgents() : Promise.resolve()
+    activeTab === "agents" ? loadAgents() : Promise.resolve(),
+    activeTab === "media" ? loadMedia() : Promise.resolve()
   ]);
 }
 
@@ -414,6 +517,7 @@ $("#login-form").addEventListener("submit", async event => {
 document.querySelectorAll("[data-tab]").forEach(button => button.addEventListener("click", () => showTab(button.dataset.tab)));
 document.querySelectorAll("[data-refresh]").forEach(button => button.addEventListener("click", () => { const target = button.dataset.refresh; if (target === "posts") return loadPosts(); if (target === "agents") return loadAgents(); return loadPerformance(); }));
 $("#refresh").addEventListener("click", () => refresh().catch(error => notice(error.message)));
+$("#media-upload-form")?.addEventListener("submit", uploadMedia);
 $("#logout").addEventListener("click", async () => {
   await fetch("/api/portal/logout", { method: "POST", credentials: "same-origin" }).catch(() => {});
   client = null; posts = []; showLogin("");
