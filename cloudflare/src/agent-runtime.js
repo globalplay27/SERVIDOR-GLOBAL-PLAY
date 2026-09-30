@@ -775,7 +775,8 @@ async function runCreator(env,client,strategy,options) {
         existingPayload.title=String(aiCreative.theme||existingPayload.title||"Conteúdo").slice(0,160);
         existingPayload.visualBrief=String(aiCreative.visualBrief||"").slice(0,1200);
         existingPayload.creativeFeatures={
-          format:String(aiCreative.format||existingPayload.creativeFeatures?.format||"image"),
+          format:"image",
+          requestedFormat:String(aiCreative.format||existingPayload.creativeFeatures?.requestedFormat||"image"),
           theme:String(aiCreative.theme||""),
           hook:String(aiCreative.hook||""),
           scene:String(aiCreative.scene||""),
@@ -888,7 +889,8 @@ async function runCreator(env,client,strategy,options) {
     }
 
     let creativeFeatures={
-      format:String(aiCreative?.format||"image"),
+      format:"image",
+      requestedFormat:String(aiCreative?.format||"image"),
       theme,hook,
       scene:String(aiCreative?.scene||""),
       composition:String(aiCreative?.composition||""),
@@ -948,8 +950,9 @@ async function runCreator(env,client,strategy,options) {
       creativeFingerprint:normalizeCreativeText([day,index,hook,theme,cta].join("|")).slice(0,240),
       growthCampaign:strategy?.growthCampaign||null,
       intelligence:{
-        format:creativeFeatures.format,
-        skill:creativeFeatures.format==="reel"?"ig-reel":creativeFeatures.format==="carousel"?"ig-carousel":"ig-image",
+        format:"image",
+        plannedFormat:creativeFeatures.requestedFormat,
+        skill:"ig-image",
         mediaSource:mediaInfo.source||"awaiting-unique-media",
         strategySource:aiCreative?"openai-growth-brain":"fallback-rules",
         antiRepeat:true,
@@ -979,7 +982,7 @@ async function runCreator(env,client,strategy,options) {
     await upsertPostFeatures(env,{
       postId:id,clientId:client.id,...creativeFeatures,
       scheduledLocalHour:Number(String(time||"0").split(":")[0])||null,
-      payload:{aiCreativeVersion:payload.aiCreativeVersion,visualBrief:payload.visualBrief}
+      payload:{aiCreativeVersion:payload.aiCreativeVersion,visualBrief:payload.visualBrief,plannedFormat:creativeFeatures.requestedFormat}
     }).catch(()=>{});
 
     plannedByDay.set(day,(plannedByDay.get(day)||0)+1);
