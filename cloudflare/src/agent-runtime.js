@@ -15,7 +15,8 @@ import { runExtendedAgents } from "./extended-agents.js";
 import { consultGrowthAI } from "./ai-growth.js";
 import { generateOriginalMedia } from "./media-generation.js";
 import { isPublishingWindow, publishingGate, sameSaoPauloDay } from "./publishing-policy.js";
-import { upsertPostFeatures, recordMetricCheckpoints } from "./post-learning.js";
+import { upsertPostFeatures, recordMetricCheckpoints, recentPublishedPostFeatures } from "./post-learning.js";
+import { diversifyScene, diversifyHook, diversifyHashtags, repetitionReasons } from "./scene-grammar.js";
 
 function parseJson(raw, fallback = {}) {
   try {
@@ -622,6 +623,7 @@ async function runCreator(env,client,strategy,options) {
     ?strategy.ctaRotation
     :[strategy?.cta||'Comente "QUERO" para saber mais'];
   const aiBatch=Array.isArray(strategy?.aiCreativeBatch)?strategy.aiCreativeBatch.slice(0,3):[];
+  const recentPublishedFeatures=await recentPublishedPostFeatures(env,client.id,60,120).catch(()=>[]);
   const created=[];
   const repaired=[];
   const approval=config.autoPublish&&!config.approvalRequired?"approved":"pending";
@@ -638,7 +640,7 @@ async function runCreator(env,client,strategy,options) {
         const generated=await generateOriginalMedia(env,client,postId,visualBrief,{
           variationSeed:String(postId)+"|"+String(Date.now())
         });
-        return {url:generated.url,source:"openai-original-media",sourceInstagramMediaId:""};
+        return {url:generated.url,source:"openai-original-media",sourceInstagramMediaId:"",fingerprint:String(generated.fingerprint||"")};
       }catch(error){
         return {url:"",source:"media-generation-failed",sourceInstagramMediaId:"",error:String(error?.message||error)};
       }
@@ -693,6 +695,7 @@ async function runCreator(env,client,strategy,options) {
     }
     payload.imageUrl=mediaInfo.url;
     payload.sourceInstagramMediaId=mediaInfo.sourceInstagramMediaId||"";
+    if(mediaInfo.fingerprint)payload.mediaFingerprint=String(mediaInfo.fingerprint);
     payload.mediaGeneration={status:"generated",attempts:generationAttempts+(safeRecheck?0:1),lastError:"",updatedAt:new Date().toISOString()};
     payload.intelligence={...(payload.intelligence||{}),mediaSource:mediaInfo.source};
     if(safeRecheck)payload.blockedDesignerRecoveryAttemptedAt=new Date().toISOString();
@@ -815,6 +818,7 @@ async function runCreator(env,client,strategy,options) {
       if(replacement){
         existingPayload.imageUrl=replacement;
         existingPayload.sourceInstagramMediaId=replacementInfo.sourceInstagramMediaId||"";
+        if(replacementInfo.fingerprint)existingPayload.mediaFingerprint=String(replacementInfo.fingerprint);
         existingPayload.retryCount=0;
         existingPayload.mediaGeneration={status:"generated",attempts:existingGenerationAttempts+(allowBlockedRecheck?0:1),lastError:"",updatedAt:new Date().toISOString()};
         existingPayload.recoveredAt=new Date().toISOString();
@@ -847,9 +851,9 @@ async function runCreator(env,client,strategy,options) {
     if((plannedByDay.get(day)||0)>=dailyPublishTarget)continue;
     const aiCreative=aiBatch[index]||null;
     const theme=String(aiCreative?.theme||themes[index%themes.length]||"Conteúdo");
-    const hook=String(aiCreative?.hook||pickUniqueHook(index,day,strategy?.radarTerms||[],recentCaptions)).trim();
+    let hook=String(aiCreative?.hook||pickUniqueHook(index,day,strategy?.radarTerms||[],recentCaptions)).trim();
     const cta=String(aiCreative?.cta||ctas[index%ctas.length]||strategy?.cta||'Comente "QUERO" para saber mais').trim();
-    const tags=String(aiCreative?.hashtags||strategy?.hashtags||"").trim().split(/\s+/).filter(Boolean).slice(0,6).join(" ");
+    let tags=String(aiCreative?.hashtags||strategy?.hashtags||"").trim().split(/\s+/).filter(Boolean).slice(0,6).join(" ");
     let caption=String(aiCreative?.caption||"").trim();
     if(!caption){
       caption=[
@@ -877,7 +881,7 @@ async function runCreator(env,client,strategy,options) {
       ].filter(x=>x!==null).join("\n").slice(0,2200);
     }
 
-    const creativeFeatures={
+    let creativeFeatures={
       format:String(aiCreative?.format||"image"),
       theme,hook,
       scene:String(aiCreative?.scene||""),
@@ -888,6 +892,27 @@ async function runCreator(env,client,strategy,options) {
       prop:String(aiCreative?.prop||""),
       cta,hashtags:tags
     };
+    creativeFeatures=diversifyScene(client,creativeFeatures,recentPublishedFeatures,id+"|"+index);
+    let repeatReasons=repetitionReasons(creativeFeatures,recentPublishedFeatures);
+    if(repeatReasons.includes("hook_structure_21d")){
+      const freshHook=diversifyHook(client,recentPublishedFeatures,id+"|hook");
+      if(freshHook){
+        const originalHook=hook;
+        hook=freshHook;
+        creativeFeatures.hook=freshHook;
+        if(caption.startsWith(originalHook))caption=freshHook+caption.slice(originalHook.length);
+      }
+    }
+    if(repeatReasons.includes("hashtags_overlap_7d")){
+      const freshTags=diversifyHashtags(client,recentPublishedFeatures,id+"|tags");
+      if(freshTags){
+        if(tags&&caption.includes(tags))caption=caption.replace(tags,freshTags);
+        else caption=(caption+"\n\n"+freshTags).trim();
+        tags=freshTags;
+        creativeFeatures.hashtags=freshTags;
+      }
+    }
+    repeatReasons=repetitionReasons(creativeFeatures,recentPublishedFeatures);
     const structuredVisualBrief=[
       String(aiCreative?.visualBrief||""),
       creativeFeatures.scene?"Scene: "+creativeFeatures.scene:"",
@@ -904,10 +929,12 @@ async function runCreator(env,client,strategy,options) {
       instagram:client.instagram||"",
       imageUrl,
       sourceInstagramMediaId:String(mediaInfo.sourceInstagramMediaId||""),
+      mediaFingerprint:String(mediaInfo.fingerprint||""),
       mediaGeneration:{status:imageUrl?"generated":"requested",attempts:imageUrl?1:1,lastError:String(mediaInfo.error||"").slice(0,120),updatedAt:new Date().toISOString()},
       title:theme.slice(0,160),
       visualBrief:structuredVisualBrief.slice(0,1600),
       creativeFeatures,
+      repetitionPolicy:{checkedAt:new Date().toISOString(),reasons:repeatReasons},
       aiCreativeVersion:String(state?.aiGrowth?.generatedAt||""),
       source:"agent-core:creator-growth-30d",
       model:"instagram-growth-skill-layer",
