@@ -151,7 +151,7 @@ function renderPosts() {
 
       const revise = document.createElement("button");
       revise.type = "button";
-      revise.textContent = "Pedir correção";
+      revise.textContent = "Pedir ajuste";
       revise.addEventListener("click", () => requestRevision(post.id, revise));
 
       actions.append(approve, reject, revise);
