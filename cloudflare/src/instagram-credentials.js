@@ -71,7 +71,14 @@ export async function resolveInstagramCredentials(env, clientId) {
   // Prefer the connection most recently authorized by the client. This keeps
   // Nexus aligned with the current Meta/Instagram login and avoids a stale
   // legacy Worker secret silently overriding a valid OAuth connection.
-  const oauth = await d1OAuthPair(env, clientId);
+  let oauth = null;
+  try {
+    oauth = await d1OAuthPair(env, clientId);
+  } catch {
+    // D1 quota/outage must not disable publishing when a verified Cloudflare
+    // secret fallback exists for the managed account.
+    oauth = null;
+  }
   if (oauth?.connected) return oauth;
 
   const core = coreSecretPair(env, clientId);
