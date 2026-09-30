@@ -1,9 +1,6 @@
-import { runCronIteration } from "./cron-runtime.js";
 import { runSchedulerTick, recordSchedulerFailure } from "./scheduler.js";
-import { processDueJobs } from "./executor.js";
 
 export const WATCHDOG_STALE_SECONDS = 180;
-export const WATCHDOG_LOCK_SECONDS = 120;
 
 export function heartbeatNeedsKick(ageSeconds, thresholdSeconds = WATCHDOG_STALE_SECONDS) {
   const age = Number(ageSeconds);
@@ -18,7 +15,7 @@ async function claimWatchdog(env) {
 
   const result = await env.DB.prepare(
     `UPDATE nexus_state
-     SET value_json=json_object('claimedAt',CURRENT_TIMESTAMP),updated_at=CURRENT_TIMESTAMP
+     SET value_json='{}',updated_at=CURRENT_TIMESTAMP
      WHERE namespace='scheduler' AND item_key='watchdog-lock' AND client_id=''
        AND updated_at < datetime('now','-2 minutes')`
   ).run();
@@ -26,7 +23,7 @@ async function claimWatchdog(env) {
   return Number(result?.meta?.changes || 0) > 0;
 }
 
-export async function kickAutomationIfStale(env, now = new Date()) {
+export async function refreshSchedulerIfStale(env, now = new Date()) {
   if (String(env.CLOUDFLARE_AUTOMATION_ACTIVE || "").toLowerCase() !== "true") {
     return { kicked:false, reason:"automation_disabled" };
   }
@@ -49,12 +46,11 @@ export async function kickAutomationIfStale(env, now = new Date()) {
   }
 
   const at = now instanceof Date ? now : new Date(now || Date.now());
-  const result = await runCronIteration({
-    at,
-    runScheduler: current => runSchedulerTick(env, current),
-    recordFailure: (current, error) => recordSchedulerFailure(env, current, error).catch(() => "scheduler_tick_error"),
-    processJobs: current => processDueJobs(env, current)
-  });
-
-  return { kicked:true, ageSeconds, ...result };
+  try {
+    const scheduler = await runSchedulerTick(env, at);
+    return { kicked:true, reason:"scheduler_refreshed", ageSeconds, scheduler };
+  } catch (error) {
+    const errorCode = await recordSchedulerFailure(env, at, error).catch(() => "scheduler_tick_error");
+    return { kicked:true, reason:"scheduler_failed", ageSeconds, errorCode };
+  }
 }
