@@ -100,3 +100,54 @@ export function repetitionReasons(current,recent=[],now=new Date()){
   }
   return reasons;
 }
+
+const HASHTAG_SETS={
+  "globalplay-streaming":[
+    "#GlobalPlay #DiversaoEmFamilia #Desenhos #SessaoEmCasa #Pipoca",
+    "#GlobalPlay #Entretenimento #MomentoEmFamilia #Animacao #DicaDoDia",
+    "#GlobalPlay #CinemaEmCasa #Familia #Diversao #OQueAssistir",
+    "#GlobalPlay #Streaming #FimDeTarde #TempoEmFamilia #CurtaEmCasa"
+  ],
+  "ragnar-one":[
+    "#RagnarOne #Nordico #CinemaEmCasa #Aventura #Atmosfera",
+    "#RagnarOne #Streaming #NoiteDeCinema #EstiloNordico #Entretenimento",
+    "#RagnarOne #Fjord #ExperienciaEmCasa #Cinema #SagaOriginal",
+    "#RagnarOne #AventuraEmCasa #NordicMood #Entretenimento #DicaDoDia"
+  ]
+};
+const HOOKS={
+  "globalplay-streaming":[
+    "Qual desenho faria todo mundo sentar no sofá hoje?",
+    "Tem noite que só pede pipoca e uma boa história.",
+    "A melhor sessão é aquela que junta a família toda.",
+    "Quem escolhe o que assistir aí na sua casa?",
+    "Um sofá, pipoca e uma escolha que agrade todo mundo."
+  ],
+  "ragnar-one":[
+    "Sua próxima noite de cinema pode ter outro clima.",
+    "Qual cenário combina com a sua próxima saga?",
+    "Transforme uma noite comum em uma experiência épica.",
+    "Entre o frio do fiorde e o calor da lareira, qual você escolhe?",
+    "Tem noites que pedem uma atmosfera diferente."
+  ]
+};
+
+export function diversifyHashtags(client,recent=[],seed=""){
+  const sets=HASHTAG_SETS[String(client?.id||"")]||[];
+  if(!sets.length)return "";
+  for(let offset=0;offset<sets.length;offset++){
+    const candidate=pick(sets,seed,offset);
+    if((recent||[]).every(prior=>hashtagOverlap(candidate,prior.hashtags)<=0.5))return candidate;
+  }
+  return pick(sets,seed,sets.length+3);
+}
+
+export function diversifyHook(client,recent=[],seed=""){
+  const hooks=HOOKS[String(client?.id||"")]||[];
+  if(!hooks.length)return "";
+  for(let offset=0;offset<hooks.length;offset++){
+    const candidate=pick(hooks,seed,offset);
+    if((recent||[]).every(prior=>tokenSimilarity(candidate,prior.hook)<0.78))return candidate;
+  }
+  return pick(hooks,seed,hooks.length+5);
+}
