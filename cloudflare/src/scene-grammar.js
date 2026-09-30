@@ -19,12 +19,12 @@ const GRAMMARS={
     props:["balde de pipoca","controle remoto","almofadas coloridas","manta aconchegante","copo de refrigerante sem marca","brinquedo genérico ao fundo"]
   },
   "ragnar-one":{
-    scenes:["fiorde ao amanhecer","cabana nórdica com lareira","costa nórdica em tempestade","mirante de montanha com neblina","interior nórdico moderno e premium","cais com silhueta de embarcação nórdica original"],
-    compositions:["plano aberto cinematográfico","plano médio com profundidade","silhueta em contraluz","ângulo baixo épico e limpo","plano lateral com luz dramática","composição central minimalista"],
-    characters:["casal adulto genérico","homem adulto genérico em pé","mulher adulta genérica em pé","dupla de amigos adultos","personagem adulto visto de costas","nenhum personagem humano"],
-    palettes:["azul frio e dourado","cinza aço e âmbar","azul profundo e verde aurora","preto, cobre e azul","cinza pedra e fogo quente"],
-    actions:["observando a paisagem","preparando uma noite de entretenimento","entrando na cabana aquecida","caminhando em direção ao fiorde","contemplando a tempestade à distância","relaxando em ambiente nórdico moderno"],
-    props:["caneca sem marca","manta de lã","lanterna metálica genérica","mapa abstrato sem texto","escudo geométrico original sem símbolos protegidos","madeira e pedra como elementos de cenário"]
+    scenes:["sala moderna com TV e luz aconchegante","home theater contemporâneo","sala elegante para noite de streaming","ambiente doméstico premium com TV ao fundo","sala de estar moderna com amigos","apartamento contemporâneo preparado para entretenimento"],
+    compositions:["plano aberto cinematográfico","plano médio com profundidade","ângulo lateral elegante","plano frontal limpo","composição central minimalista","plano aberto com TV integrada ao ambiente"],
+    characters:["casal adulto genérico","família adulta genérica","dupla de amigos adultos","homem adulto contemporâneo","mulher adulta contemporânea","nenhum personagem humano"],
+    palettes:["preto, cobre e azul","grafite e dourado discreto","azul profundo e cinza aço","preto e âmbar","cinza escuro e cobre"],
+    actions:["escolhendo o que assistir","compartilhando pipoca","relaxando durante uma sessão de streaming","conversando diante da TV","preparando uma noite de entretenimento","assistindo conteúdo em uma sala moderna"],
+    props:["balde de pipoca","controle remoto","manta escura","caneca sem marca","almofadas discretas","textura de madeira ou metal apenas no acabamento visual"]
   }
 };
 
