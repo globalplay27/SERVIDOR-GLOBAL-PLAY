@@ -342,6 +342,7 @@ async function runRadar(env, client, options) {
     })),
     recentCaptions:captions.slice(0,10),
     leadSummary,
+    invalidateReason:String(state?.aiGrowthInvalidation?.reason||""),
     profile:{
       contentStrategy:profile.contentStrategy,
       contentFocus:profile.contentFocus,
@@ -422,7 +423,11 @@ async function runRadar(env, client, options) {
       aiError:aiGrowth?.error||""
     }
   });
-  await patchAgentCoreState(env,client.id,{radar:output,aiGrowth});
+  await patchAgentCoreState(env,client.id,{
+    radar:output,
+    aiGrowth,
+    aiGrowthInvalidation:aiGrowth?.error?state?.aiGrowthInvalidation||null:null
+  });
   return output;
 }
 
