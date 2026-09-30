@@ -89,3 +89,18 @@
 @media(max-width:600px){.dialog-actions{flex-direction:column}.dialog-actions .ghost,.dialog-actions .primary{width:100%}}
 
 .link-button[hidden]{display:none!important}
+
+.campaign-master-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px}
+.campaign-form{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px}
+.campaign-form .wide{grid-column:1/-1}
+.campaign-form label{display:grid;gap:7px;color:var(--muted,#8ca0a8);font-size:12px;font-weight:700}
+.campaign-form input,.campaign-form select,.campaign-form textarea{width:100%;background:#07100d;border:1px solid #1b2b25;color:#eefcf5;border-radius:10px;padding:12px}
+.campaign-list{display:grid;gap:14px}
+.campaign-card,.directive-card{border:1px solid #183027;border-radius:14px;background:#07100d;padding:16px}
+.campaign-card-head,.directive-card>div{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.campaign-card small,.directive-card small{display:block;color:#789189;margin-top:4px}
+.campaign-card img{display:block;width:100%;max-height:360px;object-fit:cover;border-radius:12px;margin:14px 0}
+.campaign-card p,.directive-card p{color:#c7d8d1;white-space:pre-wrap}
+.campaign-flow{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-top:14px}
+.campaign-flow span{font-size:10px;text-align:center;padding:8px 5px;border-radius:8px;background:#0d1915;color:#93aaa1;border:1px solid #183027}
+@media(max-width:900px){.campaign-master-grid{grid-template-columns:1fr}.campaign-form{grid-template-columns:1fr}.campaign-form .wide{grid-column:auto}.campaign-flow{grid-template-columns:1fr 1fr}}
