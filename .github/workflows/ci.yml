@@ -75,6 +75,7 @@ jobs:
 
       - name: Recover publishing during D1 daily limit
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        continue-on-error: true
         working-directory: cloudflare
         shell: bash
         env:
