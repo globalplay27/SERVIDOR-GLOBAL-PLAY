@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#080b0a">
   <title>NEXUS AI · Agent Control Center</title>
-  <link rel="stylesheet" href="/styles.css?v=13">
+  <link rel="stylesheet" href="/styles.css?v=14">
 </head>
 <body>
   <div class="shell">
@@ -16,6 +16,7 @@
         <button class="nav-item" data-view="clients">◉ <span>Clientes</span></button>
         <button class="nav-item" data-view="agents">⬡ <span>Agent Core</span></button>
         <button class="nav-item" data-view="posts">▤ <span>Postagens & custos</span></button>
+        <button class="nav-item" data-view="campaigns">◫ <span>Campanhas & comandos</span></button>
         <button class="nav-item nav-notifications" data-view="notifications">✦ <span>Notificações</span><b id="notification-count" class="notification-count" hidden>0</b></button>
         <button class="nav-item" data-view="portal">⌁ <span>Portal do cliente</span></button>
         <button class="nav-item" data-view="odin">◆ <span>Odin & Leads</span></button>
@@ -67,6 +68,13 @@
           <article><span>04</span><strong>PUBLISHER</strong><small>Fila, publicação aprovada, tentativas e registro de falhas.</small></article>
           <article><span>05</span><strong>AUDITOR</strong><small>Métricas pós-publicação e retorno para a estratégia.</small></article>
           <article><span>06</span><strong>ODIN</strong><small>Intenção, classificação e prioridade comercial dos leads.</small></article>
+          <article><span>07</span><strong>PESQUISADOR</strong><small>Pesquisa oportunidades, temas e sinais do nicho.</small></article>
+          <article><span>08</span><strong>ANALISTA</strong><small>Analisa desempenho e potencial dos conteúdos.</small></article>
+          <article><span>09</span><strong>COPY CHIEF</strong><small>Revisa gancho, CTA e qualidade da legenda.</small></article>
+          <article><span>10</span><strong>DESIGNER</strong><small>Valida visual, originalidade e prontidão da mídia.</small></article>
+          <article><span>11</span><strong>VIDEO</strong><small>Planeja adaptação para conteúdo vertical curto.</small></article>
+          <article><span>12</span><strong>SUPORTE</strong><small>Detecta falhas reais e pendências operacionais.</small></article>
+          <article><span>13</span><strong>GROWTH</strong><small>Executa testes de crescimento e escala vencedores.</small></article>
         </div>
 
         <div class="agent-core-layout">
@@ -149,6 +157,40 @@
               <tbody id="post-ledger-body"><tr><td colspan="8">Nenhuma postagem registrada ainda.</td></tr></tbody>
             </table>
           </div>
+        </section>
+      </section>
+
+      <section id="campaigns" class="view">
+        <div class="campaign-master-grid">
+          <section class="panel">
+            <div class="panel-head"><div><p class="eyebrow">CAMPANHA DE 7 DIAS</p><h2>Distribuir criativo aos agentes</h2><p class="muted">O Estrategista e o Creator recebem automaticamente o briefing e a referência visual desta campanha.</p></div></div>
+            <label class="agent-core-client-select">Cliente<select id="campaign-client"></select></label>
+            <form id="campaign-form" class="campaign-form">
+              <label>Nome da campanha<input name="title" required placeholder="Ex.: Semana do entretenimento"></label>
+              <label>Data inicial<input name="startDate" type="date"></label>
+              <label class="wide">Briefing<textarea name="brief" rows="5" required placeholder="Objetivo, público, oferta, CTA, restrições e direção visual."></textarea></label>
+              <label class="wide">Criativo de referência<input name="creative" type="file" accept="image/jpeg,image/png,image/webp"></label>
+              <button class="primary" type="submit">Criar e distribuir campanha</button>
+              <span id="campaign-message" class="form-status"></span>
+            </form>
+          </section>
+          <section class="panel">
+            <div class="panel-head"><div><p class="eyebrow">COMANDOS PERSISTENTES</p><h2>Orientar os agentes</h2><p class="muted">As regras ficam salvas e passam a ser lidas no ciclo real dos agentes.</p></div></div>
+            <form id="directive-form" class="campaign-form">
+              <label>Aplicar a<select name="appliesTo"><option value="all">Todos os agentes</option><option value="estrategista">ESTRATEGISTA</option><option value="creator">CREATOR</option><option value="designer">DESIGNER</option><option value="publisher">PUBLISHER</option><option value="odin">ODIN</option><option value="growth">GROWTH</option></select></label>
+              <label class="wide">Orientação<textarea name="text" rows="6" required placeholder="Ex.: Até 12/10 usar tema infantil apenas no Global Play; não publicar preços; CTA Digite QUERO."></textarea></label>
+              <button class="primary" type="submit">Enviar comando aos agentes</button>
+              <span id="directive-message" class="form-status"></span>
+            </form>
+          </section>
+        </div>
+        <section class="panel">
+          <div class="panel-head"><div><p class="eyebrow">ACOMPANHAMENTO</p><h2>Campanhas e aprovação</h2><p class="muted">Atualização automática do fluxo: recebido, em produção, aprovado/ajuste, agendado e publicado.</p></div><button id="campaign-refresh" class="ghost" type="button">Atualizar</button></div>
+          <div id="campaign-list" class="campaign-list"><p class="muted">Selecione um cliente.</p></div>
+        </section>
+        <section class="panel">
+          <div class="panel-head"><div><p class="eyebrow">HISTÓRICO DE COMANDOS</p><h2>Diretrizes ativas</h2></div></div>
+          <div id="directive-list" class="campaign-list"><p class="muted">Nenhuma orientação registrada.</p></div>
         </section>
       </section>
 
@@ -321,6 +363,6 @@
       <span id="portal-access-status" class="form-status"></span>
     </form>
   </dialog>
-  <script src="/app.js?v=26" defer></script>
+  <script src="/app.js?v=27" defer></script>
 </body>
 </html>
