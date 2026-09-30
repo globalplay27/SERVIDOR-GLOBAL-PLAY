@@ -1,6 +1,7 @@
 import { getClient } from "./clients.js";
 import { reviewImage, visualApproval } from "./visual-review.js";
 import { agentCoreState, patchAgentCoreState, recordAgentExecution, normalizeAgentCoreConfig } from "./agent-core.js";
+import { commercialCopyAllowed } from "./content-policy.js";
 
 function parseJson(raw, fallback = {}) {
   try {
@@ -77,11 +78,12 @@ async function runCopyChief(env,client,options){
       :client.id==="ragnar-one"
         ?/ragnar\s*one|n[oó]rdic|saga|aventura|cinema|streaming|sof[aá]/i.test(c)
         :true;
-    const ok=hasCta&&hookStrong&&c.length<=2200&&!genericFiller&&brandSpecific;
+    const commercialSafe=commercialCopyAllowed(client,c);
+    const ok=hasCta&&hookStrong&&c.length<=2200&&!genericFiller&&brandSpecific&&commercialSafe;
     ok?strong++:needsWork++;
     const payload=row.payload&&typeof row.payload==="object"?row.payload:{}; payload.qualityGates={...(payload.qualityGates||{}),copyChief:ok?"approved":"rejected",copyChiefAt:new Date().toISOString()};
     await env.DB.prepare("UPDATE post_ledger SET payload_json=?2,error=?3,updated_at=CURRENT_TIMESTAMP WHERE id=?1").bind(row.id,JSON.stringify(payload),ok?"":"copy_quality_rejected").run();
-    reviews.push({id:row.id,ok,hasCta,hookStrong,genericFiller,brandSpecific,length:c.length});
+    reviews.push({id:row.id,ok,hasCta,hookStrong,genericFiller,brandSpecific,commercialSafe,length:c.length});
   }
   const output={reviewed:rows.length,strong,needsWork,reviews,skills:["hook-review","cta-review","caption-quality"]};
   await recordAgentExecution(env,client,"COPY CHIEF",{function:"caption-quality-gate",trigger:options.trigger,startedAt,status:needsWork?"warning":"success",model:"copy-quality-rules",quantity:rows.length,message:strong+" copy(s) fortes; "+needsWork+" precisam ajuste."});
