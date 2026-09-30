@@ -14,6 +14,7 @@ import { instagramMasterConfigStatus, handleInstagramOAuthCallback, handleInstag
 import { masterCredentialsValid, createMasterSession, authenticatePortalUser, createPortalSession, masterSessionCookie, portalSessionCookie, loginRateLimitStatus, recordLoginFailure, clearLoginFailures, resolvePortalSession, resolveMasterSession } from "./auth.js";
 import { autonomyOverallHealthy } from "./health-policy.js";
 import { buildAutonomyHealthSummary } from "./autonomy-health-summary.js";
+import { isD1Emergency, runEmergencyPublisher } from "./emergency-publisher.js";
 
 // Keep the exact legacy export name until Cloudflare removes its existing Durable Objects.
 export class YoutubeDownloader extends DurableObject {
@@ -495,12 +496,17 @@ async function handleOpenAIResponses(request, env) {
 export default {
   async scheduled(event, env, ctx) {
     const at = new Date(event.scheduledTime || Date.now());
-    ctx.waitUntil(runCronIteration({
-      at,
-      runScheduler: current => runSchedulerTick(env, current),
-      recordFailure: (current, error) => recordSchedulerFailure(env, current, error).catch(() => "scheduler_tick_error"),
-      processJobs: current => processDueJobs(env, current)
-    }));
+    ctx.waitUntil(
+      runCronIteration({
+        at,
+        runScheduler: current => runSchedulerTick(env, current),
+        recordFailure: (current, error) => recordSchedulerFailure(env, current, error).catch(() => "scheduler_tick_error"),
+        processJobs: current => processDueJobs(env, current)
+      }).catch(async error => {
+        if (!isD1Emergency(error)) throw error;
+        return runEmergencyPublisher(env, at);
+      })
+    );
   },
 
   async fetch(request, env, ctx) {
