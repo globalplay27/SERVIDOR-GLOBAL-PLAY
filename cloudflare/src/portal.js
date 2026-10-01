@@ -10,7 +10,6 @@ import { getClient, upsertClient, portalClientView } from "./clients.js";
 import { tokenUsageToday } from "./openai.js";
 import { startInstagramOAuth, handleInstagramOAuthCallback } from "./instagram.js";
 import { searchTrailers } from "./trailers.js";
-import { dispatchGitHubVideoIngest } from "./github-video-ingest.js";
 import { startGitHubVideoRender } from "./github-video-render.js";
 import { AGENT_CORE_MODULES, normalizeAgentCoreConfig, agentCoreState, agentExecutions, saveAgentCoreConfig } from "./agent-core.js";
 import { leadsForClient, leadHunterSummary } from "./leads.js";
