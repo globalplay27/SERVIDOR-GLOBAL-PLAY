@@ -44,7 +44,6 @@ function showDashboard(data) {
     : "";
   const accountLabel = instagramHandle || data.name || "Cliente";
   $("#client-label").textContent = accountLabel;
-  $("#client-name").textContent = accountLabel;
   $("#header-client-name").textContent = accountLabel;
   const logoKey = String(data.branding?.logoKey || "");
   const logo = $("#client-logo");
