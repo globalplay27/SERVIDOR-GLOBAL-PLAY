@@ -190,8 +190,15 @@ export default {
     }
 
 
-    if ((url.pathname === "/login" || url.pathname === "/portal" || url.pathname === "/portal/") && request.method === "GET") {
+    if (url.pathname === "/login" && request.method === "GET") {
       return asset(env, request, "/portal.html");
+    }
+
+    if ((url.pathname === "/portal" || url.pathname === "/portal/") && request.method === "GET") {
+      const target = new URL("/portal.html", request.url);
+      target.searchParams.set("auth", url.searchParams.get("auth") || "1");
+      target.searchParams.set("v", "89");
+      return redirect(target.pathname + target.search);
     }
 
     if (url.pathname === "/api/auth/login" && request.method === "POST") {
