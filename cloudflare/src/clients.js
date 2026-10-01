@@ -112,6 +112,10 @@ export function portalClientView(client) {
     name: client.name,
     niche: client.niche,
     instagram: client.instagram,
+    contact: {
+      name: String(config.contact?.name || client.name || ""),
+      phone: String(config.contact?.phone || "")
+    },
     status: client.status,
     theme: config.theme || "nexus",
     primaryColor: config.primaryColor || (client.id === "ragnar-one" ? "#19c563" : "#22c55e"),
