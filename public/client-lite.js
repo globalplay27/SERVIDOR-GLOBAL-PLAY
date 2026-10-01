@@ -53,6 +53,7 @@ function showTab(name) {
   });
   if (name === "posts") loadPosts();
   if (name === "agents") loadAgents();
+  if (name === "campaigns") loadCampaigns();
   if (name === "media") loadMedia();
   if (name === "performance") loadPerformance();
   if (name === "instagram") loadInstagram();
@@ -577,6 +578,103 @@ async function loadPerformance() {
   } catch (error) { notice("Desempenho: " + error.message); }
 }
 
+async function loadCampaigns() {
+  try {
+    const data = await api("/api/portal/workspace");
+    const campaigns = Array.isArray(data.campaigns) ? data.campaigns : [];
+    const directives = Array.isArray(data.directives) ? data.directives : [];
+    const campaignList = $("#campaign-list");
+    const directiveList = $("#directive-list");
+    campaignList.replaceChildren();
+    directiveList.replaceChildren();
+
+    if (!campaigns.length) {
+      const empty = document.createElement("div");
+      empty.className = "card muted";
+      empty.textContent = "Nenhuma campanha criada ainda.";
+      campaignList.append(empty);
+    } else {
+      for (const item of campaigns) {
+        const card = document.createElement("article");
+        card.className = "card";
+        const title = document.createElement("strong");
+        title.textContent = item.title || "Campanha";
+        const meta = document.createElement("small");
+        meta.textContent = "Início: " + (item.startDate || "—") + " · 7 dias";
+        const brief = document.createElement("p");
+        brief.textContent = item.brief || "";
+        card.append(title, document.createElement("br"), meta, brief);
+        campaignList.append(card);
+      }
+    }
+
+    if (!directives.length) {
+      const empty = document.createElement("div");
+      empty.className = "card muted";
+      empty.textContent = "Nenhuma orientação salva ainda.";
+      directiveList.append(empty);
+    } else {
+      for (const item of directives) {
+        const card = document.createElement("article");
+        card.className = "card";
+        const title = document.createElement("strong");
+        title.textContent = item.author === "CLIENT" ? "Sua orientação" : "Orientação do NEXUS";
+        const meta = document.createElement("small");
+        meta.textContent = formatDate(item.createdAt);
+        const text = document.createElement("p");
+        text.textContent = item.text || "";
+        card.append(title, document.createElement("br"), meta, text);
+        directiveList.append(card);
+      }
+    }
+  } catch (error) {
+    notice("Campanhas: " + error.message);
+  }
+}
+
+async function submitCampaign(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const button = form.querySelector("button[type=submit]");
+  const message = $("#campaign-message");
+  button.disabled = true;
+  message.textContent = "Enviando campanha...";
+  try {
+    const data = await api("/api/portal/campaigns", { method: "POST", body: new FormData(form) });
+    message.textContent = data.ok ? "Campanha enviada aos seus agentes." : "Campanha salva.";
+    form.reset();
+    await loadCampaigns();
+  } catch (error) {
+    message.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function submitDirective(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const button = form.querySelector("button[type=submit]");
+  const message = $("#directive-message");
+  button.disabled = true;
+  message.textContent = "Salvando orientação...";
+  try {
+    const textValue = form.elements.namedItem("text").value.trim();
+    const data = await api("/api/portal/directives", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: textValue, appliesTo: ["all"] })
+    });
+    message.textContent = data.ok ? "Orientação salva para os seus agentes." : "Orientação salva.";
+    form.reset();
+    await loadCampaigns();
+  } catch (error) {
+    message.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
 async function loadAIUsage() {
   try {
     const data = await api("/api/portal/provider-usage");
@@ -618,6 +716,7 @@ async function refresh() {
     loadAIUsage(),
     activeTab === "performance" ? loadPerformance() : Promise.resolve(),
     activeTab === "agents" ? loadAgents() : Promise.resolve(),
+    activeTab === "campaigns" ? loadCampaigns() : Promise.resolve(),
     activeTab === "media" ? loadMedia() : Promise.resolve()
   ]);
 }
@@ -644,12 +743,15 @@ document.querySelectorAll("[data-refresh]").forEach(button => button.addEventLis
   const target = button.dataset.refresh;
   if (target === "posts") return loadPosts();
   if (target === "agents") return loadAgents();
+  if (target === "campaigns") return loadCampaigns();
   if (target === "media") return loadMedia();
   if (target === "instagram") return loadInstagram();
   return loadPerformance();
 }));
 $("#refresh").addEventListener("click", () => refresh().catch(error => notice(error.message)));
 $("#media-upload-form")?.addEventListener("submit", uploadMedia);
+$("#campaign-form")?.addEventListener("submit", submitCampaign);
+$("#directive-form")?.addEventListener("submit", submitDirective);
 $("#logout").addEventListener("click", async () => {
   await fetch("/api/portal/logout", { method: "POST", credentials: "same-origin" }).catch(() => {});
   client = null; posts = []; showLogin("");
