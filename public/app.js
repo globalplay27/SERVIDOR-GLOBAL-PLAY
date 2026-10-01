@@ -608,7 +608,7 @@ async function loadIntegrations() {
             : "NÃO CONECTADA";
       openaiState.classList.toggle("off", !openai.connected);
     }
-    const money = value => Number.isFinite(Number(value)) ? "US$ " + Number(value).toFixed(2) : "—";
+    const money = value => value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value)) ? "US$ " + Number(value).toFixed(2) : "—";
     $("#openai-balance").textContent = money(openai.balanceEstimatedUsd);
     $("#openai-month-cost").textContent = money(openai.monthCostUsd);
     $("#openai-month-budget").textContent = money(openai.monthlyBudgetUsd);
