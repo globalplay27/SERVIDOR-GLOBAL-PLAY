@@ -1632,7 +1632,7 @@ $("#video-lab-generate")?.addEventListener("click",async()=>{
       method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({
         goal:"personalized",duration:90,clips:1,outputFormat:"reel",autoSubtitles:false,
         editStyle:"cinematic-card-v1",endText:settings.endText,endContact:settings.endContact,
-        logoEnabled:settings.logoEnabled
+        logoEnabled:settings.logoEnabled,logoObjectKey:settings.logoObjectKey
       })
     });
     const d=await r.json().catch(()=>({}));
