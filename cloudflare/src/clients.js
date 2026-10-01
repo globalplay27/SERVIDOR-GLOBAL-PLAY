@@ -144,6 +144,10 @@ export function portalClientView(client) {
     postingProfile,
     agentProfile,
     agentCore,
-    connections: config.connections && typeof config.connections === "object" ? config.connections : {}
+    connections: config.connections && typeof config.connections === "object" ? config.connections : {},
+    branding: {
+      logoKey: String(config.branding?.logoKey || ""),
+      logoUpdatedAt: config.branding?.logoUpdatedAt || null
+    }
   };
 }
