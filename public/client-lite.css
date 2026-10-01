@@ -32,3 +32,25 @@ button,input{font:inherit}button{cursor:pointer;border:1px solid #30516a;color:#
 .media-card strong{overflow-wrap:anywhere}.media-card small{color:#8fb0c2}.media-card p{margin:0;color:#b9ccd7;white-space:pre-wrap;overflow-wrap:anywhere}.media-card button{margin-top:auto}
 @media(max-width:760px){.media-upload{grid-template-columns:1fr}.media-upload label:nth-child(3){grid-column:auto}.media-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:480px){.media-grid{grid-template-columns:1fr}}
+
+
+/* Campaign workspace */
+#tab-campaigns{display:grid;gap:18px}
+#tab-campaigns[hidden]{display:none}
+#tab-campaigns .section-title{margin-bottom:0}
+#tab-campaigns .card{padding:22px}
+#tab-campaigns form{display:grid;gap:14px}
+#tab-campaigns label{display:grid;gap:7px}
+#tab-campaigns input,
+#tab-campaigns textarea{width:100%;box-sizing:border-box}
+#tab-campaigns textarea{min-height:110px;resize:vertical}
+#tab-campaigns #campaign-list,
+#tab-campaigns #directive-list{display:grid;gap:12px}
+#tab-campaigns #campaign-list .card,
+#tab-campaigns #directive-list .card{padding:16px;margin:0}
+@media(min-width:900px){
+  #tab-campaigns{grid-template-columns:1fr 1fr}
+  #tab-campaigns>.section-title{grid-column:1/-1}
+  #tab-campaigns>.card:nth-of-type(3),
+  #tab-campaigns>.card:nth-of-type(4){grid-column:span 1}
+}
