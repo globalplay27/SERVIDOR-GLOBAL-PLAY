@@ -1488,11 +1488,10 @@ async function searchTrailers(event){
     root.innerHTML=rows.map(item=>{
       const link=item.trailerUrl||"";
       const badge=item.trailerUrl?(item.official?"TRAILER OFICIAL":"TRAILER ENCONTRADO"):"TRAILER INDISPONÍVEL";
-      const cutterAction=item.downloadable&&item.downloadUrl
-        ?'<button type="button" class="trailer-import trailer-primary-action" data-import-video="'+escapeSupport(item.downloadUrl)+'" data-import-title="'+escapeSupport(item.title||"")+'" data-import-poster="'+escapeSupport(item.posterUrl||"")+'" data-import-overview="'+escapeSupport(item.overview||"")+'" data-import-year="'+escapeSupport(item.year||"")+'" data-import-type="'+escapeSupport(item.type||"")+'">Enviar para biblioteca</button>'
-        :(item.trailerUrl
-          ?'<button type="button" class="trailer-import trailer-primary-action" data-import-trailer="'+escapeSupport(item.trailerUrl)+'" data-import-title="'+escapeSupport(item.title||"")+'" data-import-poster="'+escapeSupport(item.posterUrl||"")+'" data-import-overview="'+escapeSupport(item.overview||"")+'" data-import-year="'+escapeSupport(item.year||"")+'" data-import-type="'+escapeSupport(item.type||"")+'">Enviar para biblioteca</button>'
-          :'<span class="trailer-open unavailable">VÍDEO INDISPONÍVEL</span>');
+      const labUrl=(item.downloadable&&item.downloadUrl)||item.trailerUrl||"";
+      const cutterAction=labUrl
+        ?'<button type="button" class="trailer-import trailer-primary-action" data-open-video-lab="'+escapeSupport(labUrl)+'" data-import-title="'+escapeSupport(item.title||"")+'" data-import-poster="'+escapeSupport(item.posterUrl||"")+'" data-import-overview="'+escapeSupport(item.overview||"")+'" data-import-year="'+escapeSupport(item.year||"")+'" data-import-type="'+escapeSupport(item.type||"")+'">Abrir laboratório</button>'
+        :'<span class="trailer-open unavailable">VÍDEO INDISPONÍVEL</span>';
       return '<article class="trailer-card">'
         +(item.posterUrl?'<img class="trailer-poster" data-trailer-poster="1" data-fallback="'+escapeSupport(item.posterFallbackUrl||"")+'" data-title="'+escapeSupport(item.title||"")+'" loading="lazy" referrerpolicy="no-referrer" src="'+escapeSupport(item.posterUrl)+'" alt="Imagem de '+escapeSupport(item.title)+'">':'<div class="trailer-poster-empty">'+escapeSupport((item.title||"NEXUS").slice(0,18))+'</div>')
         +'<div class="trailer-card-copy"><span>'+escapeSupport(item.type==="series"?"SÉRIE":"FILME")+' · '+escapeSupport(item.year||"—")+'</span>'
@@ -1531,8 +1530,7 @@ async function searchTrailers(event){
       }
       setTimeout(()=>$("#video-remote-url")?.focus(),80);
     }));
-    root.querySelectorAll("[data-import-video]").forEach(button=>button.addEventListener("click",()=>importAuthorizedVideo(button)));
-    root.querySelectorAll("[data-import-trailer]").forEach(button=>button.addEventListener("click",()=>importTrailerVideo(button)));
+    root.querySelectorAll("[data-open-video-lab]").forEach(button=>button.addEventListener("click",()=>openVideoLab(button)));
 
   }catch(error){
     if(status){status.textContent=error.message;status.className="save-status error";}
@@ -1540,6 +1538,45 @@ async function searchTrailers(event){
     $("#trailer-retry-search")?.addEventListener("click",()=>searchTrailers());
   }
 }
+
+function openVideoLab(button){
+  const lab=$("#video-lab");
+  if(!lab||!button)return;
+  const source=String(button.dataset.openVideoLab||"").trim();
+  const title=String(button.dataset.importTitle||"").trim();
+  const poster=String(button.dataset.importPoster||"").trim();
+  const overview=String(button.dataset.importOverview||"").trim();
+  const year=String(button.dataset.importYear||"").trim();
+  const profile=currentClient?.agentProfile||{};
+  if($("#video-lab-source"))$("#video-lab-source").value=source;
+  if($("#video-lab-title"))$("#video-lab-title").textContent=title||"Título";
+  if($("#video-lab-year"))$("#video-lab-year").textContent=year||"—";
+  if($("#video-lab-synopsis"))$("#video-lab-synopsis").textContent=overview||"Sinopse não disponível.";
+  const posterEl=$("#video-lab-poster");if(posterEl){posterEl.src=poster;posterEl.hidden=!poster;}
+  const logo=$("#video-lab-logo"),logoUrl=String(profile.logoUrl||"");
+  if(logo){logo.src=logoUrl;logo.hidden=!logoUrl;}
+  if($("#video-lab-brand-name"))$("#video-lab-brand-name").textContent=profile.brandName||currentClient?.name||"Sua marca";
+  if($("#video-lab-whatsapp"))$("#video-lab-whatsapp").value=profile.whatsapp||"";
+  if($("#video-lab-whatsapp-preview"))$("#video-lab-whatsapp-preview").textContent=profile.whatsapp||"WhatsApp";
+  const download=$("#video-lab-download-original");if(download)download.href=source||"#";
+  lab.hidden=false;
+  lab.scrollIntoView({behavior:"smooth",block:"start"});
+}
+function syncVideoLabPreview(){
+  const text=$("#video-lab-text")?.value?.trim()||"Indicação de filme ou série";
+  const whatsapp=$("#video-lab-whatsapp")?.value?.trim()||"WhatsApp";
+  if($("#video-lab-text-preview"))$("#video-lab-text-preview").textContent=text;
+  if($("#video-lab-whatsapp-preview"))$("#video-lab-whatsapp-preview").textContent=whatsapp;
+  const logo=$("#video-lab-logo");if(logo)logo.hidden=!($("#video-lab-use-logo")?.checked&&logo.getAttribute("src"));
+}
+$("#video-lab-text")?.addEventListener("input",syncVideoLabPreview);
+$("#video-lab-whatsapp")?.addEventListener("input",syncVideoLabPreview);
+$("#video-lab-use-logo")?.addEventListener("change",syncVideoLabPreview);
+$("#video-lab-close")?.addEventListener("click",()=>{const lab=$("#video-lab");if(lab)lab.hidden=true;});
+$("#video-lab-generate")?.addEventListener("click",()=>{
+  const status=$("#video-lab-status");
+  if(status){status.textContent="Laboratório configurado. A renderização final ainda precisa ser ligada ao processador de vídeo do servidor.";status.className="save-status";}
+});
 
 const videoFileInput=$("#video-file");
 if(videoFileInput)videoFileInput.addEventListener("change",()=>{
