@@ -253,7 +253,8 @@ export async function handleInstagramOAuthCallback(env, request, url) {
     await upsertClient(env, {
       ...client,
       instagram: username ? "@" + username : "Instagram conectado",
-      config: { ...client.config, onboarding, integrationState }
+      status: "online",
+      config: { ...client.config, onboarding, integrationState, setupMode: "ready" }
     });
 
     await env.DB.prepare("DELETE FROM oauth_states WHERE state_hash = ?1").bind(stateHash).run();
