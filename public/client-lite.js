@@ -38,9 +38,14 @@ function showDashboard(data) {
   client = data;
   $("#login").hidden = true;
   $("#dashboard").hidden = false;
-  $("#client-label").textContent = data.name || "Cliente";
-  $("#client-name").textContent = data.name || "Seu painel";
-  $("#header-client-name").textContent = data.name || "NEXUS AI";
+  const rawInstagram = String(data.instagram || "").trim();
+  const instagramHandle = rawInstagram
+    ? (rawInstagram.startsWith("@") ? rawInstagram : "@" + rawInstagram.replace(/^https?:\/\/(www\.)?instagram\.com\//i, "").replace(/\/$/, ""))
+    : "";
+  const accountLabel = instagramHandle || data.name || "Cliente";
+  $("#client-label").textContent = accountLabel;
+  $("#client-name").textContent = accountLabel;
+  $("#header-client-name").textContent = accountLabel;
   const logoKey = String(data.branding?.logoKey || "");
   const logo = $("#client-logo");
   if (logoKey) {
