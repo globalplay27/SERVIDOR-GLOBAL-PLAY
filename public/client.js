@@ -1580,6 +1580,102 @@ $("#video-lab-text")?.addEventListener("input",syncVideoLabPreview);
 $("#video-lab-whatsapp")?.addEventListener("input",syncVideoLabPreview);
 $("#video-lab-use-logo")?.addEventListener("change",syncVideoLabPreview);
 $("#video-lab-close")?.addEventListener("click",()=>{const lab=$("#video-lab");if(lab)lab.hidden=true;});
+
+function youtubeVideoUrl(value){
+  const raw=String(value||"").trim();
+  try{
+    const url=new URL(raw);
+    const host=url.hostname.toLowerCase().replace(/^www\./,"");
+    return (host==="youtube.com"||host==="m.youtube.com"||host==="youtu.be") ? raw : "";
+  }catch{return "";}
+}
+async function waitForYoutubeImport(jobId,status){
+  for(let attempt=0;attempt<90;attempt++){
+    await new Promise(resolve=>setTimeout(resolve,4000));
+    const r=await portalFetch("/api/portal/videos",{cache:"no-store"});
+    const d=await r.json().catch(()=>({}));
+    const job=(d.jobs||[]).find(item=>item.id===jobId);
+    if(!job)continue;
+    if(status){
+      status.textContent=job.message||("Baixando do YouTube… "+Math.max(0,Number(job.progress||0))+"%");
+      status.className="save-status";
+    }
+    if(job.status==="failed")throw new Error(job.error||"Não foi possível baixar este vídeo do YouTube.");
+    if(job.sourceObjectKey&&["awaiting_configuration","ready"].includes(String(job.status||""))){
+      return job;
+    }
+  }
+  throw new Error("O download está demorando mais que o esperado. Tente novamente em alguns instantes.");
+}
+$("#video-lab-youtube-download")?.addEventListener("click",async()=>{
+  const input=$("#video-lab-youtube-url");
+  const button=$("#video-lab-youtube-download");
+  const status=$("#video-lab-status");
+  const url=youtubeVideoUrl(input?.value);
+  if(!url){
+    if(status){status.textContent="Cole um link válido do YouTube.";status.className="save-status error";}
+    input?.focus();
+    return;
+  }
+  const settings={
+    url,
+    contentTitle:$("#video-lab-title")?.textContent?.trim()||"Vídeo do YouTube",
+    goal:"personalized",
+    duration:90,
+    clips:1,
+    outputFormat:"reel",
+    editStyle:"cinematic-card-v1",
+    posterUrl:$("#video-lab-poster-url")?.value||"",
+    overview:$("#video-lab-overview-value")?.value||"",
+    releaseYear:$("#video-lab-year-value")?.value||"",
+    mediaType:$("#video-lab-type-value")?.value||"",
+    autoSubtitles:false,
+    folderId:"default",
+    endText:$("#video-lab-text")?.value?.trim()||"",
+    endContact:$("#video-lab-whatsapp")?.value?.trim()||""
+  };
+  button.disabled=true;
+  try{
+    if(status){status.textContent="Enviando o link para o downloader do NEXUS…";status.className="save-status";}
+    const r=await portalFetch("/api/portal/videos/import-trailer",{
+      method:"POST",
+      headers:{"content-type":"application/json"},
+      body:JSON.stringify(settings)
+    });
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(d.error||"Não foi possível iniciar o download do YouTube.");
+    const jobId=String(d.jobId||d.job?.id||"");
+    if(!jobId)throw new Error("O NEXUS não criou o trabalho de download.");
+    await waitForYoutubeImport(jobId,status);
+
+    if(status)status.textContent="Download concluído. Preparando o vídeo no seu computador…";
+    const source=await portalFetch("/api/portal/videos/"+encodeURIComponent(jobId)+"/source",{cache:"no-store"});
+    if(!source.ok)throw new Error("O vídeo foi baixado, mas o NEXUS não conseguiu entregá-lo ao navegador.");
+    const blob=await source.blob();
+    if(!blob.size)throw new Error("O arquivo baixado ficou vazio.");
+    if(blob.size>100*1024*1024)throw new Error("O vídeo baixado passa de 100 MB. Use um vídeo menor.");
+
+    const type=blob.type&&blob.type.startsWith("video/")?blob.type:"video/mp4";
+    const ext=type.includes("webm")?"webm":type.includes("quicktime")?"mov":"mp4";
+    const file=new File([blob],"youtube-video."+ext,{type,lastModified:Date.now()});
+    const fileInput=$("#video-lab-file");
+    if(fileInput){
+      const transfer=new DataTransfer();
+      transfer.items.add(file);
+      fileInput.files=transfer.files;
+      fileInput.dispatchEvent(new Event("change",{bubbles:true}));
+    }
+    if(status){
+      status.textContent="Vídeo do YouTube pronto. Agora clique em Gerar vídeo personalizado.";
+      status.className="save-status ok";
+    }
+  }catch(error){
+    if(status){status.textContent=error.message||"Não foi possível baixar o vídeo do YouTube.";status.className="save-status error";}
+  }finally{
+    button.disabled=false;
+  }
+});
+
 async function waitForVideoLabRender(jobId,status){
   for(let attempt=0;attempt<90;attempt++){
     await new Promise(resolve=>setTimeout(resolve,4000));
