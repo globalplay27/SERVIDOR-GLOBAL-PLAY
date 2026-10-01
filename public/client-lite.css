@@ -70,3 +70,14 @@ button,input{font:inherit}button{cursor:pointer;border:1px solid #30516a;color:#
 .logo-preview{max-width:220px;max-height:120px;object-fit:contain}
 #logo-message{margin:0}
 @media(max-width:760px){.branding-card{grid-template-columns:1fr}.client-logo{width:50px;height:50px}}
+
+
+/* Account setup */
+.account-setup{display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start}
+.account-profile,.account-logo{min-width:0}
+.profile-form,.logo-form{display:grid;gap:12px}
+.profile-form label,.logo-form label{display:grid;gap:7px;color:#a6c3d2;font-size:13px}
+.profile-form input,.logo-form input[type="file"]{width:100%;box-sizing:border-box;background:#0b1520;border:1px solid #355166;border-radius:9px;color:#fff;padding:11px 12px}
+.profile-form .primary,.logo-form .primary{width:max-content}
+#profile-message,#logo-message{margin:0}
+@media(max-width:760px){.account-setup{grid-template-columns:1fr}}
