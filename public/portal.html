@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#080d15"><title>NEXUS AI · Acompanhamento</title>
-  <link rel="stylesheet" href="/client-lite.css?v=4"><script src="/client-lite.js?v=4" defer></script>
+  <link rel="stylesheet" href="/client-lite.css?v=5"><script src="/client-lite.js?v=5" defer></script>
 </head>
 <body><main class="shell">
   <section id="login" class="login card" hidden>
@@ -38,6 +38,16 @@
         <article class="card"><span>Postagens</span><strong id="next-post">Automática pelo NEXUS</strong></article>
         <article class="card"><span>Publicadas</span><strong id="published-count">—</strong></article>
         <article class="card"><span>Precisam de atenção</span><strong id="attention-count">—</strong></article>
+      </div>
+      <div class="card">
+        <div class="section-title"><div><p class="eyebrow">USO DE IA</p><h2>Consumo OpenAI de hoje</h2><p class="muted">Seu consumo é contabilizado separadamente pelo NEXUS. Nenhuma chave de API é exibida aqui.</p></div></div>
+        <div class="metrics">
+          <article class="card"><span>Tokens usados</span><strong id="ai-used-tokens">—</strong></article>
+          <article class="card"><span>Limite diário</span><strong id="ai-limit-tokens">—</strong></article>
+          <article class="card"><span>Restante hoje</span><strong id="ai-remaining-tokens">—</strong></article>
+          <article class="card"><span>Custo estimado hoje</span><strong id="ai-estimated-cost">—</strong></article>
+        </div>
+        <p id="ai-usage-note" class="muted">Carregando consumo...</p>
       </div>
       <div class="card"><h2>Última atividade</h2><p id="last-activity" class="muted">Carregando...</p></div>
     </section>
