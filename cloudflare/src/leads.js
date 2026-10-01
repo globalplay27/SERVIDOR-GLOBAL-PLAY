@@ -142,12 +142,28 @@ export async function masterLeadSummary(env) {
   const byClient = [];
   for (const client of clients) {
     const own = leads.filter(lead => lead.clientId === client.id);
+    const lastRun = await env.DB.prepare(
+      `SELECT status, finished_at, analyzed, new_leads, updated_leads, ignored, payload_json
+       FROM lead_hunter_runs
+       WHERE client_id = ?1
+       ORDER BY COALESCE(finished_at, created_at) DESC
+       LIMIT 1`
+    ).bind(client.id).first();
+    const runPayload = lastRun ? parseJson(lastRun.payload_json, {}) : {};
     byClient.push({
       clientId: client.id,
       clientName: client.name || client.id,
       instagram: client.instagram || "",
       source: "cloudflare-d1",
-      ...summarizeLeads(own)
+      ...summarizeLeads(own),
+      lastRunAt: lastRun?.finished_at || null,
+      lastRunStatus: lastRun?.status || "never",
+      lastAnalyzed: Number(lastRun?.analyzed || 0),
+      lastNew: Number(lastRun?.new_leads || 0),
+      lastUpdated: Number(lastRun?.updated_leads || 0),
+      lastIgnored: Number(lastRun?.ignored || 0),
+      lastSources: runPayload.sources || {},
+      lastErrors: Array.isArray(runPayload.errors) ? runPayload.errors.slice(0, 5) : []
     });
   }
   return { summary, byClient, leads };
