@@ -400,7 +400,9 @@
                 <input id="video-lab-overview-value" type="hidden">
                 <input id="video-lab-year-value" type="hidden">
                 <input id="video-lab-type-value" type="hidden">
-                <label><span>Vídeo do computador</span><input id="video-lab-file" type="file" accept="video/mp4,video/quicktime,video/webm,video/x-matroska,.mp4,.mov,.webm,.mkv"><small>Baixe o vídeo no PC e envie aqui. MP4, MOV, WEBM ou MKV, até 100 MB.</small></label>
+                <label><span>Baixar do YouTube</span><input id="video-lab-youtube-url" type="url" inputmode="url" placeholder="Cole o link do vídeo no YouTube"><small>Use somente vídeos próprios ou que você tenha autorização para baixar e editar.</small></label>
+                <button type="button" id="video-lab-youtube-download" class="ghost-action">Baixar do YouTube</button>
+                <label><span>Vídeo do computador</span><input id="video-lab-file" type="file" accept="video/mp4,video/quicktime,video/webm,video/x-matroska,.mp4,.mov,.webm,.mkv"><small>Você também pode escolher um vídeo salvo no PC. MP4, MOV, WEBM ou MKV, até 100 MB.</small></label>
                 <label><span>Texto do vídeo</span><input id="video-lab-text" maxlength="90" value="Indicação de filme ou série"></label>
                 <label><span>WhatsApp</span><input id="video-lab-whatsapp" maxlength="24" inputmode="tel" placeholder="(21) 99999-9999"></label>
                 <label class="video-lab-toggle"><input id="video-lab-use-logo" type="checkbox" checked><span>Usar a logo cadastrada no perfil</span></label>
@@ -598,6 +600,6 @@
       <footer><span>NEXUS AI</span><small>Client Portal · ambiente exclusivo</small></footer>
     </section>
   </main>
-  <script src="/client.js?v=81" defer></script>
+  <script src="/client.js?v=82" defer></script>
 </body>
 </html>
