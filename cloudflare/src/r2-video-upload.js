@@ -540,7 +540,7 @@ export async function processR2PublicTrailerImportJob(env, clientId, jobId) {
     settings.displayName = settings.filename;
 
     await env.DB.prepare(
-      "UPDATE video_jobs SET source_object_key=?3,status='queued',settings_json=?4,result_json=?5,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2"
+      "UPDATE video_jobs SET source_object_key=?3,status='awaiting_configuration',settings_json=?4,result_json=?5,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2"
     ).bind(
       row.id,
       row.client_id,
@@ -553,7 +553,7 @@ export async function processR2PublicTrailerImportJob(env, clientId, jobId) {
         objectEtag: object.httpEtag || "",
         resolver: resolved.resolver || resolved.host,
         importAttempts: attempt,
-        message: "Vídeo recebido no R2. Iniciando análise e cortes.",
+        message: "Vídeo recebido no R2 e pronto para uso no laboratório.",
         error: ""
       })
     ).run();
