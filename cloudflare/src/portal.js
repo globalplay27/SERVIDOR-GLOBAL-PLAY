@@ -805,6 +805,7 @@ export async function handlePortalApi(request, env, url, ctx = null) {
         endText: body.endText,
         endContact: body.endContact,
         logoEnabled: body.logoEnabled === true,
+        logoObjectKey: body.logoEnabled === true && profileLogoKeyBelongsToClient(body.logoObjectKey, client.id) ? String(body.logoObjectKey) : "",
         editStyle: body.editStyle || "cinematic-card-v1"
       });
       await startGitHubVideoRender(env, client.id, jobId, body);
