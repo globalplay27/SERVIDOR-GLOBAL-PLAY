@@ -33,7 +33,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
+          sudo apt-get install -y -qq ffmpeg fonts-dejavu-core python3-pil
 
       - name: Download source from R2 through NEXUS
         shell: bash
@@ -86,6 +86,24 @@ jobs:
               f.write("  •  ".join([x for x in [end_text,end_contact] if x])[:160])
           PY
 
+          python - <<'PY'
+          from PIL import Image, ImageDraw
+          w,h=820,720
+          img=Image.new("RGBA",(w,h),(0,0,0,0))
+          d=ImageDraw.Draw(img)
+          # Corpo do smartphone: cantos arredondados, bezel escuro e aro metálico.
+          d.rounded_rectangle((6,6,w-6,h-6),radius=58,fill=(3,7,12,248),outline=(205,219,228,255),width=10)
+          d.rounded_rectangle((24,24,w-24,h-24),radius=45,outline=(74,92,105,255),width=3)
+          # Notch / alto-falante.
+          d.rounded_rectangle((310,24,510,46),radius=11,fill=(48,58,67,255))
+          # Botões laterais para deixar a silhueta claramente de celular.
+          d.rounded_rectangle((0,160,10,250),radius=5,fill=(180,192,200,255))
+          d.rounded_rectangle((810,190,820,310),radius=5,fill=(180,192,200,255))
+          # Indicador inferior.
+          d.rounded_rectangle((310,680,510,690),radius=5,fill=(110,123,132,255))
+          img.save("/tmp/phone-frame.png")
+          PY
+
       - name: Render cinematic NEXUS template
         id: render
         shell: bash
@@ -112,11 +130,11 @@ jobs:
               -map 0:v:0 -map 0:a? -c:v libx264 -preset veryfast -crf 24 -c:a aac -b:a 128k -movflags +faststart /tmp/rendered-base.mp4
           elif [ -s /tmp/poster.jpg ]; then
             ffmpeg -y -i /tmp/source.mp4 -loop 1 -i /tmp/poster.jpg -t "$RENDER_DUR" \
-              -filter_complex "[0:v]scale=1080:930:force_original_aspect_ratio=increase,crop=1080:930,setsar=1[v];color=c=0x050807:s=1080x1920:d=$RENDER_DUR[bg];[bg][v]overlay=0:0[base];[base]drawbox=x=80:y=980:w=920:h=700:color=0x05080d@0.97:t=fill[p0];[p0]drawbox=x=80:y=980:w=920:h=700:color=0xb9c6d0:t=8[p1];[p1]drawbox=x=410:y=1002:w=260:h=16:color=0x303a43:t=fill[p2];[1:v]scale=300:420:force_original_aspect_ratio=decrease,pad=300:420:(ow-iw)/2:(oh-ih)/2:color=0x0b1117[poster];[p2][poster]overlay=120:1060[p];[p]drawtext=fontfile=$BOLD:textfile=/tmp/title.txt:x=460:y=1080:fontsize=46:line_spacing=9:fontcolor=white[tit];[tit]drawtext=fontfile=$BOLD:textfile=/tmp/meta.txt:x=460:y=1230:fontsize=26:fontcolor=0x65d9ff[meta];[meta]drawtext=fontfile=$FONT:textfile=/tmp/overview.txt:x=460:y=1290:fontsize=27:line_spacing=8:fontcolor=0xd8e5eb[desc];[desc]drawbox=x=405:y=1642:w=270:h=7:color=0x5d6973:t=fill[home];[home]drawbox=x=65:y=1735:w=950:h=110:color=0x0d2330@0.95:t=fill[cta];[cta]drawtext=fontfile=$BOLD:textfile=/tmp/cta.txt:x=(w-text_w)/2:y=1770:fontsize=31:fontcolor=0xa5ebff[outv]" \
+              -filter_complex "[0:v]scale=1080:930:force_original_aspect_ratio=increase,crop=1080:930,setsar=1[v];color=c=0x050807:s=1080x1920:d=$RENDER_DUR[bg];[bg][v]overlay=0:0[base];movie=/tmp/phone-frame.png[phone];[base][phone]overlay=130:965[p0];[1:v]scale=300:420:force_original_aspect_ratio=decrease,pad=300:420:(ow-iw)/2:(oh-ih)/2:color=0x0b1117[poster];[p0][poster]overlay=175:1055[p];[p]drawtext=fontfile=$BOLD:textfile=/tmp/title.txt:x=520:y=1065:fontsize=44:line_spacing=8:fontcolor=white[tit];[tit]drawtext=fontfile=$BOLD:textfile=/tmp/meta.txt:x=520:y=1210:fontsize=25:fontcolor=0x65d9ff[meta];[meta]drawtext=fontfile=$FONT:textfile=/tmp/overview.txt:x=520:y=1270:fontsize=25:line_spacing=7:fontcolor=0xd8e5eb[desc];[desc]drawbox=x=65:y=1735:w=950:h=110:color=0x0d2330@0.95:t=fill[cta];[cta]drawtext=fontfile=$BOLD:textfile=/tmp/cta.txt:x=(w-text_w)/2:y=1770:fontsize=31:fontcolor=0xa5ebff[outv]" \
               -map "[outv]" -map 0:a? -c:v libx264 -preset veryfast -crf 24 -c:a aac -b:a 128k -pix_fmt yuv420p -movflags +faststart /tmp/rendered-base.mp4
           else
             ffmpeg -y -i /tmp/source.mp4 -t "$RENDER_DUR" \
-              -filter_complex "[0:v]scale=1080:930:force_original_aspect_ratio=increase,crop=1080:930,setsar=1[v];color=c=0x050807:s=1080x1920:d=$RENDER_DUR[bg];[bg][v]overlay=0:0[base];[base]drawbox=x=80:y=980:w=920:h=700:color=0x05080d@0.97:t=fill[p0];[p0]drawbox=x=80:y=980:w=920:h=700:color=0xb9c6d0:t=8[p1];[p1]drawbox=x=410:y=1002:w=260:h=16:color=0x303a43:t=fill[p2];[p2]drawtext=fontfile=$BOLD:textfile=/tmp/title.txt:x=145:y=1090:fontsize=52:line_spacing=10:fontcolor=white[tit];[tit]drawtext=fontfile=$BOLD:textfile=/tmp/meta.txt:x=145:y=1270:fontsize=28:fontcolor=0x65d9ff[meta];[meta]drawtext=fontfile=$FONT:textfile=/tmp/overview.txt:x=145:y=1340:fontsize=30:line_spacing=9:fontcolor=0xd8e5eb[desc];[desc]drawbox=x=405:y=1642:w=270:h=7:color=0x5d6973:t=fill[home];[home]drawbox=x=65:y=1735:w=950:h=110:color=0x0d2330@0.95:t=fill[cta];[cta]drawtext=fontfile=$BOLD:textfile=/tmp/cta.txt:x=(w-text_w)/2:y=1770:fontsize=31:fontcolor=0xa5ebff[outv]" \
+              -filter_complex "[0:v]scale=1080:930:force_original_aspect_ratio=increase,crop=1080:930,setsar=1[v];color=c=0x050807:s=1080x1920:d=$RENDER_DUR[bg];[bg][v]overlay=0:0[base];movie=/tmp/phone-frame.png[phone];[base][phone]overlay=130:965[p0];[p0]drawtext=fontfile=$BOLD:textfile=/tmp/title.txt:x=205:y=1080:fontsize=50:line_spacing=10:fontcolor=white[tit];[tit]drawtext=fontfile=$BOLD:textfile=/tmp/meta.txt:x=205:y=1250:fontsize=27:fontcolor=0x65d9ff[meta];[meta]drawtext=fontfile=$FONT:textfile=/tmp/overview.txt:x=205:y=1320:fontsize=28:line_spacing=8:fontcolor=0xd8e5eb[desc];[desc]drawbox=x=65:y=1735:w=950:h=110:color=0x0d2330@0.95:t=fill[cta];[cta]drawtext=fontfile=$BOLD:textfile=/tmp/cta.txt:x=(w-text_w)/2:y=1770:fontsize=31:fontcolor=0xa5ebff[outv]" \
               -map "[outv]" -map 0:a? -c:v libx264 -preset veryfast -crf 24 -c:a aac -b:a 128k -pix_fmt yuv420p -movflags +faststart /tmp/rendered-base.mp4
           fi
           test -s /tmp/rendered-base.mp4
