@@ -1602,7 +1602,7 @@ async function waitForYoutubeImport(jobId,status){
       status.className="save-status";
     }
     if(job.status==="failed")throw new Error(job.error||"Não foi possível baixar este vídeo do YouTube.");
-    if(job.sourceObjectKey&&["awaiting_configuration","ready"].includes(String(job.status||""))){
+    if(job.sourceObjectKey&&String(job.status||"")!=="failed"){
       return job;
     }
   }
