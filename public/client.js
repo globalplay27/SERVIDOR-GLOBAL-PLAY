@@ -1487,17 +1487,19 @@ async function searchTrailers(event){
     }
     root.innerHTML=rows.map(item=>{
       const link=item.trailerUrl||"";
-      const badge=item.trailerUrl?(item.official?"TRAILER OFICIAL":"TRAILER ENCONTRADO"):"TRAILER INDISPONÍVEL";
-      const labUrl=(item.downloadable&&item.downloadUrl)||item.trailerUrl||"";
-      const cutterAction=labUrl
-        ?'<button type="button" class="trailer-import trailer-primary-action" data-open-video-lab="'+escapeSupport(labUrl)+'" data-import-title="'+escapeSupport(item.title||"")+'" data-import-poster="'+escapeSupport(item.posterUrl||"")+'" data-import-overview="'+escapeSupport(item.overview||"")+'" data-import-year="'+escapeSupport(item.year||"")+'" data-import-type="'+escapeSupport(item.type||"")+'">Abrir laboratório</button>'
+      const downloadUrl=item.downloadable&&item.downloadUrl?item.downloadUrl:"";
+      const downloadAction=downloadUrl
+        ?'<a class="trailer-open trailer-primary-action" href="'+escapeSupport(downloadUrl)+'" download rel="noopener">Baixar vídeo</a>'
+        :'<span class="trailer-open unavailable">DOWNLOAD INDISPONÍVEL</span>';
+      const cutterAction=link
+        ?'<button type="button" class="trailer-import" data-open-video-lab="'+escapeSupport(link)+'" data-import-title="'+escapeSupport(item.title||"")+'" data-import-poster="'+escapeSupport(item.posterUrl||"")+'" data-import-overview="'+escapeSupport(item.overview||"")+'" data-import-year="'+escapeSupport(item.year||"")+'" data-import-type="'+escapeSupport(item.type||"")+'">Abrir laboratório</button>'
         :'<span class="trailer-open unavailable">VÍDEO INDISPONÍVEL</span>';
       return '<article class="trailer-card">'
         +(item.posterUrl?'<img class="trailer-poster" data-trailer-poster="1" data-fallback="'+escapeSupport(item.posterFallbackUrl||"")+'" data-title="'+escapeSupport(item.title||"")+'" loading="lazy" referrerpolicy="no-referrer" src="'+escapeSupport(item.posterUrl)+'" alt="Imagem de '+escapeSupport(item.title)+'">':'<div class="trailer-poster-empty">'+escapeSupport((item.title||"NEXUS").slice(0,18))+'</div>')
         +'<div class="trailer-card-copy"><span>'+escapeSupport(item.type==="series"?"SÉRIE":"FILME")+' · '+escapeSupport(item.year||"—")+'</span>'
         +'<strong>'+escapeSupport(item.title||"")+'</strong>'
         +'<p>'+escapeSupport(item.overview||"Sinopse não disponível.")+'</p>'
-        +'<div class="trailer-card-actions">'+(link?'<a class="trailer-open" target="_blank" rel="noopener" href="'+escapeSupport(link)+'">'+badge+'</a>':'<span class="trailer-open unavailable">'+badge+'</span>')+cutterAction+'</div></div>'
+        +'<div class="trailer-card-actions">'+downloadAction+cutterAction+'</div></div>'
         +'</article>';
     }).join("");
     root.querySelectorAll("[data-trailer-poster]").forEach(img=>{
