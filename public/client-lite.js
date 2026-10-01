@@ -573,6 +573,23 @@ async function loadPerformance() {
   } catch (error) { notice("Desempenho: " + error.message); }
 }
 
+async function loadAIUsage() {
+  try {
+    const data = await api("/api/portal/provider-usage");
+    const usage = data.openai || {};
+    $("#ai-used-tokens").textContent = formatNumber(usage.usedTokens || 0);
+    $("#ai-limit-tokens").textContent = formatNumber(usage.limitTokens || 0);
+    $("#ai-remaining-tokens").textContent = formatNumber(usage.remainingTokens || 0);
+    $("#ai-estimated-cost").textContent = "US$ " + Number(usage.estimatedCostUsd || 0).toFixed(4);
+    const pct = Number(usage.percent || 0);
+    $("#ai-usage-note").textContent = usage.blocked
+      ? "Limite diário atingido. Novas chamadas pagas ficam bloqueadas até o próximo dia."
+      : pct + "% do limite diário utilizado · custo estimado pelo NEXUS.";
+  } catch (error) {
+    $("#ai-usage-note").textContent = "Não foi possível carregar o consumo agora.";
+  }
+}
+
 async function loadInstagram() {
   try {
     const data = await api("/api/portal/connections");
@@ -594,6 +611,7 @@ async function refresh() {
   await Promise.all([
     loadPosts(),
     loadInstagram(),
+    loadAIUsage(),
     activeTab === "performance" ? loadPerformance() : Promise.resolve(),
     activeTab === "agents" ? loadAgents() : Promise.resolve(),
     activeTab === "media" ? loadMedia() : Promise.resolve()
