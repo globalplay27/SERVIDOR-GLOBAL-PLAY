@@ -65,8 +65,7 @@
         <button type="button" data-view="posts">Postagens</button>
         <button type="button" data-view="capture">Captação</button>
         <button type="button" data-view="leads">Leads</button>
-        <button type="button" data-view="videos">Vídeos</button>
-        <button type="button" data-view="trailers">Trailers</button>
+        <button type="button" data-view="trailers">Vídeos</button>
         <button type="button" data-view="posting">Perfil do Agente</button>
         <button type="button" data-view="support">Suporte</button>
         <button type="button" class="setup-nav-main" data-view="setup" hidden>Conexões</button>
@@ -353,9 +352,9 @@
       <div id="view-trailers" class="client-view" hidden>
         <section class="settings-heading">
           <div>
-            <p class="eyebrow">NEXUS TRAILER FINDER</p>
+            <p class="eyebrow">NEXUS VIDEO LAB</p>
             <h1>Filmes e séries</h1>
-            <p class="muted">Pesquise pelo título. Toque em “Enviar para biblioteca”: o servidor recebe o vídeo sem baixar no seu computador. Depois, na Biblioteca, você escolhe o tipo, o tempo e a quantidade de cortes antes de iniciar.</p>
+            <p class="muted">Pesquise pelo título, escolha o trailer e abra o laboratório. Personalize logo, WhatsApp e textos antes de baixar. Nada é enviado para a biblioteca.</p>
           </div>
           <span id="trailer-search-status" class="save-status"></span>
         </section>
@@ -378,6 +377,35 @@
           <div id="trailer-results" class="trailer-results">
             <div class="post-client-empty"><strong>Pesquise um título</strong><span>Os resultados aparecem aqui com capa, ano, sinopse e link do trailer.</span></div>
           </div>
+
+          <section id="video-lab" class="video-lab" hidden>
+            <div class="panel-heading"><div><p class="eyebrow">OFICINA DE VÍDEO</p><h2>Monte seu vídeo</h2></div><button type="button" id="video-lab-close" class="ghost-action">Fechar</button></div>
+            <div class="video-lab-grid">
+              <div class="video-lab-preview">
+                <div class="video-lab-scene">
+                  <div class="video-lab-phone">
+                    <img id="video-lab-poster" alt="">
+                    <div><strong id="video-lab-title">Título</strong><small id="video-lab-year">—</small><p id="video-lab-synopsis">A sinopse aparecerá dentro do smartphone.</p></div>
+                  </div>
+                  <div class="video-lab-brand"><img id="video-lab-logo" alt="" hidden><strong id="video-lab-brand-name">Sua marca</strong></div>
+                  <div class="video-lab-whatsapp"><span aria-hidden="true">◉</span><strong id="video-lab-whatsapp-preview">WhatsApp</strong></div>
+                  <div id="video-lab-text-preview" class="video-lab-text">Indicação de filme ou série</div>
+                </div>
+              </div>
+              <form id="video-lab-form" class="video-lab-form">
+                <input id="video-lab-source" type="hidden">
+                <label><span>Texto do vídeo</span><input id="video-lab-text" maxlength="90" value="Indicação de filme ou série"></label>
+                <label><span>WhatsApp</span><input id="video-lab-whatsapp" maxlength="24" inputmode="tel" placeholder="(21) 99999-9999"></label>
+                <label class="video-lab-toggle"><input id="video-lab-use-logo" type="checkbox" checked><span>Usar a logo cadastrada no perfil</span></label>
+                <p class="muted">O áudio permanece o original do trailer. Sem narração.</p>
+                <div class="video-lab-actions">
+                  <a id="video-lab-download-original" class="ghost-action" href="#" target="_blank" rel="noopener">Baixar trailer original</a>
+                  <button type="button" id="video-lab-generate">Gerar vídeo personalizado</button>
+                </div>
+                <span id="video-lab-status" class="save-status"></span>
+              </form>
+            </div>
+          </section>
         </section>
       </div>
 
