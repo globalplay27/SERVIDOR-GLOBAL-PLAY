@@ -1489,11 +1489,11 @@ async function searchTrailers(event){
       const link=item.trailerUrl||"";
       const downloadUrl=item.downloadable&&item.downloadUrl?item.downloadUrl:"";
       const downloadAction=downloadUrl
-        ?'<a class="trailer-open trailer-primary-action" href="'+escapeSupport(downloadUrl)+'" download rel="noopener">Baixar vídeo</a>'
-        :'<span class="trailer-open unavailable">DOWNLOAD INDISPONÍVEL</span>';
+        ?'<a class="trailer-open trailer-primary-action" href="'+escapeSupport(downloadUrl)+'" download rel="noopener">Baixar arquivo direto</a>'
+        :'';
       const cutterAction=link
         ?'<button type="button" class="trailer-import" data-open-video-lab="'+escapeSupport(link)+'" data-import-title="'+escapeSupport(item.title||"")+'" data-import-poster="'+escapeSupport(item.posterUrl||"")+'" data-import-overview="'+escapeSupport(item.overview||"")+'" data-import-year="'+escapeSupport(item.year||"")+'" data-import-type="'+escapeSupport(item.type||"")+'">Abrir laboratório</button>'
-        :'<span class="trailer-open unavailable">VÍDEO INDISPONÍVEL</span>';
+        :'<span class="trailer-open unavailable">Trailer não localizado</span>';
       return '<article class="trailer-card">'
         +(item.posterUrl?'<img class="trailer-poster" data-trailer-poster="1" data-fallback="'+escapeSupport(item.posterFallbackUrl||"")+'" data-title="'+escapeSupport(item.title||"")+'" loading="lazy" referrerpolicy="no-referrer" src="'+escapeSupport(item.posterUrl)+'" alt="Imagem de '+escapeSupport(item.title)+'">':'<div class="trailer-poster-empty">'+escapeSupport((item.title||"NEXUS").slice(0,18))+'</div>')
         +'<div class="trailer-card-copy"><span>'+escapeSupport(item.type==="series"?"SÉRIE":"FILME")+' · '+escapeSupport(item.year||"—")+'</span>'
@@ -1915,39 +1915,67 @@ $("#video-lab-generate")?.addEventListener("click",async()=>{
   const status=$("#video-lab-status"),button=$("#video-lab-generate"),file=$("#video-lab-file")?.files?.[0];
   const download=$("#video-lab-download-final");
   if(download){download.hidden=true;download.removeAttribute("href");}
-  if(!file){if(status){status.textContent="Escolha primeiro o vídeo que está no seu computador.";status.className="save-status error";}$("#video-lab-file")?.focus();return;}
-  if(file.size>100*1024*1024){if(status){status.textContent="Este vídeo passa de 100 MB. Escolha um arquivo menor.";status.className="save-status error";}return;}
+  if(!file){
+    if(status){status.textContent="Baixe o trailer pelo botão acima ou escolha um vídeo do computador.";status.className="save-status error";}
+    return;
+  }
+  if(file.size>100*1024*1024){
+    if(status){status.textContent="Este vídeo passa de 100 MB. Escolha um arquivo menor.";status.className="save-status error";}
+    return;
+  }
+
   const profile=currentClient?.agentProfile||{};
   const settings={
+    goal:"personalized",
     duration:90,
+    clips:1,
+    outputFormat:"reel",
+    editStyle:"cinematic-card-v1",
     contentTitle:$("#video-lab-title")?.textContent?.trim()||file.name,
+    posterUrl:$("#video-lab-poster-url")?.value||"",
     overview:$("#video-lab-overview-value")?.value||"",
     releaseYear:$("#video-lab-year-value")?.value||"",
     mediaType:$("#video-lab-type-value")?.value||"",
+    autoSubtitles:false,
+    folderId:"default",
     endText:$("#video-lab-text")?.value?.trim()||"",
     endContact:$("#video-lab-whatsapp")?.value?.trim()||"",
-    logoEnabled:Boolean($("#video-lab-use-logo")?.checked&&profile.logoUrl)
+    logoEnabled:Boolean($("#video-lab-use-logo")?.checked&&profile.logoObjectKey),
+    logoObjectKey:String(profile.logoObjectKey||"")
   };
+
   button.disabled=true;
   try{
-    if(status){status.textContent="Preparando o editor local…";status.className="save-status";}
-    const rendered=await renderVideoLabLocally(file,settings,status);
-    const href=URL.createObjectURL(rendered.blob);
-    if(download){
-      if(download.dataset.objectUrl)URL.revokeObjectURL(download.dataset.objectUrl);
-      download.dataset.objectUrl=href;
-      download.href=href;
-      download.download="nexus-video."+rendered.extension;
-      download.textContent=rendered.extension==="mp4"?"Baixar MP4 pronto":"Baixar vídeo pronto";
-      download.hidden=false;
-    }
-    if(status){
-      status.textContent="Vídeo pronto. O processamento foi feito no seu computador, sem depender do GitHub.";
-      status.className="save-status ok";
-    }
+    if(status){status.textContent="Enviando o vídeo para o renderizador…";status.className="save-status";}
+    const completed=await uploadSingleVideo(file,0,1,settings,null);
+    const jobId=String(completed?.jobId||completed?.job?.id||"");
+    if(!jobId)throw new Error("O NEXUS recebeu o arquivo, mas não criou o trabalho de vídeo.");
+
+    if(status)status.textContent="Gerando o vídeo com FFmpeg…";
+    const r=await portalFetch("/api/portal/videos/"+encodeURIComponent(jobId)+"/process",{
+      method:"POST",
+      headers:{"content-type":"application/json"},
+      body:JSON.stringify({
+        goal:"personalized",
+        duration:90,
+        clips:1,
+        outputFormat:"reel",
+        autoSubtitles:false,
+        editStyle:"cinematic-card-v1",
+        endText:settings.endText,
+        endContact:settings.endContact,
+        logoEnabled:settings.logoEnabled,
+        logoObjectKey:settings.logoObjectKey
+      })
+    });
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(d.message||d.error||"Não foi possível iniciar a renderização.");
+    await waitForVideoLabRender(jobId,status);
   }catch(error){
     if(status){status.textContent=error.message||"Não foi possível gerar o vídeo.";status.className="save-status error";}
-  }finally{button.disabled=false;}
+  }finally{
+    button.disabled=false;
+  }
 });
 
 const videoFileInput=$("#video-file");
