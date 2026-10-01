@@ -791,6 +791,27 @@ export async function handlePortalApi(request, env, url, ctx = null) {
     }
   }
 
+  const videoSourceMatch = url.pathname.match(/^\/api\/portal\/videos\/([^/]+)\/source$/);
+  if (videoSourceMatch && request.method === "GET") {
+    const jobId = decodeURIComponent(videoSourceMatch[1]);
+    const row = await env.DB.prepare(
+      "SELECT source_object_key,settings_json FROM video_jobs WHERE id=?1 AND client_id=?2 LIMIT 1"
+    ).bind(jobId, client.id).first();
+    if (!row?.source_object_key || !env.MEDIA) return json({ error: "video_source_missing" }, 404);
+
+    const object = await env.MEDIA.get(String(row.source_object_key));
+    if (!object) return json({ error: "video_source_missing" }, 404);
+
+    const settings = parseJson(row.settings_json, {});
+    const headers = new Headers();
+    object.writeHttpMetadata(headers);
+    headers.set("cache-control", "private, no-store");
+    headers.set("content-disposition", 'attachment; filename="' + String(settings.filename || settings.displayName || "youtube-video.mp4").replace(/["\\\r\n]/g, "_").slice(0, 160) + '"');
+    if (object.httpEtag) headers.set("etag", object.httpEtag);
+    if (object.size) headers.set("content-length", String(object.size));
+    return new Response(object.body, { status: 200, headers });
+  }
+
   const videoProcessMatch = url.pathname.match(/^\/api\/portal\/videos\/([^/]+)\/process$/);
   if (videoProcessMatch && request.method === "POST") {
     const body = await request.json().catch(() => ({}));
