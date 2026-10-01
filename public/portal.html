@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#080d15"><title>NEXUS AI · Acompanhamento</title>
-  <link rel="stylesheet" href="/client-lite.css?v=5"><script src="/client-lite.js?v=5" defer></script>
+  <link rel="stylesheet" href="/client-lite.css?v=6"><script src="/client-lite.js?v=6" defer></script>
 </head>
 <body><main class="shell">
   <section id="login" class="login card" hidden>
@@ -25,6 +25,7 @@
       <button data-tab="overview" class="active" type="button">Visão geral</button>
       <button data-tab="posts" type="button">Postagens</button>
       <button data-tab="agents" type="button">Agentes</button>
+      <button data-tab="campaigns" type="button">Campanhas</button>
       <button data-tab="media" type="button">Mídias</button>
       <button data-tab="performance" type="button">Desempenho</button>
       <button data-tab="instagram" type="button">Instagram</button>
@@ -64,6 +65,30 @@
         <article class="card"><span>Correções solicitadas</span><strong id="agent-correction-count">—</strong></article>
       </div>
       <div id="agent-list" class="list" aria-live="polite"></div>
+    </section>
+    <section id="tab-campaigns" class="tab" hidden>
+      <div class="section-title"><div><p class="eyebrow">CAMPANHAS E ORIENTAÇÕES</p><h1>Campanhas</h1><p class="muted">Envie uma campanha de 7 dias ou uma orientação que será lida somente pelos agentes da sua conta.</p></div><button data-refresh="campaigns" type="button">Atualizar</button></div>
+      <div class="card">
+        <h2>Nova campanha de 7 dias</h2>
+        <form id="campaign-form">
+          <label>Nome da campanha<input name="title" required placeholder="Ex.: Semana do entretenimento"></label>
+          <label>Data inicial<input name="startDate" type="date"></label>
+          <label>Briefing<textarea name="brief" rows="5" required placeholder="Objetivo, oferta, CTA, público e direção visual."></textarea></label>
+          <label>Criativo de referência<input name="creative" type="file" accept="image/png,image/jpeg,image/webp"></label>
+          <button class="primary" type="submit">Enviar campanha</button>
+          <p id="campaign-message" class="muted" role="status"></p>
+        </form>
+      </div>
+      <div class="card">
+        <h2>Orientar meus agentes</h2>
+        <form id="directive-form">
+          <label>Orientação<textarea name="text" rows="4" required placeholder="Ex.: nesta semana priorize conteúdo para cliente final e evite revenda."></textarea></label>
+          <button class="primary" type="submit">Salvar orientação</button>
+          <p id="directive-message" class="muted" role="status"></p>
+        </form>
+      </div>
+      <div class="card"><h2>Campanhas ativas</h2><div id="campaign-list" class="list"></div></div>
+      <div class="card"><h2>Orientações ativas</h2><div id="directive-list" class="list"></div></div>
     </section>
     <section id="tab-media" class="tab" hidden>
       <div class="section-title"><div><p class="eyebrow">BIBLIOTECA DO CLIENTE</p><h1>Mídias e referências</h1><p class="muted">Envie imagens e vídeos próprios. Você pode guardar como material de publicação ou como referência do estilo visual que deseja.</p></div><button data-refresh="media" type="button">Atualizar</button></div>
