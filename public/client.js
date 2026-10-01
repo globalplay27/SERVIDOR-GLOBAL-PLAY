@@ -1551,6 +1551,7 @@ function openVideoLab(button){
   const year=String(button.dataset.importYear||"").trim();
   const profile=currentClient?.agentProfile||{};
   if($("#video-lab-source"))$("#video-lab-source").value=source;
+  if($("#video-lab-youtube-url"))$("#video-lab-youtube-url").value=source;
   if($("#video-lab-poster-url"))$("#video-lab-poster-url").value=poster;
   if($("#video-lab-overview-value"))$("#video-lab-overview-value").value=overview;
   if($("#video-lab-year-value"))$("#video-lab-year-value").value=year;
