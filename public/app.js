@@ -3,10 +3,19 @@ const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
 
 async function assumeClient(clientId) {
+  const clientTab = window.open("", "_blank");
+  if (!clientTab) {
+    alert("O navegador bloqueou a nova guia. Permita pop-ups para abrir o painel do cliente sem fechar o Master.");
+    return;
+  }
+  clientTab.opener = null;
+  clientTab.document.write("<title>Abrindo painel do cliente…</title><body style=\"font-family:system-ui;background:#071018;color:#fff;display:grid;place-items:center;min-height:100vh\">Abrindo painel do cliente…</body>");
+  clientTab.document.close();
   try {
     const result = await api("/api/clients/" + encodeURIComponent(clientId) + "/assume", { method: "POST" });
-    location.assign(result.entryPath);
+    clientTab.location.href = result.entryPath;
   } catch (error) {
+    clientTab.close();
     alert("Não foi possível abrir o painel do cliente: " + error.message);
   }
 }
