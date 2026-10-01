@@ -1599,48 +1599,238 @@ async function waitForVideoLabRender(jobId,status){
   }
   throw new Error("A renderização está demorando mais que o esperado. O trabalho continua no servidor.");
 }
+
+function pickLocalVideoMime(){
+  const candidates=[
+    'video/mp4;codecs="avc1.42E01E,mp4a.40.2"',
+    "video/mp4",
+    'video/webm;codecs="vp9,opus"',
+    'video/webm;codecs="vp8,opus"',
+    "video/webm"
+  ];
+  return candidates.find(type=>window.MediaRecorder?.isTypeSupported?.(type))||"";
+}
+function loadLocalVideoElement(file){
+  return new Promise((resolve,reject)=>{
+    const video=document.createElement("video");
+    video.preload="auto";
+    video.playsInline=true;
+    video.crossOrigin="anonymous";
+    video.src=URL.createObjectURL(file);
+    video.onloadedmetadata=()=>resolve(video);
+    video.onerror=()=>reject(new Error("Não foi possível abrir este vídeo no navegador."));
+  });
+}
+function loadLocalOverlayImage(src){
+  return new Promise(resolve=>{
+    if(!src){resolve(null);return;}
+    const img=new Image();
+    img.crossOrigin="anonymous";
+    img.onload=()=>resolve(img);
+    img.onerror=()=>resolve(null);
+    img.src=src;
+  });
+}
+function drawCover(ctx,source,x,y,w,h){
+  const sw=Number(source.videoWidth||source.naturalWidth||source.width||0);
+  const sh=Number(source.videoHeight||source.naturalHeight||source.height||0);
+  if(!sw||!sh)return;
+  const scale=Math.max(w/sw,h/sh);
+  const dw=sw*scale,dh=sh*scale;
+  ctx.drawImage(source,x+(w-dw)/2,y+(h-dh)/2,dw,dh);
+}
+function drawContain(ctx,source,x,y,w,h){
+  const sw=Number(source.naturalWidth||source.width||0);
+  const sh=Number(source.naturalHeight||source.height||0);
+  if(!sw||!sh)return;
+  const scale=Math.min(w/sw,h/sh);
+  const dw=sw*scale,dh=sh*scale;
+  ctx.drawImage(source,x+(w-dw)/2,y+(h-dh)/2,dw,dh);
+}
+function wrapCanvasText(ctx,text,maxWidth,maxLines=3){
+  const words=String(text||"").trim().split(/\s+/).filter(Boolean);
+  const lines=[];let line="";
+  for(const word of words){
+    const test=line?line+" "+word:word;
+    if(ctx.measureText(test).width<=maxWidth||!line){line=test;continue;}
+    lines.push(line);line=word;
+    if(lines.length>=maxLines)break;
+  }
+  if(lines.length<maxLines&&line)lines.push(line);
+  if(lines.length===maxLines&&words.length){
+    while(ctx.measureText(lines[maxLines-1]+"…").width>maxWidth&&lines[maxLines-1].length>2){
+      lines[maxLines-1]=lines[maxLines-1].slice(0,-1);
+    }
+    if(lines[maxLines-1]&&!lines[maxLines-1].endsWith("…"))lines[maxLines-1]+="…";
+  }
+  return lines;
+}
+async function renderVideoLabLocally(file,settings,status){
+  if(!window.MediaRecorder)throw new Error("Seu navegador não suporta a edição local necessária.");
+  const mimeType=pickLocalVideoMime();
+  if(!mimeType)throw new Error("Seu navegador não encontrou um formato compatível para gerar o vídeo.");
+
+  const video=await loadLocalVideoElement(file);
+  const objectUrl=video.src;
+  const duration=Math.max(1,Math.min(Number(video.duration||90),Number(settings.duration||90),90));
+  const canvas=document.createElement("canvas");
+  canvas.width=1080;canvas.height=1920;
+  const ctx=canvas.getContext("2d",{alpha:false});
+  if(!ctx){URL.revokeObjectURL(objectUrl);throw new Error("Não foi possível iniciar o editor local.");}
+
+  const profile=currentClient?.agentProfile||{};
+  const logoSrc=settings.logoEnabled?String(profile.logoUrl||""):"";
+  const logo=await loadLocalOverlayImage(logoSrc);
+  const canvasStream=canvas.captureStream(30);
+  const audioContext=new (window.AudioContext||window.webkitAudioContext)();
+  const audioSource=audioContext.createMediaElementSource(video);
+  const audioDest=audioContext.createMediaStreamDestination();
+  const silentGain=audioContext.createGain();
+  silentGain.gain.value=0;
+  audioSource.connect(audioDest);
+  audioSource.connect(silentGain);
+  silentGain.connect(audioContext.destination);
+  await audioContext.resume();
+
+  const tracks=[...canvasStream.getVideoTracks(),...audioDest.stream.getAudioTracks()];
+  const outStream=new MediaStream(tracks);
+  const chunks=[];
+  const recorder=new MediaRecorder(outStream,{mimeType,videoBitsPerSecond:6500000,audioBitsPerSecond:128000});
+  recorder.ondataavailable=e=>{if(e.data?.size)chunks.push(e.data);};
+  const stopped=new Promise((resolve,reject)=>{
+    recorder.onstop=resolve;
+    recorder.onerror=()=>reject(new Error("Falha durante a gravação local do vídeo."));
+  });
+
+  let raf=0,finished=false;
+  const cleanup=()=>{
+    if(raf)cancelAnimationFrame(raf);
+    try{video.pause();}catch{}
+    try{audioContext.close();}catch{}
+    canvasStream.getTracks().forEach(t=>t.stop());
+    audioDest.stream.getTracks().forEach(t=>t.stop());
+    URL.revokeObjectURL(objectUrl);
+  };
+
+  const draw=()=>{
+    if(finished)return;
+    const progress=Math.max(0,Math.min(1,(Number(video.currentTime||0))/duration));
+    ctx.fillStyle="#050807";ctx.fillRect(0,0,1080,1920);
+
+    ctx.save();
+    ctx.globalAlpha=.30;
+    drawCover(ctx,video,0,0,1080,1920);
+    ctx.restore();
+    ctx.fillStyle="rgba(5,8,10,.60)";ctx.fillRect(0,0,1080,1920);
+
+    const mainH=1020;
+    drawCover(ctx,video,0,0,1080,mainH);
+    const grad=ctx.createLinearGradient(0,820,0,1120);
+    grad.addColorStop(0,"rgba(5,8,10,0)");
+    grad.addColorStop(1,"rgba(5,8,10,1)");
+    ctx.fillStyle=grad;ctx.fillRect(0,800,1080,340);
+
+    if(logo){
+      ctx.save();
+      ctx.fillStyle="rgba(0,0,0,.42)";
+      ctx.beginPath();ctx.roundRect(54,54,210,210,28);ctx.fill();
+      drawContain(ctx,logo,74,74,170,170);
+      ctx.restore();
+    }
+
+    ctx.fillStyle="#65d9ff";
+    ctx.font="700 30px Arial, sans-serif";
+    ctx.fillText("NEXUS VIDEO",72,1120);
+
+    ctx.fillStyle="#ffffff";
+    ctx.font="700 58px Arial, sans-serif";
+    const titleLines=wrapCanvasText(ctx,settings.contentTitle||file.name,930,3);
+    titleLines.forEach((line,i)=>ctx.fillText(line,72,1200+i*68));
+
+    ctx.fillStyle="#c7d8e2";
+    ctx.font="400 31px Arial, sans-serif";
+    const meta=[settings.mediaType,settings.releaseYear].filter(Boolean).join("  •  ");
+    if(meta)ctx.fillText(meta,72,1428);
+
+    ctx.fillStyle="#d8e5eb";
+    ctx.font="400 30px Arial, sans-serif";
+    const bodyLines=wrapCanvasText(ctx,settings.overview||"Vídeo personalizado pelo NEXUS.",930,4);
+    bodyLines.forEach((line,i)=>ctx.fillText(line,72,1495+i*42));
+
+    const cta=[settings.endText,settings.endContact].filter(Boolean).join("  •  ");
+    if(cta){
+      ctx.fillStyle="rgba(13,35,48,.94)";
+      ctx.beginPath();ctx.roundRect(65,1735,950,112,24);ctx.fill();
+      ctx.fillStyle="#a5ebff";
+      ctx.font="700 31px Arial, sans-serif";
+      const ctaText=wrapCanvasText(ctx,cta,870,2);
+      ctaText.forEach((line,i)=>{
+        const tw=ctx.measureText(line).width;
+        ctx.fillText(line,(1080-tw)/2,1780+i*38);
+      });
+    }
+
+    if(status){
+      status.textContent="Gerando no seu computador… "+Math.round(progress*100)+"%";
+      status.className="save-status";
+    }
+
+    if(video.currentTime>=duration-.08||video.ended){
+      finished=true;
+      try{recorder.stop();}catch{}
+      return;
+    }
+    raf=requestAnimationFrame(draw);
+  };
+
+  try{
+    video.currentTime=0;
+    recorder.start(1000);
+    await video.play();
+    draw();
+    await stopped;
+    const blob=new Blob(chunks,{type:mimeType});
+    if(!blob.size)throw new Error("O vídeo gerado ficou vazio. Tente novamente.");
+    const extension=mimeType.startsWith("video/mp4")?"mp4":"webm";
+    return {blob,extension,mimeType};
+  }finally{
+    cleanup();
+  }
+}
 $("#video-lab-generate")?.addEventListener("click",async()=>{
   const status=$("#video-lab-status"),button=$("#video-lab-generate"),file=$("#video-lab-file")?.files?.[0];
-  const download=$("#video-lab-download-final");if(download)download.hidden=true;
+  const download=$("#video-lab-download-final");
+  if(download){download.hidden=true;download.removeAttribute("href");}
   if(!file){if(status){status.textContent="Escolha primeiro o vídeo que está no seu computador.";status.className="save-status error";}$("#video-lab-file")?.focus();return;}
   if(file.size>100*1024*1024){if(status){status.textContent="Este vídeo passa de 100 MB. Escolha um arquivo menor.";status.className="save-status error";}return;}
   const profile=currentClient?.agentProfile||{};
   const settings={
-    goal:"personalized",
     duration:90,
-    clips:1,
-    outputFormat:"reel",
-    editStyle:"cinematic-card-v1",
     contentTitle:$("#video-lab-title")?.textContent?.trim()||file.name,
-    posterUrl:$("#video-lab-poster-url")?.value||"",
     overview:$("#video-lab-overview-value")?.value||"",
     releaseYear:$("#video-lab-year-value")?.value||"",
     mediaType:$("#video-lab-type-value")?.value||"",
-    autoSubtitles:false,
-    folderId:"default",
     endText:$("#video-lab-text")?.value?.trim()||"",
     endContact:$("#video-lab-whatsapp")?.value?.trim()||"",
-    logoEnabled:Boolean($("#video-lab-use-logo")?.checked&&profile.logoObjectKey),
-    logoObjectKey:String(profile.logoObjectKey||"")
+    logoEnabled:Boolean($("#video-lab-use-logo")?.checked&&profile.logoUrl)
   };
   button.disabled=true;
   try{
-    if(status){status.textContent="Enviando vídeo do computador…";status.className="save-status";}
-    const completed=await uploadSingleVideo(file,0,1,settings,null);
-    const jobId=String(completed?.jobId||completed?.job?.id||"");
-    if(!jobId)throw new Error("O servidor recebeu o arquivo, mas não criou o trabalho de vídeo.");
-    if(status)status.textContent="Upload concluído. Iniciando renderização…";
-    const r=await portalFetch("/api/portal/videos/"+encodeURIComponent(jobId)+"/process",{
-      method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({
-        goal:"personalized",duration:90,clips:1,outputFormat:"reel",autoSubtitles:false,
-        editStyle:"cinematic-card-v1",endText:settings.endText,endContact:settings.endContact,
-        logoEnabled:settings.logoEnabled,logoObjectKey:settings.logoObjectKey
-      })
-    });
-    const d=await r.json().catch(()=>({}));
-    if(!r.ok)throw new Error(d.message||d.error||"Não foi possível iniciar a renderização.");
-    if(status)status.textContent="Renderizando o MP4 personalizado…";
-    await waitForVideoLabRender(jobId,status);
+    if(status){status.textContent="Preparando o editor local…";status.className="save-status";}
+    const rendered=await renderVideoLabLocally(file,settings,status);
+    const href=URL.createObjectURL(rendered.blob);
+    if(download){
+      if(download.dataset.objectUrl)URL.revokeObjectURL(download.dataset.objectUrl);
+      download.dataset.objectUrl=href;
+      download.href=href;
+      download.download="nexus-video."+rendered.extension;
+      download.textContent=rendered.extension==="mp4"?"Baixar MP4 pronto":"Baixar vídeo pronto";
+      download.hidden=false;
+    }
+    if(status){
+      status.textContent="Vídeo pronto. O processamento foi feito no seu computador, sem depender do GitHub.";
+      status.className="save-status ok";
+    }
   }catch(error){
     if(status){status.textContent=error.message||"Não foi possível gerar o vídeo.";status.className="save-status error";}
   }finally{button.disabled=false;}
