@@ -60,12 +60,20 @@ function requireAuth(request, env) {
   return authorized(request, env) ? null : json({ error: "unauthorized" }, 401);
 }
 
-async function asset(env, request, pathname) {
+async function asset(env, request, pathname, { noStore = false } = {}) {
   if (!env.ASSETS) return json({ error: "assets_binding_unavailable" }, 503);
   const target = new URL(request.url);
   target.pathname = pathname;
   target.search = "";
-  return env.ASSETS.fetch(new Request(target.toString(), request));
+  const response = await env.ASSETS.fetch(new Request(target.toString(), request));
+  if (!noStore) return response;
+  const headers = new Headers(response.headers);
+  headers.set("cache-control", "no-store, no-cache, must-revalidate, max-age=0");
+  headers.set("pragma", "no-cache");
+  headers.set("expires", "0");
+  headers.set("clear-site-data", "\"cache\"");
+  headers.set("x-nexus-portal-version", "90");
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
 async function brandingMedia(env, url) {
@@ -190,15 +198,8 @@ export default {
     }
 
 
-    if (url.pathname === "/login" && request.method === "GET") {
-      return asset(env, request, "/portal.html");
-    }
-
-    if ((url.pathname === "/portal" || url.pathname === "/portal/") && request.method === "GET") {
-      const target = new URL("/portal.html", request.url);
-      target.searchParams.set("auth", url.searchParams.get("auth") || "1");
-      target.searchParams.set("v", "89");
-      return redirect(target.pathname + target.search);
+    if ((url.pathname === "/login" || url.pathname === "/portal" || url.pathname === "/portal/" || url.pathname === "/portal.html") && request.method === "GET") {
+      return asset(env, request, "/portal.html", { noStore: true });
     }
 
     if (url.pathname === "/api/auth/login" && request.method === "POST") {
@@ -255,7 +256,7 @@ export default {
           token: session.token,
           expiresAt: session.expiresAt,
           cookieName: "nexus_session",
-          entryPath: "/portal.html?auth=1"
+          entryPath: "/portal?auth=1&v=90"
         }, 200, { "set-cookie": portalSessionCookie(session.token) });
       }
 
