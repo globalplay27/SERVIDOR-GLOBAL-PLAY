@@ -1,0 +1,155 @@
+name: NEXUS Video Template Render
+
+on:
+  repository_dispatch:
+    types: [video-template-render]
+
+concurrency:
+  group: nexus-video-render-${{ github.event.client_payload.job_id }}
+  cancel-in-progress: false
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      JOB_ID: ${{ github.event.client_payload.job_id }}
+      CLIENT_ID: ${{ github.event.client_payload.client_id }}
+      CALLBACK_TOKEN: ${{ github.event.client_payload.callback_token }}
+      TITLE: ${{ github.event.client_payload.title }}
+      OVERVIEW: ${{ github.event.client_payload.overview }}
+      RELEASE_YEAR: ${{ github.event.client_payload.year }}
+      MEDIA_TYPE: ${{ github.event.client_payload.media_type }}
+      POSTER_URL: ${{ github.event.client_payload.poster_url }}
+      LOGO_ENABLED: ${{ github.event.client_payload.logo_enabled }}
+      REQUESTED_DURATION: ${{ github.event.client_payload.duration }}
+      EDIT_STYLE: ${{ github.event.client_payload.edit_style }}
+      END_TEXT: ${{ github.event.client_payload.end_text }}
+      END_CONTACT: ${{ github.event.client_payload.end_contact }}
+      NEXUS_BASE_URL: https://servidor-nexus.diamantehinode2015.workers.dev
+    steps:
+      - name: Install FFmpeg
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
+
+      - name: Download source from R2 through NEXUS
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --retry 2 --retry-all-errors \
+            "$NEXUS_BASE_URL/api/internal/video-render/source" \
+            -H "x-nexus-job-id: $JOB_ID" \
+            -H "x-nexus-client-id: $CLIENT_ID" \
+            -H "x-nexus-callback-token: $CALLBACK_TOKEN" \
+            -o /tmp/source.mp4
+          test -s /tmp/source.mp4
+
+      - name: Prepare poster and typography
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$POSTER_URL" ]; then
+            curl -L --fail --max-time 20 "$POSTER_URL" -o /tmp/poster.jpg || rm -f /tmp/poster.jpg
+          fi
+          if [ "$LOGO_ENABLED" = "true" ]; then
+            curl --fail-with-body --retry 2 --retry-all-errors \
+              "$NEXUS_BASE_URL/api/internal/video-render/logo" \
+              -H "x-nexus-job-id: $JOB_ID" \
+              -H "x-nexus-client-id: $CLIENT_ID" \
+              -H "x-nexus-callback-token: $CALLBACK_TOKEN" \
+              -o /tmp/logo-input || rm -f /tmp/logo-input
+            if [ -s /tmp/logo-input ]; then
+              ffmpeg -y -i /tmp/logo-input -vf "scale=180:180:force_original_aspect_ratio=decrease,pad=180:180:(ow-iw)/2:(oh-ih)/2:color=black@0" /tmp/logo.png >/dev/null 2>&1 || rm -f /tmp/logo.png
+            fi
+          fi
+          python - <<'PY'
+          import os, textwrap
+          def clean(value):
+              return " ".join((value or "").replace("\n"," ").replace("\r"," ").split())
+          title=clean(os.getenv("TITLE","Conteúdo"))[:100]
+          overview=clean(os.getenv("OVERVIEW",""))[:600]
+          year=clean(os.getenv("RELEASE_YEAR",""))
+          media=clean(os.getenv("MEDIA_TYPE","")).upper()
+          end_text=clean(os.getenv("END_TEXT",""))
+          end_contact=clean(os.getenv("END_CONTACT",""))
+          with open("/tmp/title.txt","w",encoding="utf-8") as f:
+              f.write("\n".join(textwrap.wrap(title, 24)[:3]))
+          with open("/tmp/meta.txt","w",encoding="utf-8") as f:
+              bits=[b for b in [media,year] if b]
+              f.write("  •  ".join(bits) or "DESTAQUE")
+          with open("/tmp/overview.txt","w",encoding="utf-8") as f:
+              f.write("\n".join(textwrap.wrap(overview or "Confira este destaque selecionado para você.", 42)[:8]))
+          with open("/tmp/cta.txt","w",encoding="utf-8") as f:
+              f.write("  •  ".join([x for x in [end_text,end_contact] if x])[:160])
+          PY
+
+      - name: Render cinematic NEXUS template
+        id: render
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC_DUR="$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 /tmp/source.mp4 | head -n1)"
+          export SRC_DUR
+          RENDER_DUR="$(python - <<'PY'
+          import os
+          try: src=float(os.environ.get("SRC_DUR","30") or 30)
+          except: src=30
+          try: req=float(os.environ.get("REQUESTED_DURATION","30") or 30)
+          except: req=30
+          print(max(6,min(src,req,90)))
+          PY
+          )"
+          export RENDER_DUR
+          FONT="/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+          BOLD="/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+
+          if [ "$EDIT_STYLE" = "classic-cuts" ]; then
+            ffmpeg -y -i /tmp/source.mp4 -t "$RENDER_DUR" \
+              -vf "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1" \
+              -map 0:v:0 -map 0:a? -c:v libx264 -preset veryfast -crf 24 -c:a aac -b:a 128k -movflags +faststart /tmp/rendered-base.mp4
+          elif [ -s /tmp/poster.jpg ]; then
+            ffmpeg -y -i /tmp/source.mp4 -loop 1 -i /tmp/poster.jpg -t "$RENDER_DUR" \
+              -filter_complex "[0:v]scale=1080:930:force_original_aspect_ratio=increase,crop=1080:930,setsar=1[v];color=c=0x050807:s=1080x1920:d=$RENDER_DUR[bg];[bg][v]overlay=0:0[base];[base]drawbox=x=80:y=980:w=920:h=700:color=0x05080d@0.97:t=fill[p0];[p0]drawbox=x=80:y=980:w=920:h=700:color=0xb9c6d0:t=8[p1];[p1]drawbox=x=410:y=1002:w=260:h=16:color=0x303a43:t=fill[p2];[1:v]scale=300:420:force_original_aspect_ratio=decrease,pad=300:420:(ow-iw)/2:(oh-ih)/2:color=0x0b1117[poster];[p2][poster]overlay=120:1060[p];[p]drawtext=fontfile=$BOLD:textfile=/tmp/title.txt:x=460:y=1080:fontsize=46:line_spacing=9:fontcolor=white[tit];[tit]drawtext=fontfile=$BOLD:textfile=/tmp/meta.txt:x=460:y=1230:fontsize=26:fontcolor=0x65d9ff[meta];[meta]drawtext=fontfile=$FONT:textfile=/tmp/overview.txt:x=460:y=1290:fontsize=27:line_spacing=8:fontcolor=0xd8e5eb[desc];[desc]drawbox=x=405:y=1642:w=270:h=7:color=0x5d6973:t=fill[home];[home]drawbox=x=65:y=1735:w=950:h=110:color=0x0d2330@0.95:t=fill[cta];[cta]drawtext=fontfile=$BOLD:textfile=/tmp/cta.txt:x=(w-text_w)/2:y=1770:fontsize=31:fontcolor=0xa5ebff[outv]" \
+              -map "[outv]" -map 0:a? -c:v libx264 -preset veryfast -crf 24 -c:a aac -b:a 128k -pix_fmt yuv420p -movflags +faststart /tmp/rendered-base.mp4
+          else
+            ffmpeg -y -i /tmp/source.mp4 -t "$RENDER_DUR" \
+              -filter_complex "[0:v]scale=1080:930:force_original_aspect_ratio=increase,crop=1080:930,setsar=1[v];color=c=0x050807:s=1080x1920:d=$RENDER_DUR[bg];[bg][v]overlay=0:0[base];[base]drawbox=x=80:y=980:w=920:h=700:color=0x05080d@0.97:t=fill[p0];[p0]drawbox=x=80:y=980:w=920:h=700:color=0xb9c6d0:t=8[p1];[p1]drawbox=x=410:y=1002:w=260:h=16:color=0x303a43:t=fill[p2];[p2]drawtext=fontfile=$BOLD:textfile=/tmp/title.txt:x=145:y=1090:fontsize=52:line_spacing=10:fontcolor=white[tit];[tit]drawtext=fontfile=$BOLD:textfile=/tmp/meta.txt:x=145:y=1270:fontsize=28:fontcolor=0x65d9ff[meta];[meta]drawtext=fontfile=$FONT:textfile=/tmp/overview.txt:x=145:y=1340:fontsize=30:line_spacing=9:fontcolor=0xd8e5eb[desc];[desc]drawbox=x=405:y=1642:w=270:h=7:color=0x5d6973:t=fill[home];[home]drawbox=x=65:y=1735:w=950:h=110:color=0x0d2330@0.95:t=fill[cta];[cta]drawtext=fontfile=$BOLD:textfile=/tmp/cta.txt:x=(w-text_w)/2:y=1770:fontsize=31:fontcolor=0xa5ebff[outv]" \
+              -map "[outv]" -map 0:a? -c:v libx264 -preset veryfast -crf 24 -c:a aac -b:a 128k -pix_fmt yuv420p -movflags +faststart /tmp/rendered-base.mp4
+          fi
+          test -s /tmp/rendered-base.mp4
+          if [ -s /tmp/logo.png ]; then
+            ffmpeg -y -i /tmp/rendered-base.mp4 -i /tmp/logo.png \
+              -filter_complex "[0:v][1:v]overlay=W-w-38:38:format=auto[outv]" \
+              -map "[outv]" -map 0:a? -c:v libx264 -preset veryfast -crf 24 -c:a copy -movflags +faststart /tmp/rendered.mp4
+          else
+            mv /tmp/rendered-base.mp4 /tmp/rendered.mp4
+          fi
+          test -s /tmp/rendered.mp4
+
+      - name: Upload rendered video to NEXUS
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --retry 2 --retry-all-errors \
+            -X PUT "$NEXUS_BASE_URL/api/internal/video-render/upload" \
+            -H "x-nexus-job-id: $JOB_ID" \
+            -H "x-nexus-client-id: $CLIENT_ID" \
+            -H "x-nexus-callback-token: $CALLBACK_TOKEN" \
+            -H "content-type: video/mp4" \
+            --data-binary "@/tmp/rendered.mp4"
+
+      - name: Report render failure
+        if: failure()
+        continue-on-error: true
+        shell: bash
+        run: |
+          curl --silent --show-error \
+            -X POST "$NEXUS_BASE_URL/api/internal/video-render/fail" \
+            -H "x-nexus-job-id: $JOB_ID" \
+            -H "x-nexus-client-id: $CLIENT_ID" \
+            -H "x-nexus-callback-token: $CALLBACK_TOKEN" \
+            -H "content-type: application/json" \
+            --data '{"error":"github_template_render_failed"}'
