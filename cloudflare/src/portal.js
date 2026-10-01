@@ -16,7 +16,7 @@ import { AGENT_CORE_MODULES, normalizeAgentCoreConfig, agentCoreState, agentExec
 import { leadsForClient, leadHunterSummary } from "./leads.js";
 import { leadHunterView, saveLeadHunterConfig, runLeadHunter, discardLead } from "./lead-hunter.js";
 import { createVideoFolder, renameVideoFolder, deleteVideoFolder, patchVideoJob, deleteVideoJob, setClipApproval, adjustClip, selectClip, scheduleClip, bulkScheduleClips } from "./video-library.js";
-import { createR2VideoUpload, uploadR2VideoPart, completeR2VideoUpload, abortR2VideoUpload, importR2VideoFromUrl, createR2PublicTrailerImportJob } from "./r2-video-upload.js";
+import { createR2VideoUpload, uploadR2VideoPart, completeR2VideoUpload, abortR2VideoUpload, importR2VideoFromUrl, createR2PublicTrailerImportJob, processR2PublicTrailerImportJob } from "./r2-video-upload.js";
 import { decidePost, requestPostRevision, saveOwnPostContent, publishPostNow } from "./posts.js";
 
 function json(data, status = 200, headers = {}) {
@@ -467,13 +467,9 @@ export async function handlePortalApi(request, env, url, ctx = null) {
         : await importR2VideoFromUrl(env, client.id, body);
 
       if (isTrailerImport) {
-        await dispatchGitHubVideoIngest(
-          env,
-          client.id,
-          imported.jobId,
-          String(body.url || body.trailerUrl || ""),
-          String(body.contentTitle || "trailer")
-        );
+        const task = processR2PublicTrailerImportJob(env, client.id, imported.jobId);
+        if (ctx?.waitUntil) ctx.waitUntil(task);
+        else await task;
       }
 
       const jobs = await listVideos(env, client.id);
@@ -504,7 +500,7 @@ export async function handlePortalApi(request, env, url, ctx = null) {
     cacheUrl.searchParams.set("client", String(client.id));
     cacheUrl.searchParams.set("type", type);
     cacheUrl.searchParams.set("q", query.toLowerCase());
-    cacheUrl.searchParams.set("official", "ptbr-v4");
+    cacheUrl.searchParams.set("official", "ptbr-v5");
     const cacheKey = new Request(cacheUrl.toString(), { method: "GET" });
 
     try {
