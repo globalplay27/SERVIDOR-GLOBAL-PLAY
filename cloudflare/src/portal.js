@@ -600,6 +600,7 @@ export async function handlePortalApi(request, env, url, ctx) {
     try {
       const directive = await addDirective(env, client.id, {
         ...body,
+        author: "CLIENT",
         appliesTo: Array.isArray(body.appliesTo) && body.appliesTo.length ? body.appliesTo : ["all"]
       });
       return json({ ok: true, directive }, 201);
