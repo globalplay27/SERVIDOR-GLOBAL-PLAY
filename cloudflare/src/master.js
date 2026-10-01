@@ -18,6 +18,7 @@ import { agentCoreDashboard, agentCoreClientView, saveAgentCoreConfig, queueManu
 import { masterLeadSummary } from "./leads.js";
 import { instagramCredentialStatus } from "./instagram-credentials.js";
 import { addDirective, createCampaign, masterWorkspace, updateCampaign } from "./master-workspace.js";
+import { handleMasterOpenAI } from "./master-openai.js";
 
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
@@ -478,6 +479,9 @@ export async function handleMaster(request, env, url) {
 
   if (!protectedApi) return null;
   if (!await requireMaster(request, env)) return json({ error: "unauthorized" }, 401);
+
+  const openaiResponse = await handleMasterOpenAI(request, env, url);
+  if (openaiResponse) return openaiResponse;
 
   if (url.pathname === "/api/master/workspace" && request.method === "GET") {
     const clientId=String(url.searchParams.get("clientId")||"").trim();
