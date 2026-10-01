@@ -40,6 +40,16 @@ function showDashboard(data) {
   $("#dashboard").hidden = false;
   $("#client-label").textContent = data.name || "Cliente";
   $("#client-name").textContent = data.name || "Seu painel";
+  $("#header-client-name").textContent = data.name || "NEXUS AI";
+  const logoKey = String(data.branding?.logoKey || "");
+  const logo = $("#client-logo");
+  if (logoKey) {
+    logo.src = "/media/" + logoKey;
+    logo.hidden = false;
+  } else {
+    logo.hidden = true;
+    logo.removeAttribute("src");
+  }
   $("#next-post").textContent = "Automática pelo NEXUS";
 }
 
@@ -548,6 +558,78 @@ async function uploadMedia(event) {
   }
 }
 
+async function processLogo(file) {
+  if (!$("#logo-remove-bg").checked) return file;
+  const bitmap = await createImageBitmap(file);
+  const canvas = document.createElement("canvas");
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(bitmap, 0, 0);
+  bitmap.close?.();
+  const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const d = img.data;
+  const corners = [
+    0,
+    (canvas.width - 1) * 4,
+    ((canvas.height - 1) * canvas.width) * 4,
+    ((canvas.height * canvas.width) - 1) * 4
+  ];
+  const bg = [0,1,2].map(k => corners.reduce((sum,p) => sum + d[p+k], 0) / corners.length);
+  for (let p = 0; p < d.length; p += 4) {
+    const dist = Math.hypot(d[p]-bg[0], d[p+1]-bg[1], d[p+2]-bg[2]);
+    if (dist < 42) d[p+3] = 0;
+    else if (dist < 78) d[p+3] = Math.round(255 * (dist - 42) / 36);
+  }
+  ctx.putImageData(img, 0, 0);
+  const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
+  if (!blob) throw new Error("Não foi possível processar a logo.");
+  return new File([blob], "logo.png", { type: "image/png" });
+}
+
+async function previewLogo() {
+  const file = $("#logo-file")?.files?.[0];
+  if (!file) return;
+  try {
+    const processed = await processLogo(file);
+    const preview = $("#logo-preview");
+    if (preview.dataset.url) URL.revokeObjectURL(preview.dataset.url);
+    const url = URL.createObjectURL(processed);
+    preview.dataset.url = url;
+    preview.src = url;
+    $("#logo-preview-wrap").hidden = false;
+    $("#logo-message").textContent = "";
+  } catch (error) {
+    $("#logo-message").textContent = error.message;
+  }
+}
+
+async function submitLogo(event) {
+  event.preventDefault();
+  const file = $("#logo-file")?.files?.[0];
+  const button = event.currentTarget.querySelector('button[type="submit"]');
+  const message = $("#logo-message");
+  if (!file) { message.textContent = "Selecione uma logo."; return; }
+  button.disabled = true;
+  message.textContent = $("#logo-remove-bg").checked ? "Removendo fundo e salvando..." : "Salvando logo...";
+  try {
+    const processed = await processLogo(file);
+    const body = new FormData();
+    body.append("logo", processed, processed.name || "logo.png");
+    const data = await api("/api/portal/branding/logo", { method: "POST", body });
+    message.textContent = data.message || "Logo atualizada.";
+    const logo = $("#client-logo");
+    logo.src = data.logoUrl + "?v=" + Date.now();
+    logo.hidden = false;
+    const fresh = await api("/api/portal/session");
+    showDashboard(fresh);
+  } catch (error) {
+    message.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
 async function loadPerformance() {
   try {
     const data = await api("/api/portal/agent-core");
@@ -746,6 +828,9 @@ document.querySelectorAll("[data-refresh]").forEach(button => button.addEventLis
   return loadPerformance();
 }));
 $("#refresh").addEventListener("click", () => refresh().catch(error => notice(error.message)));
+$("#logo-form")?.addEventListener("submit", submitLogo);
+$("#logo-file")?.addEventListener("change", previewLogo);
+$("#logo-remove-bg")?.addEventListener("change", previewLogo);
 $("#campaign-form")?.addEventListener("submit", submitCampaign);
 $("#directive-form")?.addEventListener("submit", submitDirective);
 $("#logout").addEventListener("click", async () => {
