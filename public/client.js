@@ -1563,7 +1563,7 @@ function openVideoLab(button){
   if($("#video-lab-brand-name"))$("#video-lab-brand-name").textContent=profile.brandName||currentClient?.name||"Sua marca";
   if($("#video-lab-whatsapp"))$("#video-lab-whatsapp").value=profile.whatsapp||"";
   if($("#video-lab-whatsapp-preview"))$("#video-lab-whatsapp-preview").textContent=profile.whatsapp||"WhatsApp";
-  const download=$("#video-lab-download-original");if(download)download.href=source||"#";
+  
   lab.hidden=false;
   lab.scrollIntoView({behavior:"smooth",block:"start"});
 }
