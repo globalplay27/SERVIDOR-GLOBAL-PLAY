@@ -75,7 +75,7 @@ function masterClientView(client) {
     adaptiveTiming: true,
     leads: config.leads && typeof config.leads === "object" ? config.leads : { total:0, hot:0, warm:0, cold:0 },
     usage: { openaiPercent: Number(config.usage?.openaiPercent || 0) },
-    openaiDailyTokenLimit: Number(config.openaiDailyTokenLimit || env?.NEXUS_OPENAI_DAILY_TOKEN_LIMIT || 30000),
+    openaiDailyTokenLimit: Number(config.openaiDailyTokenLimit || 30000),
     aiMode: client.id === "ragnar-one" ? "own-key" : "shared",
     aiMonthlyImageLimit: Number(config.aiMonthlyImageLimit || 0),
     aiImagesUsed: Number(config.aiImagesUsed || 0),
