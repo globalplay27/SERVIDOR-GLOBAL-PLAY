@@ -395,19 +395,38 @@ export async function searchTrailers(env, clientId, query, type = "movie") {
     const parsed = safeJsonObjectFromText(text);
     if (!parsed || !Array.isArray(parsed.results)) throw new Error("trailer_response_invalid");
     if (parsed) {
-      const results = (Array.isArray(parsed?.results) ? parsed.results : [])
+      let results = (Array.isArray(parsed?.results) ? parsed.results : [])
         .slice(0, 4)
         .map(item => normalizeResult(item, kind, q))
-        .map(item => {
-          const channel = String(item.trailerName || "").toLowerCase();
-          const title = String(item.title || "").toLowerCase();
-          const overview = String(item.overview || "").toLowerCase();
-          const looksPtBr = /dublad|portugu[eê]s|pt[- ]?br|brasil/.test([channel,title,overview,String(item.trailerName||"")].join(" "));
-          return (item.official === true && looksPtBr)
-            ? item
-            : { ...item, trailerUrl: "", trailerName: "", official: false, downloadable: false, downloadUrl: "" };
-        })
         .filter(item => item.title && item.type === (kind === "tv" ? "series" : "movie"));
+
+      // Não inutilize o laboratório só porque o trailer oficial dublado não foi encontrado.
+      // Preserve qualquer URL válida retornada pela busca e tente completar lacunas com uma busca direta no YouTube.
+      const needsTrailer = results.some(item => !item.trailerUrl);
+      if (needsTrailer) {
+        try {
+          const yt = await youtubeHtmlSearch((kind === "tv" ? q + " série trailer" : q + " filme trailer"), kind);
+          const candidates = Array.isArray(yt?.results) ? yt.results : [];
+          results = results.map(item => {
+            if (item.trailerUrl) return item;
+            const titleKey = String(item.title || "").toLowerCase();
+            const match = candidates.find(candidate => {
+              const candidateTitle = String(candidate.title || "").toLowerCase();
+              return candidateTitle.includes(titleKey) || titleKey.includes(candidateTitle.split(" trailer")[0]);
+            }) || candidates[0];
+            return match
+              ? {
+                  ...item,
+                  trailerUrl: match.trailerUrl || "",
+                  trailerName: match.trailerName || "",
+                  posterUrl: item.posterUrl || match.posterUrl || "",
+                  posterFallbackUrl: item.posterFallbackUrl || match.posterFallbackUrl || "",
+                  official: item.official === true
+                }
+              : item;
+          });
+        } catch {}
+      }
 
       return { configured: true, source: "catalog-web-search", results };
     }
