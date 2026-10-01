@@ -279,6 +279,19 @@ function renderMasterLeads(){
     filter.innerHTML='<option value="">Todos</option>'+state.clients.map(client=>`<option value="${escapeHtml(client.id)}">${escapeHtml(client.name)} · ${escapeHtml(client.instagram||"sem Instagram")}</option>`).join("");
     filter.value=state.clients.some(c=>c.id===previous)?previous:"";state.leadClientFilter=filter.value;
   }
+  const diagnostics=$("#odin-diagnostics");
+  if(diagnostics){
+    const rows=Array.isArray(data.byClient)?data.byClient:[];
+    diagnostics.innerHTML=rows.map(item=>{
+      const errors=Array.isArray(item.lastErrors)?item.lastErrors:[];
+      const status=item.lastRunStatus||"never";
+      const statusLabel=status==="success"?"OK":status==="warning"?"ATENÇÃO":status==="never"?"SEM EXECUÇÃO":String(status).toUpperCase();
+      const detail=errors.length
+        ? escapeHtml(errors[0])
+        : "Analisados: "+Number(item.lastAnalyzed||0)+" · novos: "+Number(item.lastNew||0)+" · atualizados: "+Number(item.lastUpdated||0);
+      return '<div class="card"><strong>'+escapeHtml(item.clientName||item.clientId)+'</strong><small>'+statusLabel+' · última coleta: '+leadDate(item.lastRunAt)+'</small><p class="muted">'+detail+'</p></div>';
+    }).join("") || '<div class="card muted">O Odin ainda não possui execução registrada.</div>';
+  }
   const body=$("#master-leads-body");if(!body)return;
   let leads=Array.isArray(data.leads)?data.leads:[];
   if(state.leadClientFilter)leads=leads.filter(lead=>lead.clientId===state.leadClientFilter);
