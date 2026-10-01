@@ -28,7 +28,8 @@ export async function addDirective(env,clientId,body={}){
   if(!text)throw new Error("directive_text_required");
   const appliesTo=Array.isArray(body.appliesTo)?body.appliesTo.map(x=>String(x).toLowerCase()).filter(Boolean).slice(0,13):["all"];
   const now=new Date().toISOString();
-  const item={id:crypto.randomUUID(),text,appliesTo:appliesTo.length?appliesTo:["all"],createdAt:now,effectiveAt:now,status:"active",author:"MASTER"};
+  const author=String(body.author||"MASTER").trim().toUpperCase()==="CLIENT"?"CLIENT":"MASTER";
+  const item={id:crypto.randomUUID(),text,appliesTo:appliesTo.length?appliesTo:["all"],createdAt:now,effectiveAt:now,status:"active",author};
   const rows=await listDirectives(env,clientId);
   rows.unshift(item);
   await writeJson(env,directivesKey(clientId),rows.slice(0,80));
