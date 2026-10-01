@@ -47,7 +47,15 @@ function render() {
 
   const managedUsageClients = clients.filter(client => client.id !== "ragnar-one");
   $("#usage-list").innerHTML = managedUsageClients.length ? managedUsageClients.map(client => {
-    return `<div class="usage-row"><div><span>${escapeHtml(client.name)}</span><strong>Geração paga de imagens desativada</strong></div><div class="bar"><i style="width:0%"></i></div></div>`;
+    const limit = Math.max(1000, Number(client.openaiDailyTokenLimit || 30000));
+    return `<div class="usage-row" data-openai-limit-client="${escapeHtml(client.id)}">
+      <div><span>${escapeHtml(client.name)}</span><strong>Limite diário de OpenAI</strong><small>Chave central NEXUS · consumo isolado por cliente</small></div>
+      <div class="client-action-stack">
+        <input data-openai-limit type="number" min="1000" max="10000000" step="1000" value="${limit}" aria-label="Limite diário de tokens">
+        <button type="button" class="small-primary" data-save-openai-limit>Salvar limite</button>
+        <small data-openai-limit-message></small>
+      </div>
+    </div>`;
   }).join("") : `<p class="muted">Novos clientes aparecerão aqui. Ragnar continua isolado na própria conta.</p>`;
 
   $("#clients-table").innerHTML = clients.map(client => {
@@ -760,6 +768,34 @@ document.addEventListener("click", async event => {
       await loadWorkspace();
     }catch(error){alert("Não foi possível alterar a campanha.");}
     finally{campaignLifecycleButton.disabled=false;}
+    return;
+  }
+  const openaiLimitButton=event.target.closest("[data-save-openai-limit]");
+  if(openaiLimitButton){
+    const row=openaiLimitButton.closest("[data-openai-limit-client]");
+    const clientId=row?.dataset.openaiLimitClient||"";
+    const input=row?.querySelector("[data-openai-limit]");
+    const message=row?.querySelector("[data-openai-limit-message]");
+    const limit=Math.floor(Number(input?.value||0));
+    if(!Number.isFinite(limit)||limit<1000||limit>10000000){
+      if(message)message.textContent="Use um valor entre 1.000 e 10.000.000.";
+      return;
+    }
+    openaiLimitButton.disabled=true;
+    if(message)message.textContent="Salvando…";
+    try{
+      await api("/api/clients/"+encodeURIComponent(clientId),{
+        method:"PATCH",
+        body:JSON.stringify({openaiDailyTokenLimit:limit})
+      });
+      state.clients=await api("/api/clients");
+      render();
+      const updated=$("#usage-list")?.querySelector('[data-openai-limit-client="'+CSS.escape(clientId)+'"] [data-openai-limit-message]');
+      if(updated)updated.textContent="Limite salvo.";
+    }catch(error){
+      if(message)message.textContent="Não foi possível salvar.";
+      openaiLimitButton.disabled=false;
+    }
     return;
   }
   const runAgentButton=event.target.closest("[data-run-agent]");
