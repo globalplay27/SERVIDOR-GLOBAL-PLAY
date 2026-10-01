@@ -1549,6 +1549,10 @@ function openVideoLab(button){
   const year=String(button.dataset.importYear||"").trim();
   const profile=currentClient?.agentProfile||{};
   if($("#video-lab-source"))$("#video-lab-source").value=source;
+  if($("#video-lab-poster-url"))$("#video-lab-poster-url").value=poster;
+  if($("#video-lab-overview-value"))$("#video-lab-overview-value").value=overview;
+  if($("#video-lab-year-value"))$("#video-lab-year-value").value=year;
+  if($("#video-lab-type-value"))$("#video-lab-type-value").value=String(button.dataset.importType||"");
   if($("#video-lab-title"))$("#video-lab-title").textContent=title||"Título";
   if($("#video-lab-year"))$("#video-lab-year").textContent=year||"—";
   if($("#video-lab-synopsis"))$("#video-lab-synopsis").textContent=overview||"Sinopse não disponível.";
@@ -1574,9 +1578,70 @@ $("#video-lab-text")?.addEventListener("input",syncVideoLabPreview);
 $("#video-lab-whatsapp")?.addEventListener("input",syncVideoLabPreview);
 $("#video-lab-use-logo")?.addEventListener("change",syncVideoLabPreview);
 $("#video-lab-close")?.addEventListener("click",()=>{const lab=$("#video-lab");if(lab)lab.hidden=true;});
-$("#video-lab-generate")?.addEventListener("click",()=>{
-  const status=$("#video-lab-status");
-  if(status){status.textContent="Laboratório configurado. A renderização final ainda precisa ser ligada ao processador de vídeo do servidor.";status.className="save-status";}
+async function waitForVideoLabRender(jobId,status){
+  for(let attempt=0;attempt<90;attempt++){
+    await new Promise(resolve=>setTimeout(resolve,4000));
+    const r=await portalFetch("/api/portal/videos",{cache:"no-store"});
+    const d=await r.json().catch(()=>({}));
+    const job=(d.jobs||[]).find(item=>item.id===jobId);
+    if(!job)continue;
+    if(status)status.textContent=job.message||("Processando vídeo… "+Math.max(0,Number(job.progress||0))+"%");
+    if(job.status==="failed")throw new Error(job.error||"A renderização falhou.");
+    const clip=(job.clips||[]).find(item=>item.status==="ready"&&item.previewUrl);
+    if(job.status==="ready"&&clip){
+      const download=$("#video-lab-download-final");
+      if(download){download.href=clip.previewUrl;download.hidden=false;}
+      if(status){status.textContent="Vídeo pronto. Clique em Baixar MP4 pronto.";status.className="save-status ok";}
+      return clip;
+    }
+  }
+  throw new Error("A renderização está demorando mais que o esperado. O trabalho continua no servidor.");
+}
+$("#video-lab-generate")?.addEventListener("click",async()=>{
+  const status=$("#video-lab-status"),button=$("#video-lab-generate"),file=$("#video-lab-file")?.files?.[0];
+  const download=$("#video-lab-download-final");if(download)download.hidden=true;
+  if(!file){if(status){status.textContent="Escolha primeiro o vídeo que está no seu computador.";status.className="save-status error";}$("#video-lab-file")?.focus();return;}
+  if(file.size>100*1024*1024){if(status){status.textContent="Este vídeo passa de 100 MB. Escolha um arquivo menor.";status.className="save-status error";}return;}
+  const profile=currentClient?.agentProfile||{};
+  const settings={
+    goal:"personalized",
+    duration:90,
+    clips:1,
+    outputFormat:"reel",
+    editStyle:"cinematic-card-v1",
+    contentTitle:$("#video-lab-title")?.textContent?.trim()||file.name,
+    posterUrl:$("#video-lab-poster-url")?.value||"",
+    overview:$("#video-lab-overview-value")?.value||"",
+    releaseYear:$("#video-lab-year-value")?.value||"",
+    mediaType:$("#video-lab-type-value")?.value||"",
+    autoSubtitles:false,
+    folderId:"default",
+    endText:$("#video-lab-text")?.value?.trim()||"",
+    endContact:$("#video-lab-whatsapp")?.value?.trim()||"",
+    logoEnabled:Boolean($("#video-lab-use-logo")?.checked&&profile.logoObjectKey),
+    logoObjectKey:String(profile.logoObjectKey||"")
+  };
+  button.disabled=true;
+  try{
+    if(status){status.textContent="Enviando vídeo do computador…";status.className="save-status";}
+    const completed=await uploadSingleVideo(file,0,1,settings,null);
+    const jobId=String(completed?.jobId||completed?.job?.id||"");
+    if(!jobId)throw new Error("O servidor recebeu o arquivo, mas não criou o trabalho de vídeo.");
+    if(status)status.textContent="Upload concluído. Iniciando renderização…";
+    const r=await portalFetch("/api/portal/videos/"+encodeURIComponent(jobId)+"/process",{
+      method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({
+        goal:"personalized",duration:90,clips:1,outputFormat:"reel",autoSubtitles:false,
+        editStyle:"cinematic-card-v1",endText:settings.endText,endContact:settings.endContact,
+        logoEnabled:settings.logoEnabled
+      })
+    });
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(d.message||d.error||"Não foi possível iniciar a renderização.");
+    if(status)status.textContent="Renderizando o MP4 personalizado…";
+    await waitForVideoLabRender(jobId,status);
+  }catch(error){
+    if(status){status.textContent=error.message||"Não foi possível gerar o vídeo.";status.className="save-status error";}
+  }finally{button.disabled=false;}
 });
 
 const videoFileInput=$("#video-file");
