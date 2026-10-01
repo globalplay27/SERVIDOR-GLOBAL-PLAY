@@ -585,7 +585,16 @@ export async function processR2PublicTrailerImportJob(env, clientId, jobId) {
 }
 
 export async function processQueuedVideoImports(env, limit = 1) {
-  return dispatchPendingGitHubVideoImports(env, limit);
+  const rows = await env.DB.prepare(
+    "SELECT id,client_id FROM video_jobs WHERE status='importing' ORDER BY updated_at ASC LIMIT ?1"
+  ).bind(Math.max(1, Math.min(5, Number(limit || 1)))).all();
+
+  let processed = 0;
+  for (const row of rows?.results || []) {
+    await processR2PublicTrailerImportJob(env, row.client_id, row.id).catch(() => {});
+    processed += 1;
+  }
+  return { processed };
 }
 
 export async function importR2PublicTrailer(env, clientId, input = {}) {
