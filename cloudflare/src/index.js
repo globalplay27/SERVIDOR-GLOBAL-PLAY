@@ -190,7 +190,7 @@ export default {
     }
 
 
-    if (url.pathname === "/login" && request.method === "GET") {
+    if ((url.pathname === "/login" || url.pathname === "/portal" || url.pathname === "/portal/") && request.method === "GET") {
       return asset(env, request, "/portal.html");
     }
 
