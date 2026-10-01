@@ -612,6 +612,12 @@ export async function handleMaster(request, env, url) {
     if (!existing) return json({ error: "not_found" }, 404);
     const body = await request.json().catch(() => ({}));
     const currentConfig = existing.config && typeof existing.config === "object" ? existing.config : {};
+    if (Object.prototype.hasOwnProperty.call(body, "openaiDailyTokenLimit")) {
+      const limit = Number(body.openaiDailyTokenLimit);
+      if (!Number.isInteger(limit) || limit < 1000 || limit > 10000000) {
+        return json({ error: "invalid_openai_daily_token_limit" }, 400);
+      }
+    }
     const nextConfig = { ...currentConfig };
     const configKeys = [
       "theme","primaryColor","secondaryColor","odin","postTimes","leads","usage",
