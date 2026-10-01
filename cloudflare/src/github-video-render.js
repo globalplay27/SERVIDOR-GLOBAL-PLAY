@@ -24,7 +24,7 @@ function clipKeyPrefix(clientId) {
 }
 
 export async function startGitHubVideoRender(env, clientId, jobId, patch = {}) {
-  const ghToken = String(env.GITHUB_ACTIONS_TOKEN || "").trim();
+  const ghToken = String(env.GITHUB_ACTIONS_TOKEN || env.GITHUB_TOKEN || "").trim();
   if (!ghToken) throw new Error("github_actions_token_missing");
 
   const row = await loadJob(env, jobId, clientId);
@@ -102,6 +102,7 @@ export async function startGitHubVideoRender(env, clientId, jobId, patch = {}) {
 
   if (response.status !== 204) {
     const detail = (await response.text().catch(() => "")).slice(0, 250);
+    console.error("video_render_dispatch_failed", { status: response.status, detail, repo, jobId: String(jobId), clientId: String(clientId) });
     settings.githubRenderState = "failed";
     await env.DB.prepare(
       "UPDATE video_jobs SET status='failed',settings_json=?3,result_json=?4,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2"
