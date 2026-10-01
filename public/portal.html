@@ -10,7 +10,7 @@
   <title>NEXUS AI · Portal do Cliente</title>
   <link rel="icon" href="/assets/nexus-ai-mark.svg" type="image/svg+xml">
   <link rel="manifest" href="/manifest.webmanifest?v=1">
-  <link rel="stylesheet" href="/client.css?v=78">
+  <link rel="stylesheet" href="/client.css?v=79">
 </head>
 <body>
   <div id="nexus-boot" class="nexus-boot" hidden>
@@ -386,24 +386,29 @@
                   <div class="video-lab-backdrop"><img id="video-lab-backdrop" alt=""></div>
                   <div class="video-lab-brand"><img id="video-lab-logo" alt="" hidden><strong id="video-lab-brand-name">Sua marca</strong></div>
                   <div id="video-lab-text-preview" class="video-lab-text">Indicação de filme ou série</div>
-                  <div class="video-lab-person" aria-hidden="true"><span class="person-head"></span><span class="person-body"></span><span class="person-arm"></span><span class="person-hand"></span></div>
                   <div class="video-lab-phone">
                     <span class="phone-speaker"></span>
                     <img id="video-lab-poster" alt="">
                     <div class="phone-content"><strong id="video-lab-title">Título</strong><small id="video-lab-year">—</small><p id="video-lab-synopsis">A sinopse aparecerá dentro do smartphone.</p></div>
                   </div>
-                  <div class="video-lab-whatsapp"><span class="whatsapp-mark" aria-hidden="true">☎</span><strong id="video-lab-whatsapp-preview">WhatsApp</strong></div>
+                  <div class="video-lab-whatsapp"><span class="whatsapp-mark" aria-hidden="true"><svg viewBox="0 0 32 32" width="20" height="20" focusable="false"><path fill="currentColor" d="M16.04 3C9.4 3 4 8.3 4 14.84c0 2.32.69 4.58 1.98 6.5L4 29l7.9-2.05a12.2 12.2 0 0 0 4.14.72C22.68 27.67 28 22.37 28 15.82 28 9.28 22.68 3 16.04 3Zm0 22.66c-1.28 0-2.54-.24-3.72-.7l-.27-.1-4.68 1.21 1.25-4.48-.18-.29a9.8 9.8 0 0 1-1.52-5.23c0-5.43 4.08-10.06 9.12-10.06 5.03 0 9.04 4.63 9.04 10.06 0 5.42-4 9.59-9.04 9.59Zm5.22-7.21c-.28-.14-1.68-.82-1.94-.91-.26-.1-.45-.14-.64.14-.19.28-.74.91-.91 1.1-.17.18-.34.2-.62.07-.29-.14-1.2-.44-2.29-1.4-.85-.74-1.42-1.66-1.59-1.94-.16-.28-.02-.43.13-.57.13-.13.28-.34.43-.51.14-.16.19-.28.28-.47.1-.18.05-.35-.02-.49-.07-.14-.64-1.52-.88-2.08-.23-.55-.47-.48-.64-.49h-.55c-.19 0-.5.07-.76.35-.26.28-1 1-1 2.43 0 1.43 1.04 2.82 1.19 3.01.14.19 2.05 3.08 4.96 4.32.69.3 1.23.48 1.65.61.7.22 1.33.19 1.83.12.56-.08 1.68-.68 1.92-1.34.24-.66.24-1.22.17-1.34-.07-.12-.26-.19-.55-.33Z"/></svg></span><strong id="video-lab-whatsapp-preview">WhatsApp</strong></div>
                 </div>
               </div>
               <form id="video-lab-form" class="video-lab-form">
                 <input id="video-lab-source" type="hidden">
+                <input id="video-lab-poster-url" type="hidden">
+                <input id="video-lab-overview-value" type="hidden">
+                <input id="video-lab-year-value" type="hidden">
+                <input id="video-lab-type-value" type="hidden">
+                <label><span>Vídeo do computador</span><input id="video-lab-file" type="file" accept="video/mp4,video/quicktime,video/webm,video/x-matroska,.mp4,.mov,.webm,.mkv"><small>Baixe o vídeo no PC e envie aqui. MP4, MOV, WEBM ou MKV, até 100 MB.</small></label>
                 <label><span>Texto do vídeo</span><input id="video-lab-text" maxlength="90" value="Indicação de filme ou série"></label>
                 <label><span>WhatsApp</span><input id="video-lab-whatsapp" maxlength="24" inputmode="tel" placeholder="(21) 99999-9999"></label>
                 <label class="video-lab-toggle"><input id="video-lab-use-logo" type="checkbox" checked><span>Usar a logo cadastrada no perfil</span></label>
                 <p class="muted">O áudio permanece o original do trailer. Sem narração.</p>
                 <div class="video-lab-actions">
-                  <a id="video-lab-download-original" class="ghost-action" href="#" target="_blank" rel="noopener">Baixar trailer original</a>
+                  <a id="video-lab-download-original" class="ghost-action" href="#" target="_blank" rel="noopener">Abrir trailer original</a>
                   <button type="button" id="video-lab-generate">Gerar vídeo personalizado</button>
+                  <a id="video-lab-download-final" class="ghost-action" href="#" hidden download="nexus-video.mp4">Baixar MP4 pronto</a>
                 </div>
                 <span id="video-lab-status" class="save-status"></span>
               </form>
