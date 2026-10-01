@@ -76,27 +76,27 @@ jobs:
           end_text=clean(os.getenv("END_TEXT",""))
           end_contact=clean(os.getenv("END_CONTACT",""))
           with open("/tmp/title.txt","w",encoding="utf-8") as f:
-              f.write("\n".join(textwrap.wrap(title, 24)[:3]))
+              f.write("\n".join(textwrap.wrap(title, 22)[:3]))
           with open("/tmp/meta.txt","w",encoding="utf-8") as f:
               bits=[b for b in [media,year] if b]
               f.write("  •  ".join(bits) or "DESTAQUE")
           with open("/tmp/overview.txt","w",encoding="utf-8") as f:
-              f.write("\n".join(textwrap.wrap(overview or "Confira este destaque selecionado para você.", 34)[:5]))
+              f.write("\n".join(textwrap.wrap(overview or "Confira este destaque selecionado para você.", 30)[:5]))
           with open("/tmp/cta.txt","w",encoding="utf-8") as f:
               f.write("  •  ".join([x for x in [end_text,end_contact] if x])[:160])
           PY
 
           python - <<'PY'
           from PIL import Image, ImageDraw
-          w,h=540,900
+          w,h=440,880
           img=Image.new("RGBA",(w,h),(0,0,0,0))
           d=ImageDraw.Draw(img)
-          d.rounded_rectangle((5,5,w-5,h-5),radius=62,fill=(3,7,12,250),outline=(214,225,233,255),width=9)
-          d.rounded_rectangle((22,22,w-22,h-22),radius=48,outline=(68,86,100,255),width=3)
-          d.rounded_rectangle((190,24,350,48),radius=12,fill=(48,58,67,255))
-          d.rounded_rectangle((0,180,9,290),radius=4,fill=(180,192,200,255))
-          d.rounded_rectangle((531,220,540,350),radius=4,fill=(180,192,200,255))
-          d.rounded_rectangle((190,855,350,865),radius=5,fill=(110,123,132,255))
+          d.rounded_rectangle((5,5,w-5,h-5),radius=58,fill=(3,7,12,250),outline=(214,225,233,255),width=8)
+          d.rounded_rectangle((18,18,w-18,h-18),radius=46,outline=(68,86,100,255),width=3)
+          d.rounded_rectangle((145,24,295,48),radius=12,fill=(48,58,67,255))
+          d.rounded_rectangle((0,185,8,295),radius=4,fill=(180,192,200,255))
+          d.rounded_rectangle((432,220,440,350),radius=4,fill=(180,192,200,255))
+          d.rounded_rectangle((150,842,290,852),radius=5,fill=(110,123,132,255))
           img.save("/tmp/phone-frame.png")
           PY
 
@@ -126,11 +126,11 @@ jobs:
               -map 0:v:0 -map 0:a? -c:v libx264 -preset veryfast -crf 24 -c:a aac -b:a 128k -movflags +faststart /tmp/rendered-base.mp4
           elif [ -s /tmp/poster.jpg ]; then
             ffmpeg -y -i /tmp/source.mp4 -loop 1 -i /tmp/poster.jpg -t "$RENDER_DUR" \
-              -filter_complex "[0:v]scale=1080:900:force_original_aspect_ratio=increase,crop=1080:900,setsar=1[v];color=c=0x050807:s=1080x1920:d=$RENDER_DUR[bg];[bg][v]overlay=0:0[base];movie=/tmp/phone-frame.png[phone];[base][phone]overlay=270:915[p0];[1:v]scale=400:390:force_original_aspect_ratio=decrease,pad=400:390:(ow-iw)/2:(oh-ih)/2:color=0x0b1117[poster];[p0][poster]overlay=340:1010[p];[p]drawtext=fontfile=$BOLD:textfile=/tmp/title.txt:x=340:y=1420:fontsize=44:line_spacing=8:fontcolor=white[tit];[tit]drawtext=fontfile=$BOLD:textfile=/tmp/meta.txt:x=340:y=1520:fontsize=25:fontcolor=0x65d9ff[meta];[meta]drawtext=fontfile=$FONT:textfile=/tmp/overview.txt:x=340:y=1580:fontsize=25:line_spacing=7:fontcolor=0xd8e5eb[desc];[desc]drawbox=x=85:y=1830:w=910:h=70:color=0x0d2330@0.95:t=fill[cta];[cta]drawtext=fontfile=$BOLD:textfile=/tmp/cta.txt:x=(w-text_w)/2:y=1850:fontsize=26:fontcolor=0xa5ebff[outv]" \
+              -filter_complex "[0:v]scale=1080:900:force_original_aspect_ratio=increase,crop=1080:900,setsar=1[v];color=c=0x050807:s=1080x1920:d=$RENDER_DUR[bg];[bg][v]overlay=0:0[base];movie=/tmp/phone-frame.png[phone];[base][phone]overlay=320:930[p0];[1:v]scale=340:300:force_original_aspect_ratio=decrease,pad=340:300:(ow-iw)/2:(oh-ih)/2:color=0x0b1117[poster];[p0][poster]overlay=370:1015[p];[p]drawtext=fontfile=$BOLD:textfile=/tmp/title.txt:x=370:y=1335:fontsize=38:line_spacing=6:fontcolor=white[tit];[tit]drawtext=fontfile=$BOLD:textfile=/tmp/meta.txt:x=370:y=1438:fontsize=22:fontcolor=0x65d9ff[meta];[meta]drawtext=fontfile=$FONT:textfile=/tmp/overview.txt:x=370:y=1492:fontsize=22:line_spacing=6:fontcolor=0xd8e5eb[desc];[desc]drawbox=x=85:y=1830:w=910:h=70:color=0x0d2330@0.95:t=fill[cta];[cta]drawtext=fontfile=$BOLD:textfile=/tmp/cta.txt:x=(w-text_w)/2:y=1850:fontsize=26:fontcolor=0xa5ebff[outv]" \
               -map "[outv]" -map 0:a? -c:v libx264 -preset veryfast -crf 24 -c:a aac -b:a 128k -pix_fmt yuv420p -movflags +faststart /tmp/rendered-base.mp4
           else
             ffmpeg -y -i /tmp/source.mp4 -t "$RENDER_DUR" \
-              -filter_complex "[0:v]scale=1080:900:force_original_aspect_ratio=increase,crop=1080:900,setsar=1[v];color=c=0x050807:s=1080x1920:d=$RENDER_DUR[bg];[bg][v]overlay=0:0[base];movie=/tmp/phone-frame.png[phone];[base][phone]overlay=270:915[p0];[p0]drawtext=fontfile=$BOLD:textfile=/tmp/title.txt:x=340:y=1210:fontsize=48:line_spacing=9:fontcolor=white[tit];[tit]drawtext=fontfile=$BOLD:textfile=/tmp/meta.txt:x=340:y=1345:fontsize=27:fontcolor=0x65d9ff[meta];[meta]drawtext=fontfile=$FONT:textfile=/tmp/overview.txt:x=340:y=1415:fontsize=27:line_spacing=8:fontcolor=0xd8e5eb[desc];[desc]drawbox=x=85:y=1830:w=910:h=70:color=0x0d2330@0.95:t=fill[cta];[cta]drawtext=fontfile=$BOLD:textfile=/tmp/cta.txt:x=(w-text_w)/2:y=1850:fontsize=26:fontcolor=0xa5ebff[outv]" \
+              -filter_complex "[0:v]scale=1080:900:force_original_aspect_ratio=increase,crop=1080:900,setsar=1[v];color=c=0x050807:s=1080x1920:d=$RENDER_DUR[bg];[bg][v]overlay=0:0[base];movie=/tmp/phone-frame.png[phone];[base][phone]overlay=320:930[p0];[p0]drawtext=fontfile=$BOLD:textfile=/tmp/title.txt:x=370:y=1135:fontsize=42:line_spacing=7:fontcolor=white[tit];[tit]drawtext=fontfile=$BOLD:textfile=/tmp/meta.txt:x=370:y=1275:fontsize=23:fontcolor=0x65d9ff[meta];[meta]drawtext=fontfile=$FONT:textfile=/tmp/overview.txt:x=370:y=1340:fontsize=23:line_spacing=7:fontcolor=0xd8e5eb[desc];[desc]drawbox=x=85:y=1830:w=910:h=70:color=0x0d2330@0.95:t=fill[cta];[cta]drawtext=fontfile=$BOLD:textfile=/tmp/cta.txt:x=(w-text_w)/2:y=1850:fontsize=26:fontcolor=0xa5ebff[outv]" \
               -map "[outv]" -map 0:a? -c:v libx264 -preset veryfast -crf 24 -c:a aac -b:a 128k -pix_fmt yuv420p -movflags +faststart /tmp/rendered-base.mp4
           fi
           test -s /tmp/rendered-base.mp4
