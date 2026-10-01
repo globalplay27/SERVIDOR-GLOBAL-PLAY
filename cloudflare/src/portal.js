@@ -17,6 +17,7 @@ import { AGENT_CORE_MODULES, normalizeAgentCoreConfig, agentCoreState, agentExec
 import { leadsForClient, leadHunterSummary } from "./leads.js";
 import { leadHunterView, saveLeadHunterConfig, runLeadHunter, discardLead } from "./lead-hunter.js";
 import { decidePost, requestPostRevision, cancelPost, saveOwnPostContent, publishPostNow, useLibraryImageForPost } from "./posts.js";
+import { addDirective, createCampaign, masterWorkspace } from "./master-workspace.js";
 
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
@@ -587,6 +588,40 @@ export async function handlePortalApi(request, env, url, ctx) {
       return json({ ok: true, config, client: portalClientView(updated) });
     } catch (error) {
       return json({ error: error instanceof Error ? error.message : String(error) }, 400);
+    }
+  }
+
+  if (url.pathname === "/api/portal/workspace" && request.method === "GET") {
+    return json(await masterWorkspace(env, client.id));
+  }
+
+  if (url.pathname === "/api/portal/directives" && request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    try {
+      const directive = await addDirective(env, client.id, {
+        ...body,
+        appliesTo: Array.isArray(body.appliesTo) && body.appliesTo.length ? body.appliesTo : ["all"]
+      });
+      return json({ ok: true, directive }, 201);
+    } catch (error) {
+      return json({ error: error instanceof Error ? error.message : String(error) }, 400);
+    }
+  }
+
+  if (url.pathname === "/api/portal/campaigns" && request.method === "POST") {
+    const form = await request.formData().catch(() => null);
+    try {
+      const campaign = await createCampaign(env, client.id, {
+        title: form?.get("title"),
+        brief: form?.get("brief"),
+        startDate: form?.get("startDate"),
+        file: form?.get("creative")
+      });
+      return json({ ok: true, campaign }, 201);
+    } catch (error) {
+      const code = error instanceof Error ? error.message : String(error);
+      const status = code === "creative_too_large" ? 413 : code === "r2_unavailable" ? 503 : 400;
+      return json({ error: code }, status);
     }
   }
 
