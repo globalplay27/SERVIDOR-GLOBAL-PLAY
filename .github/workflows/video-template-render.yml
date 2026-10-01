@@ -81,26 +81,22 @@ jobs:
               bits=[b for b in [media,year] if b]
               f.write("  •  ".join(bits) or "DESTAQUE")
           with open("/tmp/overview.txt","w",encoding="utf-8") as f:
-              f.write("\n".join(textwrap.wrap(overview or "Confira este destaque selecionado para você.", 42)[:8]))
+              f.write("\n".join(textwrap.wrap(overview or "Confira este destaque selecionado para você.", 34)[:5]))
           with open("/tmp/cta.txt","w",encoding="utf-8") as f:
               f.write("  •  ".join([x for x in [end_text,end_contact] if x])[:160])
           PY
 
           python - <<'PY'
           from PIL import Image, ImageDraw
-          w,h=820,720
+          w,h=540,900
           img=Image.new("RGBA",(w,h),(0,0,0,0))
           d=ImageDraw.Draw(img)
-          # Corpo do smartphone: cantos arredondados, bezel escuro e aro metálico.
-          d.rounded_rectangle((6,6,w-6,h-6),radius=58,fill=(3,7,12,248),outline=(205,219,228,255),width=10)
-          d.rounded_rectangle((24,24,w-24,h-24),radius=45,outline=(74,92,105,255),width=3)
-          # Notch / alto-falante.
-          d.rounded_rectangle((310,24,510,46),radius=11,fill=(48,58,67,255))
-          # Botões laterais para deixar a silhueta claramente de celular.
-          d.rounded_rectangle((0,160,10,250),radius=5,fill=(180,192,200,255))
-          d.rounded_rectangle((810,190,820,310),radius=5,fill=(180,192,200,255))
-          # Indicador inferior.
-          d.rounded_rectangle((310,680,510,690),radius=5,fill=(110,123,132,255))
+          d.rounded_rectangle((5,5,w-5,h-5),radius=62,fill=(3,7,12,250),outline=(214,225,233,255),width=9)
+          d.rounded_rectangle((22,22,w-22,h-22),radius=48,outline=(68,86,100,255),width=3)
+          d.rounded_rectangle((190,24,350,48),radius=12,fill=(48,58,67,255))
+          d.rounded_rectangle((0,180,9,290),radius=4,fill=(180,192,200,255))
+          d.rounded_rectangle((531,220,540,350),radius=4,fill=(180,192,200,255))
+          d.rounded_rectangle((190,855,350,865),radius=5,fill=(110,123,132,255))
           img.save("/tmp/phone-frame.png")
           PY
 
@@ -130,11 +126,11 @@ jobs:
               -map 0:v:0 -map 0:a? -c:v libx264 -preset veryfast -crf 24 -c:a aac -b:a 128k -movflags +faststart /tmp/rendered-base.mp4
           elif [ -s /tmp/poster.jpg ]; then
             ffmpeg -y -i /tmp/source.mp4 -loop 1 -i /tmp/poster.jpg -t "$RENDER_DUR" \
-              -filter_complex "[0:v]scale=1080:930:force_original_aspect_ratio=increase,crop=1080:930,setsar=1[v];color=c=0x050807:s=1080x1920:d=$RENDER_DUR[bg];[bg][v]overlay=0:0[base];movie=/tmp/phone-frame.png[phone];[base][phone]overlay=130:965[p0];[1:v]scale=300:420:force_original_aspect_ratio=decrease,pad=300:420:(ow-iw)/2:(oh-ih)/2:color=0x0b1117[poster];[p0][poster]overlay=175:1055[p];[p]drawtext=fontfile=$BOLD:textfile=/tmp/title.txt:x=520:y=1065:fontsize=44:line_spacing=8:fontcolor=white[tit];[tit]drawtext=fontfile=$BOLD:textfile=/tmp/meta.txt:x=520:y=1210:fontsize=25:fontcolor=0x65d9ff[meta];[meta]drawtext=fontfile=$FONT:textfile=/tmp/overview.txt:x=520:y=1270:fontsize=25:line_spacing=7:fontcolor=0xd8e5eb[desc];[desc]drawbox=x=65:y=1735:w=950:h=110:color=0x0d2330@0.95:t=fill[cta];[cta]drawtext=fontfile=$BOLD:textfile=/tmp/cta.txt:x=(w-text_w)/2:y=1770:fontsize=31:fontcolor=0xa5ebff[outv]" \
+              -filter_complex "[0:v]scale=1080:900:force_original_aspect_ratio=increase,crop=1080:900,setsar=1[v];color=c=0x050807:s=1080x1920:d=$RENDER_DUR[bg];[bg][v]overlay=0:0[base];movie=/tmp/phone-frame.png[phone];[base][phone]overlay=270:915[p0];[1:v]scale=400:390:force_original_aspect_ratio=decrease,pad=400:390:(ow-iw)/2:(oh-ih)/2:color=0x0b1117[poster];[p0][poster]overlay=340:1010[p];[p]drawtext=fontfile=$BOLD:textfile=/tmp/title.txt:x=340:y=1420:fontsize=44:line_spacing=8:fontcolor=white[tit];[tit]drawtext=fontfile=$BOLD:textfile=/tmp/meta.txt:x=340:y=1520:fontsize=25:fontcolor=0x65d9ff[meta];[meta]drawtext=fontfile=$FONT:textfile=/tmp/overview.txt:x=340:y=1580:fontsize=25:line_spacing=7:fontcolor=0xd8e5eb[desc];[desc]drawbox=x=85:y=1830:w=910:h=70:color=0x0d2330@0.95:t=fill[cta];[cta]drawtext=fontfile=$BOLD:textfile=/tmp/cta.txt:x=(w-text_w)/2:y=1850:fontsize=26:fontcolor=0xa5ebff[outv]" \
               -map "[outv]" -map 0:a? -c:v libx264 -preset veryfast -crf 24 -c:a aac -b:a 128k -pix_fmt yuv420p -movflags +faststart /tmp/rendered-base.mp4
           else
             ffmpeg -y -i /tmp/source.mp4 -t "$RENDER_DUR" \
-              -filter_complex "[0:v]scale=1080:930:force_original_aspect_ratio=increase,crop=1080:930,setsar=1[v];color=c=0x050807:s=1080x1920:d=$RENDER_DUR[bg];[bg][v]overlay=0:0[base];movie=/tmp/phone-frame.png[phone];[base][phone]overlay=130:965[p0];[p0]drawtext=fontfile=$BOLD:textfile=/tmp/title.txt:x=205:y=1080:fontsize=50:line_spacing=10:fontcolor=white[tit];[tit]drawtext=fontfile=$BOLD:textfile=/tmp/meta.txt:x=205:y=1250:fontsize=27:fontcolor=0x65d9ff[meta];[meta]drawtext=fontfile=$FONT:textfile=/tmp/overview.txt:x=205:y=1320:fontsize=28:line_spacing=8:fontcolor=0xd8e5eb[desc];[desc]drawbox=x=65:y=1735:w=950:h=110:color=0x0d2330@0.95:t=fill[cta];[cta]drawtext=fontfile=$BOLD:textfile=/tmp/cta.txt:x=(w-text_w)/2:y=1770:fontsize=31:fontcolor=0xa5ebff[outv]" \
+              -filter_complex "[0:v]scale=1080:900:force_original_aspect_ratio=increase,crop=1080:900,setsar=1[v];color=c=0x050807:s=1080x1920:d=$RENDER_DUR[bg];[bg][v]overlay=0:0[base];movie=/tmp/phone-frame.png[phone];[base][phone]overlay=270:915[p0];[p0]drawtext=fontfile=$BOLD:textfile=/tmp/title.txt:x=340:y=1210:fontsize=48:line_spacing=9:fontcolor=white[tit];[tit]drawtext=fontfile=$BOLD:textfile=/tmp/meta.txt:x=340:y=1345:fontsize=27:fontcolor=0x65d9ff[meta];[meta]drawtext=fontfile=$FONT:textfile=/tmp/overview.txt:x=340:y=1415:fontsize=27:line_spacing=8:fontcolor=0xd8e5eb[desc];[desc]drawbox=x=85:y=1830:w=910:h=70:color=0x0d2330@0.95:t=fill[cta];[cta]drawtext=fontfile=$BOLD:textfile=/tmp/cta.txt:x=(w-text_w)/2:y=1850:fontsize=26:fontcolor=0xa5ebff[outv]" \
               -map "[outv]" -map 0:a? -c:v libx264 -preset veryfast -crf 24 -c:a aac -b:a 128k -pix_fmt yuv420p -movflags +faststart /tmp/rendered-base.mp4
           fi
           test -s /tmp/rendered-base.mp4
