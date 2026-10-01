@@ -659,8 +659,56 @@ function clientPostState(post){
   if(post.status==="skipped")return{label:"NÃO ENVIADA",cls:"rejected",attention:true};
   return{label:"AGENDADA",cls:"scheduled",attention:false};
 }
+function clientCampaignKey(post){
+  return String(post.campaignId||post.campaignName||post.campaign||"Campanha principal").trim()||"Campanha principal";
+}
+function clientCampaignStatus(posts=[]){
+  const explicit=posts.map(post=>String(post.campaignStatus||"").toLowerCase()).find(Boolean);
+  if(["paused","inactive","pausada","inativa"].includes(explicit))return{label:"PAUSADA",cls:"correction"};
+  if(["ended","finished","completed","encerrada","finalizada"].includes(explicit))return{label:"FINALIZADA",cls:"sent"};
+  const unresolved=posts.filter(post=>!["published","skipped","failed"].includes(String(post.status||"")));
+  const attention=posts.some(post=>clientPostState(post).attention);
+  if(unresolved.length)return{label:"ATIVA",cls:attention?"correction":"approved"};
+  return{label:"FINALIZADA",cls:attention?"correction":"sent"};
+}
+function renderClientCampaigns(posts=[]){
+  const root=$("#client-campaign-list");
+  if(!root)return;
+  if(!posts.length){
+    root.innerHTML='<div class="post-client-empty"><strong>Nenhuma campanha registrada ainda</strong><span>Assim que houver postagens no NEXUS, as campanhas e seus status aparecerão aqui.</span></div>';
+    return;
+  }
+  const groups=new Map();
+  posts.forEach(post=>{
+    const key=clientCampaignKey(post);
+    if(!groups.has(key))groups.set(key,[]);
+    groups.get(key).push(post);
+  });
+  root.innerHTML=[...groups.entries()].map(([name,items])=>{
+    const status=clientCampaignStatus(items);
+    const published=items.filter(post=>post.status==="published");
+    const scheduled=items.filter(post=>["scheduled","ready","generating","publishing"].includes(String(post.status||""))).length;
+    const attention=items.filter(post=>clientPostState(post).attention).length;
+    const lastPublished=[...published].sort((a,b)=>new Date(b.publishedAt||b.updatedAt||0)-new Date(a.publishedAt||a.updatedAt||0))[0];
+    const postedTitles=published.slice(0,4).map(post=>escapeSupport(post.title||post.caption||"Publicação enviada"));
+    return `<article class="client-post-card ${status.cls}">
+      <div class="client-post-time"><span>STATUS</span><strong>${status.label}</strong><small>${items.length} publicação(ões)</small></div>
+      <div class="client-post-main">
+        <div class="client-post-title"><strong>${escapeSupport(name)}</strong><span class="client-post-status ${status.cls}">${status.label}</span></div>
+        <div class="client-post-meta">
+          <span>Publicadas: <b>${published.length}</b></span>
+          <span>Agendadas/em andamento: <b>${scheduled}</b></span>
+          <span>Precisam de atenção: <b>${attention}</b></span>
+        </div>
+        ${lastPublished?`<p class="client-post-detail">Última publicação: ${formatClientPostDate(lastPublished.publishedAt||lastPublished.updatedAt)}</p>`:""}
+        ${postedTitles.length?`<div class="client-post-draft"><span>O QUE JÁ FOI POSTADO</span>${postedTitles.map(title=>`<p>• ${title}</p>`).join("")}</div>`:""}
+      </div>
+    </article>`;
+  }).join("");
+}
 function renderClientPosts(data={}){
   clientPosts=Array.isArray(data.posts)?data.posts:[];
+  renderClientCampaigns(clientPosts);
   const schedule=Array.isArray(data.schedule)?data.schedule:(currentClient?.postTimes||[]);
   if($("#client-post-schedule"))$("#client-post-schedule").textContent=schedule.join(" · ")||"—";
   const today=saoPauloDay();
