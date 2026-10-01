@@ -13,13 +13,16 @@ function rowToClient(row) {
   const storedAgentProfile = storedConfig.agentProfile && typeof storedConfig.agentProfile === "object"
     ? storedConfig.agentProfile
     : {};
+  const configuredAgentName = String(
+    storedAgentProfile.agentName || storedConfig.agentName || "NEXUS"
+  ).trim() || "NEXUS";
   const config = {
     ...storedConfig,
     agentEngine: "NEXUS",
-    agentName: "NEXUS",
+    agentName: configuredAgentName,
     agentProfile: {
       ...storedAgentProfile,
-      agentName: "NEXUS"
+      agentName: configuredAgentName
     }
   };
   return {
