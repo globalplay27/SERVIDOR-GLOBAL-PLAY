@@ -1553,6 +1553,7 @@ function openVideoLab(button){
   if($("#video-lab-year"))$("#video-lab-year").textContent=year||"—";
   if($("#video-lab-synopsis"))$("#video-lab-synopsis").textContent=overview||"Sinopse não disponível.";
   const posterEl=$("#video-lab-poster");if(posterEl){posterEl.src=poster;posterEl.hidden=!poster;}
+  const backdrop=$("#video-lab-backdrop");if(backdrop){backdrop.src=poster;backdrop.hidden=!poster;}
   const logo=$("#video-lab-logo"),logoUrl=String(profile.logoUrl||"");
   if(logo){logo.src=logoUrl;logo.hidden=!logoUrl;}
   if($("#video-lab-brand-name"))$("#video-lab-brand-name").textContent=profile.brandName||currentClient?.name||"Sua marca";
