@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#080d15"><title>NEXUS AI · Acompanhamento</title>
-  <link rel="stylesheet" href="/client-lite.css?v=8"><script src="/client-lite.js?v=8" defer></script>
+  <link rel="stylesheet" href="/client-lite.css?v=9"><script src="/client-lite.js?v=8" defer></script>
 </head>
 <body><main class="shell">
   <section id="login" class="login card" hidden>
@@ -33,24 +33,7 @@
     <section id="tab-overview" class="tab">
       <p class="eyebrow">VISÃO GERAL</p><h1 id="client-name">Seu painel</h1>
       <p class="muted">Acompanhe a operação e os resultados da sua conta.</p>
-      <div class="metrics">
-        <article class="card"><span>Instagram</span><strong id="overview-instagram">—</strong></article>
-        <article class="card"><span>Postagens</span><strong id="next-post">Automática pelo NEXUS</strong></article>
-        <article class="card"><span>Publicadas</span><strong id="published-count">—</strong></article>
-        <article class="card"><span>Precisam de atenção</span><strong id="attention-count">—</strong></article>
-      </div>
-      <div class="card">
-        <div class="section-title"><div><p class="eyebrow">USO DE IA</p><h2>Consumo OpenAI de hoje</h2><p class="muted">Seu consumo é contabilizado separadamente pelo NEXUS. Nenhuma chave de API é exibida aqui.</p></div></div>
-        <div class="metrics">
-          <article class="card"><span>Tokens usados</span><strong id="ai-used-tokens">—</strong></article>
-          <article class="card"><span>Limite diário</span><strong id="ai-limit-tokens">—</strong></article>
-          <article class="card"><span>Restante hoje</span><strong id="ai-remaining-tokens">—</strong></article>
-          <article class="card"><span>Custo estimado hoje</span><strong id="ai-estimated-cost">—</strong></article>
-        </div>
-        <p id="ai-usage-note" class="muted">Carregando consumo...</p>
-      </div>
-      <div class="card"><h2>Última atividade</h2><p id="last-activity" class="muted">Carregando...</p></div>
-      <div class="card branding-card">
+<div class="card branding-card">
         <div>
           <p class="eyebrow">IDENTIDADE VISUAL</p>
           <h2>Logo da sua marca</h2>
@@ -71,6 +54,23 @@
           <p id="logo-message" class="muted" role="status"></p>
         </form>
       </div>
+      <div class="metrics">
+        <article class="card"><span>Instagram</span><strong id="overview-instagram">—</strong></article>
+        <article class="card"><span>Postagens</span><strong id="next-post">Automática pelo NEXUS</strong></article>
+        <article class="card"><span>Publicadas</span><strong id="published-count">—</strong></article>
+        <article class="card"><span>Precisam de atenção</span><strong id="attention-count">—</strong></article>
+      </div>
+      <div class="card">
+        <div class="section-title"><div><p class="eyebrow">USO DE IA</p><h2>Consumo OpenAI de hoje</h2><p class="muted">Seu consumo é contabilizado separadamente pelo NEXUS. Nenhuma chave de API é exibida aqui.</p></div></div>
+        <div class="metrics">
+          <article class="card"><span>Tokens usados</span><strong id="ai-used-tokens">—</strong></article>
+          <article class="card"><span>Limite diário</span><strong id="ai-limit-tokens">—</strong></article>
+          <article class="card"><span>Restante hoje</span><strong id="ai-remaining-tokens">—</strong></article>
+          <article class="card"><span>Custo estimado hoje</span><strong id="ai-estimated-cost">—</strong></article>
+        </div>
+        <p id="ai-usage-note" class="muted">Carregando consumo...</p>
+      </div>
+      <div class="card"><h2>Última atividade</h2><p id="last-activity" class="muted">Carregando...</p></div>
     </section>
     <section id="tab-posts" class="tab" hidden>
       <div class="section-title"><div><p class="eyebrow">PUBLICAÇÕES</p><h1>Postagens</h1><p class="muted">Revise cada criativo antes da publicação. Aprove, mande refazer, cancele ou publique quando estiver pronto.</p></div><button data-refresh="posts" type="button">Atualizar</button></div>
