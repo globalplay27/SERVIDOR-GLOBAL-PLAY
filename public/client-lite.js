@@ -55,6 +55,9 @@ function showDashboard(data) {
     logo.hidden = true;
     logo.removeAttribute("src");
   }
+  $("#profile-name").value = data.contact?.name || data.name || "";
+  $("#profile-phone").value = data.contact?.phone || "";
+  $("#profile-instagram").value = instagramHandle || "";
   $("#next-post").textContent = "Automática pelo NEXUS";
 }
 
@@ -635,6 +638,33 @@ async function submitLogo(event) {
   }
 }
 
+async function submitProfile(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const button = form.querySelector('button[type="submit"]');
+  const message = $("#profile-message");
+  const payload = {
+    name: $("#profile-name").value.trim(),
+    phone: $("#profile-phone").value.trim(),
+    instagram: $("#profile-instagram").value.trim()
+  };
+  button.disabled = true;
+  message.textContent = "Salvando...";
+  try {
+    const data = await api("/api/portal/profile", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    message.textContent = data.message || "Dados atualizados.";
+    showDashboard(data.client);
+  } catch (error) {
+    message.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
 async function loadPerformance() {
   try {
     const data = await api("/api/portal/agent-core");
@@ -833,6 +863,7 @@ document.querySelectorAll("[data-refresh]").forEach(button => button.addEventLis
   return loadPerformance();
 }));
 $("#refresh").addEventListener("click", () => refresh().catch(error => notice(error.message)));
+$("#profile-form")?.addEventListener("submit", submitProfile);
 $("#logo-form")?.addEventListener("submit", submitLogo);
 $("#logo-file")?.addEventListener("change", previewLogo);
 $("#logo-remove-bg")?.addEventListener("change", previewLogo);
