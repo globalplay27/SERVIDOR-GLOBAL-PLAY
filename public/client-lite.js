@@ -553,23 +553,27 @@ async function loadPerformance() {
     const data = await api("/api/portal/agent-core");
     const radar = data.state?.radar || {};
     const root = $("#top-media"); root.replaceChildren();
-    const available = radar.source === "instagram-api" && Number.isFinite(Number(radar.followersCount));
-    $("#followers").textContent = available ? formatNumber(radar.followersCount) : "—";
-    $("#followers-delta").textContent = available ? String(Number(radar.followersDelta || 0) >= 0 ? "+" : "") + formatNumber(radar.followersDelta) : "—";
-    $("#median-engagement").textContent = available ? formatNumber(radar.metrics?.medianEngagement) : "—";
-    $("#scanned-media").textContent = available ? formatNumber(radar.scannedMedia) : "—";
+    const hasSnapshot = radar.source === "instagram-api";
+    const hasFollowers = hasSnapshot && Number.isFinite(Number(radar.followersCount));
+    const hasMedia = hasSnapshot && Number.isFinite(Number(radar.scannedMedia));
+    $("#followers").textContent = hasFollowers ? formatNumber(radar.followersCount) : "—";
+    $("#followers-delta").textContent = hasFollowers ? String(Number(radar.followersDelta || 0) >= 0 ? "+" : "") + formatNumber(radar.followersDelta) : "—";
+    $("#median-engagement").textContent = hasMedia ? formatNumber(radar.metrics?.medianEngagement || 0) : "—";
+    $("#scanned-media").textContent = hasMedia ? formatNumber(radar.scannedMedia) : "—";
     for (const item of (Array.isArray(radar.topMedia) ? radar.topMedia : []).slice(0, 5)) {
       const row = document.createElement("div"); row.className = "media-row";
       const title = document.createElement("strong"); title.textContent = item.caption || item.mediaType || "Publicação";
-      const count = document.createElement("small"); count.textContent = formatNumber(item.engagement) + " interações (curtidas + 2 × comentários)";
+      const count = document.createElement("small"); count.textContent = formatNumber(item.engagement) + " interações ponderadas";
       row.append(title, count);
       const linkUrl = safeInstagramLink(item.permalink);
       if (linkUrl) { const link = document.createElement("a"); link.href = linkUrl; link.target = "_blank"; link.rel = "noopener noreferrer"; link.textContent = " Abrir publicação"; row.append(link); }
       root.append(row);
     }
-    $("#performance-note").textContent = available
-      ? "Dados da última coleta: " + formatDate(data.state?.lastCycleAt) + ". As interações não incluem visualizações."
-      : "Aguardando uma coleta válida do Instagram. Nenhum resultado foi estimado.";
+    const diagnostic = Array.isArray(radar.diagnosis) ? radar.diagnosis[0] : "";
+    const scannedAt = radar.scannedAt || data.state?.lastCycleAt;
+    $("#performance-note").textContent = hasSnapshot
+      ? "Última coleta do Instagram: " + formatDate(scannedAt) + ". " + (diagnostic || "Métricas recebidas da conta conectada.")
+      : (diagnostic || "O RADAR ainda não conseguiu uma coleta válida do Instagram. Verifique a autorização e aguarde a próxima rodada.");
   } catch (error) { notice("Desempenho: " + error.message); }
 }
 
