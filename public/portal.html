@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#080d15"><title>NEXUS AI · Acompanhamento</title>
-  <link rel="stylesheet" href="/client-lite.css?v=14"><script src="/client-lite.js?v=13" defer></script>
+  <link rel="stylesheet" href="/client-lite.css?v=14"><script src="/client-lite.js?v=15" defer></script>
 </head>
 <body><main class="shell">
   <section id="login" class="login card" hidden>
@@ -25,6 +25,7 @@
       <button data-tab="overview" class="active" type="button">Visão geral</button>
       <button data-tab="posts" type="button">Postagens</button>
       <button data-tab="agents" type="button">Agentes</button>
+      <button data-tab="videos" type="button">Vídeos</button>
       <button data-tab="campaigns" type="button">Campanhas</button>
       <button data-tab="performance" type="button">Desempenho</button>
       <button data-tab="instagram" type="button">Instagram</button>
@@ -114,6 +115,21 @@
       </div>
       <div class="card"><h2>Campanhas ativas</h2><div id="campaign-list" class="list"></div></div>
       <div class="card"><h2>Orientações ativas</h2><div id="directive-list" class="list"></div></div>
+    </section>
+    <section id="tab-videos" class="tab" hidden>
+      <div class="section-title"><div><p class="eyebrow">VÍDEOS</p><h1>Vídeos do cliente</h1><p class="muted">Envie um vídeo do seu computador para o NEXUS. Ele fica armazenado para processamento, geração e download do MP4.</p></div><button data-refresh="videos" type="button">Atualizar</button></div>
+      <form id="media-upload-form" class="card media-upload">
+        <label>Vídeo
+          <input id="media-file" name="file" type="file" accept="video/mp4,video/webm,video/quicktime" required>
+        </label>
+        <input id="media-purpose" name="purpose" type="hidden" value="publish">
+        <label>Observação
+          <textarea id="media-note" name="note" maxlength="800" placeholder="Opcional"></textarea>
+        </label>
+        <button class="primary" type="submit">Enviar vídeo</button>
+        <p id="media-upload-message" class="muted" role="status"></p>
+      </form>
+      <div id="media-list" class="media-grid" aria-live="polite"></div>
     </section>
     <section id="tab-performance" class="tab" hidden>
       <div class="section-title"><div><p class="eyebrow">RESULTADOS</p><h1>Desempenho</h1><p class="muted">Dados coletados da conta profissional conectada.</p></div><button data-refresh="performance" type="button">Atualizar</button></div>
