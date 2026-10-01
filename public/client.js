@@ -1836,33 +1836,50 @@ async function renderVideoLabLocally(file,settings,status){
 
     ctx.fillStyle="#65d9ff";
     ctx.font="700 30px Arial, sans-serif";
-    ctx.fillText("NEXUS VIDEO",72,1120);
+    ctx.fillText("NEXUS VIDEO",72,1110);
+
+    // Smartphone frame for title, metadata and synopsis.
+    const phoneX=90,phoneY=1140,phoneW=900,phoneH=560,phoneR=54;
+    ctx.save();
+    ctx.fillStyle="rgba(8,12,17,.96)";
+    ctx.strokeStyle="#9fb3c4";
+    ctx.lineWidth=10;
+    ctx.beginPath();ctx.roundRect(phoneX,phoneY,phoneW,phoneH,phoneR);ctx.fill();ctx.stroke();
+
+    // Top speaker/notch.
+    ctx.fillStyle="#1d2730";
+    ctx.beginPath();ctx.roundRect(phoneX+330,phoneY+18,240,22,12);ctx.fill();
 
     ctx.fillStyle="#ffffff";
-    ctx.font="700 58px Arial, sans-serif";
-    const titleLines=wrapCanvasText(ctx,settings.contentTitle||file.name,930,3);
-    titleLines.forEach((line,i)=>ctx.fillText(line,72,1200+i*68));
+    ctx.font="700 48px Arial, sans-serif";
+    const titleLines=wrapCanvasText(ctx,settings.contentTitle||file.name,760,2);
+    titleLines.forEach((line,i)=>ctx.fillText(line,phoneX+70,phoneY+100+i*58));
 
-    ctx.fillStyle="#c7d8e2";
-    ctx.font="400 31px Arial, sans-serif";
+    ctx.fillStyle="#65d9ff";
+    ctx.font="600 27px Arial, sans-serif";
     const meta=[settings.mediaType,settings.releaseYear].filter(Boolean).join("  •  ");
-    if(meta)ctx.fillText(meta,72,1428);
+    if(meta)ctx.fillText(meta,phoneX+70,phoneY+225);
 
     ctx.fillStyle="#d8e5eb";
-    ctx.font="400 30px Arial, sans-serif";
-    const bodyLines=wrapCanvasText(ctx,settings.overview||"Vídeo personalizado pelo NEXUS.",930,4);
-    bodyLines.forEach((line,i)=>ctx.fillText(line,72,1495+i*42));
+    ctx.font="400 29px Arial, sans-serif";
+    const bodyLines=wrapCanvasText(ctx,settings.overview||"Vídeo personalizado pelo NEXUS.",760,6);
+    bodyLines.forEach((line,i)=>ctx.fillText(line,phoneX+70,phoneY+292+i*40));
+
+    // Home indicator.
+    ctx.fillStyle="#5d6973";
+    ctx.beginPath();ctx.roundRect(phoneX+315,phoneY+phoneH-34,270,8,4);ctx.fill();
+    ctx.restore();
 
     const cta=[settings.endText,settings.endContact].filter(Boolean).join("  •  ");
     if(cta){
-      ctx.fillStyle="rgba(13,35,48,.94)";
-      ctx.beginPath();ctx.roundRect(65,1735,950,112,24);ctx.fill();
+      ctx.fillStyle="rgba(13,35,48,.96)";
+      ctx.beginPath();ctx.roundRect(65,1730,950,112,24);ctx.fill();
       ctx.fillStyle="#a5ebff";
       ctx.font="700 31px Arial, sans-serif";
       const ctaText=wrapCanvasText(ctx,cta,870,2);
       ctaText.forEach((line,i)=>{
         const tw=ctx.measureText(line).width;
-        ctx.fillText(line,(1080-tw)/2,1780+i*38);
+        ctx.fillText(line,(1080-tw)/2,1775+i*38);
       });
     }
 
