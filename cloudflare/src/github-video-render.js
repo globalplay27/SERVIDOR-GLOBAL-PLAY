@@ -86,16 +86,18 @@ export async function startGitHubVideoRender(env, clientId, jobId, patch = {}) {
         job_id: String(jobId),
         client_id: String(clientId),
         callback_token: settings.githubRenderToken,
-        title: String(settings.contentTitle || settings.displayName || "Conteúdo").slice(0, 180),
-        overview: String(settings.overview || "").slice(0, 1800),
-        year: String(settings.releaseYear || "").slice(0, 12),
-        media_type: String(settings.mediaType || "").slice(0, 24),
-        poster_url: String(settings.posterUrl || "").slice(0, 1200),
-        logo_enabled: settings.logoEnabled === true && Boolean(settings.logoObjectKey),
-        duration,
-        edit_style: editStyle,
-        end_text: String(settings.endText || "").slice(0, 120),
-        end_contact: String(settings.endContact || "").slice(0, 120)
+        render: {
+          title: String(settings.contentTitle || settings.displayName || "Conteúdo").slice(0, 180),
+          overview: String(settings.overview || "").slice(0, 1800),
+          year: String(settings.releaseYear || "").slice(0, 12),
+          media_type: String(settings.mediaType || "").slice(0, 24),
+          poster_url: String(settings.posterUrl || "").slice(0, 1200),
+          logo_enabled: settings.logoEnabled === true && Boolean(settings.logoObjectKey),
+          duration,
+          edit_style: editStyle,
+          end_text: String(settings.endText || "").slice(0, 120),
+          end_contact: String(settings.endContact || "").slice(0, 120)
+        }
       }
     })
   });
