@@ -310,6 +310,60 @@ export async function handlePortalApi(request, env, url, ctx) {
     );
   }
 
+  if (url.pathname === "/api/portal/branding/logo" && request.method === "POST") {
+    if (!env.MEDIA) return json({ error: "r2_unavailable", message: "O armazenamento de mídia do NEXUS não está disponível." }, 503);
+    const form = await request.formData().catch(() => null);
+    const file = form?.get("logo");
+    if (!file || typeof file.arrayBuffer !== "function") {
+      return json({ error: "logo_required", message: "Selecione uma imagem para a logo." }, 400);
+    }
+
+    const contentType = String(file.type || "").toLowerCase();
+    const allowed = new Set(["image/png", "image/jpeg", "image/webp"]);
+    if (!allowed.has(contentType)) {
+      return json({ error: "unsupported_logo_type", message: "Use PNG, JPG ou WEBP." }, 415);
+    }
+
+    const maxBytes = 5 * 1024 * 1024;
+    const bytes = await file.arrayBuffer();
+    if (!bytes.byteLength || bytes.byteLength > maxBytes) {
+      return json({ error: "logo_too_large", message: "A logo deve ter no máximo 5 MB." }, 413);
+    }
+
+    const extension = mediaExtension(contentType, file.name || "logo");
+    const key = "branding/" + String(client.id) + "/logo-" + Date.now() + "." + extension;
+    await env.MEDIA.put(key, bytes, {
+      httpMetadata: { contentType, cacheControl: "public, max-age=31536000, immutable" },
+      customMetadata: { clientId: String(client.id), kind: "client-logo" }
+    });
+
+    const config = client.config && typeof client.config === "object" ? client.config : {};
+    const previousKey = String(config.branding?.logoKey || "");
+    const nextConfig = {
+      ...config,
+      branding: {
+        ...(config.branding && typeof config.branding === "object" ? config.branding : {}),
+        logoKey: key,
+        logoUpdatedAt: new Date().toISOString()
+      }
+    };
+
+    await env.DB.prepare(
+      "UPDATE clients SET config_json = ?1, updated_at = CURRENT_TIMESTAMP WHERE id = ?2"
+    ).bind(JSON.stringify(nextConfig), client.id).run();
+
+    if (previousKey && previousKey !== key && previousKey.startsWith("branding/" + String(client.id) + "/")) {
+      await env.MEDIA.delete(previousKey).catch(() => {});
+    }
+
+    return json({
+      ok: true,
+      message: "Logo atualizada.",
+      logoKey: key,
+      logoUrl: url.origin + "/media/" + key
+    }, 201);
+  }
+
   if (url.pathname === "/api/portal/live-status" && request.method === "GET") {
     return json({
       ok: true,
