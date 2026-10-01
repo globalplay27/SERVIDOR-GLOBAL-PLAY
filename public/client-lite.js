@@ -54,7 +54,6 @@ function showTab(name) {
   if (name === "posts") loadPosts();
   if (name === "agents") loadAgents();
   if (name === "campaigns") loadCampaigns();
-  if (name === "media") loadMedia();
   if (name === "performance") loadPerformance();
   if (name === "instagram") loadInstagram();
 }
@@ -716,8 +715,7 @@ async function refresh() {
     loadAIUsage(),
     activeTab === "performance" ? loadPerformance() : Promise.resolve(),
     activeTab === "agents" ? loadAgents() : Promise.resolve(),
-    activeTab === "campaigns" ? loadCampaigns() : Promise.resolve(),
-    activeTab === "media" ? loadMedia() : Promise.resolve()
+    activeTab === "campaigns" ? loadCampaigns() : Promise.resolve()
   ]);
 }
 
@@ -744,12 +742,10 @@ document.querySelectorAll("[data-refresh]").forEach(button => button.addEventLis
   if (target === "posts") return loadPosts();
   if (target === "agents") return loadAgents();
   if (target === "campaigns") return loadCampaigns();
-  if (target === "media") return loadMedia();
   if (target === "instagram") return loadInstagram();
   return loadPerformance();
 }));
 $("#refresh").addEventListener("click", () => refresh().catch(error => notice(error.message)));
-$("#media-upload-form")?.addEventListener("submit", uploadMedia);
 $("#campaign-form")?.addEventListener("submit", submitCampaign);
 $("#directive-form")?.addEventListener("submit", submitDirective);
 $("#logout").addEventListener("click", async () => {
