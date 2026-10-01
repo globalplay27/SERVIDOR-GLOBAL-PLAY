@@ -16,16 +16,16 @@ jobs:
       JOB_ID: ${{ github.event.client_payload.job_id }}
       CLIENT_ID: ${{ github.event.client_payload.client_id }}
       CALLBACK_TOKEN: ${{ github.event.client_payload.callback_token }}
-      TITLE: ${{ github.event.client_payload.title }}
-      OVERVIEW: ${{ github.event.client_payload.overview }}
-      RELEASE_YEAR: ${{ github.event.client_payload.year }}
-      MEDIA_TYPE: ${{ github.event.client_payload.media_type }}
-      POSTER_URL: ${{ github.event.client_payload.poster_url }}
-      LOGO_ENABLED: ${{ github.event.client_payload.logo_enabled }}
-      REQUESTED_DURATION: ${{ github.event.client_payload.duration }}
-      EDIT_STYLE: ${{ github.event.client_payload.edit_style }}
-      END_TEXT: ${{ github.event.client_payload.end_text }}
-      END_CONTACT: ${{ github.event.client_payload.end_contact }}
+      TITLE: ${{ github.event.client_payload.render.title }}
+      OVERVIEW: ${{ github.event.client_payload.render.overview }}
+      RELEASE_YEAR: ${{ github.event.client_payload.render.year }}
+      MEDIA_TYPE: ${{ github.event.client_payload.render.media_type }}
+      POSTER_URL: ${{ github.event.client_payload.render.poster_url }}
+      LOGO_ENABLED: ${{ github.event.client_payload.render.logo_enabled }}
+      REQUESTED_DURATION: ${{ github.event.client_payload.render.duration }}
+      EDIT_STYLE: ${{ github.event.client_payload.render.edit_style }}
+      END_TEXT: ${{ github.event.client_payload.render.end_text }}
+      END_CONTACT: ${{ github.event.client_payload.render.end_contact }}
       NEXUS_BASE_URL: https://servidor-nexus.diamantehinode2015.workers.dev
     steps:
       - name: Install FFmpeg
