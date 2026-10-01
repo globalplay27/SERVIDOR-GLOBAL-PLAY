@@ -310,6 +310,37 @@ export async function handlePortalApi(request, env, url, ctx) {
     );
   }
 
+  if (url.pathname === "/api/portal/profile" && request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    const name = String(body.name || "").trim().slice(0, 120);
+    const phone = String(body.phone || "").trim().slice(0, 40);
+    const instagram = String(body.instagram || "").trim()
+      .replace(/^@/, "")
+      .replace(/^https?:\/\/(www\.)?instagram\.com\//i, "")
+      .replace(/\/$/, "")
+      .slice(0, 120);
+
+    if (!name) return json({ error: "name_required", message: "Informe o nome do responsável ou da empresa." }, 400);
+    if (!instagram) return json({ error: "instagram_required", message: "Informe o @ do Instagram." }, 400);
+
+    const config = client.config && typeof client.config === "object" ? client.config : {};
+    const nextConfig = {
+      ...config,
+      contact: {
+        ...(config.contact && typeof config.contact === "object" ? config.contact : {}),
+        name,
+        phone
+      }
+    };
+
+    await env.DB.prepare(
+      "UPDATE clients SET name = ?1, instagram = ?2, config_json = ?3, updated_at = CURRENT_TIMESTAMP WHERE id = ?4"
+    ).bind(name, instagram, JSON.stringify(nextConfig), client.id).run();
+
+    const updated = await getClient(env, client.id);
+    return json({ ok: true, message: "Dados da conta atualizados.", client: portalClientView(updated) });
+  }
+
   if (url.pathname === "/api/portal/branding/logo" && request.method === "POST") {
     if (!env.MEDIA) return json({ error: "r2_unavailable", message: "O armazenamento de mídia do NEXUS não está disponível." }, 503);
     const form = await request.formData().catch(() => null);
