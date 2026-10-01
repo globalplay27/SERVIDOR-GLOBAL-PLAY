@@ -70,6 +70,7 @@ function showTab(name) {
   });
   if (name === "posts") loadPosts();
   if (name === "agents") loadAgents();
+  if (name === "videos") loadMedia();
   if (name === "campaigns") loadCampaigns();
   if (name === "performance") loadPerformance();
   if (name === "instagram") loadInstagram();
@@ -831,6 +832,7 @@ async function refresh() {
     loadAIUsage(),
     activeTab === "performance" ? loadPerformance() : Promise.resolve(),
     activeTab === "agents" ? loadAgents() : Promise.resolve(),
+    activeTab === "videos" ? loadMedia() : Promise.resolve(),
     activeTab === "campaigns" ? loadCampaigns() : Promise.resolve()
   ]);
 }
@@ -858,6 +860,7 @@ document.querySelectorAll("[data-refresh]").forEach(button => button.addEventLis
   if (target === "posts") return loadPosts();
   if (target === "agents") return loadAgents();
   if (target === "campaigns") return loadCampaigns();
+  if (target === "videos") return loadMedia();
   if (target === "instagram") return loadInstagram();
   return loadPerformance();
 }));
@@ -866,6 +869,7 @@ $("#profile-form")?.addEventListener("submit", submitProfile);
 $("#logo-form")?.addEventListener("submit", submitLogo);
 $("#logo-file")?.addEventListener("change", previewLogo);
 $("#logo-remove-bg")?.addEventListener("change", previewLogo);
+$("#media-upload-form")?.addEventListener("submit", uploadMedia);
 $("#campaign-form")?.addEventListener("submit", submitCampaign);
 $("#directive-form")?.addEventListener("submit", submitDirective);
 $("#logout").addEventListener("click", async () => {
