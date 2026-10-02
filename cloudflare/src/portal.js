@@ -645,6 +645,27 @@ export async function handlePortalApi(request, env, url, ctx) {
       }
     });
 
+    let posterUrl = "";
+    const posterFile = form.get("poster");
+    if (posterFile && typeof posterFile.arrayBuffer === "function" && Number(posterFile.size || 0) > 0) {
+      const posterType = String(posterFile.type || "").toLowerCase();
+      const posterAllowed = new Set(["image/png", "image/jpeg", "image/webp"]);
+      if (!posterAllowed.has(posterType)) {
+        return json({ error: "unsupported_poster_type", message: "A capa deve ser PNG, JPG ou WEBP." }, 415);
+      }
+      if (Number(posterFile.size || 0) > 5 * 1024 * 1024) {
+        return json({ error: "poster_too_large", message: "A capa deve ter no máximo 5 MB." }, 413);
+      }
+      const posterBytes = await posterFile.arrayBuffer();
+      const posterExt = mediaExtension(posterType, posterFile.name || "capa");
+      const posterKey = "library/" + String(client.id) + "/" + new Date().toISOString().slice(0, 10) + "/poster-" + crypto.randomUUID() + "." + posterExt;
+      await env.MEDIA.put(posterKey, posterBytes, {
+        httpMetadata: { contentType: posterType, cacheControl: "private, no-store" },
+        customMetadata: { clientId: String(client.id), originalName: String(posterFile.name || "capa"), purpose: "reference", kind: "video-poster" }
+      });
+      posterUrl = url.origin + "/media/" + posterKey;
+    }
+
     let videoJobId = "";
     if (purpose === "publish" && contentType.startsWith("video/")) {
       videoJobId = "video_" + crypto.randomUUID().replace(/-/g, "").slice(0, 24);
@@ -655,7 +676,7 @@ export async function handlePortalApi(request, env, url, ctx) {
         overview: String(form.get("overview") || "").trim().slice(0, 1800),
         releaseYear: String(form.get("year") || "").trim().slice(0, 12),
         mediaType: String(form.get("mediaType") || "").trim().slice(0, 24),
-        posterUrl: String(form.get("posterUrl") || "").trim().slice(0, 1200),
+        posterUrl: posterUrl || String(form.get("posterUrl") || "").trim().slice(0, 1200),
         clipDuration: 30,
         requestedClips: 1,
         outputFormat: "reel",
