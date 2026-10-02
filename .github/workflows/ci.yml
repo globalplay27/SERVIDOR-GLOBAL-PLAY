@@ -75,7 +75,7 @@ jobs:
           echo "$portal" | grep -F 'id="video-job-list"' >/dev/null
           js="$(curl --fail --silent --show-error --max-time 20 "$base/client-lite.js?verify=$GITHUB_SHA")"
           echo "$js" | grep -F 'async function loadVideoJobs()' >/dev/null
-          echo "$js" | grep -F 'MAX_VIDEO_UPLOAD_BYTES = 95 * 1024 * 1024' >/dev/null
+          echo "$js" | grep -F 'MAX_VIDEO_UPLOAD_BYTES = 90 * 1024 * 1024' >/dev/null
           headers="$(curl --fail --silent --show-error --max-time 20 -I "$base/portal?verify=$GITHUB_SHA")"
           echo "$headers" | grep -i 'cache-control:.*no-store' >/dev/null
           echo "Client video workspace verified."

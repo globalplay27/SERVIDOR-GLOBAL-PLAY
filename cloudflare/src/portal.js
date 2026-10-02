@@ -615,10 +615,10 @@ export async function handlePortalApi(request, env, url, ctx) {
       return json({ error: "unsupported_media_type", message: "Use PNG, JPG, WEBP, MP4, WEBM ou MOV." }, 415);
     }
 
-    const maxBytes = 95 * 1024 * 1024;
+    const maxBytes = 90 * 1024 * 1024;
     const size = Number(file.size || 0);
     if (!size || size > maxBytes) {
-      return json({ error: "media_too_large", message: "O vídeo deve ter no máximo 95 MB." }, 413);
+      return json({ error: "media_too_large", message: "O vídeo deve ter no máximo 90 MB." }, 413);
     }
 
     const purpose = String(form.get("purpose") || "reference") === "publish" ? "publish" : "reference";
