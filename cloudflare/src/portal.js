@@ -18,6 +18,7 @@ import { leadsForClient, leadHunterSummary } from "./leads.js";
 import { leadHunterView, saveLeadHunterConfig, runLeadHunter, discardLead } from "./lead-hunter.js";
 import { decidePost, requestPostRevision, cancelPost, saveOwnPostContent, publishPostNow, useLibraryImageForPost } from "./posts.js";
 import { addDirective, createCampaign, masterWorkspace } from "./master-workspace.js";
+import { startGitHubVideoRender } from "./github-video-render.js";
 
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
@@ -141,6 +142,61 @@ async function listClientMedia(env, clientId, origin = "") {
     uploadedAt: object.uploaded || null,
     url: base ? base + "/media/" + object.key : "/media/" + object.key
   })).sort((a, b) => String(b.uploadedAt || "").localeCompare(String(a.uploadedAt || "")));
+}
+
+
+async function listVideoJobs(env, clientId) {
+  const result = await env.DB.prepare(
+    `SELECT id, client_id, source_object_key, status, settings_json, result_json, created_at, updated_at
+     FROM video_jobs WHERE client_id = ?1 ORDER BY created_at DESC LIMIT 100`
+  ).bind(String(clientId)).all();
+  const jobs = [];
+  for (const row of result?.results || []) {
+    const settings = parseJson(row.settings_json, {});
+    const resultJson = parseJson(row.result_json, {});
+    let clips = [];
+    try {
+      const clipRows = await env.DB.prepare(
+        `SELECT id, output_object_key, status, approval_status, publish_status, settings_json, result_json, created_at, updated_at
+         FROM video_clips WHERE job_id = ?1 AND client_id = ?2 ORDER BY created_at DESC`
+      ).bind(String(row.id), String(clientId)).all();
+      clips = (clipRows?.results || []).map(clip => ({
+        id: clip.id,
+        outputObjectKey: clip.output_object_key || "",
+        status: clip.status || "pending",
+        approvalStatus: clip.approval_status || "pending",
+        publishStatus: clip.publish_status || "draft",
+        ...parseJson(clip.settings_json, {}),
+        ...parseJson(clip.result_json, {}),
+        createdAt: clip.created_at || null,
+        updatedAt: clip.updated_at || null
+      }));
+    } catch {}
+    jobs.push({
+      id: row.id,
+      clientId: row.client_id,
+      sourceObjectKey: row.source_object_key || "",
+      status: row.status || "pending",
+      filename: settings.filename || settings.displayName || "Vídeo",
+      contentTitle: settings.contentTitle || "",
+      overview: settings.overview || "",
+      releaseYear: settings.releaseYear || "",
+      mediaType: settings.mediaType || "",
+      posterUrl: settings.posterUrl || "",
+      logoEnabled: settings.logoEnabled === true,
+      logoObjectKey: settings.logoObjectKey || "",
+      editStyle: settings.editStyle || "cinematic-card-v1",
+      endText: settings.endText || "",
+      endContact: settings.endContact || "",
+      progress: Number(resultJson.progress || 0),
+      message: resultJson.message || "",
+      error: resultJson.error || "",
+      clips,
+      createdAt: row.created_at || null,
+      updatedAt: row.updated_at || null
+    });
+  }
+  return jobs;
 }
 
 function mediaExtension(contentType, originalName = "") {
@@ -471,6 +527,72 @@ export async function handlePortalApi(request, env, url, ctx) {
     }
   }
 
+
+  if (url.pathname === "/api/portal/videos" && request.method === "GET") {
+    return json({ ok: true, jobs: await listVideoJobs(env, client.id) });
+  }
+
+  const videoProcessMatch = url.pathname.match(/^\/api\/portal\/videos\/([^/]+)\/process$/);
+  if (videoProcessMatch && request.method === "POST") {
+    const jobId = decodeURIComponent(videoProcessMatch[1]);
+    const body = await request.json().catch(() => ({}));
+    const row = await env.DB.prepare(
+      "SELECT id, settings_json FROM video_jobs WHERE id=?1 AND client_id=?2 LIMIT 1"
+    ).bind(jobId, client.id).first();
+    if (!row) return json({ error: "video_not_found", message: "Vídeo não encontrado." }, 404);
+
+    const current = parseJson(row.settings_json, {});
+    const branding = client.config?.branding && typeof client.config.branding === "object" ? client.config.branding : {};
+    const settings = {
+      ...current,
+      contentTitle: String(body.title || current.contentTitle || current.displayName || "Conteúdo").trim().slice(0, 180),
+      overview: String(body.overview || current.overview || "").trim().slice(0, 1800),
+      releaseYear: String(body.year || current.releaseYear || "").trim().slice(0, 12),
+      mediaType: String(body.mediaType || current.mediaType || "").trim().slice(0, 24),
+      posterUrl: String(body.posterUrl || current.posterUrl || "").trim().slice(0, 1200),
+      editStyle: "cinematic-card-v1",
+      clipDuration: Math.max(6, Math.min(90, Number(body.duration || current.clipDuration || 30))),
+      requestedClips: 1,
+      outputFormat: "reel",
+      logoEnabled: body.logoEnabled !== false && Boolean(branding.logoKey),
+      logoObjectKey: body.logoEnabled !== false ? String(branding.logoKey || "") : "",
+      endText: String(body.endText || current.endText || "").trim().slice(0, 120),
+      endContact: String(body.endContact || current.endContact || "").trim().slice(0, 120)
+    };
+    await env.DB.prepare(
+      "UPDATE video_jobs SET settings_json=?3, updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2"
+    ).bind(jobId, client.id, JSON.stringify(settings)).run();
+
+    try {
+      await startGitHubVideoRender(env, client.id, jobId, settings);
+      const jobs = await listVideoJobs(env, client.id);
+      return json({ ok: true, job: jobs.find(item => item.id === jobId) || null }, 202);
+    } catch (error) {
+      const code = error instanceof Error ? error.message : String(error);
+      return json({ error: code, message: code === "github_actions_token_missing"
+        ? "O renderizador ainda não está autorizado no Worker."
+        : "Não foi possível iniciar a geração do vídeo." }, 400);
+    }
+  }
+
+  const clipMediaMatch = url.pathname.match(/^\/api\/portal\/videos\/([^/]+)\/clips\/([^/]+)\/media$/);
+  if (clipMediaMatch && request.method === "GET") {
+    const jobId = decodeURIComponent(clipMediaMatch[1]);
+    const clipId = decodeURIComponent(clipMediaMatch[2]);
+    const clip = await env.DB.prepare(
+      "SELECT output_object_key FROM video_clips WHERE id=?1 AND job_id=?2 AND client_id=?3 LIMIT 1"
+    ).bind(clipId, jobId, client.id).first();
+    if (!clip?.output_object_key || !env.MEDIA) return json({ error: "clip_not_found" }, 404);
+    const object = await env.MEDIA.get(String(clip.output_object_key));
+    if (!object) return json({ error: "clip_not_found" }, 404);
+    const headers = new Headers();
+    object.writeHttpMetadata(headers);
+    headers.set("cache-control", "private, no-store");
+    headers.set("content-disposition", 'attachment; filename="nexus-video.mp4"');
+    if (object.size) headers.set("content-length", String(object.size));
+    return new Response(object.body, { status: 200, headers });
+  }
+
   if (url.pathname === "/api/portal/media" && request.method === "GET") {
     return json({
       ok: true,
@@ -523,11 +645,40 @@ export async function handlePortalApi(request, env, url, ctx) {
       }
     });
 
+    let videoJobId = "";
+    if (purpose === "publish" && contentType.startsWith("video/")) {
+      videoJobId = "video_" + crypto.randomUUID().replace(/-/g, "").slice(0, 24);
+      const settings = {
+        filename: originalName,
+        displayName: originalName.replace(/\.[a-z0-9]{2,5}$/i, ""),
+        contentTitle: String(form.get("title") || "").trim().slice(0, 180),
+        overview: String(form.get("overview") || "").trim().slice(0, 1800),
+        releaseYear: String(form.get("year") || "").trim().slice(0, 12),
+        mediaType: String(form.get("mediaType") || "").trim().slice(0, 24),
+        posterUrl: String(form.get("posterUrl") || "").trim().slice(0, 1200),
+        clipDuration: 30,
+        requestedClips: 1,
+        outputFormat: "reel",
+        editStyle: "cinematic-card-v1"
+      };
+      await env.DB.prepare(
+        `INSERT INTO video_jobs(id, client_id, source_object_key, status, settings_json, result_json, created_at, updated_at)
+         VALUES(?1, ?2, ?3, 'awaiting_configuration', ?4, ?5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
+      ).bind(
+        videoJobId,
+        String(client.id),
+        key,
+        JSON.stringify(settings),
+        JSON.stringify({ progress: 15, message: "Vídeo enviado. Preencha os dados e gere o MP4.", error: "" })
+      ).run();
+    }
+
     return json({
       ok: true,
-      message: purpose === "reference"
+      message: videoJobId ? "Vídeo enviado. Agora complete os dados e gere o MP4." : (purpose === "reference"
         ? "Mídia salva como referência de estilo."
-        : "Mídia salva na biblioteca do cliente.",
+        : "Mídia salva na biblioteca do cliente."),
+      videoJobId,
       media: (await listClientMedia(env, client.id, url.origin)).find(item => item.key === key) || { key, url: url.origin + "/media/" + key }
     }, 201);
   }
