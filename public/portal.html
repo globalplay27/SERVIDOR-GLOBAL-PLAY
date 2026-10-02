@@ -122,6 +122,24 @@
         <label>Vídeo
           <input id="media-file" name="file" type="file" accept="video/mp4,video/webm,video/quicktime" required>
         </label>
+        <label>Capa
+          <input id="video-poster-file" name="poster" type="file" accept="image/png,image/jpeg,image/webp">
+        </label>
+        <label>Título
+          <input id="video-title" name="title" type="text" maxlength="180" placeholder="Nome do filme ou série">
+        </label>
+        <label>Ano / tipo
+          <div class="video-meta-fields">
+            <input id="video-year" name="year" type="text" maxlength="12" placeholder="2026">
+            <select id="video-media-type" name="mediaType">
+              <option value="FILME">Filme</option>
+              <option value="SÉRIE">Série</option>
+            </select>
+          </div>
+        </label>
+        <label>Sinopse
+          <textarea id="video-overview" name="overview" maxlength="1800" placeholder="Sinopse que aparecerá dentro do smartphone"></textarea>
+        </label>
         <input id="media-purpose" name="purpose" type="hidden" value="publish">
         <label>Observação
           <textarea id="media-note" name="note" maxlength="800" placeholder="Opcional"></textarea>
@@ -129,6 +147,7 @@
         <button class="primary" type="submit">Enviar vídeo</button>
         <p id="media-upload-message" class="muted" role="status"></p>
       </form>
+      <div id="video-job-list" class="media-grid" aria-live="polite"></div>
       <div id="media-list" class="media-grid" aria-live="polite"></div>
     </section>
     <section id="tab-performance" class="tab" hidden>
