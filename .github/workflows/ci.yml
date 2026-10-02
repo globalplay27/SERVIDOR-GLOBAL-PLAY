@@ -64,6 +64,22 @@ jobs:
           fi
           npm run deploy
 
+      - name: Verify client video workspace
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="https://servidor-nexus.diamantehinode2015.workers.dev"
+          portal="$(curl --fail --silent --show-error --max-time 20 "$base/portal?verify=$GITHUB_SHA")"
+          echo "$portal" | grep -F 'data-tab="videos"' >/dev/null
+          echo "$portal" | grep -F 'id="video-job-list"' >/dev/null
+          js="$(curl --fail --silent --show-error --max-time 20 "$base/client-lite.js?verify=$GITHUB_SHA")"
+          echo "$js" | grep -F 'async function loadVideoJobs()' >/dev/null
+          echo "$js" | grep -F 'MAX_VIDEO_UPLOAD_BYTES = 95 * 1024 * 1024' >/dev/null
+          headers="$(curl --fail --silent --show-error --max-time 20 -I "$base/portal?verify=$GITHUB_SHA")"
+          echo "$headers" | grep -i 'cache-control:.*no-store' >/dev/null
+          echo "Client video workspace verified."
+
       - name: Verify Master access page
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: bash
