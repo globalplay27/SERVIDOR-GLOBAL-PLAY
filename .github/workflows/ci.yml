@@ -74,11 +74,11 @@ jobs:
             portal="$(curl --fail --silent --show-error --max-time 20 "$base/portal?verify=$GITHUB_SHA-$attempt" || true)"
             js="$(curl --fail --silent --show-error --max-time 20 "$base/client-lite.js?verify=$GITHUB_SHA-$attempt" || true)"
             headers="$(curl --fail --silent --show-error --max-time 20 -I "$base/portal?verify=$GITHUB_SHA-$attempt" || true)"
-            if printf '%s' "$portal" | grep -Fq 'data-tab="videos"' \
-              && printf '%s' "$portal" | grep -Fq 'id="video-job-list"' \
-              && printf '%s' "$js" | grep -Fq 'async function loadVideoJobs()' \
-              && printf '%s' "$js" | grep -Fq 'MAX_VIDEO_UPLOAD_BYTES = 90 * 1024 * 1024' \
-              && printf '%s' "$headers" | grep -qi 'cache-control:.*no-store'; then
+            if grep -Fq 'data-tab="videos"' <<<"$portal" \
+              && grep -Fq 'id="video-job-list"' <<<"$portal" \
+              && grep -Fq 'async function loadVideoJobs()' <<<"$js" \
+              && grep -Fq 'MAX_VIDEO_UPLOAD_BYTES = 90 * 1024 * 1024' <<<"$js" \
+              && grep -qi 'cache-control:.*no-store' <<<"$headers"; then
               echo "Client video workspace verified on attempt $attempt."
               exit 0
             fi

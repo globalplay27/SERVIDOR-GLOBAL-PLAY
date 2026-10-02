@@ -16,3 +16,8 @@
 
 ## Retomada — 2026-09-27 20h UTC
 Implementação incremental da visão somente no Global Play, conforme prioridade do proprietário. Não reativada geração paga de imagens. A análise visual usa API e limite diário existentes; falta de saldo/erro impede aprovação e é registrada. Nenhuma postagem de teste disparada.
+
+## 2026-10-02 — decisão atual sobre vídeo no painel
+- A instrução antiga de 2026-09-27 para “não restaurar edição/corte de vídeo” não representa mais o escopo atual do painel. Entre 01 e 02/10 o proprietário voltou a solicitar explicitamente a área `Vídeos`, upload local, geração e download do MP4; os commits recentes do `main` implementam esse fluxo. Não remover a aba ou o render por causa daquela decisão histórica.
+- Continua proibido reintroduzir Railway. O fluxo de vídeo vigente usa Worker/R2 + GitHub Actions/FFmpeg.
+- Limite escolhido para upload principal: 90 MB, abaixo do teto total de 100 MB da requisição no plano Cloudflare Free, para deixar margem a capa e multipart.

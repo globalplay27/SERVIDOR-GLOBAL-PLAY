@@ -56,3 +56,9 @@ O health anterior exibia Odin `success`, mas não indicava coleta automática, q
 
 ## Retomada — 2026-09-27 20h UTC
 Pendências desta retomada: fonte contínua de mídia nova continua ausente; Global Play usa URLs configuradas/rascunhos existentes. Visão real ainda precisa de evidência de execução e saldo disponível. Cache identifica URL, não hash dos pixels. Métricas reais e replicação ao Ragnar não concluídas. Sem acesso autenticado ao D1 nesta sessão.
+
+## 2026-10-02 — painel de vídeos
+- Causa de código para uploads locais falharem: frontend e backend impunham 25 MB. Corrigido para 90 MB com streaming R2; ainda falta prova ponta a ponta com um arquivo real autenticado.
+- Causa provável para a aba parecer alternar/sumir: rotas do portal e seus assets podiam ser servidas diretamente como Static Assets, fora do Worker. Agora passam por `run_worker_first` e recebem `no-store`; confirmar no navegador do cliente após novo login/reload.
+- A checagem externa `Workers Builds: servidor-nexus` já aparecia vermelha no `main` antes destas mudanças. A implantação oficial de `.github/workflows/ci.yml` consegue executar `wrangler deploy`; investigar o build externo separadamente para não confundi-lo com o deploy canônico.
+- A checagem `Verify Nexus production autonomy` também já falhava depois de deploys bem-sucedidos e é independente do workspace de vídeos.

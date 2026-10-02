@@ -47,3 +47,10 @@ Bundle Wrangler dry-run aprovado nesta retomada. Testes adicionados ao CI antes 
 - Commit `cbe562ced29a3e644104ac64fe816190acf58979`, [CI 36347542955](https://github.com/globalplay27/SERVIDOR-GLOBAL-PLAY/actions/runs/36347542955): seis testes, sintaxe, bundle e etapa de deploy concluídos com sucesso.
 - Health após deploy: ok, D1 pronto, R2 e assets vinculados.
 - Navegador do portal exibe login, sem sessão autenticada. Execução real do Designer e post_ledger ainda não consultados. Nenhuma postagem de teste disparada.
+
+## 2026-10-02 — estabilidade da área Vídeos
+- PR #72: testes de JS/Worker/Node passaram. Primeiro dry-run falhou porque `/portal*` tornava `/portal-login` redundante em `run_worker_first`; a regra duplicada foi removida e o run 37020749427 passou.
+- Merge `e824ac47`, run 37020915371: migrations, deploy Cloudflare, verificação do workspace de vídeo, Master e recuperação passaram. O job terminou vermelho apenas em `Verify Nexus production autonomy`, problema já existente e fora deste escopo.
+- PR #73, run 37021212788: limite seguro de 90 MB passou em sintaxe, testes e bundle. Merge `ede028ed` implantou com sucesso; a checagem imediata do workspace falhou.
+- PR #74, run 37021511042: verificador com retentativas passou nos testes de PR. Merge `3f934cf1` implantou; a checagem pós-deploy ainda falhou. Revisão do script encontrou falso negativo determinístico: com `set -o pipefail`, `printf ... | grep -q` pode falhar quando o grep encerra o pipe cedo. A correção troca pipes por here-strings; precisa ser confirmada no próximo run de `main`.
+- Nenhuma postagem Instagram foi usada para testar estas mudanças.

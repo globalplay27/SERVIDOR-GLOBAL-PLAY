@@ -70,3 +70,11 @@
 
 ## Retomada — 2026-09-27 20h UTC
 Preparada fiscalização visual real para Global Play e exigência do parecer nos publicadores principal, manual e sweep. Adicionados seis testes sem rede e timeout de 20s na chamada OpenAI. Mantidas credenciais por cliente, orçamento diário e exclusões de escopo. Nenhuma geração de imagem ou publicação de teste.
+
+## 2026-10-02 — estabilização do painel do cliente / vídeos
+- Rotas `/portal*`, `/client-lite.js` e `/client-lite.css` passaram a `run_worker_first`.
+- O Worker passou a devolver o shell e assets do cliente com `no-store/no-cache`; versão do `client-lite.js` avançou para evitar reutilização do bundle antigo.
+- Upload principal passou de 25 MB para 90 MB e de `arrayBuffer()` para `file.stream()` no R2.
+- Teste de regressão garante aba Vídeos, lista de jobs, geração/download e limite de upload.
+- CI ganhou validação do workspace no domínio de produção após deploy, com retentativa de propagação. Corrigido falso negativo do próprio verificador causado por `pipefail` com `grep -q`.
+- PRs de runtime: #72, #73 e #74. Nenhuma publicação Meta foi disparada.
