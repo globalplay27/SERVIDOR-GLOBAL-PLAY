@@ -8,7 +8,8 @@ function fakeEnv() {
     { id:"globalplay-streaming", name:"Global Play", niche:"Streaming", instagram:"@globalplay_streaming", status:"online", config_json:"{}", created_at:"2026-09-01", updated_at:"2026-09-30" },
     { id:"ragnar-one", name:"Ragnar One", niche:"Streaming", instagram:"@ragnarplay1", status:"online", config_json:"{}", created_at:"2026-09-01", updated_at:"2026-09-30" }
   ];
-  const today = "2026-09-30T10:00:00.000Z";
+  const now = new Date();
+  const today = new Date(now.getTime() - 60_000).toISOString();
 
   const DB = {
     prepare(sql) {
