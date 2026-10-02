@@ -28,7 +28,7 @@
   "assets": {
     "directory": "../public",
     "binding": "ASSETS",
-    "run_worker_first": ["/", "/login", "/portal*", "/client-lite.js", "/client-lite.css", "/master*", "/portal-login", "/api/*", "/index.html"]
+    "run_worker_first": ["/", "/login", "/portal*", "/client-lite.js", "/client-lite.css", "/master*", "/api/*", "/index.html"]
   },
   "d1_databases": [{
     "binding": "DB",
