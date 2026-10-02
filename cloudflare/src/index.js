@@ -70,7 +70,18 @@ async function asset(env, request, pathname) {
   const target = new URL(request.url);
   target.pathname = pathname;
   target.search = "";
-  return env.ASSETS.fetch(new Request(target.toString(), request));
+  const response = await env.ASSETS.fetch(new Request(target.toString(), request));
+  const headers = new Headers(response.headers);
+  if (["/portal.html", "/client-lite.js", "/client-lite.css"].includes(pathname)) {
+    headers.set("cache-control", "no-store, no-cache, must-revalidate");
+    headers.set("pragma", "no-cache");
+    headers.set("expires", "0");
+  }
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers
+  });
 }
 
 async function mediaResponse(request, env, url) {
@@ -559,8 +570,12 @@ export default {
     if (instagramComplianceResponse) return instagramComplianceResponse;
 
 
-    if (url.pathname === "/login" && request.method === "GET") {
+    if (["GET", "HEAD"].includes(request.method) && ["/login", "/portal", "/portal.html"].includes(url.pathname)) {
       return asset(env, request, "/portal.html");
+    }
+
+    if (["GET", "HEAD"].includes(request.method) && ["/client-lite.js", "/client-lite.css"].includes(url.pathname)) {
+      return asset(env, request, url.pathname);
     }
 
     if (url.pathname === "/api/auth/login" && request.method === "POST") {
