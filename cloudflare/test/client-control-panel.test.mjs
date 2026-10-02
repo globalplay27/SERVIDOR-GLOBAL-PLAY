@@ -30,8 +30,8 @@ test("client portal exposes agent activity and post review controls", async () =
   assert.match(js, /async function loadVideoJobs\(/);
   assert.match(js, /Gerar MP4/);
   assert.match(js, /Baixar MP4/);
-  assert.match(js, /MAX_VIDEO_UPLOAD_BYTES = 95 \* 1024 \* 1024/);
-  assert.match(portal, /const maxBytes = 95 \* 1024 \* 1024/);
+  assert.match(js, /MAX_VIDEO_UPLOAD_BYTES = 90 \* 1024 \* 1024/);
+  assert.match(portal, /const maxBytes = 90 \* 1024 \* 1024/);
   assert.match(portal, /env\.MEDIA\.put\(key, file\.stream\(\)/);
   assert.match(index, /"\/portal", "\/portal\.html"/);
   assert.match(index, /no-store, no-cache, must-revalidate/);
