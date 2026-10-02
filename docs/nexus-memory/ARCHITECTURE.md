@@ -21,3 +21,8 @@ Fluxo pretendido no código: cron → `scheduled_jobs` → ciclo central → `po
 
 ## Retomada — 2026-09-27 20h UTC
 Nova inspeção visual preparada: extended-agents → visual-review → openAIResponses (chave do cliente e orçamento diário existentes). Modelo padrão gpt-4.1-mini, resposta estruturada, uma avaliação nova por passagem do Designer, cache por URL, backoff de 30 minutos, até três tentativas por mídia/post. Todos os publicadores exigem parecer correspondente à URL para Global Play. Ragnar permanece no fluxo anterior. URLs revisadas devem ser imutáveis; alteração de bytes na mesma URL não é detectada pelo cache.
+
+## 2026-10-02 — entrega do portal e vídeo do cliente
+- `wrangler.jsonc` força `/portal*`, `/client-lite.js` e `/client-lite.css` a executar o Worker antes dos Static Assets. `asset()` devolve esses arquivos com cache desativado, evitando alternância entre shells antigos e novos.
+- Upload de mídia do portal usa R2 `MEDIA`; para o vídeo principal o Worker valida até 90 MB e grava `file.stream()` diretamente no bucket. A capa opcional continua com limite separado de 5 MB.
+- O render é despachado pelo Worker para `.github/workflows/video-template-render.yml`. O resultado volta ao R2 e é servido como anexo MP4 pela rota do portal.
