@@ -3,6 +3,7 @@ import { openAIKeyStatus } from "./openai-routing.js";
 import { openAIResponses, tokenUsageToday } from "./openai.js";
 import { getState, putState, deleteState } from "./storage.js";
 import { handlePortalApi } from "./portal.js";
+import { handleGitHubVideoRenderCallback } from "./github-video-render.js";
 import { handleMaster, masterLoginPage } from "./master.js";
 import { runSchedulerTick, recordSchedulerFailure } from "./scheduler.js";
 import { runCronIteration } from "./cron-runtime.js";
@@ -636,6 +637,9 @@ export default {
       throw error;
     }
     if (masterResponse) return masterResponse;
+
+    const videoRenderCallback = await handleGitHubVideoRenderCallback(request, env, url);
+    if (videoRenderCallback) return videoRenderCallback;
 
     const portalResponse = await handlePortalApi(request, env, url, ctx);
     if (portalResponse) return portalResponse;
