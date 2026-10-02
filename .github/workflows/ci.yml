@@ -70,15 +70,23 @@ jobs:
         run: |
           set -euo pipefail
           base="https://servidor-nexus.diamantehinode2015.workers.dev"
-          portal="$(curl --fail --silent --show-error --max-time 20 "$base/portal?verify=$GITHUB_SHA")"
-          echo "$portal" | grep -F 'data-tab="videos"' >/dev/null
-          echo "$portal" | grep -F 'id="video-job-list"' >/dev/null
-          js="$(curl --fail --silent --show-error --max-time 20 "$base/client-lite.js?verify=$GITHUB_SHA")"
-          echo "$js" | grep -F 'async function loadVideoJobs()' >/dev/null
-          echo "$js" | grep -F 'MAX_VIDEO_UPLOAD_BYTES = 90 * 1024 * 1024' >/dev/null
-          headers="$(curl --fail --silent --show-error --max-time 20 -I "$base/portal?verify=$GITHUB_SHA")"
-          echo "$headers" | grep -i 'cache-control:.*no-store' >/dev/null
-          echo "Client video workspace verified."
+          for attempt in 1 2 3 4 5 6; do
+            portal="$(curl --fail --silent --show-error --max-time 20 "$base/portal?verify=$GITHUB_SHA-$attempt" || true)"
+            js="$(curl --fail --silent --show-error --max-time 20 "$base/client-lite.js?verify=$GITHUB_SHA-$attempt" || true)"
+            headers="$(curl --fail --silent --show-error --max-time 20 -I "$base/portal?verify=$GITHUB_SHA-$attempt" || true)"
+            if printf '%s' "$portal" | grep -Fq 'data-tab="videos"' \
+              && printf '%s' "$portal" | grep -Fq 'id="video-job-list"' \
+              && printf '%s' "$js" | grep -Fq 'async function loadVideoJobs()' \
+              && printf '%s' "$js" | grep -Fq 'MAX_VIDEO_UPLOAD_BYTES = 90 * 1024 * 1024' \
+              && printf '%s' "$headers" | grep -qi 'cache-control:.*no-store'; then
+              echo "Client video workspace verified on attempt $attempt."
+              exit 0
+            fi
+            echo "::warning::Client portal assets not fully propagated on attempt $attempt."
+            sleep 5
+          done
+          echo "::error::Client video workspace did not converge after deploy."
+          exit 1
 
       - name: Verify Master access page
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
