@@ -10,6 +10,7 @@ const formatDate = value => {
 let client = null;
 let posts = [];
 let activeTab = "overview";
+const MAX_VIDEO_UPLOAD_BYTES = 95 * 1024 * 1024;
 
 async function api(path, options = {}) {
   const response = await fetch(path, { credentials: "same-origin", cache: "no-store", ...options });
@@ -636,11 +637,11 @@ async function uploadMedia(event) {
   const message = $("#media-upload-message");
   const file = $("#media-file").files?.[0];
   if (!file) {
-    message.textContent = "Selecione uma imagem ou vídeo.";
+    message.textContent = "Selecione um vídeo.";
     return;
   }
-  if (file.size > 25 * 1024 * 1024) {
-    message.textContent = "O arquivo deve ter no máximo 25 MB.";
+  if (file.size > MAX_VIDEO_UPLOAD_BYTES) {
+    message.textContent = "O vídeo deve ter no máximo 95 MB.";
     return;
   }
 

@@ -615,10 +615,10 @@ export async function handlePortalApi(request, env, url, ctx) {
       return json({ error: "unsupported_media_type", message: "Use PNG, JPG, WEBP, MP4, WEBM ou MOV." }, 415);
     }
 
-    const maxBytes = 25 * 1024 * 1024;
+    const maxBytes = 95 * 1024 * 1024;
     const size = Number(file.size || 0);
     if (!size || size > maxBytes) {
-      return json({ error: "media_too_large", message: "O arquivo deve ter no máximo 25 MB." }, 413);
+      return json({ error: "media_too_large", message: "O vídeo deve ter no máximo 95 MB." }, 413);
     }
 
     const purpose = String(form.get("purpose") || "reference") === "publish" ? "publish" : "reference";
@@ -626,12 +626,8 @@ export async function handlePortalApi(request, env, url, ctx) {
     const originalName = String(file.name || "midia").replace(/[\r\n]/g, " ").slice(0, 180);
     const extension = mediaExtension(contentType, originalName);
     const key = "library/" + String(client.id) + "/" + new Date().toISOString().slice(0, 10) + "/" + crypto.randomUUID() + "." + extension;
-    const bytes = await file.arrayBuffer();
-    if (!bytes.byteLength || bytes.byteLength > maxBytes) {
-      return json({ error: "media_too_large", message: "O arquivo deve ter no máximo 25 MB." }, 413);
-    }
 
-    await env.MEDIA.put(key, bytes, {
+    await env.MEDIA.put(key, file.stream(), {
       httpMetadata: {
         contentType,
         cacheControl: "private, no-store"

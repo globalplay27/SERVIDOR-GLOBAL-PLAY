@@ -3,10 +3,12 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 test("client portal exposes agent activity and post review controls", async () => {
-  const [html, js, portal] = await Promise.all([
+  const [html, js, portal, index, wrangler] = await Promise.all([
     readFile(new URL("../../public/portal.html", import.meta.url), "utf8"),
     readFile(new URL("../../public/client-lite.js", import.meta.url), "utf8"),
-    readFile(new URL("../src/portal.js", import.meta.url), "utf8")
+    readFile(new URL("../src/portal.js", import.meta.url), "utf8"),
+    readFile(new URL("../src/index.js", import.meta.url), "utf8"),
+    readFile(new URL("../wrangler.jsonc", import.meta.url), "utf8")
   ]);
 
   assert.match(html, /data-tab="agents"/);
@@ -28,6 +30,13 @@ test("client portal exposes agent activity and post review controls", async () =
   assert.match(js, /async function loadVideoJobs\(/);
   assert.match(js, /Gerar MP4/);
   assert.match(js, /Baixar MP4/);
+  assert.match(js, /MAX_VIDEO_UPLOAD_BYTES = 95 \* 1024 \* 1024/);
+  assert.match(portal, /const maxBytes = 95 \* 1024 \* 1024/);
+  assert.match(portal, /env\.MEDIA\.put\(key, file\.stream\(\)/);
+  assert.match(index, /"\/portal", "\/portal\.html"/);
+  assert.match(index, /no-store, no-cache, must-revalidate/);
+  assert.match(wrangler, /"\/portal\*"/);
+  assert.match(wrangler, /"\/client-lite\.js"/);
   assert.match(portal, /postDecisionMatch/);
   assert.match(portal, /postRevisionMatch/);
   assert.equal(portal.includes("/decision"), true);
