@@ -68,3 +68,9 @@ Prioridade atual: concluir CI/deploy da revisão visual Global Play, obter evid�
 - Próximo passo concreto: conferir main/deploy por acesso autorizado e obter registros atuais de agent_executions, scheduler e post_ledger. Em seguida corrigir o consumo de resultados pelo Estrategista/Creator, validar com dados simulados sem postagem e verificar execução real. Implementar acompanhamento automático de falhas com recuperação limitada e indicação clara do que exige intervenção.
 - Critério de conclusão: evidência por função de execução recente, entradas/saídas, erros e recuperação; conteúdo novo aprovado e publicação registrada; métricas reais alimentando decisões seguintes. Não prometer visualizações, viralização ou número de seguidores.
 - Continuidade: ler estes documentos antes de buscar histórico. Esta atualização registra direção e diagnóstico, não conclusão da autonomia.
+
+## 2026-10-02 — próximo passo do painel de cliente
+1. Confirmar no próximo run de `main` que `Deploy servidor-nexus` e `Verify client video workspace` passam com o verificador sem pipe.
+2. No painel autenticado, abrir `Vídeos`, enviar um MP4 real com menos de 90 MB, preencher título e sinopse, gerar o MP4 e baixar o resultado.
+3. Inspecionar o arquivo final: smartphone visível em primeiro plano, título/sinopse alinhados, sem elementos gráficos indevidos e download funcional. Se falhar, usar o ID/status de `video_jobs` e o run `video-template-render` para localizar a etapa; não alterar publicação Instagram para esse teste.
+4. Tratar separadamente os problemas preexistentes de `Verify Nexus production autonomy` e `Workers Builds: servidor-nexus`.
