@@ -70,7 +70,7 @@ function showTab(name) {
   });
   if (name === "posts") loadPosts();
   if (name === "agents") loadAgents();
-  if (name === "videos") loadMedia();
+  if (name === "videos") Promise.all([loadMedia(), loadVideoJobs()]);
   if (name === "campaigns") loadCampaigns();
   if (name === "performance") loadPerformance();
   if (name === "instagram") loadInstagram();
@@ -532,6 +532,103 @@ async function loadMedia() {
   }
 }
 
+
+async function loadVideoJobs() {
+  const root = $("#video-job-list");
+  if (!root) return;
+  try {
+    const data = await api("/api/portal/videos");
+    const jobs = Array.isArray(data.jobs) ? data.jobs : [];
+    root.replaceChildren();
+    if (!jobs.length) return;
+
+    for (const job of jobs) {
+      const card = document.createElement("article");
+      card.className = "card media-card video-render-job";
+
+      const title = document.createElement("strong");
+      title.textContent = job.contentTitle || job.filename || "Vídeo";
+
+      const status = document.createElement("small");
+      const labels = {
+        awaiting_configuration: "Pronto para gerar",
+        cutting: "Gerando MP4",
+        ready: "MP4 pronto",
+        failed: "Falha na geração"
+      };
+      status.textContent = (labels[job.status] || job.status || "Aguardando") + " · " + Math.round(Number(job.progress || 0)) + "%";
+      card.append(title, status);
+
+      if (job.message) {
+        const message = document.createElement("p");
+        message.className = "muted";
+        message.textContent = job.message;
+        card.append(message);
+      }
+
+      if (job.overview) {
+        const synopsis = document.createElement("p");
+        synopsis.className = "muted";
+        synopsis.textContent = job.overview;
+        card.append(synopsis);
+      }
+
+      const actions = document.createElement("div");
+      actions.className = "post-actions";
+
+      if (job.status === "awaiting_configuration" || job.status === "failed") {
+        const generate = document.createElement("button");
+        generate.type = "button";
+        generate.className = "primary";
+        generate.textContent = job.status === "failed" ? "Gerar novamente" : "Gerar MP4";
+        generate.addEventListener("click", async () => {
+          generate.disabled = true;
+          const original = generate.textContent;
+          generate.textContent = "Iniciando...";
+          try {
+            await api("/api/portal/videos/" + encodeURIComponent(job.id) + "/process", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({})
+            });
+            notice("Vídeo enviado para renderização.");
+            await loadVideoJobs();
+            setTimeout(() => loadVideoJobs(), 5000);
+          } catch (error) {
+            notice("Vídeos: " + error.message);
+            generate.disabled = false;
+            generate.textContent = original;
+          }
+        });
+        actions.append(generate);
+      }
+
+      const readyClip = (job.clips || []).find(clip => clip.status === "ready" && clip.previewUrl);
+      if (readyClip) {
+        const download = document.createElement("a");
+        download.className = "primary";
+        download.href = readyClip.previewUrl;
+        download.download = "nexus-video.mp4";
+        download.textContent = "Baixar MP4";
+        actions.append(download);
+      }
+
+      if (job.status === "cutting") {
+        const refresh = document.createElement("button");
+        refresh.type = "button";
+        refresh.textContent = "Atualizar status";
+        refresh.addEventListener("click", loadVideoJobs);
+        actions.append(refresh);
+      }
+
+      if (actions.children.length) card.append(actions);
+      root.append(card);
+    }
+  } catch (error) {
+    notice("Vídeos: " + error.message);
+  }
+}
+
 async function uploadMedia(event) {
   event.preventDefault();
   const form = event.currentTarget;
@@ -549,6 +646,12 @@ async function uploadMedia(event) {
 
   const body = new FormData();
   body.append("file", file);
+  const poster = $("#video-poster-file")?.files?.[0];
+  if (poster) body.append("poster", poster);
+  body.append("title", $("#video-title")?.value?.trim() || "");
+  body.append("overview", $("#video-overview")?.value?.trim() || "");
+  body.append("year", $("#video-year")?.value?.trim() || "");
+  body.append("mediaType", $("#video-media-type")?.value || "FILME");
   body.append("purpose", $("#media-purpose").value);
   body.append("note", $("#media-note").value.trim());
 
@@ -558,7 +661,7 @@ async function uploadMedia(event) {
     const data = await api("/api/portal/media", { method: "POST", body });
     message.textContent = data.message || "Mídia enviada.";
     form.reset();
-    await loadMedia();
+    await Promise.all([loadMedia(), loadVideoJobs()]);
   } catch (error) {
     message.textContent = error.message;
   } finally {
@@ -832,7 +935,7 @@ async function refresh() {
     loadAIUsage(),
     activeTab === "performance" ? loadPerformance() : Promise.resolve(),
     activeTab === "agents" ? loadAgents() : Promise.resolve(),
-    activeTab === "videos" ? loadMedia() : Promise.resolve(),
+    activeTab === "videos" ? Promise.all([loadMedia(), loadVideoJobs()]) : Promise.resolve(),
     activeTab === "campaigns" ? loadCampaigns() : Promise.resolve()
   ]);
 }
@@ -860,7 +963,7 @@ document.querySelectorAll("[data-refresh]").forEach(button => button.addEventLis
   if (target === "posts") return loadPosts();
   if (target === "agents") return loadAgents();
   if (target === "campaigns") return loadCampaigns();
-  if (target === "videos") return loadMedia();
+  if (target === "videos") return Promise.all([loadMedia(), loadVideoJobs()]);
   if (target === "instagram") return loadInstagram();
   return loadPerformance();
 }));
