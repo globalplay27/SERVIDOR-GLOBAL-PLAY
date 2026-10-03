@@ -115,10 +115,10 @@ def prepare(work, metadata, poster_path=None):
     required=['title','overview']
     if any(not metadata.get(field) for field in required):
         raise ValueError('movie_metadata_incomplete')
-    # The full synopsis remains in the job; the phone uses a bounded readable excerpt.
-    overview=str(metadata['overview'])
-    if len(overview)>460:
-        overview=overview[:457].rsplit(' ',1)[0]+'…'
+    # Keep the synopsis visually close to the supplied reference: short, readable and never a large card.
+    overview=' '.join(str(metadata.get('overview') or '').split())
+    if len(overview)>125:
+        overview=overview[:122].rsplit(' ',1)[0]+'…'
     metadata=dict(metadata,overview=overview)
     bg=background(poster)
     bg.save(work/'background.png')
@@ -142,7 +142,7 @@ def prepare(work, metadata, poster_path=None):
     d=ImageDraw.Draw(intro)
     text_block(d,metadata['title'],(312,1258,748,1308),36,True,centered=True)
     text_block(d,' • '.join(filter(None,[metadata.get('year'),metadata.get('runtime')])),(310,1320,747,1360),23,centered=True)
-    text_block(d,metadata['overview'],(311,1370,747,1528),25,centered=True,excerpt=True)
+    text_block(d,metadata['overview'],(145,1560,935,1688),24,centered=True,excerpt=True)
     footer(intro,contact)
     intro.save(work/'phase-0.png')
 
@@ -238,6 +238,16 @@ def render(source,output,work,duration=30,source_crop=None):
     command+=['-filter_complex_threads','1','-filter_complex',graph,'-map','[out]','-map','0:a?','-t',str(duration),'-r','30','-c:v','libx264','-preset','veryfast','-crf','22','-c:a','aac','-b:a','128k','-movflags','+faststart',str(output)]
     subprocess.run(command,check=True)
 
+def render_plain(source,output,duration,source_crop=None):
+    """Direct file uploads: convert to 9:16 without inventing title, synopsis or poster."""
+    prefix=(source_crop+',' if source_crop else '')
+    graph=f'[0:v]{prefix}scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=30,format=yuv420p[out]'
+    command=['ffmpeg','-hide_banner','-loglevel','error','-y','-i',str(source),
+             '-filter_complex',graph,'-map','[out]','-map','0:a?','-t',str(duration),'-r','30',
+             '-c:v','libx264','-preset','veryfast','-crf','22','-c:a','aac','-b:a','128k',
+             '-movflags','+faststart',str(output)]
+    subprocess.run(command,check=True)
+
 def load_metadata(path=None):
     if path:
         path=Path(path)
@@ -278,7 +288,7 @@ def materialize_metadata(data, work, private_poster=None):
         except Exception:
             if required: raise
             return ''
-    data['poster']=str(Path(private_poster).resolve()) if private_poster else download(data.get('posterUrl'),'poster.jpg',True)
+    data['poster']=str(Path(private_poster).resolve()) if private_poster else download(data.get('posterUrl'),'poster.jpg',False)
     data['media_type']=data.get('mediaType','FILME')
     data['_folder']=str(folder)
     for i,person in enumerate(data.get('cast',[])[:9]): person['image']=download(person.get('image'),f'cast-{i}.jpg')
@@ -304,7 +314,11 @@ if __name__=='__main__':
         data=json.loads(supplied)
         private_poster='/tmp/poster.jpg' if str(data.get('posterUrl','')).startswith(os.environ.get('NEXUS_BASE_URL','https://invalid.example')+'/media/') and Path('/tmp/poster.jpg').exists() else None
         metadata=materialize_metadata(data,args.work,private_poster)
-    prepare(args.work,metadata,args.poster)
     source_duration=float(json.loads(subprocess.check_output(['ffprobe','-v','error','-show_entries','format=duration','-of','json',args.source]))['format']['duration'])
     duration=min(source_duration,args.duration) if args.duration>0 else source_duration
-    render(args.source,args.output,args.work,max(.1,duration),args.source_crop)
+    has_editorial_metadata=bool(str(metadata.get('overview') or '').strip() and str(metadata.get('poster') or '').strip())
+    if has_editorial_metadata:
+        prepare(args.work,metadata,args.poster)
+        render(args.source,args.output,args.work,max(.1,duration),args.source_crop)
+    else:
+        render_plain(args.source,args.output,max(.1,duration),args.source_crop)
