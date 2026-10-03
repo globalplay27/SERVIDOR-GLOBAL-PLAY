@@ -1,6 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { youtubeUrl, searchCatalog, catalogMetadata } from '../src/video-catalog.js';
+import { youtubeUrl, searchCatalog, catalogMetadata, portugueseTrailerScore } from '../src/video-catalog.js';
+
+test('Every title requires a verified official trailer with Portuguese evidence; English and fan uploads are rejected', () => {
+  const valid = { title: 'Reacher — Trailer oficial dublado', channel: 'Prime Video Brasil', channelVerified: true };
+  assert.ok(portugueseTrailerScore(valid) >= 0);
+  for (const patch of [
+    { title: 'Reacher — Official trailer English' },
+    { title: 'Reacher — Trailer legendado' },
+    { channel: 'Fan trailers Brasil' },
+    { channelVerified: false },
+    { title: 'Reacher entrevista dublada' },
+    { title: 'Michael Official Trailer', channel: 'Universal Pictures' }
+  ]) assert.equal(portugueseTrailerScore({ ...valid, ...patch }), -1);
+});
 
 test('YouTube imports accept canonical public video URLs and reject foreign hosts and playlists', () => {
   for (const url of ['https://youtu.be/0123456789_', 'https://www.youtube.com/watch?v=0123456789_&list=ignore', 'https://youtube.com/shorts/0123456789_']) assert.equal(youtubeUrl(url), 'https://www.youtube.com/watch?v=0123456789_');

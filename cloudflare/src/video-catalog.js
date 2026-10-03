@@ -1,4 +1,14 @@
 const plain = value => String(value || "").replace(/<[^>]*>/g, "").replace(/&amp;/g, "&").trim();
+export function portugueseTrailerScore(item) {
+  const clean = value => String(value || "").normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const title = clean(item.title), channel = clean(item.channel);
+  if (/legendad|subtitled|english|ingles/.test(title)) return -1;
+  const studio = /^(?:amazon )?(?:prime video|netflix|warner bros\.? pictures|warner play|universal pictures|paramount pictures|sony pictures|disney|disney studios|20th century studios|diamond films|paris filmes|imagem filmes|hbo|max|globoplay|lionsgate|mubi)(?: brasil| brazil| br)?$/.test(channel);
+  const brazil = /brasil|brazil|\bbr\b|portugues/.test(channel);
+  const dubbed = /dublad|portugues|pt[- ]?br/.test(title);
+  if (!studio || !item.channelVerified || (!brazil && !dubbed) || !/trailer/.test(title)) return -1;
+  return (dubbed ? 100 : 0) + (brazil ? 70 : 0) + (/oficial/.test(title) ? 30 : 0) + (item.channelVerified ? 20 : 0);
+}
 export function youtubeUrl(value) {
   try {
     const u = new URL(value); let id = "";
@@ -57,7 +67,7 @@ export async function dispatchVideoSearch(env, clientId, query, type) {
     .bind(id, clientId, JSON.stringify({ contentTitle: query, githubRenderToken: callbackToken, searchOnly: true })).run();
   const r = await fetch("https://api.github.com/repos/" + (env.GITHUB_INGEST_REPOSITORY || "globalplay27/SERVIDOR-GLOBAL-PLAY") + "/dispatches", {
     method: "POST", headers: { authorization: "Bearer " + token, accept: "application/vnd.github+json", "content-type": "application/json", "user-agent": "NEXUS" },
-    body: JSON.stringify({ event_type: "video-youtube-search", client_payload: { job_id: id, client_id: clientId, callback_token: callbackToken, query: query.slice(0, 120) + (type === "series" ? " série trailer oficial" : " filme trailer oficial") } })
+    body: JSON.stringify({ event_type: "video-youtube-search", client_payload: { job_id: id, client_id: clientId, callback_token: callbackToken, query: query.slice(0, 120) + " trailer oficial dublado português Brasil" } })
   });
   if (r.status !== 204) throw new Error("youtube_search_dispatch_failed");
   return id;

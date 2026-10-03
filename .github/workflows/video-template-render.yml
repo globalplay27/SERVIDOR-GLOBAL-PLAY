@@ -46,8 +46,11 @@ jobs:
           if [ -n "$SOURCE_URL" ]; then
             python -m pip install --upgrade 'yt-dlp[default]'
             yt-dlp --no-playlist --js-runtimes node --remote-components ejs:github --socket-timeout 30 --retries 3 \
-              --merge-output-format mp4 --remux-video mp4 -f 'bv*[height<=720]+ba/b[height<=720]/best' -o '/tmp/youtube.%(ext)s' "$SOURCE_URL"
+              --write-info-json --merge-output-format mp4 --remux-video mp4 -f 'bv*[height<=720]+ba[language^=pt]/bv*[height<=720]+ba/b[height<=720]/best' -o '/tmp/youtube.%(ext)s' "$SOURCE_URL"
             ffmpeg -hide_banner -loglevel error -y -i /tmp/youtube.mp4 -map 0:v:0 -map 0:a? -c:v libx264 -preset veryfast -crf 23 -c:a aac /tmp/source.mp4
+            python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+            python -m pip install openai-whisper
+            python scripts/verify_portuguese_trailer.py /tmp/youtube.info.json /tmp/source.mp4
           else
             curl --fail-with-body --retry 2 --retry-all-errors \
               "$NEXUS_BASE_URL/api/internal/video-render/source" \
@@ -148,10 +151,17 @@ jobs:
         continue-on-error: true
         shell: bash
         run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          path=Path('/tmp/nexus-render-error.txt')
+          error=path.read_text().strip() if path.exists() else 'github_template_render_failed'
+          json.dump({'error':error},open('/tmp/failure.json','w'))
+          PY
           curl --silent --show-error \
             -X POST "$NEXUS_BASE_URL/api/internal/video-render/fail" \
             -H "x-nexus-job-id: $JOB_ID" \
             -H "x-nexus-client-id: $CLIENT_ID" \
             -H "x-nexus-callback-token: $CALLBACK_TOKEN" \
             -H "content-type: application/json" \
-            --data '{"error":"github_template_render_failed"}'
+            --data-binary @/tmp/failure.json

@@ -62,16 +62,17 @@ def background(poster):
     image=Image.alpha_composite(image,Image.new('RGBA',(W,H),(1,9,16,205)))
     return image
 
-def contact_icon(canvas):
-    d=ImageDraw.Draw(canvas)
-    x,y=318,1814
-    d.ellipse((x-45,y-45,x+45,y+45),fill='#25d366',outline='white',width=5)
-    d.polygon([(x-38,y+26),(x-45,y+51),(x-12,y+40)],fill='#25d366')
-    d.line([(x-38,y+26),(x-45,y+51),(x-12,y+40)],fill='white',width=4)
-    # White handset within the chat bubble.
-    d.arc((x-24,y-25,x+26,y+23),70,205,fill='white',width=11)
-    d.rounded_rectangle((x-28,y-24,x-12,y-5),5,fill='white')
-    d.rounded_rectangle((x+10,y+6,x+28,y+22),5,fill='white')
+def contact_icon(canvas, contact='', y=1775, size=56):
+    # Unmodified glyph from Meta's official WhatsApp Brand Resource Center, 2026.
+    icon=Image.open(ASSETS/'whatsapp-official.png').convert('RGBA')
+    icon.thumbnail((size,size),Image.Resampling.LANCZOS)
+    d=ImageDraw.Draw(canvas); face=font(34 if size==56 else 28,True)
+    label=contact or 'WhatsApp'
+    width=d.textlength(label,font=face)
+    x=int((W-size-20-width)/2)
+    canvas.alpha_composite(icon,(x,y))
+    d.text((x+size+20,y+(size-face.size)/2),label,font=face,fill='white')
+
 
 def heart_eyes(canvas):
     d=ImageDraw.Draw(canvas); x,y=485,878
@@ -85,29 +86,27 @@ def heart_eyes(canvas):
 def footer(canvas, contact=''):
     d=ImageDraw.Draw(canvas)
     d.rectangle((0,1738,W,H),fill=(1,7,11,240))
-    text_block(d,os.getenv('END_TEXT') or 'DISPONÍVEL EM NOSSO APLICATIVO',(100,1748,980,1790),27,centered=True)
-    # The same six device categories as the reference, drawn as editable vectors.
+    text_block(d,os.getenv('END_TEXT') or 'DISPONÍVEL EM NOSSO APLICATIVO',(100,1740,980,1772),24,centered=True)
     labels=['TV SMART','TV BOX','PC/NOTE','CELULAR','XBOX','CAST']
     for i,label in enumerate(labels):
         x=200+i*130
         if i in (0,1,2):
-            d.rounded_rectangle((x-42,1800,x+42,1850),5,outline='white',width=3)
-            d.line((x-12,1851,x+12,1851),fill='white',width=3)
+            d.rounded_rectangle((x-32,1840,x+32,1878),4,outline='white',width=3)
+            d.line((x-10,1879,x+10,1879),fill='white',width=3)
         elif i==3:
-            d.rounded_rectangle((x-20,1793,x+20,1856),5,outline='white',width=3)
-            d.line((x-7,1848,x+7,1848),fill='white',width=2)
+            d.rounded_rectangle((x-16,1834,x+16,1880),4,outline='white',width=3)
+            d.line((x-6,1875,x+6,1875),fill='white',width=2)
         elif i==4:
-            d.ellipse((x-32,1793,x+32,1857),outline='white',width=3)
-            d.line((x-22,1803,x+22,1847),fill='white',width=3)
-            d.line((x+22,1803,x-22,1847),fill='white',width=3)
+            d.ellipse((x-24,1834,x+24,1882),outline='white',width=3)
+            d.line((x-17,1840,x+17,1876),fill='white',width=3)
+            d.line((x+17,1840,x-17,1876),fill='white',width=3)
         else:
-            d.rounded_rectangle((x-36,1799,x+36,1855),5,outline='white',width=3)
-            for radius in (12,22,32):
-                d.arc((x-42-radius,1835-radius,x-42+radius,1835+radius),270,360,fill='white',width=3)
-        text_block(d,label,(x-60,1867,x+60,1898),17,centered=True)
-    contact_icon(canvas)
-    if contact:
-        text_block(d,contact,(65,1692,1015,1736),26,centered=True)
+            d.rounded_rectangle((x-28,1840,x+28,1880),4,outline='white',width=3)
+            for radius in (9,16,23):
+                d.arc((x-31-radius,1866-radius,x-31+radius,1866+radius),270,360,fill='white',width=3)
+        text_block(d,label,(x-60,1887,x+60,1912),16,centered=True)
+    contact_icon(canvas,contact)
+
 
 def prepare(work, metadata, poster_path=None):
     work=Path(work); work.mkdir(parents=True,exist_ok=True)
@@ -178,7 +177,7 @@ def prepare(work, metadata, poster_path=None):
         d.ellipse((cx-140,cy-140,cx+140,cy+140),fill='white')
         cast.paste(image,(cx-125,cy-125),mask)
         text_block(d,person['name'],(cx-150,cy+153,cx+150,cy+257),36,True,centered=True)
-    contact_icon(cast)
+    contact_icon(cast,contact,y=1860,size=48)
     cast.save(work/'phase-2.png')
 
     reviews=bg.copy(); d=ImageDraw.Draw(reviews)

@@ -569,6 +569,7 @@ export async function handlePortalApi(request, env, url, ctx) {
       const id = "video_" + crypto.randomUUID().replace(/-/g, "").slice(0, 24);
       const branding = client.config?.branding || {};
       const settings = { sourceUrl, contentTitle: metadata.title, overview: String(body.overview || metadata.overview).slice(0, 1800), releaseYear: metadata.year, mediaType: metadata.mediaType, posterUrl: metadata.posterUrl, movieMetadata: metadata, editStyle: "cinematic-card-v1", clipDuration: null, requestedClips: 1, logoEnabled: Boolean(branding.logoKey), logoObjectKey: branding.logoKey || "" };
+      settings.endContact = String(body.endContact ?? client.config?.videoTemplate?.whatsappNumber ?? "").trim().slice(0, 40);
       await env.DB.prepare("INSERT INTO video_jobs(id,client_id,source_object_key,status,settings_json,result_json,created_at,updated_at) VALUES(?1,?2,'','awaiting_configuration',?3,'{}',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)").bind(id, client.id, JSON.stringify(settings)).run();
       await startGitHubVideoRender(env, client.id, id, settings);
       return json({ ok: true, jobId: id }, 202);
@@ -576,6 +577,13 @@ export async function handlePortalApi(request, env, url, ctx) {
   }
 
   const videoProcessMatch = url.pathname.match(/^\/api\/portal\/videos\/([^/]+)\/process$/);
+  if (url.pathname === "/api/portal/videos/preferences" && request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    const number = String(body.whatsappNumber || "").trim().slice(0, 40);
+    if (number && (!/^[+\d\s().-]+$/.test(number) || !/^\d{10,15}$/.test(number.replace(/\D/g, "")))) return json({ message: "Informe um WhatsApp com DDD, usando de 10 a 15 dígitos." }, 400);
+    await env.DB.prepare("UPDATE clients SET config_json=json_set(config_json,'$.videoTemplate.whatsappNumber',?1),updated_at=CURRENT_TIMESTAMP WHERE id=?2").bind(number, client.id).run();
+    return json({ ok: true, whatsappNumber: number });
+  }
   if (videoProcessMatch && request.method === "POST") {
     const jobId = decodeURIComponent(videoProcessMatch[1]);
     const body = await request.json().catch(() => ({}));
@@ -600,7 +608,7 @@ export async function handlePortalApi(request, env, url, ctx) {
       logoEnabled: body.logoEnabled !== false && Boolean(branding.logoKey),
       logoObjectKey: body.logoEnabled !== false ? String(branding.logoKey || "") : "",
       endText: String(body.endText || current.endText || "").trim().slice(0, 120),
-      endContact: String(body.endContact || current.endContact || "").trim().slice(0, 120)
+      endContact: String(body.endContact ?? client.config?.videoTemplate?.whatsappNumber ?? current.endContact ?? "").trim().slice(0, 40)
     };
     if (!settings.movieMetadata && !/^(michael|michael jackson)$/i.test(settings.contentTitle)) {
       try { settings.movieMetadata = await catalogMetadata(settings.contentTitle, /s[eé]rie|series|tv/i.test(settings.mediaType) ? "series" : "movie"); }
