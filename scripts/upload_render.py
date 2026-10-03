@@ -2,7 +2,7 @@
 import json, os, urllib.request, subprocess
 
 base=os.environ['NEXUS_BASE_URL']+'/api/internal/video-render/upload/'
-headers={'x-nexus-job-id':os.environ['JOB_ID'],'x-nexus-client-id':os.environ['CLIENT_ID'],'x-nexus-callback-token':os.environ['CALLBACK_TOKEN']}
+headers={'x-nexus-job-id':os.environ['JOB_ID'],'x-nexus-client-id':os.environ['CLIENT_ID'],'x-nexus-callback-token':os.environ['CALLBACK_TOKEN'],'user-agent':'NEXUS-GitHub-Renderer/1.0','accept':'application/json'}
 duration=json.loads(subprocess.check_output(['ffprobe','-v','error','-show_entries','format=duration','-of','json','/tmp/rendered.mp4']))['format']['duration']
 def send(path,data,method='POST'):
     request=urllib.request.Request(base+path,data=data,method=method,headers={**headers,'content-type':'application/octet-stream','x-nexus-duration':duration})
