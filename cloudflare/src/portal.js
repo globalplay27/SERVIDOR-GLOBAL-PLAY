@@ -570,8 +570,13 @@ export async function handlePortalApi(request, env, url, ctx) {
       const branding = client.config?.branding || {};
       const settings = { sourceUrl, contentTitle: metadata.title, overview: String(body.overview || metadata.overview).slice(0, 1800), releaseYear: metadata.year, mediaType: metadata.mediaType, posterUrl: metadata.posterUrl, movieMetadata: metadata, editStyle: "cinematic-card-v1", clipDuration: null, requestedClips: 1, logoEnabled: Boolean(branding.logoKey), logoObjectKey: branding.logoKey || "" };
       settings.endContact = String(body.endContact ?? client.config?.videoTemplate?.whatsappNumber ?? "").trim().slice(0, 40);
-      await env.DB.prepare("INSERT INTO video_jobs(id,client_id,source_object_key,status,settings_json,result_json,created_at,updated_at) VALUES(?1,?2,'','awaiting_configuration',?3,'{}',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)").bind(id, client.id, JSON.stringify(settings)).run();
-      await startGitHubVideoRender(env, client.id, id, settings);
+      await env.DB.prepare("INSERT INTO video_jobs(id,client_id,source_object_key,status,settings_json,result_json,created_at,updated_at) VALUES(?1,?2,'','importing',?3,?4,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)").bind(
+        id,
+        client.id,
+        JSON.stringify(settings),
+        JSON.stringify({ progress: 5, message: "Preparando a importação do vídeo para o NEXUS.", error: "" })
+      ).run();
+      await startYouTubeVideoIngest(env, client.id, id);
       return json({ ok: true, jobId: id }, 202);
     } catch (error) { return json({ message: error.message === "catalog_title_not_found" ? "Título não encontrado. Selecione o filme ou série correto na busca." : "Não foi possível preparar o vídeo. Tente novamente." }, 400); }
   }
