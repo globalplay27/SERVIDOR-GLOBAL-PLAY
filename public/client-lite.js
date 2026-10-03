@@ -710,6 +710,26 @@ async function loadVideoJobs() {
       }
 
       const actions = document.createElement("div");
+      if (job.status === "failed") {
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "danger";
+        remove.textContent = "Apagar";
+        remove.addEventListener("click", async () => {
+          if (!window.confirm("Apagar este vídeo que falhou?")) return;
+          remove.disabled = true;
+          remove.textContent = "Apagando...";
+          try {
+            await api("/api/portal/videos/" + encodeURIComponent(job.id), { method: "DELETE" });
+            await loadVideoJobs();
+          } catch (error) {
+            notice("Vídeos: " + error.message);
+            remove.disabled = false;
+            remove.textContent = "Apagar";
+          }
+        });
+        actions.append(remove);
+      }
       actions.className = "post-actions";
 
       if (job.sourceReady === true && ["awaiting_configuration", "failed", "ready"].includes(job.status)) {
@@ -816,7 +836,28 @@ async function loadVideoJobs() {
         section.hidden = true;
         summary.querySelectorAll(".video-summary-item[data-group]").forEach(button => button.setAttribute("aria-expanded", "false"));
       });
-      heading.append(title, close);
+      heading.append(title);
+      if (key === "failed" && items.length) {
+        const clearFailed = document.createElement("button");
+        clearFailed.type = "button";
+        clearFailed.className = "danger";
+        clearFailed.textContent = "Apagar todos os que falharam";
+        clearFailed.addEventListener("click", async () => {
+          if (!window.confirm("Apagar todos os vídeos que falharam?")) return;
+          clearFailed.disabled = true;
+          clearFailed.textContent = "Apagando...";
+          try {
+            await api("/api/portal/videos/failed", { method: "DELETE" });
+            await loadVideoJobs();
+          } catch (error) {
+            notice("Vídeos: " + error.message);
+            clearFailed.disabled = false;
+            clearFailed.textContent = "Apagar todos os que falharam";
+          }
+        });
+        heading.append(clearFailed);
+      }
+      heading.append(close);
       section.append(heading);
       const grid = document.createElement("div");
       grid.className = "media-grid";
