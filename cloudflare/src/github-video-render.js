@@ -162,7 +162,7 @@ export async function startGitHubVideoRender(env, clientId, jobId, patch = {}) {
       progress: 25,
       message: editStyle === "cinematic-card-v1"
         ? "Aplicando o modelo cinematográfico NEXUS."
-        : "Criando o corte.",
+        : "Aplicando o molde ao vídeo completo.",
       error: ""
     })
   ).run();
@@ -238,7 +238,7 @@ export async function startGitHubVideoRender(env, clientId, jobId, patch = {}) {
     String(jobId),
     String(clientId),
     JSON.stringify(settings),
-    JSON.stringify({ ...result, progress: 35, message: "Modelo NEXUS enviado para renderização.", error: "" })
+    JSON.stringify({ ...result, progress: 35, message: "Aplicando o molde NEXUS ao vídeo completo.", error: "" })
   ).run();
 
   return { ok: true, jobId };
@@ -457,7 +457,7 @@ export async function handleGitHubVideoRenderCallback(request, env, url) {
 
     const clipSettings = {
       rank: 1,
-      title: settings.contentTitle || settings.displayName || "Corte NEXUS",
+      title: settings.contentTitle || settings.displayName || "Vídeo NEXUS",
       caption: settings.contentTitle || "",
       start: 0,
       end: Number(request.headers.get("x-nexus-duration") || settings.clipDuration || 0),
@@ -470,7 +470,7 @@ export async function handleGitHubVideoRenderCallback(request, env, url) {
       previewUrl: `/api/portal/videos/${encodeURIComponent(jobId)}/clips/${encodeURIComponent(clipId)}/media`,
       reason: settings.editStyle === "cinematic-card-v1"
         ? "Modelo cinematográfico NEXUS com vídeo, pôster e ficha visual."
-        : "Corte gerado pelo NEXUS.",
+        : "Vídeo completo gerado pelo NEXUS.",
       subtitlesApplied: false
     };
 
