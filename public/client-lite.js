@@ -10,7 +10,7 @@ const formatDate = value => {
 };
 let client = null;
 let posts = [];
-let activeTab = "overview";
+let activeTab = "videos";
 const MAX_VIDEO_UPLOAD_BYTES = 90 * 1024 * 1024;
 
 async function api(path, options = {}) {
@@ -544,7 +544,7 @@ async function generateYouTubeVideo(url) {
   const message = $("#youtube-search-message");
   message.textContent = "Preparando o vídeo completo...";
   try {
-    await api("/api/portal/videos/youtube", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url, title: selected?.title || $("#youtube-query").value.trim(), type: $("#youtube-type").value, catalogId: selected?.id || "", endContact: $("#video-whatsapp-number")?.value.trim() || "", overview: $("#youtube-overview").value.trim() }) });
+    await api("/api/portal/videos/youtube", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url, title: selected?.title || $("#youtube-query").value.trim(), type: $("#youtube-type").value, catalogId: selected?.id || "", endContact: $("#video-whatsapp-number")?.value.trim() || "", overview: $("#youtube-overview").value.trim(), logoEnabled: $("#video-use-logo")?.checked !== false }) });
     message.textContent = "Vídeo completo enviado para edição. Acompanhe abaixo.";
     await loadVideoJobs();
   } catch (error) { message.textContent = error.message; }
@@ -589,7 +589,7 @@ async function loadVideoJobs() {
     const data = await api("/api/portal/videos");
     const jobs = Array.isArray(data.jobs) ? data.jobs : [];
     clearTimeout(videoJobTimer);
-    if (jobs.some(job => job.status === 'cutting')) videoJobTimer = setTimeout(loadVideoJobs, 7000);
+    if (jobs.some(job => ['importing','cutting'].includes(job.status))) videoJobTimer = setTimeout(loadVideoJobs, 7000);
     root.replaceChildren();
     if (!jobs.length) return;
 
@@ -602,6 +602,7 @@ async function loadVideoJobs() {
 
       const status = document.createElement("small");
       const labels = {
+        importing: "Importando vídeo",
         awaiting_configuration: "Pronto para gerar",
         cutting: "Gerando MP4",
         ready: "MP4 pronto",
@@ -640,7 +641,7 @@ async function loadVideoJobs() {
             await api("/api/portal/videos/" + encodeURIComponent(job.id) + "/process", {
               method: "POST",
               headers: { "content-type": "application/json" },
-              body: JSON.stringify({ endContact: $("#video-whatsapp-number")?.value.trim() || "" })
+              body: JSON.stringify({ endContact: $("#video-whatsapp-number")?.value.trim() || "", logoEnabled: $("#video-use-logo")?.checked !== false })
             });
             notice("Vídeo enviado para renderização.");
             await loadVideoJobs();
@@ -981,13 +982,8 @@ async function refresh() {
   const data = await api("/api/portal/session");
   showDashboard(data);
   await Promise.all([
-    loadPosts(),
     loadInstagram(),
-    loadAIUsage(),
-    activeTab === "performance" ? loadPerformance() : Promise.resolve(),
-    activeTab === "agents" ? loadAgents() : Promise.resolve(),
-    activeTab === "videos" ? Promise.all([loadMedia(), loadVideoJobs()]) : Promise.resolve(),
-    activeTab === "campaigns" ? loadCampaigns() : Promise.resolve()
+    activeTab === "videos" ? Promise.all([loadMedia(), loadVideoJobs()]) : Promise.resolve()
   ]);
 }
 
