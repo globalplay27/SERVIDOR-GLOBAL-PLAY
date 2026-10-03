@@ -77,3 +77,10 @@ Prioridade atual: concluir CI/deploy da revisão visual Global Play, obter evid�
 
 ## 2026-10-02 — retomada desktop
 Implantar correção do redirect circular, exigir GET /portal = 200 sem Location e aba Vídeos presente. Depois validar upload/render/download com sessão de cliente autorizada.
+
+
+## 2026-10-02 — correção implantada e abertura confirmada
+- PR #76 integrada como 27ef7a925d8f6bf735a54268e0d9ab0af70e2574. CI do PR 37087267048 aprovado.
+- Run 37087333583: migrations, bundle, deploy Cloudflare e Verify client video workspace passaram. A verificação de autonomia estava em execução na consulta; seu resultado não é prova do fluxo de vídeo.
+- Verificação HTTP independente após deploy: /portal, /portal.html e /login responderam 200, sem Location, com no-store, data-tab="videos" e video-job-list presentes.
+- A abertura do painel está corrigida. Próximo passo: entrar com sessão de cliente e validar upload de MP4, renderização e download; essas etapas autenticadas não foram executadas nesta sessão.
