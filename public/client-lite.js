@@ -1052,7 +1052,7 @@ document.querySelectorAll("[data-refresh]").forEach(button => button.addEventLis
   if (target === "posts") return loadPosts();
   if (target === "agents") return loadAgents();
   if (target === "campaigns") return loadCampaigns();
-  if (target === "videos") return loadVideoJobs();
+  if (target === "videos") return Promise.all([loadMedia(), loadVideoJobs()]);
   if (target === "instagram") return loadInstagram();
   return loadPerformance();
 }));
