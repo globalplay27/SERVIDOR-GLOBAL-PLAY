@@ -35,13 +35,23 @@ export function summarizeClientState(client, stateRow, now = Date.now()) {
     };
   });
   const missingAgents = agents.filter(item => item.status === "never").map(item => item.agent);
+  // A module that ran once days ago must not make production health look green.
+  // With the normal 15-30 minute cadence, two hours allows transient delays
+  // while still exposing genuinely stalled agents.
+  const maxAgentAgeMinutes = 120;
+  const staleAgents = agents
+    .filter(item => item.status !== "never" && (item.ageMinutes === null || item.ageMinutes > maxAgentAgeMinutes))
+    .map(item => item.agent);
   const nextCycleMs = Date.parse(String(state?.nextCycleAt || ""));
   const delayed = Number.isFinite(nextCycleMs) && now - nextCycleMs > 5 * 60 * 1000;
   return {
     status: String(client?.status || "online"),
     agents,
     allAgentsSeen: missingAgents.length === 0,
+    allAgentsFresh: missingAgents.length === 0 && staleAgents.length === 0,
     missingAgents,
+    staleAgents,
+    maxAgentAgeMinutes,
     instagramConnection: {
       connected: null,
       tokenValid: null,
