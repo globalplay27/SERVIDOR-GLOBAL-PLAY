@@ -1,0 +1,40 @@
+name: NEXUS YouTube Smoke
+
+on:
+  push:
+    paths:
+      - ".github/workflows/video-youtube-smoke.yml"
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install yt-dlp
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check --quiet --upgrade "yt-dlp[default]"
+      - name: Test YouTube clients
+        shell: bash
+        env:
+          URL: https://www.youtube.com/watch?v=WlpK6_BDNgE
+        run: |
+          set -u
+          for CLIENT in web_safari tv tv_simply web_embedded android_vr; do
+            echo "=== CLIENT:$CLIENT ==="
+            rm -f /tmp/urls.txt
+            if yt-dlp --js-runtimes node --no-playlist               --extractor-args "youtube:player-client=$CLIENT"               -f "b[height<=720]/b" -g "$URL" > /tmp/urls.txt 2>&1; then
+              echo "CLIENT_OK:$CLIENT"
+              head -c 240 /tmp/urls.txt
+              echo
+              exit 0
+            else
+              echo "CLIENT_FAIL:$CLIENT"
+              tail -n 12 /tmp/urls.txt
+            fi
+          done
+          exit 1
