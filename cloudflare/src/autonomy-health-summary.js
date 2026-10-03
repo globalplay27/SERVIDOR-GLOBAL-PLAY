@@ -43,8 +43,14 @@ export function summarizeClientState(client, stateRow, now = Date.now()) {
     .filter(item => item.status !== "never" && (item.ageMinutes === null || item.ageMinutes > maxAgentAgeMinutes))
     .map(item => item.agent);
   const nextCycleMs = Date.parse(String(state?.nextCycleAt || ""));
-  const delayed = Number.isFinite(nextCycleMs) && now - nextCycleMs > 5 * 60 * 1000;
+  const recentAges = agents.map(item => item.ageMinutes).filter(Number.isFinite);
+  const freshestAgentAgeMinutes = recentAges.length ? Math.min(...recentAges) : null;
+  const cycleOverdue = Number.isFinite(nextCycleMs) && now - nextCycleMs > 5 * 60 * 1000;
+  // Do not flag a cycle as delayed while its agents are visibly progressing.
+  // The final nextCycleAt timestamp is written only when the full cycle finishes.
+  const delayed = cycleOverdue && (freshestAgentAgeMinutes === null || freshestAgentAgeMinutes > 10);
   return {
+    clientId: String(client?.id || ""),
     status: String(client?.status || "online"),
     agents,
     allAgentsSeen: missingAgents.length === 0,
@@ -61,6 +67,8 @@ export function summarizeClientState(client, stateRow, now = Date.now()) {
     cycleHealth: {
       status: String(state?.lastCycleStatus || "unknown"),
       delayed,
+      cycleOverdue,
+      freshestAgentAgeMinutes,
       stage: String(state?.lastCycleStage || "unknown"),
       errorCode: (() => {
         const raw = String(state?.lastCycleError || "").trim();
