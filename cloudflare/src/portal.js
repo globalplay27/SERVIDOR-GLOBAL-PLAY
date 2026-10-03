@@ -837,22 +837,54 @@ export async function handlePortalApi(request, env, url, ctx) {
     if (purpose === "publish" && contentType.startsWith("video/")) {
       videoJobId = "video_" + crypto.randomUUID().replace(/-/g, "").slice(0, 24);
       const branding = client.config?.branding && typeof client.config.branding === "object" ? client.config.branding : {};
+      const requestedTitle = String(form.get("title") || "").trim().slice(0, 180);
+      const requestedOverview = String(form.get("overview") || "").trim().slice(0, 1800);
+      const requestedYear = String(form.get("year") || "").trim().slice(0, 12);
+      const requestedMediaType = String(form.get("mediaType") || "").trim().slice(0, 24);
+      const catalogId = String(form.get("catalogId") || "").trim().slice(0, 120);
+      const catalogType = String(form.get("catalogType") || "") === "series" ? "series" : "movie";
+      let metadata = {
+        title: requestedTitle,
+        overview: requestedOverview,
+        year: requestedYear,
+        mediaType: requestedMediaType,
+        posterUrl: "",
+        cast: [],
+        reviews: [],
+        related: []
+      };
+      if (requestedTitle) {
+        try {
+          const catalog = await catalogMetadata(requestedTitle, catalogType, catalogId);
+          metadata = {
+            ...catalog,
+            title: catalog.title || requestedTitle,
+            overview: requestedOverview || catalog.overview || "",
+            year: catalog.year || requestedYear,
+            mediaType: catalog.mediaType || requestedMediaType
+          };
+        } catch {}
+      }
+      const resolvedPosterUrl = posterUrl || String(metadata.posterUrl || "").trim().slice(0, 1200);
+      metadata.posterUrl = resolvedPosterUrl;
+      const displayName = originalName.replace(/\.[a-z0-9]{2,5}$/i, "");
+      const logoEnabled = String(form.get("logoEnabled") || "1") !== "0" && Boolean(branding.logoKey);
       const settings = {
         filename: originalName,
-        displayName: originalName.replace(/\.[a-z0-9]{2,5}$/i, ""),
-        contentTitle: "",
-        overview: "",
-        releaseYear: "",
-        mediaType: "",
-        posterUrl: "",
-        movieMetadata: { title: "", overview: "", year: "", mediaType: "", posterUrl: "", cast: [], reviews: [], related: [] },
+        displayName,
+        contentTitle: String(metadata.title || requestedTitle || displayName).trim().slice(0, 180),
+        overview: String(metadata.overview || requestedOverview || "").trim().slice(0, 1800),
+        releaseYear: String(metadata.year || requestedYear || "").trim().slice(0, 12),
+        mediaType: String(metadata.mediaType || requestedMediaType || "").trim().slice(0, 24),
+        posterUrl: resolvedPosterUrl,
+        movieMetadata: metadata,
         clipDuration: null,
         requestedClips: 1,
         outputFormat: "reel",
         editStyle: "cinematic-card-v1",
-        logoEnabled: Boolean(branding.logoKey),
-        logoObjectKey: String(branding.logoKey || ""),
-        endContact: String(client.config?.videoTemplate?.whatsappNumber || "").trim().slice(0, 40)
+        logoEnabled,
+        logoObjectKey: logoEnabled ? String(branding.logoKey || "") : "",
+        endContact: String(form.get("endContact") || client.config?.videoTemplate?.whatsappNumber || "").trim().slice(0, 40)
       };
       await env.DB.prepare(
         `INSERT INTO video_jobs(id, client_id, source_object_key, status, settings_json, result_json, created_at, updated_at)
@@ -862,7 +894,7 @@ export async function handlePortalApi(request, env, url, ctx) {
         String(client.id),
         key,
         JSON.stringify(settings),
-        JSON.stringify({ progress: 0, message: "Vídeo original confirmado no R2. Iniciando geração vertical 9:16.", error: "" })
+        JSON.stringify({ progress: 0, message: "Vídeo confirmado. Iniciando o modelo 9:16 com smartphone e sinopse.", error: "" })
       ).run();
       try {
         await startGitHubVideoRender(env, client.id, videoJobId, settings);
