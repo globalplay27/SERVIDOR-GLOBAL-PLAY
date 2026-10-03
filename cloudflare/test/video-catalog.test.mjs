@@ -5,6 +5,8 @@ import { youtubeUrl, searchCatalog, catalogMetadata, portugueseTrailerScore } fr
 test('Every title requires a verified official trailer with Portuguese evidence; English and fan uploads are rejected', () => {
   const valid = { title: 'Reacher — Trailer oficial dublado', channel: 'Prime Video Brasil', channelVerified: true };
   assert.ok(portugueseTrailerScore(valid) >= 0);
+  assert.ok(portugueseTrailerScore({...valid,channelVerified:false,channelId:'UCuNjvqjTzw9LcD9PVpTVWRA'}) >= 0);
+  assert.equal(portugueseTrailerScore({...valid,channelVerified:false,channelId:'fake'}) ,-1);
   for (const patch of [
     { title: 'Reacher — Official trailer English' },
     { title: 'Reacher — Trailer legendado' },

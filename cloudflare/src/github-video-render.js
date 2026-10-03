@@ -160,7 +160,7 @@ export async function handleGitHubVideoRenderCallback(request, env, url) {
     const body = await request.json();
     const results = (Array.isArray(body.results) ? body.results : []).slice(0, 30)
       .filter(x => /^[a-zA-Z0-9_-]{11}$/.test(String(x.id || "")))
-      .map(x => ({ id: x.id, title: String(x.title || "").slice(0, 220), channel: String(x.channel || "").slice(0, 120), channelVerified: x.channelVerified === true, duration: Number(x.duration) || null, url: "https://www.youtube.com/watch?v=" + x.id, thumbnail: "https://i.ytimg.com/vi/" + x.id + "/hqdefault.jpg" }))
+      .map(x => ({ id: x.id, title: String(x.title || "").slice(0, 220), channel: String(x.channel || "").slice(0, 120), channelId: String(x.channelId || '').slice(0, 30), channelVerified: x.channelVerified === true, duration: Number(x.duration) || null, url: "https://www.youtube.com/watch?v=" + x.id, thumbnail: "https://i.ytimg.com/vi/" + x.id + "/hqdefault.jpg" }))
       .filter(x => portugueseTrailerScore(x) >= 0).sort((a, b) => portugueseTrailerScore(b) - portugueseTrailerScore(a)).slice(0, 8);
     delete settings.githubRenderToken;
     await env.DB.prepare("UPDATE video_jobs SET status='search_results',settings_json=?3,result_json=?4,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2")

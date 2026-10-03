@@ -6,7 +6,10 @@ export function portugueseTrailerScore(item) {
   const studio = /^(?:amazon )?(?:prime video|netflix|warner bros\.? pictures|warner play|universal pictures|paramount pictures|sony pictures|disney|disney studios|20th century studios|diamond films|paris filmes|imagem filmes|hbo|max|globoplay|lionsgate|mubi)(?: brasil| brazil| br)?$/.test(channel);
   const brazil = /brasil|brazil|\bbr\b|portugues/.test(channel);
   const dubbed = /dublad|portugues|pt[- ]?br/.test(title);
-  if (!studio || !item.channelVerified || (!brazil && !dubbed) || !/trailer/.test(title)) return -1;
+  // Prime Video BR omits its badge in search metadata. Match its immutable channel ID,
+  // confirmed through the trailer embedded by About Amazon Brasil, not its display name.
+  const officialIdentity = item.channelVerified || item.channelId === 'UCuNjvqjTzw9LcD9PVpTVWRA';
+  if (!studio || !officialIdentity || (!brazil && !dubbed) || !/trailer/.test(title)) return -1;
   return (dubbed ? 100 : 0) + (brazil ? 70 : 0) + (/oficial/.test(title) ? 30 : 0) + (item.channelVerified ? 20 : 0);
 }
 export function youtubeUrl(value) {
