@@ -763,20 +763,27 @@ export async function handlePortalApi(request, env, url, ctx) {
     }
 
     let videoJobId = "";
+    let renderStarted = false;
+    let renderError = "";
     if (purpose === "publish" && contentType.startsWith("video/")) {
       videoJobId = "video_" + crypto.randomUUID().replace(/-/g, "").slice(0, 24);
+      const branding = client.config?.branding && typeof client.config.branding === "object" ? client.config.branding : {};
       const settings = {
         filename: originalName,
         displayName: originalName.replace(/\.[a-z0-9]{2,5}$/i, ""),
-        contentTitle: String(form.get("title") || "").trim().slice(0, 180),
-        overview: String(form.get("overview") || "").trim().slice(0, 1800),
-        releaseYear: String(form.get("year") || "").trim().slice(0, 12),
-        mediaType: String(form.get("mediaType") || "").trim().slice(0, 24),
-        posterUrl: posterUrl || String(form.get("posterUrl") || "").trim().slice(0, 1200),
+        contentTitle: "",
+        overview: "",
+        releaseYear: "",
+        mediaType: "",
+        posterUrl: "",
+        movieMetadata: { title: "", overview: "", year: "", mediaType: "", posterUrl: "", cast: [], reviews: [], related: [] },
         clipDuration: null,
         requestedClips: 1,
         outputFormat: "reel",
-        editStyle: "cinematic-card-v1"
+        editStyle: "cinematic-card-v1",
+        logoEnabled: Boolean(branding.logoKey),
+        logoObjectKey: String(branding.logoKey || ""),
+        endContact: String(client.config?.videoTemplate?.whatsappNumber || "").trim().slice(0, 40)
       };
       await env.DB.prepare(
         `INSERT INTO video_jobs(id, client_id, source_object_key, status, settings_json, result_json, created_at, updated_at)
@@ -786,16 +793,24 @@ export async function handlePortalApi(request, env, url, ctx) {
         String(client.id),
         key,
         JSON.stringify(settings),
-        JSON.stringify({ progress: 0, message: "Vídeo original confirmado no R2. Configure o Laboratório e gere o MP4.", error: "" })
+        JSON.stringify({ progress: 0, message: "Vídeo original confirmado no R2. Iniciando geração vertical 9:16.", error: "" })
       ).run();
+      try {
+        await startGitHubVideoRender(env, client.id, videoJobId, settings);
+        renderStarted = true;
+      } catch (error) {
+        renderError = error instanceof Error ? error.message : String(error);
+      }
     }
 
     return json({
       ok: true,
-      message: videoJobId ? "Vídeo enviado. Agora complete os dados e gere o MP4." : (purpose === "reference"
-        ? "Mídia salva como referência de estilo."
-        : "Mídia salva na biblioteca do cliente."),
+      message: videoJobId
+        ? (renderStarted ? "Vídeo enviado. A geração 9:16 foi iniciada." : "Vídeo enviado, mas a geração não iniciou automaticamente. Use Gerar MP4 para tentar novamente.")
+        : (purpose === "reference" ? "Mídia salva como referência de estilo." : "Mídia salva na biblioteca do cliente."),
       videoJobId,
+      renderStarted,
+      renderError,
       media: (await listClientMedia(env, client.id, url.origin)).find(item => item.key === key) || { key, url: url.origin + "/media/" + key }
     }, 201);
   }
