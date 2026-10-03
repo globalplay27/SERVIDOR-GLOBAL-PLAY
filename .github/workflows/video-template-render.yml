@@ -20,7 +20,6 @@ jobs:
       OVERVIEW: ${{ github.event.client_payload.render.overview }}
       RELEASE_YEAR: ${{ github.event.client_payload.render.year }}
       MEDIA_TYPE: ${{ github.event.client_payload.render.media_type }}
-      SOURCE_URL: ${{ github.event.client_payload.render.source_url }}
       MOVIE_METADATA: ${{ toJSON(github.event.client_payload.render.metadata) }}
       POSTER_URL: ${{ github.event.client_payload.render.poster_url }}
       LOGO_ENABLED: ${{ github.event.client_payload.render.logo_enabled }}
@@ -43,20 +42,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ -n "$SOURCE_URL" ]; then
-            python -m pip install --upgrade 'yt-dlp[default]'
-            yt-dlp --no-playlist --js-runtimes node --remote-components ejs:github --socket-timeout 30 --retries 3 \
-              --write-info-json --merge-output-format mp4 --remux-video mp4 -f 'bv*[height<=720]+ba[language^=pt]/bv*[height<=720]+ba/b[height<=720]/best' -o '/tmp/youtube.%(ext)s' "$SOURCE_URL"
-            ffmpeg -hide_banner -loglevel error -y -i /tmp/youtube.mp4 -map 0:v:0 -map 0:a? -c:v libx264 -preset veryfast -crf 23 -c:a aac /tmp/source.mp4
-            python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
-            python -m pip install openai-whisper
-            python scripts/verify_portuguese_trailer.py /tmp/youtube.info.json /tmp/source.mp4
-          else
-            curl --fail-with-body --retry 2 --retry-all-errors \
-              "$NEXUS_BASE_URL/api/internal/video-render/source" \
-              -H "x-nexus-job-id: $JOB_ID" -H "x-nexus-client-id: $CLIENT_ID" \
-              -H "x-nexus-callback-token: $CALLBACK_TOKEN" -o /tmp/source.mp4
-          fi
+          curl --fail-with-body --retry 2 --retry-all-errors \
+            "$NEXUS_BASE_URL/api/internal/video-render/source" \
+            -H "x-nexus-job-id: $JOB_ID" -H "x-nexus-client-id: $CLIENT_ID" \
+            -H "x-nexus-callback-token: $CALLBACK_TOKEN" -o /tmp/source.mp4
           test -s /tmp/source.mp4
 
       - name: Prepare poster and typography

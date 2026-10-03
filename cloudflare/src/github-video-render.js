@@ -24,13 +24,79 @@ function clipKeyPrefix(clientId) {
   return "videos/" + String(clientId).replace(/[^a-zA-Z0-9_-]+/g, "-") + "/clips/";
 }
 
+
+function sourceKeyPrefix(clientId) {
+  return "videos/" + String(clientId).replace(/[^a-zA-Z0-9_-]+/g, "-") + "/sources/";
+}
+
+function validIngestToken(row, token) {
+  if (!row || !token) return false;
+  const settings = parseJson(row.settings_json, {});
+  return Boolean(settings.ingestCallbackToken && String(settings.ingestCallbackToken) === String(token));
+}
+
+export async function startYouTubeVideoIngest(env, clientId, jobId) {
+  const row = await loadJob(env, jobId, clientId);
+  if (!row) throw new Error("video_not_found");
+  const settings = parseJson(row.settings_json, {});
+  const result = parseJson(row.result_json, {});
+  const sourceUrl = String(settings.sourceUrl || "").trim();
+  if (!sourceUrl) throw new Error("video_source_missing");
+
+  const downloaderUrl = String(env.NEXUS_DOWNLOADER_URL || "").trim().replace(/\/+$/, "");
+  if (!downloaderUrl) throw new Error("youtube_downloader_not_configured");
+
+  settings.ingestCallbackToken = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
+  await env.DB.prepare(
+    "UPDATE video_jobs SET status='importing',settings_json=?3,result_json=?4,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2"
+  ).bind(
+    String(jobId),
+    String(clientId),
+    JSON.stringify(settings),
+    JSON.stringify({ ...result, progress: 10, message: "Importando o vídeo para o NEXUS antes da renderização.", error: "" })
+  ).run();
+
+  const response = await fetch(downloaderUrl + "/ingest", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      ...(String(env.NEXUS_DOWNLOADER_SECRET || "").trim()
+        ? { authorization: "Bearer " + String(env.NEXUS_DOWNLOADER_SECRET).trim() }
+        : {})
+    },
+    body: JSON.stringify({
+      source_url: sourceUrl,
+      job_id: String(jobId),
+      client_id: String(clientId),
+      callback_token: settings.ingestCallbackToken,
+      callback_base: String(env.PUBLIC_BASE_URL || "https://servidor-nexus.diamantehinode2015.workers.dev").replace(/\/+$/, ""),
+      title: String(settings.contentTitle || settings.displayName || "video-youtube").slice(0, 180)
+    }),
+    signal: AbortSignal.timeout(10000)
+  });
+
+  if (!response.ok) {
+    const detail = (await response.text().catch(() => "")).slice(0, 220);
+    await env.DB.prepare(
+      "UPDATE video_jobs SET status='failed',result_json=?3,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2"
+    ).bind(
+      String(jobId),
+      String(clientId),
+      JSON.stringify({ ...result, progress: 0, message: "Não foi possível iniciar a importação do vídeo.", error: ("youtube_downloader_http_" + response.status + ":" + detail).slice(0, 500) })
+    ).run();
+    throw new Error("youtube_downloader_dispatch_failed");
+  }
+
+  return { ok: true, jobId };
+}
+
 export async function startGitHubVideoRender(env, clientId, jobId, patch = {}) {
   const ghToken = String(env.GITHUB_ACTIONS_TOKEN || env.GITHUB_TOKEN || "").trim();
   if (!ghToken) throw new Error("github_actions_token_missing");
 
   const row = await loadJob(env, jobId, clientId);
   if (!row) throw new Error("video_not_found");
-  if (!row.source_object_key && !parseJson(row.settings_json).sourceUrl) throw new Error("video_source_missing");
+  if (!row.source_object_key) throw new Error("video_source_missing");
 
   const settings = parseJson(row.settings_json, {});
   const result = parseJson(row.result_json, {});
@@ -93,8 +159,6 @@ export async function startGitHubVideoRender(env, clientId, jobId, patch = {}) {
           year: String(settings.releaseYear || "").slice(0, 12),
           media_type: String(settings.mediaType || "").slice(0, 24),
           poster_url: String(settings.posterUrl || "").slice(0, 1200),
-          source_url: String(settings.sourceUrl || ""),
-          require_portuguese: Boolean(settings.sourceUrl),
           metadata: settings.movieMetadata || null,
           logo_enabled: settings.logoEnabled === true && Boolean(settings.logoObjectKey),
           duration,
@@ -141,12 +205,87 @@ export async function startGitHubVideoRender(env, clientId, jobId, patch = {}) {
 }
 
 export async function handleGitHubVideoRenderCallback(request, env, url) {
-  if (!url.pathname.startsWith("/api/internal/video-render/")) return null;
+  if (!url.pathname.startsWith("/api/internal/video-render/") && !url.pathname.startsWith("/api/internal/video-ingest/")) return null;
 
   const jobId = String(request.headers.get("x-nexus-job-id") || "").trim();
   const clientId = String(request.headers.get("x-nexus-client-id") || "").trim();
   const token = String(request.headers.get("x-nexus-callback-token") || "").trim();
   const row = await loadJob(env, jobId, clientId);
+
+  if (url.pathname.startsWith("/api/internal/video-ingest/")) {
+    if (!row || !validIngestToken(row, token)) {
+      return new Response(JSON.stringify({ error: "unauthorized" }), {
+        status: 401,
+        headers: { "content-type": "application/json; charset=utf-8" }
+      });
+    }
+
+    if (url.pathname === "/api/internal/video-ingest/upload" && request.method === "PUT") {
+      if (!env.MEDIA || !request.body) {
+        return new Response(JSON.stringify({ error: "r2_unavailable" }), { status: 503, headers: { "content-type": "application/json" } });
+      }
+      const declared = Number(request.headers.get("content-length") || 0);
+      if (!declared || declared > 95 * 1024 * 1024) {
+        return new Response(JSON.stringify({ error: declared ? "video_too_large" : "video_size_required" }), {
+          status: declared ? 413 : 400,
+          headers: { "content-type": "application/json" }
+        });
+      }
+
+      const settings = parseJson(row.settings_json, {});
+      const result = parseJson(row.result_json, {});
+      const key = sourceKeyPrefix(clientId) + crypto.randomUUID() + ".mp4";
+      const object = await env.MEDIA.put(key, request.body, {
+        httpMetadata: { contentType: "video/mp4", cacheControl: "private, no-store" },
+        customMetadata: { clientId: String(clientId), jobId: String(jobId), kind: "video-source", source: "youtube" }
+      });
+      if (!object) return new Response(JSON.stringify({ error: "video_store_failed" }), { status: 500 });
+
+      delete settings.ingestCallbackToken;
+      await env.DB.prepare(
+        "UPDATE video_jobs SET source_object_key=?3,status='awaiting_configuration',settings_json=?4,result_json=?5,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2"
+      ).bind(
+        String(jobId),
+        String(clientId),
+        key,
+        JSON.stringify(settings),
+        JSON.stringify({ ...result, progress: 22, message: "Vídeo salvo no NEXUS. Iniciando renderização.", error: "" })
+      ).run();
+
+      try {
+        await startGitHubVideoRender(env, clientId, jobId, settings);
+      } catch (error) {
+        return new Response(JSON.stringify({ error: String(error instanceof Error ? error.message : error) }), {
+          status: 500,
+          headers: { "content-type": "application/json" }
+        });
+      }
+
+      return new Response(JSON.stringify({ ok: true, jobId, objectKey: key }), {
+        status: 201,
+        headers: { "content-type": "application/json" }
+      });
+    }
+
+    if (url.pathname === "/api/internal/video-ingest/fail" && request.method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      const settings = parseJson(row.settings_json, {});
+      const result = parseJson(row.result_json, {});
+      delete settings.ingestCallbackToken;
+      await env.DB.prepare(
+        "UPDATE video_jobs SET status='failed',settings_json=?3,result_json=?4,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2"
+      ).bind(
+        String(jobId),
+        String(clientId),
+        JSON.stringify(settings),
+        JSON.stringify({ ...result, progress: 0, message: "A importação do vídeo do YouTube falhou.", error: String(body.error || "youtube_ingest_failed").slice(0, 500) })
+      ).run();
+      return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+
+    return new Response(JSON.stringify({ error: "not_found" }), { status: 404, headers: { "content-type": "application/json" } });
+  }
+
   if (!row || !validRenderToken(row, token)) {
     return new Response(JSON.stringify({ error: "unauthorized" }), {
       status: 401,
