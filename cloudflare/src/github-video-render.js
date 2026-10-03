@@ -144,6 +144,7 @@ export async function startGitHubVideoRender(env, clientId, jobId, patch = {}) {
     JSON.stringify(settings),
     JSON.stringify({
       ...result,
+      clips: [],
       progress: 25,
       message: editStyle === "cinematic-card-v1"
         ? "Aplicando o modelo cinematográfico NEXUS."
