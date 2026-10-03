@@ -1,4 +1,5 @@
 const $ = selector => document.querySelector(selector);
+const $$ = selector => document.querySelectorAll(selector);
 const formatNumber = value => new Intl.NumberFormat("pt-BR").format(Number(value || 0));
 const formatDate = value => {
   if (!value) return "—";
