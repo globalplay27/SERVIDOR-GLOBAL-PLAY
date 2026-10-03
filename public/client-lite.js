@@ -1192,7 +1192,6 @@ $("#video-whatsapp-form")?.addEventListener("submit", async event => {
 });
 $("#video-search-form")?.addEventListener("submit", searchYouTube);
 $("#youtube-catalog")?.addEventListener("change", () => { $("#youtube-overview").value = youtubeCatalog.find(x => x.id === $("#youtube-catalog").value)?.overview || ''; });
-$("#youtube-link-form")?.addEventListener("submit", event => { event.preventDefault(); generateYouTubeVideo($("#youtube-url").value.trim()); });
 $$('[data-video-source]').forEach(button => button.addEventListener('click', () => {
   const youtube = button.dataset.videoSource === 'youtube';
   $("#video-youtube-panel").hidden = !youtube; $("#media-upload-form").hidden = youtube;
