@@ -114,3 +114,4 @@ button,input{font:inherit}button{cursor:pointer;border:1px solid #30516a;color:#
   background:#0b1520;
   color:#c9d8e1;
 }
+[hidden] { display: none !important; } [data-video-source][aria-selected="true"] { background: var(--accent, #65d9ff); color: #051018; } #video-youtube-panel label { display: grid; gap: 8px; margin: 14px 0; } #youtube-results img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 12px; }

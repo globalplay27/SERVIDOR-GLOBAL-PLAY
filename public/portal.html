@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#080d15"><title>NEXUS AI · Acompanhamento</title>
-  <link rel="stylesheet" href="/client-lite.css?v=14"><script src="/client-lite.js?v=18" defer></script>
+  <link rel="stylesheet" href="/client-lite.css?v=15"><script src="/client-lite.js?v=19" defer></script>
 </head>
 <body><main class="shell">
   <section id="login" class="login card" hidden>
@@ -118,7 +118,27 @@
     </section>
     <section id="tab-videos" class="tab" hidden>
       <div class="section-title"><div><p class="eyebrow">VÍDEOS</p><h1>Vídeos do cliente</h1><p class="muted">Envie um vídeo do seu computador para o NEXUS. Ele fica armazenado para processamento, geração e download do MP4.</p></div><button data-refresh="videos" type="button">Atualizar</button></div>
-      <form id="media-upload-form" class="card media-upload">
+      <div class="post-actions" role="tablist" aria-label="Origem do vídeo">
+        <button type="button" role="tab" aria-selected="true" data-video-source="youtube">Buscar no YouTube</button>
+        <button type="button" role="tab" aria-selected="false" data-video-source="upload">Enviar arquivo</button>
+      </div>
+      <section id="video-youtube-panel" class="card">
+        <form id="video-search-form" class="media-upload">
+          <label>Nome do filme ou série<input id="youtube-query" type="search" required maxlength="120" placeholder="Ex.: Reacher"></label>
+          <label>Tipo<select id="youtube-type"><option value="movie">Filme</option><option value="series">Série</option></select></label>
+          <button class="primary" type="submit">Buscar vídeos</button>
+        </form>
+        <p id="youtube-search-message" role="status" class="muted"></p>
+        <label>Título no catálogo<select id="youtube-catalog"><option value="">Busque um filme ou série</option></select></label>
+        <label>Sinopse<textarea id="youtube-overview" maxlength="1800" placeholder="Sinopse que ficará dentro do celular"></textarea></label>
+        <div id="youtube-results" class="media-grid"></div>
+        <form id="youtube-link-form" class="media-upload">
+          <label>Link do YouTube<input id="youtube-url" type="url" placeholder="https://www.youtube.com/watch?v=..."></label>
+          <button class="primary" type="submit">Gerar vídeo completo</button>
+        </form>
+        <p class="muted">Modelo de cinco partes aplicado ao vídeo inteiro: celular, destaque, elenco, avaliações e relacionados.</p>
+      </section>
+      <form id="media-upload-form" class="card media-upload" hidden>
         <label>Vídeo
           <input id="media-file" name="file" type="file" accept="video/mp4,video/webm,video/quicktime" required>
         </label>
