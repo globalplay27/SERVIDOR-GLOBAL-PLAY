@@ -1,6 +1,5 @@
-const $ = selector => document.querySelector(selector);
-const $$ = selector => document.querySelectorAll(selector);
-const formatNumber = value => new Intl.NumberFormat("pt-BR").format(Number(value || 0));
+const $ = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
 const formatDate = value => {
   if (!value) return "—";
   const date = new Date(value);
@@ -9,8 +8,11 @@ const formatDate = value => {
     : "—";
 };
 let client = null;
-let posts = [];
 let activeTab = "videos";
+let selectedCatalog = null;
+let searchType = "movie";
+let trailerSearchTimer = null;
+let videoJobTimer = null;
 const MAX_VIDEO_UPLOAD_BYTES = 90 * 1024 * 1024;
 
 async function api(path, options = {}) {
@@ -21,15 +23,14 @@ async function api(path, options = {}) {
     throw new Error("Sessão expirada");
   }
   if (!response.ok) throw new Error(data?.message || data?.error || "Não foi possível consultar o NEXUS.");
-  if (!data || typeof data !== "object" || data.ok === false) throw new Error(data?.message || data?.error || "A API não retornou dados válidos. Atualize e tente novamente.");
-  return data;
+  return data && typeof data === "object" ? data : {};
 }
 
 function notice(message) {
-  const element = $("#notice");
-  if (!element) return;
-  element.textContent = message;
-  element.hidden = !message;
+  const el = $("#notice");
+  if (!el) return;
+  el.textContent = message || "";
+  el.hidden = !message;
 }
 
 function showLogin(message = "") {
@@ -39,197 +40,225 @@ function showLogin(message = "") {
 }
 
 function showDashboard(data) {
-  client = data;
+  client = data || {};
   $("#login").hidden = true;
   $("#dashboard").hidden = false;
-  const rawInstagram = String(data.instagram || "").trim();
-  const instagramHandle = rawInstagram
-    ? (rawInstagram.startsWith("@") ? rawInstagram : "@" + rawInstagram.replace(/^https?:\/\/(www\.)?instagram\.com\//i, "").replace(/\/$/, ""))
-    : "";
-  const accountLabel = instagramHandle || data.name || "Cliente";
-  $("#client-label").textContent = accountLabel;
-  $("#client-label").title = "Conta: " + data.id;
-  $("#header-client-name").textContent = accountLabel;
-  const logoKey = String(data.branding?.logoKey || "");
+  const raw = String(client.instagram || "").trim();
+  const handle = raw ? (raw.startsWith("@") ? raw : "@" + raw.replace(/^https?:\/\/(www\.)?instagram\.com\//i, "").replace(/\/$/, "")) : "";
+  const label = handle || client.name || "Cliente";
+  $("#client-label").textContent = label;
+  $("#header-client-name").textContent = label;
   const logo = $("#client-logo");
-  if (logo && logoKey) {
-    logo.src = "/media/" + logoKey;
-    logo.hidden = false;
-  } else if (logo) {
-    logo.hidden = true;
-    logo.removeAttribute("src");
-  }
-  if ($("#profile-name")) $("#profile-name").value = data.contact?.name || data.name || "";
-  if ($("#profile-phone")) $("#profile-phone").value = data.contact?.phone || "";
-  if ($("#video-whatsapp-number")) $("#video-whatsapp-number").value = data.videoTemplate?.whatsappNumber || "";
-  if ($("#profile-instagram")) $("#profile-instagram").value = instagramHandle || "";
-  if ($("#next-post")) $("#next-post").textContent = "Automática pelo NEXUS";
+  const logoKey = String(client.branding?.logoKey || "");
+  if (logo && logoKey) { logo.src = "/media/" + logoKey; logo.hidden = false; }
+  else if (logo) { logo.hidden = true; logo.removeAttribute("src"); }
+  if ($("#video-whatsapp-number")) $("#video-whatsapp-number").value = client.videoTemplate?.whatsappNumber || "";
 }
 
 function showTab(name) {
   activeTab = name;
-  document.querySelectorAll("[data-tab]").forEach(button => {
-    button.classList.toggle("active", button.dataset.tab === name);
-  });
-  document.querySelectorAll(".tab").forEach(section => {
-    section.hidden = section.id !== "tab-" + name;
-  });
+  $$("[data-tab]").forEach(btn => btn.classList.toggle("active", btn.dataset.tab === name));
+  $$(".tab").forEach(section => { section.hidden = section.id !== "tab-" + name; });
   if (name === "videos") loadVideoJobs();
   if (name === "instagram") loadInstagram();
 }
 
-/* TRAILER SEARCH */
-let trailerSearchTimer = null;
+function renderCatalog(items) {
+  const box = $("#catalog-box");
+  const list = $("#catalog-list");
+  list.replaceChildren();
+  if (!items.length) { box.hidden = true; return; }
+  box.hidden = false;
+  items.forEach((item, index) => {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "catalog-card" + (selectedCatalog && selectedCatalog.id === item.id ? " selected" : "");
+    if (item.posterUrl) {
+      const img = document.createElement("img");
+      img.src = item.posterUrl;
+      img.alt = item.title || "";
+      card.append(img);
+    }
+    const title = document.createElement("strong");
+    title.textContent = item.title || "Título";
+    const meta = document.createElement("small");
+    meta.textContent = [item.mediaType || "", item.year || ""].filter(Boolean).join(" · ");
+    card.append(title, meta);
+    card.addEventListener("click", () => {
+      selectedCatalog = item;
+      renderCatalog(items);
+      notice("Título selecionado: " + item.title);
+    });
+    list.append(card);
+    if (!selectedCatalog && index === 0) selectedCatalog = item;
+  });
+  if (selectedCatalog) {
+    list.querySelectorAll(".catalog-card").forEach((el, i) => {
+      if (items[i] && items[i].id === selectedCatalog.id) el.classList.add("selected");
+    });
+  }
+}
+
+function renderTrailers(results) {
+  const box = $("#trailer-results");
+  const list = $("#youtube-results");
+  list.replaceChildren();
+  if (!results.length) { box.hidden = true; return; }
+  box.hidden = false;
+  results.forEach(item => {
+    const card = document.createElement("article");
+    card.className = "youtube-card";
+    const img = document.createElement("img");
+    img.src = item.thumbnail || ("https://i.ytimg.com/vi/" + item.id + "/hqdefault.jpg");
+    img.alt = item.title || "Trailer";
+    const title = document.createElement("strong");
+    title.textContent = item.title || "Trailer";
+    const meta = document.createElement("small");
+    const mins = item.duration ? Math.round(Number(item.duration) / 60) + " min" : "";
+    meta.textContent = [item.channel || "Canal", mins].filter(Boolean).join(" · ");
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "primary";
+    btn.textContent = "Gerar corte 9:16";
+    btn.addEventListener("click", () => startTrailerJob(item, btn));
+    card.append(img, title, meta, btn);
+    list.append(card);
+  });
+}
+
 async function searchTrailers(event) {
   event.preventDefault();
   const query = $("#trailer-query")?.value.trim();
-  const type = $("#trailer-type")?.value || "movie";
+  searchType = $("#trailer-type")?.value || "movie";
   const btn = $("#trailer-search-btn");
   const msg = $("#trailer-search-message");
-  const resultsBox = $("#trailer-results");
-  const list = $("#trailer-results-list");
-  if (!query) { if (msg) msg.textContent = "Digite o nome do filme ou série."; return; }
-  if (btn) { btn.disabled = true; btn.textContent = "Buscando..."; }
-  if (msg) msg.textContent = "Procurando trailers oficiais dublados...";
-  if (resultsBox) resultsBox.hidden = true;
-  if (list) list.replaceChildren();
+  if (!query) { msg.textContent = "Digite o nome do filme ou série."; return; }
+  selectedCatalog = null;
+  btn.disabled = true;
+  btn.textContent = "Buscando...";
+  msg.textContent = "Procurando título e trailers oficiais dublados...";
+  $("#catalog-box").hidden = true;
+  $("#trailer-results").hidden = true;
   if (trailerSearchTimer) clearTimeout(trailerSearchTimer);
   try {
     const data = await api("/api/portal/videos/search", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ query, type })
+      body: JSON.stringify({ query, type: searchType })
     });
+    const catalog = Array.isArray(data.catalog) ? data.catalog : [];
+    renderCatalog(catalog);
+    msg.textContent = "Buscando trailers oficiais no YouTube...";
     const searchId = data.searchId;
-    if (msg) msg.textContent = "Buscando no YouTube... aguarde alguns segundos.";
     let attempts = 0;
     const poll = async () => {
       attempts++;
       try {
         const status = await api("/api/portal/videos/search/" + encodeURIComponent(searchId));
-        if (status.status === "searching" && attempts < 14) {
+        if (status.status !== "search_results" && attempts < 24) {
           trailerSearchTimer = setTimeout(poll, 2500);
           return;
         }
         const results = Array.isArray(status.results) ? status.results : [];
-        if (!results.length) {
-          if (msg) msg.textContent = "Nenhum trailer oficial dublado encontrado. Tente outro nome.";
-          if (btn) { btn.disabled = false; btn.textContent = "Buscar no YouTube"; }
-          return;
+        if (!results.length) msg.textContent = "Nenhum trailer oficial dublado encontrado. Tente outro nome.";
+        else {
+          renderTrailers(results);
+          msg.textContent = "Confirme o filme e clique em Gerar corte 9:16 no trailer.";
         }
-        results.sort((a, b) => (Number(b.score) || 0) - (Number(a.score) || 0));
-        if (list) list.replaceChildren();
-        for (const item of results.slice(0, 12)) {
-          const card = document.createElement("article");
-          card.className = "card";
-          const title = document.createElement("strong");
-          title.textContent = item.title || "Trailer";
-          const meta = document.createElement("small");
-          const mins = item.duration ? Math.round(Number(item.duration) / 60) + " min" : "";
-          meta.textContent = [item.channel || "Canal", mins].filter(Boolean).join(" · ");
-          const actions = document.createElement("div");
-          actions.className = "post-actions";
-          const useBtn = document.createElement("button");
-          useBtn.type = "button";
-          useBtn.className = "primary";
-          useBtn.textContent = "Usar este trailer";
-          useBtn.addEventListener("click", () => startTrailerJob(item, type, useBtn));
-          actions.append(useBtn);
-          card.append(title, meta, actions);
-          if (list) list.append(card);
-        }
-        if (resultsBox) resultsBox.hidden = false;
-        if (msg) msg.textContent = results.length + " resultado(s) encontrado(s). Escolha um para gerar o 9:16.";
       } catch (err) {
-        if (msg) msg.textContent = "Erro na busca: " + err.message;
-      } finally {
-        if (btn) { btn.disabled = false; btn.textContent = "Buscar no YouTube"; }
+        msg.textContent = "Erro na busca: " + err.message;
+      }
+      if (statusDone(attempts)) {
+        btn.disabled = false;
+        btn.textContent = "Buscar trailer dublado";
       }
     };
+    function statusDone(n) { return true; }
     trailerSearchTimer = setTimeout(poll, 2000);
   } catch (error) {
-    if (msg) msg.textContent = "Erro: " + error.message;
-    if (btn) { btn.disabled = false; btn.textContent = "Buscar no YouTube"; }
+    msg.textContent = "Erro: " + error.message;
+    btn.disabled = false;
+    btn.textContent = "Buscar trailer dublado";
   }
 }
 
-async function startTrailerJob(item, type, button) {
+async function startTrailerJob(item, button) {
+  if (!selectedCatalog) {
+    notice("Selecione o filme ou série na lista de títulos antes de gerar o corte.");
+    return;
+  }
   const original = button.textContent;
   button.disabled = true;
-  button.textContent = "Iniciando...";
+  button.textContent = "Gerando...";
   try {
-    const body = {
-      url: "https://www.youtube.com/watch?v=" + (item.id || ""),
-      title: item.title || "Trailer",
-      type: type,
-      logoEnabled: $("#video-use-logo")?.checked !== false,
-      endContact: $("#video-whatsapp-number")?.value.trim() || ""
-    };
     const data = await api("/api/portal/videos/youtube", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(body)
+      body: JSON.stringify({
+        url: item.url || ("https://www.youtube.com/watch?v=" + item.id),
+        title: selectedCatalog.title,
+        catalogId: selectedCatalog.id,
+        type: searchType,
+        overview: selectedCatalog.overview || "",
+        logoEnabled: $("#video-use-logo")?.checked !== false,
+        endContact: $("#video-whatsapp-number")?.value.trim() || ""
+      })
     });
-    notice(data.message || "Trailer enviado para download e conversão 9:16 com template cinematográfico.");
-    const resultsBox = $("#trailer-results");
-    if (resultsBox) resultsBox.hidden = true;
+    notice(data.message || "Trailer enviado. O corte 9:16 está sendo gerado.");
     await loadVideoJobs();
   } catch (error) {
     notice("Trailer: " + error.message);
+  } finally {
     button.disabled = false;
     button.textContent = original;
   }
 }
 
-let videoJobTimer;
 async function loadVideoJobs() {
   const root = $("#video-job-list");
   if (!root) return;
   try {
     const data = await api("/api/portal/videos");
     let jobs = Array.isArray(data.jobs) ? data.jobs : [];
-    if (!Array.isArray(data.jobs)) throw new Error("A API não confirmou a lista de vídeos.");
     if (jobs.some(job => job.status === "failed")) {
-      await api("/api/portal/videos/failed", { method: "DELETE" });
+      await api("/api/portal/videos/failed", { method: "DELETE" }).catch(() => {});
       jobs = jobs.filter(job => job.status !== "failed");
     }
     clearTimeout(videoJobTimer);
-    if (jobs.some(job => ["importing","cutting"].includes(job.status))) {
+    if (jobs.some(job => ["importing", "cutting", "searching"].includes(job.status))) {
       videoJobTimer = setTimeout(loadVideoJobs, 5000);
     }
     root.replaceChildren();
-    if (!jobs.length) {
+    const heading = document.createElement("h2");
+    heading.textContent = "Cortes em andamento e prontos";
+    root.append(heading);
+    const visible = jobs.filter(job => job.status !== "searching" && job.status !== "search_results");
+    if (!visible.length) {
       const empty = document.createElement("p");
       empty.className = "muted";
-      empty.textContent = "Nenhum vídeo registrado.";
+      empty.textContent = "Nenhum corte gerado ainda.";
       root.append(empty);
       return;
     }
-    for (const job of jobs) {
+    visible.forEach(job => {
       const card = document.createElement("article");
       card.className = "card media-card video-render-job";
       const title = document.createElement("strong");
       title.textContent = job.contentTitle || job.filename || "Vídeo";
       const status = document.createElement("span");
-      const labels = { importing: "BAIXANDO", awaiting_configuration: "PRONTO", cutting: "GERANDO", ready: "CONCLUÍDO", failed: "FALHOU" };
+      const labels = { importing: "BAIXANDO", awaiting_configuration: "PRONTO", cutting: "GERANDO CORTE", ready: "CORTE PRONTO", failed: "FALHOU" };
       status.className = "status " + (job.status === "ready" ? "published" : job.status === "failed" ? "failed" : "ready");
-      status.textContent = labels[job.status] || String(job.status || "AGUARDANDO").toUpperCase();
+      status.textContent = labels[job.status] || String(job.status || "").toUpperCase();
       const meta = document.createElement("small");
-      meta.textContent = "Atualizado: " + formatDate(job.updatedAt || job.createdAt);
+      meta.textContent = (job.message || "") + " · " + formatDate(job.updatedAt || job.createdAt);
       card.append(title, status, meta);
-      if (job.message && ["importing","cutting"].includes(job.status)) {
-        const message = document.createElement("p");
-        message.className = "muted";
-        message.textContent = job.message;
-        card.append(message);
-      }
       const actions = document.createElement("div");
       actions.className = "post-actions";
       if (job.status === "awaiting_configuration" && job.sourceReady === true) {
         const generate = document.createElement("button");
         generate.type = "button";
         generate.className = "primary";
-        generate.textContent = "Gerar agora";
+        generate.textContent = "Gerar corte agora";
         generate.addEventListener("click", async () => {
           generate.disabled = true;
           try {
@@ -249,18 +278,18 @@ async function loadVideoJobs() {
         });
         actions.append(generate);
       }
-      const readyClip = (job.clips || []).find(clip => clip.status === "ready" && clip.previewUrl);
-      if (job.status === "ready" && readyClip) {
-        const download = document.createElement("a");
-        download.className = "primary";
-        download.href = readyClip.previewUrl;
-        download.download = "nexus-video.mp4";
-        download.textContent = "Baixar MP4";
-        actions.append(download);
+      const clip = (job.clips || []).find(c => c.status === "ready" && c.previewUrl);
+      if (job.status === "ready" && clip) {
+        const a = document.createElement("a");
+        a.className = "primary";
+        a.href = clip.previewUrl;
+        a.download = "nexus-trailer-9x16.mp4";
+        a.textContent = "Baixar corte 9:16";
+        actions.append(a);
       }
       if (actions.children.length) card.append(actions);
       root.append(card);
-    }
+    });
   } catch (error) {
     notice("Vídeos: " + error.message);
   }
@@ -272,33 +301,35 @@ async function uploadMedia(event) {
   const button = form.querySelector('button[type="submit"]');
   const message = $("#media-upload-message");
   const file = $("#media-file")?.files?.[0];
-  if (!file) { if (message) message.textContent = "Selecione um vídeo."; return; }
-  if (file.size > MAX_VIDEO_UPLOAD_BYTES) { if (message) message.textContent = "O vídeo deve ter no máximo 90 MB."; return; }
+  if (!file) { message.textContent = "Selecione um vídeo."; return; }
+  if (file.size > MAX_VIDEO_UPLOAD_BYTES) { message.textContent = "O vídeo deve ter no máximo 90 MB."; return; }
   const body = new FormData();
   body.append("file", file);
   body.append("purpose", "publish");
   if ($("#media-note")?.value) body.append("note", $("#media-note").value);
-  if (button) { button.disabled = true; button.textContent = "Enviando..."; }
-  if (message) message.textContent = "Enviando vídeo...";
+  button.disabled = true;
+  message.textContent = "Enviando...";
   try {
     const data = await api("/api/portal/media", { method: "POST", body });
-    if (message) message.textContent = data.message || "Vídeo enviado. Gerando 9:16...";
+    message.textContent = data.message || "Vídeo enviado. Gerando 9:16...";
     form.reset();
+    showTab("videos");
     await loadVideoJobs();
   } catch (error) {
-    if (message) message.textContent = "Erro: " + error.message;
+    message.textContent = "Erro: " + error.message;
   } finally {
-    if (button) { button.disabled = false; button.textContent = "Enviar e gerar 9:16"; }
+    button.disabled = false;
   }
 }
 
 async function loadInstagram() {
   try {
-    const data = await api("/api/portal/instagram");
-    if ($("#instagram-handle")) $("#instagram-handle").textContent = data.handle || data.username || "Nenhuma conta conectada";
-    if ($("#instagram-state")) $("#instagram-state").textContent = data.connected ? "Conectado" : "Não conectado";
-    if ($("#instagram-expires")) $("#instagram-expires").textContent = data.expiresAt ? formatDate(data.expiresAt) : "—";
-    if ($("#instagram-scopes")) $("#instagram-scopes").textContent = (data.scopes || []).join(", ") || "—";
+    const data = await api("/api/portal/connections");
+    const ig = data.instagram || data.connection || data;
+    $("#instagram-handle").textContent = ig.handle || ig.username || ig.instagram || "Nenhuma conta conectada";
+    $("#instagram-state").textContent = ig.connected || ig.status === "connected" ? "Conectado" : (ig.status || "Não conectado");
+    $("#instagram-expires").textContent = ig.expiresAt ? formatDate(ig.expiresAt) : "—";
+    $("#instagram-scopes").textContent = Array.isArray(ig.scopes) ? ig.scopes.join(", ") : (ig.scopes || "—");
   } catch (error) {
     notice("Instagram: " + error.message);
   }
@@ -306,9 +337,9 @@ async function loadInstagram() {
 
 async function boot() {
   try {
-    const data = await api("/api/portal/me");
-    showDashboard(data);
-    showTab(activeTab);
+    const data = await api("/api/portal/session");
+    showDashboard(data.client || data);
+    showTab("videos");
   } catch {
     showLogin();
   }
@@ -317,8 +348,7 @@ async function boot() {
 document.addEventListener("DOMContentLoaded", () => {
   $("#login-form")?.addEventListener("submit", async event => {
     event.preventDefault();
-    const form = event.currentTarget;
-    const body = Object.fromEntries(new FormData(form).entries());
+    const body = Object.fromEntries(new FormData(event.currentTarget).entries());
     try {
       const data = await api("/api/portal/login", {
         method: "POST",
@@ -336,12 +366,8 @@ document.addEventListener("DOMContentLoaded", () => {
     showLogin();
   });
   $("#refresh")?.addEventListener("click", () => showTab(activeTab));
-  document.querySelectorAll("[data-tab]").forEach(btn => {
-    btn.addEventListener("click", () => showTab(btn.dataset.tab));
-  });
-  document.querySelectorAll("[data-refresh]").forEach(btn => {
-    btn.addEventListener("click", () => showTab(btn.dataset.refresh || activeTab));
-  });
+  $$("[data-tab]").forEach(btn => btn.addEventListener("click", () => showTab(btn.dataset.tab)));
+  $$("[data-refresh]").forEach(btn => btn.addEventListener("click", () => showTab(btn.dataset.refresh || activeTab)));
   $("#trailer-search-form")?.addEventListener("submit", searchTrailers);
   $("#media-upload-form")?.addEventListener("submit", uploadMedia);
   $("#video-whatsapp-form")?.addEventListener("submit", async event => {
@@ -352,14 +378,14 @@ document.addEventListener("DOMContentLoaded", () => {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ whatsappNumber: $("#video-whatsapp-number")?.value.trim() || "" })
       });
-      if ($("#video-whatsapp-message")) $("#video-whatsapp-message").textContent = "Número salvo para os próximos vídeos.";
+      $("#video-whatsapp-message").textContent = "Número salvo.";
     } catch (error) {
-      if ($("#video-whatsapp-message")) $("#video-whatsapp-message").textContent = error.message;
+      $("#video-whatsapp-message").textContent = error.message;
     }
   });
   $("#connect-instagram")?.addEventListener("click", async () => {
     try {
-      const data = await api("/api/portal/instagram/connect", { method: "POST" });
+      const data = await api("/api/portal/instagram/start");
       if (data.url) window.location.href = data.url;
       else notice(data.message || "Não foi possível iniciar a conexão.");
     } catch (error) {
@@ -374,10 +400,10 @@ document.addEventListener("DOMContentLoaded", () => {
     body.append("logo", file);
     body.append("removeBg", $("#logo-remove-bg")?.checked ? "1" : "0");
     try {
-      const data = await api("/api/portal/logo", { method: "POST", body });
-      if ($("#logo-message")) $("#logo-message").textContent = data.message || "Logo salva.";
+      const data = await api("/api/portal/branding/logo", { method: "POST", body });
+      $("#logo-message").textContent = data.message || "Logo salva.";
     } catch (error) {
-      if ($("#logo-message")) $("#logo-message").textContent = error.message;
+      $("#logo-message").textContent = error.message;
     }
   });
   boot();
