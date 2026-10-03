@@ -550,61 +550,20 @@ async function loadMedia() {
 }
 
 
-let youtubeCatalog = [];
-let videoSearchTimer;
 let videoJobTimer;
-async function generateYouTubeVideo(url) {
-  const selected = youtubeCatalog.find(x => x.id === $("#youtube-catalog").value);
-  const message = $("#youtube-search-message");
-  message.textContent = "Preparando o vídeo completo...";
-  try {
-    await api("/api/portal/videos/youtube", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url, title: selected?.title || $("#youtube-query").value.trim(), type: $("#youtube-type").value, catalogId: selected?.id || "", endContact: $("#video-whatsapp-number")?.value.trim() || "", logoEnabled: $("#video-use-logo")?.checked !== false }) });
-    message.textContent = "Download iniciado. O NEXUS vai baixar, aplicar o modelo 9:16 e gerar automaticamente.";
-    await loadVideoJobs();
-  } catch (error) {
-    message.textContent = "Falha ao iniciar: " + error.message;
-    await loadVideoJobs().catch(() => {});
-  }
-}
-async function searchYouTube(event) {
-  event.preventDefault(); clearTimeout(videoSearchTimer);
-  const button = event.currentTarget.querySelector('button');
-  const message = $("#youtube-search-message");
-  button.disabled = true; message.textContent = "Buscando título e vídeos no YouTube...";
-  $("#youtube-results").replaceChildren();
-  try {
-    const data = await api("/api/portal/videos/search", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ query: $("#youtube-query").value.trim(), type: $("#youtube-type").value }) });
-    youtubeCatalog = data.catalog || [];
-    $("#youtube-catalog").replaceChildren(...youtubeCatalog.map(item => { const o = document.createElement('option'); o.value = item.id; o.textContent = item.title + ' (' + item.year + ')'; return o; }));
-    const poll = async () => {
-      try {
-        const state = await api('/api/portal/videos/search/' + encodeURIComponent(data.searchId));
-        if (state.status === 'searching') { videoSearchTimer = setTimeout(poll, 5000); return; }
-        if (state.status !== 'search_results') throw new Error('A busca do YouTube falhou. Tente buscar novamente.');
-        message.textContent = state.results.length ? 'Escolha um resultado para baixar e gerar automaticamente.' : 'Nenhum trailer oficial dublado em português encontrado. Tente outra busca.';
-        for (const result of state.results) {
-          const card = document.createElement('article'); card.className = 'card media-card';
-          const image = document.createElement('img'); image.src = result.thumbnail; image.alt = result.title;
-          const title = document.createElement('strong'); title.textContent = result.title;
-          const info = document.createElement('p'); info.className = 'muted'; info.textContent = result.channel + (result.duration ? ' · ' + Math.floor(result.duration / 60) + ' min ' + Math.round(result.duration % 60) + ' s' : '');
-          const choose = document.createElement('button'); choose.textContent = 'Gerar vídeo completo'; choose.className = 'primary';
-          choose.addEventListener('click', async () => { choose.disabled = true; await generateYouTubeVideo(result.url); choose.disabled = false; });
-          const view = document.createElement('a'); view.href = result.url; view.target = '_blank'; view.rel = 'noopener'; view.textContent = 'Ver no YouTube';
-          card.append(image, title, info, view, choose); $("#youtube-results").append(card);
-        }
-      } catch (error) { message.textContent = error.message; }
-    };
-    videoSearchTimer = setTimeout(poll, 5000);
-  } catch (error) { message.textContent = error.message; }
-  finally { button.disabled = false; }
-}
+
 async function loadVideoJobs() {
   const root = $("#video-job-list");
   if (!root) return;
   try {
     const data = await api("/api/portal/videos");
-    const jobs = Array.isArray(data.jobs) ? data.jobs : [];
+    let jobs = Array.isArray(data.jobs) ? data.jobs : [];
     if (!Array.isArray(data.jobs)) throw new Error("A API não confirmou a lista de vídeos.");
+
+    if (jobs.some(job => job.status === "failed")) {
+      await api("/api/portal/videos/failed", { method: "DELETE" });
+      jobs = jobs.filter(job => job.status !== "failed");
+    }
 
     clearTimeout(videoJobTimer);
     if (jobs.some(job => ["importing","cutting"].includes(job.status))) {
@@ -616,8 +575,7 @@ async function loadVideoJobs() {
     const groups = {
       processing: jobs.filter(job => ["importing","cutting"].includes(job.status)),
       waiting: jobs.filter(job => job.status === "awaiting_configuration"),
-      ready: jobs.filter(job => job.status === "ready"),
-      failed: jobs.filter(job => job.status === "failed")
+      ready: jobs.filter(job => job.status === "ready")
     };
 
     const summary = document.createElement("div");
@@ -625,8 +583,7 @@ async function loadVideoJobs() {
     const summaryDefs = [
       ["Em andamento", groups.processing.length, "processing", ""],
       ["Prontos", groups.waiting.length, "waiting", "waiting"],
-      ["Concluídos", groups.ready.length, "done", "ready"],
-      ["Falharam", groups.failed.length, "failed", "failed"]
+      ["Concluídos", groups.ready.length, "done", "ready"]
     ];
 
     const drawer = document.createElement("div");
@@ -722,23 +679,6 @@ async function loadVideoJobs() {
         actions.append(download);
       }
 
-      if (job.status === "failed") {
-        const remove = document.createElement("button");
-        remove.type = "button";
-        remove.textContent = "Apagar";
-        remove.addEventListener("click", async () => {
-          remove.disabled = true;
-          try {
-            await api("/api/portal/videos/" + encodeURIComponent(job.id), { method: "DELETE" });
-            await loadVideoJobs();
-          } catch (error) {
-            notice("Vídeos: " + error.message);
-            remove.disabled = false;
-          }
-        });
-        actions.append(remove);
-      }
-
       if (job.status === "cutting") {
         const refresh = document.createElement("button");
         refresh.type = "button";
@@ -756,26 +696,9 @@ async function loadVideoJobs() {
       const titleRow = document.createElement("div");
       titleRow.className = "video-drawer-title";
       const heading = document.createElement("strong");
-      const labels = { waiting: "Prontos para gerar", ready: "Concluídos", failed: "Falharam" };
+      const labels = { waiting: "Prontos para gerar", ready: "Concluídos" };
       heading.textContent = labels[target] || "Vídeos";
       titleRow.append(heading);
-
-      if (target === "failed" && groups.failed.length) {
-        const clear = document.createElement("button");
-        clear.type = "button";
-        clear.textContent = "Apagar todos os que falharam";
-        clear.addEventListener("click", async () => {
-          clear.disabled = true;
-          try {
-            await api("/api/portal/videos/failed", { method: "DELETE" });
-            await loadVideoJobs();
-          } catch (error) {
-            notice("Vídeos: " + error.message);
-            clear.disabled = false;
-          }
-        });
-        titleRow.append(clear);
-      }
 
       drawer.append(titleRow);
       for (const job of groups[target] || []) drawer.append(createCard(job));
@@ -1155,12 +1078,7 @@ $("#video-whatsapp-form")?.addEventListener("submit", async event => {
   } catch (error) { $("#video-whatsapp-message").textContent = error.message; }
   finally { button.disabled = false; }
 });
-$("#video-search-form")?.addEventListener("submit", searchYouTube);
-$$('[data-video-source]').forEach(button => button.addEventListener('click', () => {
-  const youtube = button.dataset.videoSource === 'youtube';
-  $("#video-youtube-panel").hidden = !youtube; $("#media-upload-form").hidden = youtube;
-  $$('[data-video-source]').forEach(tab => tab.setAttribute('aria-selected', String(tab === button)));
-}));
+
 $("#campaign-form")?.addEventListener("submit", submitCampaign);
 $("#directive-form")?.addEventListener("submit", submitDirective);
 $("#logout").addEventListener("click", async () => {
