@@ -31,15 +31,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Prepare render dependencies
+      - name: Check FFmpeg
         shell: bash
         run: |
           set -euo pipefail
-          if ! command -v ffmpeg >/dev/null 2>&1 || [ ! -f /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf ]; then
+          if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
             sudo apt-get update -qq
-            sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
+            sudo apt-get install -y -qq ffmpeg
           fi
-          python3 -c "from PIL import Image, ImageDraw, ImageFont" >/dev/null 2>&1 || python3 -m pip install --quiet pillow
 
       - name: Download source from R2 through NEXUS
         shell: bash
@@ -52,21 +51,39 @@ jobs:
             -H "x-nexus-callback-token: $CALLBACK_TOKEN" -o /tmp/source.mp4
           test -s /tmp/source.mp4
 
-      - name: Convert full video to 9x16
+      - name: Convert full video to clean 9x16
         id: render
         shell: bash
         run: |
           set -euo pipefail
           echo video_9x16_render_failed > /tmp/nexus-render-error.txt
+
+          SRC_DUR="$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 /tmp/source.mp4 | head -n1)"
+          : > /tmp/crops.txt
+          for PCT in 0.18 0.48 0.78; do
+            SS="$(awk -v d="$SRC_DUR" -v p="$PCT" 'BEGIN { s=d*p; if (s<0) s=0; printf "%.3f", s }')"
+            ffmpeg -hide_banner -ss "$SS" -i /tmp/source.mp4 -t 1.5 \
+              -vf "cropdetect=24:16:0" -an -f null - 2>&1 \
+              | sed -n 's/.*\(crop=[0-9:]*\).*/\1/p' >> /tmp/crops.txt || true
+          done
+          CROP="$(sort /tmp/crops.txt | uniq -c | sort -nr | head -n1 | awk '{print $2}')"
+          if [ -z "$CROP" ]; then CROP="crop=iw:ih:0:0"; fi
+          echo "Using source crop: $CROP"
+
+          FILTER="[0:v]$CROP,split=2[clean][base];[base]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=10:1[bg];[clean]scale=1080:1920:force_original_aspect_ratio=decrease[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1,format=yuv420p[out]"
+
           ffmpeg -hide_banner -loglevel error -y \
             -i /tmp/source.mp4 \
-            -vf "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1" \
-            -map 0:v:0 -map 0:a? \
-            -c:v libx264 -preset superfast -crf 22 -threads 0 \
+            -filter_complex "$FILTER" \
+            -map "[out]" -map 0:a? \
+            -c:v libx264 -preset superfast -crf 21 -threads 0 \
             -c:a aac -b:a 128k \
             -movflags +faststart \
             /tmp/rendered.mp4
+
           test -s /tmp/rendered.mp4
+          test "$(ffprobe -v error -select_streams v:0 -show_entries stream=width -of csv=p=0 /tmp/rendered.mp4)" = "1080"
+          test "$(ffprobe -v error -select_streams v:0 -show_entries stream=height -of csv=p=0 /tmp/rendered.mp4)" = "1920"
 
       - name: Upload rendered video to NEXUS
         shell: bash
