@@ -197,6 +197,16 @@ async function listVideoJobs(env, clientId) {
       if (update?.meta?.changes) { row.status = "failed"; Object.assign(resultJson, timeoutResult); }
       else if (expiredToken) settings.ingestCallbackToken = expiredToken;
     }
+    const renderStartedAt = settings.githubRenderUpdatedAt || row.updated_at;
+    const renderStartedMs = new Date(String(renderStartedAt || "").replace(" ", "T") + (/Z$|[+-]\d\d:\d\d$/.test(String(renderStartedAt)) ? "" : "Z")).getTime();
+    if (row.status === "cutting" && Number.isFinite(renderStartedMs) && Date.now() - renderStartedMs > 30 * 60 * 1000) {
+      delete settings.githubRenderToken;
+      settings.githubRenderState = "failed";
+      const timeoutResult = { ...resultJson, progress: 0, error: "video_render_timeout", message: videoErrorMessages.video_render_timeout };
+      const update = await env.DB.prepare("UPDATE video_jobs SET status='failed',settings_json=?3,result_json=?4,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2 AND status='cutting'")
+        .bind(row.id, clientId, JSON.stringify(settings), JSON.stringify(timeoutResult)).run();
+      if (update?.meta?.changes) { row.status = "failed"; Object.assign(resultJson, timeoutResult); }
+    }
     jobs.push({
       id: row.id,
       clientId: row.client_id,

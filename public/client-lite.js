@@ -75,7 +75,7 @@ function showTab(name) {
   });
   if (name === "posts") loadPosts();
   if (name === "agents") loadAgents();
-  if (name === "videos") Promise.all([loadMedia(), loadVideoJobs()]);
+  if (name === "videos") loadVideoJobs();
   if (name === "campaigns") loadCampaigns();
   if (name === "performance") loadPerformance();
   if (name === "instagram") loadInstagram();
@@ -559,9 +559,12 @@ async function generateYouTubeVideo(url) {
   message.textContent = "Preparando o vídeo completo...";
   try {
     await api("/api/portal/videos/youtube", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url, title: selected?.title || $("#youtube-query").value.trim(), type: $("#youtube-type").value, catalogId: selected?.id || "", endContact: $("#video-whatsapp-number")?.value.trim() || "", overview: $("#youtube-overview").value.trim(), logoEnabled: $("#video-use-logo")?.checked !== false }) });
-    message.textContent = "Importação solicitada. O Laboratório será liberado após confirmar o MP4 original no R2.";
+    message.textContent = "Importação iniciada. Acompanhe abaixo: IMPORTANDO → PRONTO PARA GERAR → GERANDO → CONCLUÍDO.";
     await loadVideoJobs();
-  } catch (error) { message.textContent = error.message; }
+  } catch (error) {
+    message.textContent = "Falha ao iniciar: " + error.message;
+    await loadVideoJobs().catch(() => {});
+  }
 }
 async function searchYouTube(event) {
   event.preventDefault(); clearTimeout(videoSearchTimer);
@@ -604,31 +607,67 @@ async function loadVideoJobs() {
     const jobs = Array.isArray(data.jobs) ? data.jobs : [];
     if (!Array.isArray(data.jobs)) throw new Error("A API não confirmou a lista de vídeos.");
     clearTimeout(videoJobTimer);
-    if (jobs.some(job => ['importing','cutting'].includes(job.status))) videoJobTimer = setTimeout(loadVideoJobs, 7000);
+    if (jobs.some(job => ["importing","cutting"].includes(job.status))) videoJobTimer = setTimeout(loadVideoJobs, 5000);
     root.replaceChildren();
     if (!jobs.length) { const empty = document.createElement("p"); empty.textContent = "Nenhum vídeo registrado. Envie um MP4 para começar."; root.append(empty); return; }
 
-    for (const job of jobs) {
+    const summary = document.createElement("div");
+    summary.className = "video-status-summary";
+    const counts = {
+      processing: jobs.filter(job => ["importing","cutting"].includes(job.status)).length,
+      waiting: jobs.filter(job => job.status === "awaiting_configuration").length,
+      ready: jobs.filter(job => job.status === "ready").length,
+      failed: jobs.filter(job => job.status === "failed").length
+    };
+    [
+      ["Em andamento", counts.processing, "processing"],
+      ["Prontos para gerar", counts.waiting, "waiting"],
+      ["Concluídos", counts.ready, "done"],
+      ["Falharam", counts.failed, "failed"]
+    ].forEach(([label, value, kind]) => {
+      const item = document.createElement("div");
+      item.className = "video-summary-item " + kind;
+      const strong = document.createElement("strong"); strong.textContent = String(value);
+      const small = document.createElement("small"); small.textContent = label;
+      item.append(strong, small); summary.append(item);
+    });
+    root.append(summary);
+
+    const rank = { cutting: 0, importing: 1, awaiting_configuration: 2, failed: 3, ready: 4 };
+    const orderedJobs = [...jobs].sort((a, b) => {
+      const ar = rank[a.status] ?? 9, br = rank[b.status] ?? 9;
+      if (ar !== br) return ar - br;
+      return String(b.updatedAt || b.createdAt || "").localeCompare(String(a.updatedAt || a.createdAt || ""));
+    });
+
+    for (const job of orderedJobs) {
       const card = document.createElement("article");
       card.className = "card media-card video-render-job";
 
       const title = document.createElement("strong");
       title.textContent = job.contentTitle || job.filename || "Vídeo";
 
-      const status = document.createElement("small");
+      const status = document.createElement("span");
       const labels = {
-        importing: "Importando vídeo",
-        awaiting_configuration: "Pronto para gerar",
-        cutting: "Gerando MP4",
-        ready: "MP4 pronto",
-        failed: "Falha na geração"
+        importing: "IMPORTANDO",
+        awaiting_configuration: "PRONTO PARA GERAR",
+        cutting: "GERANDO",
+        ready: "CONCLUÍDO",
+        failed: "FALHOU"
       };
-      status.textContent = (labels[job.status] || job.status || "Aguardando") + (job.status === "ready" ? " · 100%" : "");
-      card.append(title, status);
+      const statusKind = job.status === "ready" ? "published" : job.status === "failed" ? "failed" : "ready";
+      status.className = "status " + statusKind;
+      status.textContent = labels[job.status] || String(job.status || "AGUARDANDO").toUpperCase();
+
+      const meta = document.createElement("small");
+      const progress = Number(job.progress || 0);
+      const progressText = ["importing","cutting"].includes(job.status) && progress ? " · " + progress + "%" : "";
+      meta.textContent = "Atualizado: " + formatDate(job.updatedAt || job.createdAt) + progressText;
+      card.append(title, status, meta);
 
       if (job.message) {
         const message = document.createElement("p");
-        message.className = "muted";
+        message.className = job.status === "failed" ? "error" : "muted";
         message.textContent = job.message;
         card.append(message);
       }
@@ -688,8 +727,11 @@ async function loadVideoJobs() {
         });
         laboratory.append(generate); actions.append(laboratory);
       } else if (!job.sourceReady && job.status !== "importing") {
-        const blocked = document.createElement("p"); blocked.className = "muted";
-        blocked.textContent = "Laboratório bloqueado: envie um vídeo original válido para continuar.";
+        const blocked = document.createElement("p");
+        blocked.className = job.status === "failed" ? "error" : "muted";
+        blocked.textContent = job.status === "failed"
+          ? "Este trabalho falhou antes de receber o vídeo original. Use “Enviar arquivo” para criar uma nova geração."
+          : "Laboratório bloqueado: envie um vídeo original válido para continuar.";
         actions.append(blocked);
       }
 
@@ -751,7 +793,7 @@ async function uploadMedia(event) {
     const data = await api("/api/portal/media", { method: "POST", body });
     message.textContent = data.message || "Mídia enviada.";
     form.reset();
-    await Promise.all([loadMedia(), loadVideoJobs()]);
+    await loadVideoJobs();
   } catch (error) {
     message.textContent = error.message;
   } finally {
