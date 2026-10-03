@@ -544,7 +544,7 @@ async function generateYouTubeVideo(url) {
   const message = $("#youtube-search-message");
   message.textContent = "Preparando o vídeo completo...";
   try {
-    await api("/api/portal/videos/youtube", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url, title: selected?.title || $("#youtube-query").value.trim(), type: $("#youtube-type").value, catalogId: selected?.id || "", endContact: $("#video-whatsapp-number")?.value.trim() || "", overview: $("#youtube-overview").value.trim() }) });
+    await api("/api/portal/videos/youtube", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url, title: selected?.title || $("#youtube-query").value.trim(), type: $("#youtube-type").value, catalogId: selected?.id || "", endContact: $("#video-whatsapp-number")?.value.trim() || "", overview: $("#youtube-overview").value.trim(), logoEnabled: $("#video-use-logo")?.checked !== false }) });
     message.textContent = "Vídeo completo enviado para edição. Acompanhe abaixo.";
     await loadVideoJobs();
   } catch (error) { message.textContent = error.message; }
@@ -640,7 +640,7 @@ async function loadVideoJobs() {
             await api("/api/portal/videos/" + encodeURIComponent(job.id) + "/process", {
               method: "POST",
               headers: { "content-type": "application/json" },
-              body: JSON.stringify({ endContact: $("#video-whatsapp-number")?.value.trim() || "" })
+              body: JSON.stringify({ endContact: $("#video-whatsapp-number")?.value.trim() || "", logoEnabled: $("#video-use-logo")?.checked !== false })
             });
             notice("Vídeo enviado para renderização.");
             await loadVideoJobs();
