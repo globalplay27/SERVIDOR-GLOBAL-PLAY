@@ -42,6 +42,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          echo source_download_failed > /tmp/nexus-render-error.txt
           curl --fail-with-body --retry 2 --retry-all-errors \
             "$NEXUS_BASE_URL/api/internal/video-render/source" \
             -H "x-nexus-job-id: $JOB_ID" -H "x-nexus-client-id: $CLIENT_ID" \
@@ -52,6 +53,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          echo poster_preparation_failed > /tmp/nexus-render-error.txt
           if [ -n "$POSTER_URL" ]; then
             if [[ "$POSTER_URL" == "$NEXUS_BASE_URL/media/"* ]]; then
               curl --fail --max-time 20 "$NEXUS_BASE_URL/api/internal/video-render/poster" \
@@ -113,6 +115,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          echo template_render_failed > /tmp/nexus-render-error.txt
           SRC_DUR="$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 /tmp/source.mp4 | head -n1)"
           export SRC_DUR
           RENDER_DUR="$SRC_DUR"
@@ -133,6 +136,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          echo result_upload_failed > /tmp/nexus-render-error.txt
           python scripts/upload_render.py
 
       - name: Report render failure
