@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#080d15"><title>NEXUS Vídeos</title>
-  <link rel="stylesheet" href="/client-lite.css?v=17"><script src="/client-lite.js?v=22" defer></script>
+  <link rel="stylesheet" href="/client-lite.css?v=17"><script src="/client-lite.js?v=23" defer></script>
 </head>
 <body><main class="shell">
   <section id="login" class="login card" hidden>
@@ -97,24 +97,8 @@
       <div class="card"><h2>Orientações ativas</h2><div id="directive-list" class="list"></div></div>
     </section>
     <section id="tab-videos" class="tab">
-      <div class="section-title"><div><p class="eyebrow">VÍDEOS</p><h1>Gerador de vídeos</h1><p class="muted">Busque um trailer ou envie um vídeo, gere o resultado e escolha publicar manualmente ou programar para a semana.</p></div><button data-refresh="videos" type="button">Atualizar</button></div>
-      <div class="post-actions" role="tablist" aria-label="Origem do vídeo">
-        <button type="button" role="tab" aria-selected="true" data-video-source="youtube">Buscar no YouTube</button>
-        <button type="button" role="tab" aria-selected="false" data-video-source="upload">Enviar arquivo</button>
-      </div>
-      <section id="video-youtube-panel" class="card">
-        <form id="video-search-form" class="media-upload">
-          <label>Nome do filme ou série<input id="youtube-query" type="search" required maxlength="120" placeholder="Ex.: Reacher"></label>
-          <label>Tipo<select id="youtube-type"><option value="movie">Filme</option><option value="series">Série</option></select></label>
-          <button class="primary" type="submit">Buscar trailer oficial dublado</button>
-        </form>
-        <p id="youtube-search-message" role="status" class="muted"></p>
-        <label>Título no catálogo<select id="youtube-catalog"><option value="">Busque um filme ou série</option></select></label>
-        <p class="muted">Título, capa e sinopse são preenchidos automaticamente pelo catálogo.</p>
-        <div id="youtube-results" class="media-grid"></div>
-        <p class="muted">Escolha um resultado da busca e o NEXUS baixa e gera automaticamente.</p>
-      </section>
-      <form id="media-upload-form" class="card media-upload" hidden>
+      <div class="section-title"><div><p class="eyebrow">VÍDEOS</p><h1>Gerador de vídeos</h1><p class="muted">Envie um vídeo do computador, informe o WhatsApp e gere o resultado vertical 9:16.</p></div><button data-refresh="videos" type="button">Atualizar</button></div>
+      <form id="media-upload-form" class="card media-upload">
         <label>Vídeo
           <input id="media-file" name="file" type="file" accept="video/mp4,video/webm,video/quicktime" required>
         </label>
@@ -126,6 +110,13 @@
         <button class="primary" type="submit">Enviar e gerar 9:16</button>
         <p id="media-upload-message" class="muted" role="status"></p>
       </form>
+      <form id="video-whatsapp-form" class="card">
+        <h2><img src="/assets/video-template/whatsapp-official.svg" alt="WhatsApp" width="32" height="32"> WhatsApp no vídeo</h2>
+        <label>Número do WhatsApp<input id="video-whatsapp-number" type="tel" maxlength="40" inputmode="tel" placeholder="(11) 99999-9999"></label>
+        <p class="muted">Este número aparecerá ao lado do símbolo oficial no rodapé dos próximos vídeos.</p>
+        <button type="submit">Salvar número</button>
+        <p id="video-whatsapp-message" class="muted" role="status"></p>
+      </form>
       <div class="card">
         <h2>Logo no vídeo</h2>
         <label class="check-row">
@@ -135,13 +126,6 @@
         <p class="muted">Cadastre ou altere a marca na aba “Logo do cliente”. A marca será aplicada pequena no canto superior direito.</p>
       </div>
       <div id="video-job-list" aria-live="polite"></div>
-      <form id="video-whatsapp-form" class="card">
-        <h2><img src="/assets/video-template/whatsapp-official.svg" alt="WhatsApp" width="32" height="32"> WhatsApp no vídeo</h2>
-        <label>Número do WhatsApp<input id="video-whatsapp-number" type="tel" maxlength="40" inputmode="tel" placeholder="(11) 99999-9999"></label>
-        <p class="muted">Este número aparecerá ao lado do símbolo oficial no rodapé dos próximos vídeos.</p>
-        <button type="submit">Salvar número</button>
-        <p id="video-whatsapp-message" class="muted" role="status"></p>
-      </form>
 
     </section>
     <section id="tab-performance" class="tab" hidden>
