@@ -119,7 +119,7 @@ function renderTrailers(results) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "primary";
-    btn.textContent = "Gerar corte 9:16";
+    btn.textContent = "Gerar vídeo 9:16";
     btn.addEventListener("click", () => startTrailerJob(item, btn));
     card.append(img, title, meta, btn);
     list.append(card);
@@ -163,7 +163,7 @@ async function searchTrailers(event) {
         if (!results.length) msg.textContent = "Nenhum trailer oficial dublado encontrado. Tente outro nome.";
         else {
           renderTrailers(results);
-          msg.textContent = "Confirme o filme e clique em Gerar corte 9:16 no trailer.";
+          msg.textContent = "Confirme o filme e clique em Gerar vídeo 9:16.";
         }
       } catch (err) {
         msg.textContent = "Erro na busca: " + err.message;
@@ -173,7 +173,7 @@ async function searchTrailers(event) {
         btn.textContent = "Buscar trailer dublado";
       }
     };
-    function statusDone(n) { return true; }
+    function statusDone(n) { return n >= 24; }
     trailerSearchTimer = setTimeout(poll, 2000);
   } catch (error) {
     msg.textContent = "Erro: " + error.message;
@@ -220,23 +220,19 @@ async function loadVideoJobs() {
   try {
     const data = await api("/api/portal/videos");
     let jobs = Array.isArray(data.jobs) ? data.jobs : [];
-    if (jobs.some(job => job.status === "failed")) {
-      await api("/api/portal/videos/failed", { method: "DELETE" }).catch(() => {});
-      jobs = jobs.filter(job => job.status !== "failed");
-    }
     clearTimeout(videoJobTimer);
     if (jobs.some(job => ["importing", "cutting", "searching"].includes(job.status))) {
       videoJobTimer = setTimeout(loadVideoJobs, 5000);
     }
     root.replaceChildren();
     const heading = document.createElement("h2");
-    heading.textContent = "Cortes em andamento e prontos";
+    heading.textContent = "Vídeos em andamento e prontos";
     root.append(heading);
     const visible = jobs.filter(job => job.status !== "searching" && job.status !== "search_results");
     if (!visible.length) {
       const empty = document.createElement("p");
       empty.className = "muted";
-      empty.textContent = "Nenhum corte gerado ainda.";
+      empty.textContent = "Nenhum vídeo gerado ainda.";
       root.append(empty);
       return;
     }
@@ -246,7 +242,7 @@ async function loadVideoJobs() {
       const title = document.createElement("strong");
       title.textContent = job.contentTitle || job.filename || "Vídeo";
       const status = document.createElement("span");
-      const labels = { importing: "BAIXANDO", awaiting_configuration: "PRONTO", cutting: "GERANDO CORTE", ready: "CORTE PRONTO", failed: "FALHOU" };
+      const labels = { importing: "BAIXANDO VÍDEO", awaiting_configuration: "PRONTO PARA GERAR", cutting: "GERANDO VÍDEO", ready: "VÍDEO PRONTO", failed: "FALHOU" };
       status.className = "status " + (job.status === "ready" ? "published" : job.status === "failed" ? "failed" : "ready");
       status.textContent = labels[job.status] || String(job.status || "").toUpperCase();
       const meta = document.createElement("small");
@@ -258,7 +254,7 @@ async function loadVideoJobs() {
         const generate = document.createElement("button");
         generate.type = "button";
         generate.className = "primary";
-        generate.textContent = "Gerar corte agora";
+        generate.textContent = "Gerar vídeo agora";
         generate.addEventListener("click", async () => {
           generate.disabled = true;
           try {
@@ -283,8 +279,8 @@ async function loadVideoJobs() {
         const a = document.createElement("a");
         a.className = "primary";
         a.href = clip.previewUrl;
-        a.download = "nexus-trailer-9x16.mp4";
-        a.textContent = "Baixar corte 9:16";
+        a.download = "nexus-video-9x16.mp4";
+        a.textContent = "Baixar vídeo 9:16";
         actions.append(a);
       }
       if (actions.children.length) card.append(actions);
