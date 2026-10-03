@@ -150,6 +150,25 @@ export async function handleGitHubVideoRenderCallback(request, env, url) {
     });
   }
 
+  if (url.pathname === "/api/internal/video-render/poster" && request.method === "GET") {
+    const settings = parseJson(row.settings_json, {});
+    let key = "";
+    try {
+      const poster = new URL(String(settings.posterUrl || ""), url.origin);
+      if (poster.pathname.startsWith("/media/")) key = decodeURIComponent(poster.pathname.slice(7));
+    } catch {}
+    if (!env.MEDIA || !key.startsWith("library/" + String(clientId) + "/") || key.includes("..") || key.includes("\\")) {
+      return new Response(JSON.stringify({ error: "poster_not_found" }), { status: 404, headers: { "content-type": "application/json" } });
+    }
+    const object = await env.MEDIA.get(key);
+    if (!object) return new Response(JSON.stringify({ error: "poster_not_found" }), { status: 404 });
+    const headers = new Headers();
+    object.writeHttpMetadata(headers);
+    headers.set("cache-control", "private, no-store");
+    if (object.size) headers.set("content-length", String(object.size));
+    return new Response(object.body, { status: 200, headers });
+  }
+
   if (url.pathname === "/api/internal/video-render/logo" && request.method === "GET") {
     const settings = parseJson(row.settings_json, {});
     const key = String(settings.logoObjectKey || "");

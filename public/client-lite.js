@@ -577,11 +577,11 @@ async function loadVideoJobs() {
       const actions = document.createElement("div");
       actions.className = "post-actions";
 
-      if (job.status === "awaiting_configuration" || job.status === "failed") {
+      if (["awaiting_configuration", "failed", "ready"].includes(job.status)) {
         const generate = document.createElement("button");
         generate.type = "button";
         generate.className = "primary";
-        generate.textContent = job.status === "failed" ? "Gerar novamente" : "Gerar MP4";
+        generate.textContent = job.status === "awaiting_configuration" ? "Gerar MP4" : "Gerar novamente";
         generate.addEventListener("click", async () => {
           generate.disabled = true;
           const original = generate.textContent;
@@ -605,7 +605,7 @@ async function loadVideoJobs() {
       }
 
       const readyClip = (job.clips || []).find(clip => clip.status === "ready" && clip.previewUrl);
-      if (readyClip) {
+      if (readyClip && job.status === "ready") {
         const download = document.createElement("a");
         download.className = "primary";
         download.href = readyClip.previewUrl;
