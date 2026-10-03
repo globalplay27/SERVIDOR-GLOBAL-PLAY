@@ -280,11 +280,17 @@ async function runVideo(env,client,options){
     function:"short-form-video-plan",
     trigger:options.trigger,
     startedAt,
-    status:"success",
+    status:candidates.length ? "warning" : "success",
     model:"short-form-rules+growth-plan",
     quantity:candidates.length,
-    message:candidates.length+" plano(s) de Reel com roteiro e assets preparados; renderização MP4 permanece separada.",
-    metadata:{rendererAvailable:false,plansReady:plans.filter(x=>x.status==="script-assets-ready").length}
+    message:candidates.length
+      ? candidates.length+" plano(s) de Reel preparados, mas este agente é somente planejamento; o MP4 depende do pipeline de renderização."
+      : "Nenhum Reel aguardando planejamento neste ciclo.",
+    metadata:{
+      rendererAvailable:false,
+      executionMode:"planning-only",
+      plansReady:plans.filter(x=>x.status==="script-assets-ready").length
+    }
   });
   await patchAgentCoreState(env,client.id,{video:output});
   return output;
