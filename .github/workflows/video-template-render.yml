@@ -137,7 +137,22 @@ jobs:
         run: |
           set -euo pipefail
           echo result_upload_failed > /tmp/nexus-render-error.txt
-          python scripts/upload_render.py
+          SIZE="$(stat -c%s /tmp/rendered.mp4)"
+          DURATION="$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 /tmp/rendered.mp4 | head -n1)"
+          if [ "$SIZE" -le $((90*1024*1024)) ]; then
+            curl --fail-with-body --silent --show-error --retry 3 --retry-all-errors \
+              -A "NEXUS-GitHub-Renderer/1.0" \
+              -X PUT "$NEXUS_BASE_URL/api/internal/video-render/upload" \
+              -H "x-nexus-job-id: $JOB_ID" \
+              -H "x-nexus-client-id: $CLIENT_ID" \
+              -H "x-nexus-callback-token: $CALLBACK_TOKEN" \
+              -H "x-nexus-duration: $DURATION" \
+              -H "content-type: video/mp4" \
+              -H "content-length: $SIZE" \
+              --data-binary @/tmp/rendered.mp4
+          else
+            python scripts/upload_render.py
+          fi
 
       - name: Report render failure
         if: failure()
