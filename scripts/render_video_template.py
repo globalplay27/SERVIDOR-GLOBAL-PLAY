@@ -169,31 +169,40 @@ def prepare_template(work, metadata, source, poster_path=None):
 
     front.save(work / "phone-foreground.png")
 
-def render_fixed(source, output, work, duration, source_crop=None):
+def render_fixed(source, output, work, duration, source_crop=None, logo_path=None):
     prefix = (source_crop + "," if source_crop else "")
     dx = "10*sin(2*PI*t/3.2)"
     dy = "5*sin(2*PI*t/2.6)"
+    use_logo = bool(logo_path and Path(logo_path).exists() and Path(logo_path).stat().st_size)
     graph = (
         f"[0:v]{prefix}scale={SCREEN_W}:{VIDEO_H}:force_original_aspect_ratio=increase,"
-        f"crop={SCREEN_W}:{VIDEO_H},setsar=1,fps=30,format=rgba[clip];"
-        "[1:v]scale=1080:1920,setsar=1,fps=30,format=rgba[bg];"
-        "[2:v]setsar=1,fps=30,format=rgba[under];"
-        "[3:v]setsar=1,fps=30,format=rgba[front];"
+        f"crop={SCREEN_W}:{VIDEO_H},setsar=1,fps=30[clip];"
+        "[1:v]scale=1080:1920,setsar=1[bg];"
+        "[2:v]setsar=1[under];"
+        "[3:v]setsar=1[front];"
         f"[bg][under]overlay=x='{dx}':y='{dy}':shortest=1[a];"
         f"[a][clip]overlay=x='{SCREEN_X}+{dx}':y='{SCREEN_Y}+{dy}':shortest=1[b];"
-        f"[b][front]overlay=x='{dx}':y='{dy}':shortest=1,format=yuv420p[out]"
+        f"[b][front]overlay=x='{dx}':y='{dy}':shortest=1[c];"
     )
+    if use_logo:
+        graph += "[4:v]setsar=1[logo];[c][logo]overlay=W-w-38:38:shortest=1,format=yuv420p[out]"
+    else:
+        graph += "[c]format=yuv420p[out]"
     cmd = [
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
         "-i", str(source),
-        "-loop", "1", "-i", str(Path(work)/"background.png"),
-        "-loop", "1", "-i", str(Path(work)/"phone-underlay.png"),
-        "-loop", "1", "-i", str(Path(work)/"phone-foreground.png"),
-        "-filter_complex_threads", "1",
+        "-loop", "1", "-framerate", "1", "-i", str(Path(work)/"background.png"),
+        "-loop", "1", "-framerate", "1", "-i", str(Path(work)/"phone-underlay.png"),
+        "-loop", "1", "-framerate", "1", "-i", str(Path(work)/"phone-foreground.png"),
+    ]
+    if use_logo:
+        cmd += ["-loop", "1", "-framerate", "1", "-i", str(logo_path)]
+    cmd += [
         "-filter_complex", graph,
         "-map", "[out]", "-map", "0:a?",
         "-t", str(duration), "-r", "30",
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+        "-c:v", "libx264", "-preset", "superfast", "-crf", "23",
+        "-threads", "0",
         "-c:a", "aac", "-b:a", "128k",
         "-movflags", "+faststart", str(output)
     ]
@@ -256,6 +265,7 @@ if __name__ == "__main__":
     parser.add_argument("--poster")
     parser.add_argument("--duration", type=float, default=0)
     parser.add_argument("--source-crop")
+    parser.add_argument("--logo")
     args = parser.parse_args()
 
     supplied = os.getenv("MOVIE_METADATA", "").strip()
@@ -276,4 +286,4 @@ if __name__ == "__main__":
     duration = max(0.1, duration)
 
     prepare_template(args.work, metadata, args.source, args.poster)
-    render_fixed(args.source, args.output, args.work, duration, args.source_crop)
+    render_fixed(args.source, args.output, args.work, duration, args.source_crop, args.logo)
