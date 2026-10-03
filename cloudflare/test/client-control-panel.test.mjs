@@ -27,8 +27,11 @@ test("client portal exposes minimal video, Instagram and logo navigation", async
   assert.match(js, /Baixar vídeo 9:16/);
   assert.match(js, /let pendingUploadMetadata = null/);
   assert.match(js, /const uploadMetadata = pendingUploadMetadata \|\| selectedCatalog/);
-  assert.match(js, /NEXUS mantém o título, a sinopse e gera o 9:16/);
+  assert.match(js, /NEXUS mantém título e sinopse/);
   assert.match(js, /MAX_VIDEO_UPLOAD_BYTES = 90 \* 1024 \* 1024/);
+  assert.match(html, /class="video-status-dock"/);
+  assert.ok(html.indexOf('id="video-job-list"') < html.indexOf('id="trailer-search-form"'));
+  assert.match(js, /Acompanhe aqui\. Não precisa rolar a página\./);
   assert.match(portal, /const maxBytes = 90 \* 1024 \* 1024/);
   assert.match(portal, /env\.MEDIA\.put\(key, file\.stream\(\)/);
   assert.match(index, /"\/portal", "\/portal\.html"/);
