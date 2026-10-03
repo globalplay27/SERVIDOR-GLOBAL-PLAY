@@ -44,12 +44,11 @@ const evidence=[];
 async function call(path,options={}){const r=await nativeFetch(base+path,{...options,headers:{'x-nexus-session':session.token,...options.headers}});const d=await r.json();return{status:r.status,data:d};}
 try{
   const source=await readFile(process.env.NEXUS_E2E_SOURCE);
-  const form=new FormData();form.append('file',new Blob([source],{type:'video/mp4'}),'test.mp4');form.append('purpose','publish');form.append('title','Michael');form.append('year','2026');form.append('overview','Teste técnico de cinco segundos para validar o fluxo completo.');
-  let r=await call('/api/portal/media',{method:'POST',body:form});assert.equal(r.status,201,JSON.stringify(r.data));const jobId=r.data.videoJobId;
-  let jobs=(await call('/api/portal/videos')).data.jobs;const job=jobs.find(x=>x.id===jobId);assert.equal(job.sourceReady,true);assert.equal(job.status,'awaiting_configuration');
-  assert.equal((await MEDIA.head(job.sourceObjectKey)).size,source.length);evidence.push({test:'MP4 HTTP multipart → API → R2 emulator → configuration',result:'PASS',bytes:source.length});
   globalThis.fetch=async(url,options)=>{if(String(url).startsWith('https://api.github.com/'))return new Response(null,{status:204});throw new Error('external_network_disabled_in_fixture');};
-  r=await call('/api/portal/videos/'+jobId+'/process',{method:'POST',body:'{}',headers:{'content-type':'application/json'}});assert.equal(r.status,202,JSON.stringify(r.data));
+  const form=new FormData();form.append('file',new Blob([source],{type:'video/mp4'}),'test.mp4');form.append('purpose','publish');
+  let r=await call('/api/portal/media',{method:'POST',body:form});assert.equal(r.status,202,JSON.stringify(r.data));const jobId=r.data.videoJobId;
+  let jobs=(await call('/api/portal/videos')).data.jobs;const job=jobs.find(x=>x.id===jobId);assert.equal(job.sourceReady,true);assert.equal(job.status,'cutting');
+  assert.equal((await MEDIA.head(job.sourceObjectKey)).size,source.length);evidence.push({test:'MP4 HTTP multipart → API → R2 emulator → automatic render dispatch',result:'PASS',bytes:source.length});
   const row=db.prepare('SELECT * FROM video_jobs WHERE id=?1').get({'?1':jobId});const token=JSON.parse(row.settings_json).githubRenderToken;
   const rendered=await readFile(process.env.NEXUS_E2E_RESULT);
   let result=await nativeFetch(base+'/api/internal/video-render/upload',{method:'PUT',body:rendered,headers:{'content-type':'video/mp4','content-length':String(rendered.length),'x-nexus-job-id':jobId,'x-nexus-client-id':'e2e-client','x-nexus-callback-token':token}});assert.equal(result.status,201,await result.clone().text());
