@@ -38,7 +38,7 @@ test('network timeout and rejected acknowledgements persist ingestion failure in
   try{
     for(const fail of [async()=>{throw new DOMException('timeout','TimeoutError');},async()=>Response.json({ok:true})]){
       const f=fixture();globalThis.fetch=fail;
-      await assert.rejects(startYouTubeVideoIngest(f.env,'client-a','job'),/youtube_downloader_(timeout|invalid_response)/);
+      await assert.rejects(startYouTubeVideoIngest(f.env,'client-a','job'),/youtube_ingest_dispatch_(timeout|failed)/);
       assert.equal(f.row.status,'failed');assert.equal(JSON.parse(f.row.result_json).progress,0);
       assert.equal(JSON.parse(f.row.settings_json).ingestCallbackToken,undefined);
     }
