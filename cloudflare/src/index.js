@@ -68,7 +68,9 @@ function requireAuth(request, env) {
 async function asset(env, request, pathname) {
   if (!env.ASSETS) return json({ error: "assets_binding_unavailable" }, 503);
   const target = new URL(request.url);
-  target.pathname = pathname;
+  // ASSETS canonicalizes portal.html to /portal. Fetch the canonical URL
+  // directly so the outer /portal response cannot redirect to itself.
+  target.pathname = pathname === "/portal.html" ? "/portal" : pathname;
   target.search = "";
   const response = await env.ASSETS.fetch(new Request(target.toString(), request));
   const headers = new Headers(response.headers);
