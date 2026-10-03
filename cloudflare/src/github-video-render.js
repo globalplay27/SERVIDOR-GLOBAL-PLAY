@@ -35,6 +35,139 @@ function validIngestToken(row, token) {
   return Boolean(settings.ingestCallbackToken && String(settings.ingestCallbackToken) === String(token));
 }
 
+
+const MAX_INGEST_VIDEO_BYTES = 95 * 1024 * 1024;
+
+function youtubeVideoIdFromUrl(value) {
+  try {
+    const url = new URL(String(value || "").trim());
+    if (url.protocol !== "https:") return "";
+    const host = url.hostname.toLowerCase().replace(/^www\./, "");
+    if (host === "youtu.be") return url.pathname.split("/").filter(Boolean)[0] || "";
+    if (host !== "youtube.com") return "";
+    if (url.pathname === "/watch") return url.searchParams.get("v") || "";
+    const parts = url.pathname.split("/").filter(Boolean);
+    return ["shorts","embed","live"].includes(parts[0]) ? (parts[1] || "") : "";
+  } catch {
+    return "";
+  }
+}
+
+function unsafeRemoteVideoHost(hostname) {
+  const host = String(hostname || "").toLowerCase().replace(/^\[|\]$/g, "");
+  if (!host || host === "localhost" || host.endsWith(".localhost") || host.endsWith(".internal")) return true;
+  if (host === "::1" || host.startsWith("fc") || host.startsWith("fd") || host.startsWith("fe80:")) return true;
+  const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!ipv4) return false;
+  const a = Number(ipv4[1]), b = Number(ipv4[2]);
+  return a === 10 || a === 127 || a === 0 || (a === 169 && b === 254)
+    || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+}
+
+async function resolvePublicYoutubeStream(sourceUrl) {
+  const videoId = youtubeVideoIdFromUrl(sourceUrl);
+  if (!videoId) throw new Error("invalid_youtube_url");
+
+  const piped = [
+    "https://pipedapi.kavin.rocks",
+    "https://pipedapi.tokhmi.xyz",
+    "https://pipedapi.syncpundit.io",
+    "https://api-piped.mha.fi",
+    "https://pipedapi.rivo.lol"
+  ];
+
+  const tryPiped = async base => {
+    const response = await fetch(base + "/streams/" + encodeURIComponent(videoId), {
+      headers: { accept: "application/json", "user-agent": "NEXUS-Video/3.0" },
+      signal: AbortSignal.timeout(5000)
+    });
+    if (!response.ok) throw new Error("piped_" + response.status);
+    const payload = await response.json().catch(() => ({}));
+    const candidates = (Array.isArray(payload.videoStreams) ? payload.videoStreams : [])
+      .filter(item => item?.url && item?.videoOnly !== true)
+      .map(item => ({
+        ...item,
+        qualityNumber: Number(String(item.quality || "").match(/\d+/)?.[0] || 0),
+        bytes: Number(item.contentLength || 0),
+        mime: String(item.mimeType || "").toLowerCase()
+      }))
+      .filter(item => (!item.bytes || item.bytes <= MAX_INGEST_VIDEO_BYTES) && (!item.qualityNumber || item.qualityNumber <= 480))
+      .sort((a,b) => {
+        const amp4 = a.mime.includes("mp4") ? 1 : 0;
+        const bmp4 = b.mime.includes("mp4") ? 1 : 0;
+        return (bmp4-amp4) || (b.qualityNumber-a.qualityNumber);
+      });
+    if (!candidates.length) throw new Error("piped_no_muxed_stream");
+
+    for (const stream of candidates.slice(0,3)) {
+      const mediaUrl = new URL(String(stream.url), base);
+      if (mediaUrl.protocol !== "https:" || unsafeRemoteVideoHost(mediaUrl.hostname)) continue;
+      const media = await fetch(mediaUrl.toString(), {
+        headers: { accept: "video/*,*/*;q=0.8", "user-agent": "Mozilla/5.0 NEXUS-Video/3.0" },
+        signal: AbortSignal.timeout(20000)
+      });
+      if (!media.ok || !media.body) continue;
+      const length = Number(media.headers.get("content-length") || stream.bytes || 0);
+      if (!length || length > MAX_INGEST_VIDEO_BYTES) {
+        try { await media.body.cancel(); } catch {}
+        continue;
+      }
+      const type = String(media.headers.get("content-type") || stream.mime || "video/mp4").split(";")[0].toLowerCase();
+      return { response: media, size: length, contentType: type.startsWith("video/") ? type : "video/mp4", videoId, resolver: "piped" };
+    }
+    throw new Error("piped_media_unavailable");
+  };
+
+  try {
+    return await Promise.any(piped.map(tryPiped));
+  } catch {
+    throw new Error("youtube_public_stream_unavailable");
+  }
+}
+
+async function storeResolvedYoutubeSource(env, clientId, jobId, row, resolved) {
+  if (!env.MEDIA || !resolved?.response?.body) throw new Error("r2_unavailable");
+  const settings = parseJson(row.settings_json, {});
+  const result = parseJson(row.result_json, {});
+  const key = sourceKeyPrefix(clientId) + crypto.randomUUID() + ".mp4";
+  const object = await env.MEDIA.put(key, resolved.response.body, {
+    httpMetadata: { contentType: resolved.contentType || "video/mp4", cacheControl: "private, no-store" },
+    customMetadata: {
+      clientId: String(clientId),
+      jobId: String(jobId),
+      kind: "video-source",
+      source: "youtube-public",
+      sourceVideoId: resolved.videoId || "",
+      resolver: resolved.resolver || "public-stream"
+    }
+  });
+  if (!object) throw new Error("video_store_failed");
+
+  delete settings.ingestCallbackToken;
+  settings.fileSize = Number(object.size || resolved.size || 0);
+  settings.contentType = resolved.contentType || "video/mp4";
+
+  await env.DB.prepare(
+    "UPDATE video_jobs SET source_object_key=?3,status='awaiting_configuration',settings_json=?4,result_json=?5,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2"
+  ).bind(
+    String(jobId),
+    String(clientId),
+    key,
+    JSON.stringify(settings),
+    JSON.stringify({
+      ...result,
+      progress: 22,
+      storage: "r2",
+      resolver: resolved.resolver || "public-stream",
+      message: "Vídeo salvo no NEXUS. Iniciando renderização.",
+      error: ""
+    })
+  ).run();
+
+  await startGitHubVideoRender(env, clientId, jobId, settings);
+  return { ok: true, jobId, objectKey: key };
+}
+
 export async function startYouTubeVideoIngest(env, clientId, jobId) {
   const row = await loadJob(env, jobId, clientId);
   if (!row) throw new Error("video_not_found");
@@ -43,51 +176,75 @@ export async function startYouTubeVideoIngest(env, clientId, jobId) {
   const sourceUrl = String(settings.sourceUrl || "").trim();
   if (!sourceUrl) throw new Error("video_source_missing");
 
-  const downloaderUrl = String(env.NEXUS_DOWNLOADER_URL || "").trim().replace(/\/+$/, "");
-  if (!downloaderUrl) throw new Error("youtube_downloader_not_configured");
-
-  settings.ingestCallbackToken = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
   await env.DB.prepare(
-    "UPDATE video_jobs SET status='importing',settings_json=?3,result_json=?4,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2"
+    "UPDATE video_jobs SET status='importing',result_json=?3,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2"
   ).bind(
     String(jobId),
     String(clientId),
-    JSON.stringify(settings),
     JSON.stringify({ ...result, progress: 10, message: "Importando o vídeo para o NEXUS antes da renderização.", error: "" })
   ).run();
 
-  const response = await fetch(downloaderUrl + "/ingest", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      ...(String(env.NEXUS_DOWNLOADER_SECRET || "").trim()
-        ? { authorization: "Bearer " + String(env.NEXUS_DOWNLOADER_SECRET).trim() }
-        : {})
-    },
-    body: JSON.stringify({
-      source_url: sourceUrl,
-      job_id: String(jobId),
-      client_id: String(clientId),
-      callback_token: settings.ingestCallbackToken,
-      callback_base: String(env.PUBLIC_BASE_URL || "https://servidor-nexus.diamantehinode2015.workers.dev").replace(/\/+$/, ""),
-      title: String(settings.contentTitle || settings.displayName || "video-youtube").slice(0, 180)
-    }),
-    signal: AbortSignal.timeout(10000)
-  });
+  // Prefer a public muxed stream resolved inside Cloudflare. This keeps the render
+  // job R2-only and avoids depending on YouTube access from GitHub runners.
+  try {
+    const resolved = await resolvePublicYoutubeStream(sourceUrl);
+    return await storeResolvedYoutubeSource(env, clientId, jobId, row, resolved);
+  } catch (publicError) {
+    const downloaderUrl = String(env.NEXUS_DOWNLOADER_URL || "").trim().replace(/\/+$/, "");
+    if (!downloaderUrl) {
+      await env.DB.prepare(
+        "UPDATE video_jobs SET status='failed',result_json=?3,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2"
+      ).bind(
+        String(jobId),
+        String(clientId),
+        JSON.stringify({ ...result, progress: 0, message: "Não foi possível importar este vídeo.", error: String(publicError instanceof Error ? publicError.message : publicError).slice(0, 500) })
+      ).run();
+      throw publicError;
+    }
 
-  if (!response.ok) {
-    const detail = (await response.text().catch(() => "")).slice(0, 220);
+    settings.ingestCallbackToken = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
     await env.DB.prepare(
-      "UPDATE video_jobs SET status='failed',result_json=?3,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2"
+      "UPDATE video_jobs SET settings_json=?3,result_json=?4,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2"
     ).bind(
       String(jobId),
       String(clientId),
-      JSON.stringify({ ...result, progress: 0, message: "Não foi possível iniciar a importação do vídeo.", error: ("youtube_downloader_http_" + response.status + ":" + detail).slice(0, 500) })
+      JSON.stringify(settings),
+      JSON.stringify({ ...result, progress: 12, message: "Tentando rota alternativa de importação.", error: "" })
     ).run();
-    throw new Error("youtube_downloader_dispatch_failed");
-  }
 
-  return { ok: true, jobId };
+    const response = await fetch(downloaderUrl + "/ingest", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...(String(env.NEXUS_DOWNLOADER_SECRET || "").trim()
+          ? { authorization: "Bearer " + String(env.NEXUS_DOWNLOADER_SECRET).trim() }
+          : {})
+      },
+      body: JSON.stringify({
+        source_url: sourceUrl,
+        job_id: String(jobId),
+        client_id: String(clientId),
+        callback_token: settings.ingestCallbackToken,
+        callback_base: String(env.PUBLIC_BASE_URL || "https://servidor-nexus.diamantehinode2015.workers.dev").replace(/\/+$/, ""),
+        title: String(settings.contentTitle || settings.displayName || "video-youtube").slice(0, 180)
+      }),
+      signal: AbortSignal.timeout(10000)
+    });
+
+    if (!response.ok) {
+      const detail = (await response.text().catch(() => "")).slice(0, 220);
+      await env.DB.prepare(
+        "UPDATE video_jobs SET status='failed',result_json=?3,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2"
+      ).bind(
+        String(jobId),
+        String(clientId),
+        JSON.stringify({ ...result, progress: 0, message: "Não foi possível iniciar a importação do vídeo.", error: ("youtube_downloader_http_" + response.status + ":" + detail).slice(0, 500) })
+      ).run();
+      throw new Error("youtube_downloader_dispatch_failed");
+    }
+
+    return { ok: true, jobId, fallback: "external-downloader" };
+  }
 }
 
 export async function startGitHubVideoRender(env, clientId, jobId, patch = {}) {
