@@ -129,7 +129,7 @@ export async function startGitHubVideoRender(env, clientId, jobId, patch = {}) {
 
   const settings = parseJson(row.settings_json, {});
   const result = parseJson(row.result_json, {});
-  const duration = null; // Customer template always edits the complete source.
+  const duration = Math.max(10, Math.min(30, Number(patch.clipDuration || settings.clipDuration || 30))); // Short-form customer video.
   const clips = Math.max(1, Math.min(12, Number(patch.clips || patch.requestedClips || settings.requestedClips || 3)));
   const outputFormat = ["reel","feed","square"].includes(String(patch.outputFormat || settings.outputFormat || "reel"))
     ? String(patch.outputFormat || settings.outputFormat || "reel") : "reel";
