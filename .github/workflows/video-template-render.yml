@@ -64,6 +64,11 @@ jobs:
               curl -L --fail --max-time 20 "$POSTER_URL" -o /tmp/poster.jpg
             fi
           fi
+          if [ ! -s /tmp/poster.jpg ]; then
+            ffmpeg -y -ss 1 -i /tmp/source.mp4 -frames:v 1 -q:v 2 /tmp/poster.jpg >/dev/null 2>&1 || \
+            ffmpeg -y -i /tmp/source.mp4 -frames:v 1 -q:v 2 /tmp/poster.jpg >/dev/null 2>&1
+          fi
+          test -s /tmp/poster.jpg
           if [ "$LOGO_ENABLED" = "true" ]; then
             curl --fail-with-body --retry 2 --retry-all-errors \
               "$NEXUS_BASE_URL/api/internal/video-render/logo" \
