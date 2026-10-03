@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#080d15"><title>NEXUS Vídeos</title>
-  <link rel="stylesheet" href="/client-lite.css?v=19"><script src="/client-lite.js?v=25" defer></script>
+  <link rel="stylesheet" href="/client-lite.css?v=19"><script src="/client-lite.js?v=26" defer></script>
 </head>
 <body><main class="shell">
   <section id="login" class="login card" hidden>
     <div class="brand"><strong>NEXUS AI</strong></div>
     <p class="eyebrow">ACESSO AO PAINEL</p><h1>Entre na sua conta</h1>
-    <p class="muted">Busque trailers oficiais dublados e gere o corte 9:16.</p>
+    <p class="muted">Busque trailers oficiais dublados e gere o vídeo final 9:16.</p>
     <form id="login-form">
       <label>Usuário<input name="username" autocomplete="username" required></label>
       <label>Senha<input name="password" type="password" autocomplete="current-password" required></label>
@@ -34,9 +34,9 @@
         <div>
           <p class="eyebrow">YOUTUBE OFICIAL</p>
           <h1>Filmes e trailers dublados</h1>
-          <p class="muted">1) Busque o filme ou série. 2) Confirme o título. 3) Escolha o trailer oficial dublado. 4) Gere o corte 9:16.</p>
+          <p class="muted">1) Busque o filme ou série. 2) Confirme o título. 3) Escolha o trailer oficial dublado. 4) Gere o vídeo 9:16.</p>
         </div>
-        <button data-refresh="videos" type="button">Atualizar cortes</button>
+        <button data-refresh="videos" type="button">Atualizar vídeos</button>
       </div>
 
       <form id="trailer-search-form" class="card" data-panel="youtube">
@@ -58,13 +58,13 @@
 
       <div id="catalog-box" class="card" hidden>
         <h2>1. Confirme o filme ou série</h2>
-        <p class="muted">Selecione o título certo. Isso entra no template cinematográfico.</p>
+        <p class="muted">Selecione o título certo. A sinopse e a arte entram automaticamente no modelo.</p>
         <div id="catalog-list" class="catalog-grid"></div>
       </div>
 
       <div id="trailer-results" class="card" hidden>
-        <h2>2. Escolha o trailer oficial e gere o corte</h2>
-        <p class="muted">Só trailers oficiais dublados em português. O corte sai em 9:16 com o template cinematográfico.</p>
+        <h2>2. Escolha o trailer oficial e gere o vídeo</h2>
+        <p class="muted">Só trailers oficiais dublados em português. O vídeo sai em 9:16 com o modelo padrão do cliente.</p>
         <div id="youtube-results" class="youtube-grid"></div>
       </div>
 
