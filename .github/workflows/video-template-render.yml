@@ -131,11 +131,19 @@ jobs:
           if [ -s /tmp/logo.png ]; then
             ffmpeg -y -i /tmp/rendered-base.mp4 -i /tmp/logo.png \
               -filter_complex "[0:v][1:v]overlay=W-w-38:38:format=auto[outv]" \
-              -map "[outv]" -map 0:a? -c:v libx264 -preset veryfast -crf 24 -c:a copy -movflags +faststart /tmp/rendered.mp4
+              -map "[outv]" -map 0:a? -c:v libx264 -preset veryfast -crf 24 -c:a aac -b:a 128k -movflags +faststart /tmp/rendered-logo.mp4
           else
-            mv /tmp/rendered-base.mp4 /tmp/rendered.mp4
+            cp /tmp/rendered-base.mp4 /tmp/rendered-logo.mp4
           fi
+          test -s /tmp/rendered-logo.mp4
+
+          # Final guard: every delivered customer video must be vertical 9:16.
+          ffmpeg -y -i /tmp/rendered-logo.mp4 \
+            -filter_complex "[0:v]split=2[fg0][bg0];[bg0]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,gblur=sigma=28[bg];[fg0]scale=1080:1920:force_original_aspect_ratio=decrease[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1,fps=30[outv]" \
+            -map "[outv]" -map 0:a? -c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -movflags +faststart /tmp/rendered.mp4
           test -s /tmp/rendered.mp4
+          DIMENSIONS="$(ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 /tmp/rendered.mp4)"
+          test "$DIMENSIONS" = "1080x1920"
 
       - name: Upload rendered video to NEXUS
         shell: bash
