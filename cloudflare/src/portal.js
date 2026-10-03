@@ -606,15 +606,20 @@ export async function handlePortalApi(request, env, url, ctx) {
     return json({ ok: true, deleted: Number(deleted?.meta?.changes || rows.length) });
   }
 
-  const failedVideoDeleteMatch = url.pathname.match(/^\/api\/portal\/videos\/([^/]+)$/);
-  if (failedVideoDeleteMatch && request.method === "DELETE") {
-    const jobId = decodeURIComponent(failedVideoDeleteMatch[1]);
+  const videoDeleteMatch = url.pathname.match(/^\/api\/portal\/videos\/([^/]+)$/);
+  if (videoDeleteMatch && request.method === "DELETE") {
+    const jobId = decodeURIComponent(videoDeleteMatch[1]);
     const row = await env.DB.prepare(
       "SELECT id, source_object_key, status FROM video_jobs WHERE id=?1 AND client_id=?2 LIMIT 1"
     ).bind(jobId, client.id).first();
     if (!row) return json({ error: "video_not_found", message: "Vídeo não encontrado." }, 404);
-    if (row.status !== "failed") {
-      return json({ error: "video_delete_not_allowed", message: "Só vídeos com falha podem ser apagados por esta opção." }, 409);
+
+    const deletableStatuses = new Set(["ready", "failed", "awaiting_configuration"]);
+    if (!deletableStatuses.has(String(row.status || ""))) {
+      return json({
+        error: "video_delete_not_allowed",
+        message: "Espere a geração terminar antes de excluir este vídeo."
+      }, 409);
     }
 
     const clipRows = await env.DB.prepare(
@@ -627,7 +632,7 @@ export async function handlePortalApi(request, env, url, ctx) {
 
     await env.DB.prepare("DELETE FROM video_clips WHERE job_id=?1 AND client_id=?2")
       .bind(jobId, client.id).run();
-    await env.DB.prepare("DELETE FROM video_jobs WHERE id=?1 AND client_id=?2 AND status='failed'")
+    await env.DB.prepare("DELETE FROM video_jobs WHERE id=?1 AND client_id=?2")
       .bind(jobId, client.id).run();
 
     for (const key of keys) {
