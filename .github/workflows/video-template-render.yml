@@ -62,7 +62,7 @@ jobs:
           : > /tmp/crops.txt
           for PCT in 0.18 0.48 0.78; do
             SS="$(awk -v d="$SRC_DUR" -v p="$PCT" 'BEGIN { s=d*p; if (s<0) s=0; printf "%.3f", s }')"
-            ffmpeg -hide_banner -ss "$SS" -i /tmp/source.mp4 -t 1.5 \
+            ffmpeg -hide_banner -ss "$SS" -i /tmp/source.mp4 -t 0.8 \
               -vf "cropdetect=24:16:0" -an -f null - 2>&1 \
               | sed -n 's/.*\(crop=[0-9:]*\).*/\1/p' >> /tmp/crops.txt || true
           done
@@ -70,7 +70,7 @@ jobs:
           if [ -z "$CROP" ]; then CROP="crop=iw:ih:0:0"; fi
           echo "Using source crop: $CROP"
 
-          FILTER="[0:v]$CROP,split=2[clean][base];[base]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=10:1[bg];[clean]scale=1080:1920:force_original_aspect_ratio=decrease[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1,format=yuv420p[out]"
+          FILTER="[0:v]$CROP,split=2[clean][base];[base]scale=270:480:force_original_aspect_ratio=increase,crop=270:480,boxblur=6:1,scale=1080:1920[bg];[clean]scale=1080:1920:force_original_aspect_ratio=decrease[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1,format=yuv420p[out]"
 
           ffmpeg -hide_banner -loglevel error -y \
             -i /tmp/source.mp4 \
