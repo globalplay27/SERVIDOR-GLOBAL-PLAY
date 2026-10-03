@@ -70,7 +70,7 @@ jobs:
               -H "x-nexus-callback-token: $CALLBACK_TOKEN" \
               -o /tmp/logo-input || rm -f /tmp/logo-input
             if [ -s /tmp/logo-input ]; then
-              ffmpeg -y -i /tmp/logo-input -vf "scale=180:180:force_original_aspect_ratio=decrease,pad=180:180:(ow-iw)/2:(oh-ih)/2:color=black@0" /tmp/logo.png >/dev/null 2>&1 || rm -f /tmp/logo.png
+              ffmpeg -y -i /tmp/logo-input -vf "scale=120:120:force_original_aspect_ratio=decrease,pad=120:120:(ow-iw)/2:(oh-ih)/2:color=black@0" /tmp/logo.png >/dev/null 2>&1 || rm -f /tmp/logo.png
             fi
           fi
           python - <<'PY'
