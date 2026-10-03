@@ -2,14 +2,14 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#080d15"><title>NEXUS AI · Acompanhamento</title>
+  <meta name="theme-color" content="#080d15"><title>NEXUS Vídeos</title>
   <link rel="stylesheet" href="/client-lite.css?v=15"><script src="/client-lite.js?v=19" defer></script>
 </head>
 <body><main class="shell">
   <section id="login" class="login card" hidden>
     <div class="brand"><strong>NEXUS AI</strong></div>
     <p class="eyebrow">ACESSO AO PAINEL</p><h1>Entre na sua conta</h1>
-    <p class="muted">Acompanhe suas publicações e autorize seu Instagram.</p>
+    <p class="muted">Conecte seu Instagram e gere vídeos para publicar.</p>
     <form id="login-form">
       <label>Usuário<input name="username" autocomplete="username" required></label>
       <label>Senha<input name="password" type="password" autocomplete="current-password" required></label>
@@ -31,7 +31,7 @@
       <button data-tab="instagram" type="button">Instagram</button>
     </nav>
     <div id="notice" class="notice" role="status" hidden></div>
-    <section id="tab-overview" class="tab">
+    <section id="tab-overview" class="tab" hidden>
       <p class="eyebrow">VISÃO GERAL</p>
 <div class="card account-setup">
         <div class="account-profile">
@@ -116,8 +116,8 @@
       <div class="card"><h2>Campanhas ativas</h2><div id="campaign-list" class="list"></div></div>
       <div class="card"><h2>Orientações ativas</h2><div id="directive-list" class="list"></div></div>
     </section>
-    <section id="tab-videos" class="tab" hidden>
-      <div class="section-title"><div><p class="eyebrow">VÍDEOS</p><h1>Vídeos do cliente</h1><p class="muted">Envie um vídeo do seu computador para o NEXUS. Ele fica armazenado para processamento, geração e download do MP4.</p></div><button data-refresh="videos" type="button">Atualizar</button></div>
+    <section id="tab-videos" class="tab">
+      <div class="section-title"><div><p class="eyebrow">VÍDEOS</p><h1>Gerador de vídeos</h1><p class="muted">Busque um trailer ou envie um vídeo, gere o resultado e escolha publicar manualmente ou programar para a semana.</p></div><button data-refresh="videos" type="button">Atualizar</button></div>
       <div class="post-actions" role="tablist" aria-label="Origem do vídeo">
         <button type="button" role="tab" aria-selected="true" data-video-source="youtube">Buscar no YouTube</button>
         <button type="button" role="tab" aria-selected="false" data-video-source="upload">Enviar arquivo</button>
@@ -136,7 +136,7 @@
           <label>Link do YouTube<input id="youtube-url" type="url" placeholder="https://www.youtube.com/watch?v=..."></label>
           <button class="primary" type="submit">Gerar vídeo completo</button>
         </form>
-        <p class="muted">Modelo de cinco partes aplicado ao vídeo inteiro: celular, destaque, elenco, avaliações e relacionados.</p>
+        <p class="muted">Escolha o vídeo, gere o resultado e publique quando quiser.</p>
       </section>
       <form id="media-upload-form" class="card media-upload" hidden>
         <label>Vídeo
