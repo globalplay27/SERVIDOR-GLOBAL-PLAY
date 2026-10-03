@@ -167,7 +167,7 @@ export async function handleInstagramOAuthCallback(env, request, url) {
     const payload = parseJson(saved.payload_json, {});
     const redirectUri = String(payload.redirectUri || instagramRedirectUri(request));
     returnTo = String(payload.returnTo || "");
-    if (returnTo && !returnTo.startsWith("/master")) returnTo = "";
+    if (returnTo && !returnTo.startsWith("/master") && !returnTo.startsWith("/portal.html")) returnTo = "";
     const tokenBody = new URLSearchParams({
       client_id: appId,
       client_secret: appSecret,
