@@ -56,24 +56,36 @@ export async function startYouTubeVideoIngest(env, clientId, jobId) {
     JSON.stringify({ ...result, progress: 10, message: "Importando o vídeo para o NEXUS antes da renderização.", error: "" })
   ).run();
 
-  const response = await fetch(downloaderUrl + "/ingest", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      ...(String(env.NEXUS_DOWNLOADER_SECRET || "").trim()
-        ? { authorization: "Bearer " + String(env.NEXUS_DOWNLOADER_SECRET).trim() }
-        : {})
-    },
-    body: JSON.stringify({
-      source_url: sourceUrl,
-      job_id: String(jobId),
-      client_id: String(clientId),
-      callback_token: settings.ingestCallbackToken,
-      callback_base: String(env.PUBLIC_BASE_URL || "https://servidor-nexus.diamantehinode2015.workers.dev").replace(/\/+$/, ""),
-      title: String(settings.contentTitle || settings.displayName || "video-youtube").slice(0, 180)
-    }),
-    signal: AbortSignal.timeout(10000)
-  });
+  let response;
+  try {
+    response = await fetch(downloaderUrl + "/ingest", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...(String(env.NEXUS_DOWNLOADER_SECRET || "").trim()
+          ? { authorization: "Bearer " + String(env.NEXUS_DOWNLOADER_SECRET).trim() }
+          : {})
+      },
+      body: JSON.stringify({
+        source_url: sourceUrl,
+        job_id: String(jobId),
+        client_id: String(clientId),
+        callback_token: settings.ingestCallbackToken,
+        callback_base: String(env.PUBLIC_BASE_URL || "https://servidor-nexus.diamantehinode2015.workers.dev").replace(/\/+$/, ""),
+        title: String(settings.contentTitle || settings.displayName || "video-youtube").slice(0, 180)
+      }),
+      signal: AbortSignal.timeout(60000)
+    });
+  } catch (error) {
+    await env.DB.prepare(
+      "UPDATE video_jobs SET status='failed',result_json=?3,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2"
+    ).bind(
+      String(jobId),
+      String(clientId),
+      JSON.stringify({ ...result, progress: 0, message: "Não foi possível conectar ao importador de vídeo.", error: ("youtube_downloader_network:" + String(error instanceof Error ? error.message : error)).slice(0, 500) })
+    ).run();
+    throw new Error("youtube_downloader_unreachable");
+  }
 
   if (!response.ok) {
     const detail = (await response.text().catch(() => "")).slice(0, 220);
