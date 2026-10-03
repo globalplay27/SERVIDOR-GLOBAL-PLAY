@@ -436,10 +436,12 @@ async function runAgentCore(agent="all",button=null){
   if(button){button.disabled=true;button.textContent="Executando…";}
   if(message)message.textContent=agent==="all"?"Executando ciclo completo…":"Executando "+agent.toUpperCase()+"…";
   try{
-    await api("/api/master/agent-core/"+encodeURIComponent(selected.clientId)+"/run",{
+    const queued=await api("/api/master/agent-core/"+encodeURIComponent(selected.clientId)+"/run",{
       method:"POST",body:JSON.stringify({agent})
     });
-    if(message)message.textContent="Execução concluída e registrada.";
+    if(message)message.textContent=queued?.queued
+      ? "Execução enfileirada. O status muda somente depois da execução real."
+      : "Solicitação recebida; aguardando confirmação real.";
     await loadAgentCore();
     await loadPostLedger();
   }catch(error){if(message)message.textContent="Falha na execução: "+error.message;}
