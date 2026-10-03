@@ -31,12 +31,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install FFmpeg
+      - name: Prepare render dependencies
         shell: bash
         run: |
           set -euo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq ffmpeg fonts-dejavu-core python3-pil
+          if ! command -v ffmpeg >/dev/null 2>&1 || [ ! -f /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf ]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
+          fi
+          python3 -c "from PIL import Image, ImageDraw, ImageFont" >/dev/null 2>&1 || python3 -m pip install --quiet pillow
 
       - name: Download source from R2 through NEXUS
         shell: bash
@@ -120,16 +123,11 @@ jobs:
           export SRC_DUR
           RENDER_DUR="$SRC_DUR"
           export RENDER_DUR
-          /usr/bin/python3 scripts/render_video_template.py --source /tmp/source.mp4 \
-            --output /tmp/rendered-base.mp4 --work /tmp/movie-template
-          test -s /tmp/rendered-base.mp4
+          RENDER_ARGS=(--source /tmp/source.mp4 --output /tmp/rendered.mp4 --work /tmp/movie-template)
           if [ -s /tmp/logo.png ]; then
-            ffmpeg -y -i /tmp/rendered-base.mp4 -i /tmp/logo.png \
-              -filter_complex "[0:v][1:v]overlay=W-w-38:38:format=auto[outv]" \
-              -map "[outv]" -map 0:a? -c:v libx264 -preset veryfast -crf 24 -c:a copy -movflags +faststart /tmp/rendered.mp4
-          else
-            mv /tmp/rendered-base.mp4 /tmp/rendered.mp4
+            RENDER_ARGS+=(--logo /tmp/logo.png)
           fi
+          /usr/bin/python3 scripts/render_video_template.py "${RENDER_ARGS[@]}"
           test -s /tmp/rendered.mp4
 
       - name: Upload rendered video to NEXUS
