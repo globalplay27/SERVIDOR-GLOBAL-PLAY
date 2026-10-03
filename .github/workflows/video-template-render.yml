@@ -118,10 +118,11 @@ jobs:
           echo template_render_failed > /tmp/nexus-render-error.txt
           SRC_DUR="$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 /tmp/source.mp4 | head -n1)"
           export SRC_DUR
-          RENDER_DUR="$SRC_DUR"
+          REQUESTED="${REQUESTED_DURATION:-30}"
+          RENDER_DUR="$(awk -v src=\"$SRC_DUR\" -v req=\"$REQUESTED\" 'BEGIN { if (req < 10) req=10; if (req > 30) req=30; if (src < req) print src; else print req }')"
           export RENDER_DUR
           /usr/bin/python3 scripts/render_video_template.py --source /tmp/source.mp4 \
-            --output /tmp/rendered-base.mp4 --work /tmp/movie-template
+            --output /tmp/rendered-base.mp4 --work /tmp/movie-template --duration "$RENDER_DUR"
           test -s /tmp/rendered-base.mp4
           if [ -s /tmp/logo.png ]; then
             ffmpeg -y -i /tmp/rendered-base.mp4 -i /tmp/logo.png \
