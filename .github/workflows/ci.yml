@@ -12,7 +12,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
 
       - name: Check panel JavaScript
         run: |
@@ -48,6 +48,12 @@ jobs:
           TITLE=Michael RELEASE_YEAR=2026 /usr/bin/python3 scripts/render_video_template.py \
             --source /tmp/template-long-source.mp4 --output /tmp/template-long-output.mp4 --work /tmp/template-long-smoke
           test "$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 /tmp/template-long-output.mp4)" = '91.000000'
+
+      - name: Test client workspace HTTP, database and storage flow
+        env:
+          NEXUS_E2E_SOURCE: /tmp/template-source.mp4
+          NEXUS_E2E_RESULT: /tmp/template-output.mp4
+        run: node scripts/test-client-workspace.mjs
 
       - name: Validate Wrangler bundle
         working-directory: cloudflare

@@ -1,4 +1,5 @@
 import { portugueseTrailerScore } from './video-catalog.js';
+import { confirmedVideoSource, videoErrorMessages } from './video-source.js';
 function parseJson(raw, fallback = {}) {
   try {
     const value = JSON.parse(String(raw || ""));
@@ -44,7 +45,7 @@ export async function startYouTubeVideoIngest(env, clientId, jobId) {
   if (!sourceUrl) throw new Error("video_source_missing");
 
   const downloaderUrl = String(env.NEXUS_DOWNLOADER_URL || "").trim().replace(/\/+$/, "");
-  if (!downloaderUrl) throw new Error("youtube_downloader_not_configured");
+  settings.ingestStartedAt = new Date().toISOString();
 
   settings.ingestCallbackToken = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
   await env.DB.prepare(
@@ -56,6 +57,8 @@ export async function startYouTubeVideoIngest(env, clientId, jobId) {
     JSON.stringify({ ...result, progress: 10, message: "Importando o vídeo para o NEXUS antes da renderização.", error: "" })
   ).run();
 
+  try {
+  if (!downloaderUrl) throw new Error("youtube_downloader_not_configured");
   const response = await fetch(downloaderUrl + "/ingest", {
     method: "POST",
     headers: {
@@ -76,15 +79,25 @@ export async function startYouTubeVideoIngest(env, clientId, jobId) {
   });
 
   if (!response.ok) {
-    const detail = (await response.text().catch(() => "")).slice(0, 220);
+    throw new Error("youtube_downloader_http_" + response.status);
+  }
+  const accepted = await response.json().catch(() => null);
+  if (accepted?.accepted !== true || String(accepted.job_id || accepted.jobId || "") !== String(jobId)) {
+    throw new Error("youtube_downloader_invalid_response");
+  }
+  } catch (error) {
+    const code = /^(youtube_downloader_)/.test(String(error?.message || "")) ? error.message
+      : ["TimeoutError", "AbortError"].includes(error?.name) ? "youtube_downloader_timeout" : "youtube_downloader_transport_failed";
+    delete settings.ingestCallbackToken;
     await env.DB.prepare(
-      "UPDATE video_jobs SET status='failed',result_json=?3,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2"
+      "UPDATE video_jobs SET status='failed',settings_json=?3,result_json=?4,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2 AND status='importing'"
     ).bind(
       String(jobId),
       String(clientId),
-      JSON.stringify({ ...result, progress: 0, message: "Não foi possível iniciar a importação do vídeo.", error: ("youtube_downloader_http_" + response.status + ":" + detail).slice(0, 500) })
+      JSON.stringify(settings),
+      JSON.stringify({ ...result, progress: 0, message: videoErrorMessages[code] || "O importador recusou o pedido: " + code + ". Use Enviar arquivo.", error: code })
     ).run();
-    throw new Error("youtube_downloader_dispatch_failed");
+    throw new Error(code);
   }
 
   return { ok: true, jobId };
@@ -97,6 +110,8 @@ export async function startGitHubVideoRender(env, clientId, jobId, patch = {}) {
   const row = await loadJob(env, jobId, clientId);
   if (!row) throw new Error("video_not_found");
   if (!row.source_object_key) throw new Error("video_source_missing");
+  if (["importing", "cutting"].includes(row.status)) throw new Error("video_render_in_progress");
+  await confirmedVideoSource(env, clientId, row.source_object_key);
 
   const settings = parseJson(row.settings_json, {});
   const result = parseJson(row.result_json, {});
@@ -121,8 +136,8 @@ export async function startGitHubVideoRender(env, clientId, jobId, patch = {}) {
     githubRenderUpdatedAt: new Date().toISOString()
   });
 
-  await env.DB.prepare(
-    "UPDATE video_jobs SET status='cutting',settings_json=?3,result_json=?4,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2"
+  const claim = await env.DB.prepare(
+    "UPDATE video_jobs SET status='cutting',settings_json=?3,result_json=?4,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2 AND status NOT IN ('importing','cutting')"
   ).bind(
     String(jobId),
     String(clientId),
@@ -136,10 +151,12 @@ export async function startGitHubVideoRender(env, clientId, jobId, patch = {}) {
       error: ""
     })
   ).run();
+  if (!claim?.meta?.changes) throw new Error("video_render_in_progress");
 
   const repo = String(env.GITHUB_INGEST_REPOSITORY || "globalplay27/SERVIDOR-GLOBAL-PLAY");
   const [owner, name] = repo.split("/");
-  const response = await fetch(`https://api.github.com/repos/${owner}/${name}/dispatches`, {
+  let response;
+  try { response = await fetch(`https://api.github.com/repos/${owner}/${name}/dispatches`, {
     method: "POST",
     headers: {
       authorization: `Bearer ${ghToken}`,
@@ -147,6 +164,7 @@ export async function startGitHubVideoRender(env, clientId, jobId, patch = {}) {
       "content-type": "application/json",
       "user-agent": "NEXUS-Cloudflare-Worker"
     },
+    signal: AbortSignal.timeout(15000),
     body: JSON.stringify({
       event_type: "video-template-render",
       client_payload: {
@@ -168,7 +186,14 @@ export async function startGitHubVideoRender(env, clientId, jobId, patch = {}) {
         }
       }
     })
-  });
+  }); } catch (error) {
+    const code = ["TimeoutError", "AbortError"].includes(error?.name) ? "github_render_dispatch_timeout" : "github_render_dispatch_transport_failed";
+    settings.githubRenderState = "failed";
+    delete settings.githubRenderToken;
+    await env.DB.prepare("UPDATE video_jobs SET status='failed',settings_json=?3,result_json=?4,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2 AND status='cutting'")
+      .bind(jobId, clientId, JSON.stringify(settings), JSON.stringify({ ...result, progress: 0, message: "Falha na conexão com o renderizador. Tente gerar novamente.", error: code })).run();
+    throw new Error(code);
+  }
 
   if (response.status !== 204) {
     const detail = (await response.text().catch(() => "")).slice(0, 250);
@@ -239,7 +264,8 @@ export async function handleGitHubVideoRenderCallback(request, env, url) {
         httpMetadata: { contentType: "video/mp4", cacheControl: "private, no-store" },
         customMetadata: { clientId: String(clientId), jobId: String(jobId), kind: "video-source", source: "youtube" }
       });
-      if (!object) return new Response(JSON.stringify({ error: "video_store_failed" }), { status: 500 });
+      if (!object) return Response.json({ error: "video_store_failed" }, { status: 500 });
+      await confirmedVideoSource(env, clientId, key, declared);
 
       delete settings.ingestCallbackToken;
       await env.DB.prepare(
@@ -249,17 +275,8 @@ export async function handleGitHubVideoRenderCallback(request, env, url) {
         String(clientId),
         key,
         JSON.stringify(settings),
-        JSON.stringify({ ...result, progress: 22, message: "Vídeo salvo no NEXUS. Iniciando renderização.", error: "" })
+        JSON.stringify({ ...result, progress: 0, message: "MP4 original confirmado no R2. Configure o vídeo no Laboratório antes de gerar.", error: "" })
       ).run();
-
-      try {
-        await startGitHubVideoRender(env, clientId, jobId, settings);
-      } catch (error) {
-        return new Response(JSON.stringify({ error: String(error instanceof Error ? error.message : error) }), {
-          status: 500,
-          headers: { "content-type": "application/json" }
-        });
-      }
 
       return new Response(JSON.stringify({ ok: true, jobId, objectKey: key }), {
         status: 201,
@@ -278,7 +295,7 @@ export async function handleGitHubVideoRenderCallback(request, env, url) {
         String(jobId),
         String(clientId),
         JSON.stringify(settings),
-        JSON.stringify({ ...result, progress: 0, message: "A importação do vídeo do YouTube falhou.", error: String(body.error || "youtube_ingest_failed").slice(0, 500) })
+        JSON.stringify({ ...result, progress: 0, message: videoErrorMessages[body.error] || "A importação do vídeo do YouTube falhou. Use Enviar arquivo.", error: String(body.error || "youtube_ingest_failed").slice(0, 500) })
       ).run();
       return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json" } });
     }
@@ -402,6 +419,8 @@ export async function handleGitHubVideoRenderCallback(request, env, url) {
       customMetadata: { clientId: String(clientId), jobId: String(jobId), kind: "video-clip", template: String(settings.editStyle || "cinematic-card-v1") }
     });
     if (!object) throw new Error("render_store_failed");
+    const stored = await env.MEDIA.head(key);
+    if (!stored || !Number(stored.size) || (object.size && Number(stored.size) !== Number(object.size))) throw new Error("render_store_unconfirmed");
 
     const clipSettings = {
       rank: 1,
@@ -416,7 +435,6 @@ export async function handleGitHubVideoRenderCallback(request, env, url) {
     };
     const clipResult = {
       previewUrl: `/api/portal/videos/${encodeURIComponent(jobId)}/clips/${encodeURIComponent(clipId)}/media`,
-      qualityScore: 92,
       reason: settings.editStyle === "cinematic-card-v1"
         ? "Modelo cinematográfico NEXUS com vídeo, pôster e ficha visual."
         : "Corte gerado pelo NEXUS.",
