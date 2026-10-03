@@ -5611,14 +5611,15 @@ async function processExternalYoutubeIngest(payload) {
       "--concurrent-fragments", "4",
       "--max-filesize", "95M",
       "--merge-output-format", "mp4",
+      "--remux-video", "mp4",
       "-o", template
     ];
 
     let downloaded = false;
     let lastError = null;
     const attempts = [
-      [...common, "--extractor-args", "youtube:player_client=web_embedded", "-f", "b[height<=480]/b", sourceUrl],
-      [...common, "-f", "b[height<=480]/b", sourceUrl],
+      [...common, "--extractor-args", "youtube:player_client=web_embedded", "-f", "bv*[height<=480]+ba[language^=pt]/b[height<=480]/b", sourceUrl],
+      [...common, "-f", "bv*[height<=480]+ba[language^=pt]/b[height<=480]/b", sourceUrl],
       [...common, "-f", "bv*[height<=480]+ba/b[height<=480]/b", sourceUrl]
     ];
 
@@ -5639,25 +5640,29 @@ async function processExternalYoutubeIngest(payload) {
     }
 
     if (!downloaded) {
-      throw new Error("render_ytdlp_failed:" + String(lastError?.stderr || lastError?.message || "download_failed").replace(/\s+/g, " ").slice(0, 350));
+      const reason = String(lastError?.stderr || lastError?.message || "");
+      throw new Error(/confirm.*not a bot|HTTP Error 403|Sign in/i.test(reason) ? "youtube_download_blocked" : "youtube_download_failed");
     }
 
     const candidates = fs.readdirSync("/tmp")
-      .filter(name => name.startsWith(prefix + "."))
+      .filter(name => name === prefix + ".mp4")
       .map(name => {
         const full = path.join("/tmp", name);
         let size = 0;
         try { size = fs.statSync(full).size; } catch {}
         return { name, full, size };
       })
-      .filter(item => item.size > 0 && item.size <= 100 * 1024 * 1024)
+      .filter(item => item.size > 0 && item.size <= 95 * 1024 * 1024)
       .sort((a,b) => b.size - a.size);
 
     const selected = candidates[0];
     if (!selected) throw new Error("render_download_empty_or_too_large");
+    const probe = await execFileAsync("ffprobe", ["-v", "error", "-show_entries", "stream=codec_type", "-show_entries", "format=duration", "-of", "json", selected.full], { timeout: 30000 });
+    const inspected = JSON.parse(probe.stdout);
+    if (!inspected.streams?.some(stream => stream.codec_type === "video") || !(Number(inspected.format?.duration) > 0)) throw new Error("video_source_invalid");
 
     const ext = path.extname(selected.name).toLowerCase();
-    const contentType = ext === ".webm" ? "video/webm" : ext === ".mkv" ? "video/x-matroska" : "video/mp4";
+    const contentType = "video/mp4";
     const requestedTitle = String(payload.title || "video-youtube").trim().replace(/[\\/\0-\x1f\x7f]+/g, "_").slice(0, 120) || "video-youtube";
     const fileName = requestedTitle + (ext || ".mp4");
 

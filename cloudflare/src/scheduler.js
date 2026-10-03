@@ -94,7 +94,7 @@ async function saveSchedulerState(env, clientId, value) {
   ).bind(clientId, JSON.stringify(value)).run();
 }
 
-async function enqueue(env, clientId, kind, dueAt, payload = {}) {
+export async function enqueue(env, clientId, kind, dueAt, payload = {}) {
   const pending = await env.DB.prepare(
     `SELECT id FROM scheduled_jobs
      WHERE client_id = ?1 AND kind = ?2 AND status IN ('scheduled','running')

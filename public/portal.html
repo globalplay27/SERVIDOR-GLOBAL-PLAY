@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#080d15"><title>NEXUS Vídeos</title>
-  <link rel="stylesheet" href="/client-lite.css?v=15"><script src="/client-lite.js?v=19" defer></script>
+  <link rel="stylesheet" href="/client-lite.css?v=15"><script src="/client-lite.js?v=20" defer></script>
 </head>
 <body><main class="shell">
   <section id="login" class="login card" hidden>
@@ -91,6 +91,8 @@
         <article class="card"><span>Correções solicitadas</span><strong id="agent-correction-count">—</strong></article>
       </div>
       <div id="agent-list" class="list" aria-live="polite"></div>
+      <div class="post-actions"><button id="run-agent-cycle" class="primary" type="button">Executar ciclo completo</button></div>
+      <p id="agent-cycle-status" class="muted" role="status"></p>
     </section>
     <section id="tab-campaigns" class="tab" hidden>
       <div class="section-title"><div><p class="eyebrow">CAMPANHAS E ORIENTAÇÕES</p><h1>Campanhas</h1><p class="muted">Envie uma campanha de 7 dias ou uma orientação que será lida somente pelos agentes da sua conta.</p></div><button data-refresh="campaigns" type="button">Atualizar</button></div>

@@ -150,7 +150,6 @@ def prepare(work, metadata, poster_path=None):
     text_block(d,metadata.get('media_type','FILME'),(100,586,510,635),31,centered=True)
     for j,word in enumerate(['LAN','ÇA','MEN','TO']):
         text_block(d,word,(100,650+j*130,550,790+j*130),110,True,centered=True)
-    heart_eyes(launch)
     glow=Image.new('RGBA',(W,H)); ImageDraw.Draw(glow).rounded_rectangle((612,592,1028,1268),40,outline='white',width=15)
     launch.alpha_composite(glow.filter(ImageFilter.GaussianBlur(14)))
     rounded_image(launch,poster,(620,600,1020,1260),35)
@@ -192,7 +191,6 @@ def prepare(work, metadata, poster_path=None):
             points.append((x,y+(12 if j%2 else -7)))
         points += [(970-j*28,y+280+(10 if j%2 else -7)) for j in range(32)]
         d.polygon(points,fill='#e0c7ff')
-        d.ellipse((145,y+30,215,y+100),fill='#5c91ed')
         text_block(d,review['author'],(240,y+27,900,y+70),27,True,fill='#17202c')
         text_block(d,review.get('source',''),(240,y+67,900,y+100),18,fill='#333545')
         text_block(d,review['text'],(145,y+119,925,y+230),28,fill='#17202c')

@@ -238,13 +238,13 @@ async function instagramSnapshot(env, client) {
       insights: item.id && index < 6 ? await instagramMediaInsights(item.id, headers, item.mediaType) : {}
     })));
 
-    let followersCount=0, mediaCount=items.length, username=String(conn?.username||"");
+    let followersCount=null, mediaCount=items.length, username=String(conn?.username||"");
     try {
       const profileUrl="https://graph.instagram.com/"+encodeURIComponent(igUserId)+"?fields="+encodeURIComponent("username,followers_count,media_count");
       const profileResponse=await fetch(profileUrl,{headers,signal:AbortSignal.timeout(8000)});
       const profile=await profileResponse.json().catch(()=>({}));
       if(profileResponse.ok){
-        followersCount=Math.max(0,Number(profile.followers_count||0));
+        followersCount=profile.followers_count != null && Number.isFinite(Number(profile.followers_count)) ? Math.max(0,Number(profile.followers_count)) : null;
         mediaCount=Math.max(0,Number(profile.media_count||items.length));
         username=String(profile.username||username);
       }
@@ -252,7 +252,7 @@ async function instagramSnapshot(env, client) {
 
     return { source:"instagram-api",items,followersCount,mediaCount,username };
   } catch(error) {
-    return { source:"instagram-api",items:[],followersCount:0,mediaCount:0,error:String(error?.message||error).slice(0,300) };
+    return { source:"instagram-api-error",items:[],followersCount:null,mediaCount:null,error:String(error?.message||error).slice(0,300) };
   }
 }
 
@@ -335,9 +335,9 @@ async function runRadar(env, client, options) {
   }).sort((a,b)=>b.engagement-a.engagement);
   const engagement=scored.map(item=>item.engagement);
   const postTimes=recommendedTimes(snapshot.items,client.id);
-  const previousFollowers=Math.max(0,Number(state?.radar?.followersCount||0));
-  const followersCount=Math.max(0,Number(snapshot.followersCount||previousFollowers||0));
-  const followerDelta=followersCount&&previousFollowers?followersCount-previousFollowers:0;
+  const previousFollowers=state?.radar?.followersCount != null ? Math.max(0,Number(state.radar.followersCount)) : null;
+  const followersCount=snapshot.followersCount != null ? Math.max(0,Number(snapshot.followersCount)) : null;
+  const followerDelta=followersCount != null && previousFollowers != null ? followersCount-previousFollowers : null;
 
   const leadSummary=await leadHunterSummary(env,client.id).catch(()=>({total:0,hot:0,warm:0,cold:0}));
 
@@ -371,7 +371,7 @@ async function runRadar(env, client, options) {
       totalInteractions:scored.reduce((sum,item)=>sum+Number(item.insights?.total_interactions||0),0)
     },
     followersCount,
-    followersDelta,
+    followersDelta:followerDelta,
     recommendedPostTimes:postTimes,
     topMedia:scored.slice(0,5).map(item=>({
       mediaType:item.mediaType,engagement:item.engagement,

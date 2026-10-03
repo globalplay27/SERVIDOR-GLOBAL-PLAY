@@ -19,7 +19,10 @@ import { leadHunterView, saveLeadHunterConfig, runLeadHunter, discardLead } from
 import { decidePost, requestPostRevision, cancelPost, saveOwnPostContent, publishPostNow, useLibraryImageForPost } from "./posts.js";
 import { addDirective, createCampaign, masterWorkspace } from "./master-workspace.js";
 import { startGitHubVideoRender, startYouTubeVideoIngest } from "./github-video-render.js";
+import { confirmedVideoSource, isMp4Header, videoErrorMessages } from "./video-source.js";
 import { youtubeUrl, searchCatalog, catalogMetadata, dispatchVideoSearch } from "./video-catalog.js";
+import { enqueue } from "./scheduler.js";
+import { processDueJobs } from "./executor.js";
 
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
@@ -173,11 +176,33 @@ async function listVideoJobs(env, clientId) {
         createdAt: clip.created_at || null,
         updatedAt: clip.updated_at || null
       }));
-    } catch {}
+    } catch (error) { throw error; }
+    let sourceReady = false;
+    let sourceError = "";
+    if (row.source_object_key) {
+      try { await confirmedVideoSource(env, clientId, row.source_object_key); sourceReady = true; }
+      catch (error) {
+        sourceError = String(error?.message || "video_source_invalid");
+        if (!videoErrorMessages[sourceError]) throw error;
+      }
+    }
+    const startedAt = settings.ingestStartedAt || row.updated_at;
+    const startedMs = new Date(String(startedAt || "").replace(" ", "T") + (/Z$|[+-]\d\d:\d\d$/.test(String(startedAt)) ? "" : "Z")).getTime();
+    if (row.status === "importing" && Number.isFinite(startedMs) && Date.now() - startedMs > 30 * 60 * 1000) {
+      const expiredToken = settings.ingestCallbackToken;
+      delete settings.ingestCallbackToken;
+      const timeoutResult = { ...resultJson, progress: 0, error: "youtube_ingest_timeout", message: videoErrorMessages.youtube_ingest_timeout };
+      const update = await env.DB.prepare("UPDATE video_jobs SET status='failed',settings_json=?3,result_json=?4,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2 AND status='importing' AND settings_json=?5")
+        .bind(row.id, clientId, JSON.stringify(settings), JSON.stringify(timeoutResult), row.settings_json).run();
+      if (update?.meta?.changes) { row.status = "failed"; Object.assign(resultJson, timeoutResult); }
+      else if (expiredToken) settings.ingestCallbackToken = expiredToken;
+    }
     jobs.push({
       id: row.id,
       clientId: row.client_id,
       sourceObjectKey: row.source_object_key || "",
+      sourceReady,
+      sourceError,
       status: row.status || "pending",
       filename: settings.filename || settings.displayName || "Vídeo",
       contentTitle: settings.contentTitle || "",
@@ -224,6 +249,7 @@ async function listPosts(env, clientId) {
      ORDER BY updated_at DESC LIMIT 100`
   ).bind(String(clientId)).all();
   return (result?.results || []).map(row => ({
+    ...parseJson(row.payload_json, {}),
     id: row.id,
     clientId: row.client_id,
     scheduledFor: row.scheduled_for || null,
@@ -235,7 +261,6 @@ async function listPosts(env, clientId) {
     imageObjectKey: row.image_object_key || "",
     error: row.error || "",
     costUsd: Number(row.cost_usd || 0),
-    ...parseJson(row.payload_json, {}),
     createdAt: row.created_at || null,
     updatedAt: row.updated_at || null
   }));
@@ -571,7 +596,7 @@ export async function handlePortalApi(request, env, url, ctx) {
       ).run();
       await startYouTubeVideoIngest(env, client.id, id);
       return json({ ok: true, jobId: id }, 202);
-    } catch (error) { return json({ message: error.message === "catalog_title_not_found" ? "Título não encontrado. Selecione o filme ou série correto na busca." : "Não foi possível preparar o vídeo. Tente novamente." }, 400); }
+    } catch (error) { return json({ error: error.message, message: videoErrorMessages[error.message] || (error.message === "catalog_title_not_found" ? "Título não encontrado. Selecione o filme ou série correto na busca." : "Não foi possível importar o vídeo: " + error.message) }, 400); }
   }
 
   const videoProcessMatch = url.pathname.match(/^\/api\/portal\/videos\/([^/]+)\/process$/);
@@ -586,9 +611,13 @@ export async function handlePortalApi(request, env, url, ctx) {
     const jobId = decodeURIComponent(videoProcessMatch[1]);
     const body = await request.json().catch(() => ({}));
     const row = await env.DB.prepare(
-      "SELECT id, settings_json FROM video_jobs WHERE id=?1 AND client_id=?2 LIMIT 1"
+      "SELECT id, status, source_object_key, settings_json FROM video_jobs WHERE id=?1 AND client_id=?2 LIMIT 1"
     ).bind(jobId, client.id).first();
     if (!row) return json({ error: "video_not_found", message: "Vídeo não encontrado." }, 404);
+    try {
+      if (["importing", "cutting"].includes(row.status)) throw new Error("video_render_in_progress");
+      await confirmedVideoSource(env, client.id, row.source_object_key);
+    } catch (error) { return json({ error: error.message, message: videoErrorMessages[error.message] || "Não foi possível confirmar o vídeo original." }, 409); }
 
     const current = parseJson(row.settings_json, {});
     const branding = client.config?.branding && typeof client.config.branding === "object" ? client.config.branding : {};
@@ -624,7 +653,7 @@ export async function handlePortalApi(request, env, url, ctx) {
       const code = error instanceof Error ? error.message : String(error);
       return json({ error: code, message: code === "github_actions_token_missing"
         ? "O renderizador ainda não está autorizado no Worker."
-        : "Não foi possível iniciar a geração do vídeo." }, 400);
+        : videoErrorMessages[code] || "Não foi possível iniciar a geração do vídeo: " + code }, 400);
     }
   }
 
@@ -673,6 +702,9 @@ export async function handlePortalApi(request, env, url, ctx) {
     if (!size || size > maxBytes) {
       return json({ error: "media_too_large", message: "O vídeo deve ter no máximo 90 MB." }, 413);
     }
+    if (contentType === "video/mp4" && !isMp4Header(await file.slice(0, 32).arrayBuffer())) {
+      return json({ error: "video_source_invalid", message: "O arquivo selecionado não contém um MP4 válido." }, 415);
+    }
 
     const purpose = String(form.get("purpose") || "reference") === "publish" ? "publish" : "reference";
     const note = String(form.get("note") || "").trim().slice(0, 800);
@@ -693,6 +725,11 @@ export async function handlePortalApi(request, env, url, ctx) {
         kind: purpose === "reference" ? "creative-reference" : "client-owned-media"
       }
     });
+    if (contentType.startsWith("video/")) await confirmedVideoSource(env, client.id, key, size);
+    else {
+      const stored = await env.MEDIA.head(key);
+      if (!stored || Number(stored.size) !== size) throw new Error("media_store_unconfirmed");
+    }
 
     let posterUrl = "";
     const posterFile = form.get("poster");
@@ -739,7 +776,7 @@ export async function handlePortalApi(request, env, url, ctx) {
         String(client.id),
         key,
         JSON.stringify(settings),
-        JSON.stringify({ progress: 15, message: "Vídeo enviado. Preencha os dados e gere o MP4.", error: "" })
+        JSON.stringify({ progress: 0, message: "Vídeo original confirmado no R2. Configure o Laboratório e gere o MP4.", error: "" })
       ).run();
     }
 
@@ -875,15 +912,23 @@ export async function handlePortalApi(request, env, url, ctx) {
     const correctionRow = await env.DB.prepare(
       "SELECT COUNT(*) AS count FROM post_ledger WHERE client_id = ?1 AND approval_status = 'correction_requested'"
     ).bind(client.id).first();
+    const cycle = await env.DB.prepare("SELECT id,status,last_error,updated_at FROM scheduled_jobs WHERE client_id=?1 AND kind='agent-core-cycle' ORDER BY updated_at DESC LIMIT 1").bind(client.id).first();
     return json({
       ok: true,
       modules: AGENT_CORE_MODULES,
       config: normalizeAgentCoreConfig(client),
       state,
       executions,
+      cycle: cycle ? { id: cycle.id, status: cycle.status, error: cycle.last_error || "", updatedAt: cycle.updated_at } : null,
       pendingApproval: Number(pendingRow?.count || 0),
       correctionRequested: Number(correctionRow?.count || 0)
     });
+  }
+
+  if (url.pathname === "/api/portal/agent-core/run" && request.method === "POST") {
+    const queued = await enqueue(env, client.id, "agent-core-cycle", new Date(), { trigger: "manual", agent: "all" });
+    if (queued) ctx.waitUntil(processDueJobs(env, new Date()).catch(error => console.error("portal_cycle_failed", { clientId: client.id, code: String(error?.message || "cycle_failed").slice(0, 120) })));
+    return json({ ok: true, queued, message: queued ? "Ciclo completo agendado. Acompanhe os resultados dos agentes." : "Já existe um ciclo pendente ou em execução para esta conta." }, 202);
   }
 
   if (url.pathname === "/api/portal/agent-core" && request.method === "POST") {

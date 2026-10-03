@@ -655,10 +655,27 @@ export default {
     }
     if (masterResponse) return masterResponse;
 
-    const videoRenderCallback = await handleGitHubVideoRenderCallback(request, env, url);
+    let videoRenderCallback;
+    try { videoRenderCallback = await handleGitHubVideoRenderCallback(request, env, url); }
+    catch (error) {
+      if (!url.pathname.startsWith("/api/internal/video-")) throw error;
+      const code = String(error?.message || "video_callback_failed");
+      console.error("video_callback_failed", { path: url.pathname, code: code.slice(0, 120) });
+      return json({ ok: false, error: code, message: "O armazenamento/processamento do vídeo falhou." }, 502);
+    }
     if (videoRenderCallback) return videoRenderCallback;
 
-    const portalResponse = await handlePortalApi(request, env, url, ctx);
+    let portalResponse;
+    try { portalResponse = await handlePortalApi(request, env, url, ctx); }
+    catch (error) {
+      if (!url.pathname.startsWith("/api/portal/")) throw error;
+      const raw = String(error?.message || error);
+      const limited = /free tier daily row read limit|d1_daily_read_limit/i.test(raw);
+      console.error("portal_request_failed", { path: url.pathname, code: limited ? "d1_daily_read_limit" : "portal_request_failed" });
+      return json({ ok: false, error: limited ? "d1_daily_read_limit" : "portal_request_failed", message: limited
+        ? "Os dados estão temporariamente indisponíveis pelo limite de leitura do D1. A lista vazia não representa ausência de registros."
+        : "Não foi possível concluir a operação. Nenhum sucesso foi confirmado. Tente novamente." }, 503);
+    }
     if (portalResponse) return portalResponse;
 
     if (url.pathname === "/health" || url.pathname === "/api/health") {

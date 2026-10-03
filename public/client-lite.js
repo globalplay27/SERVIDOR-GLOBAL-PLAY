@@ -15,12 +15,13 @@ const MAX_VIDEO_UPLOAD_BYTES = 90 * 1024 * 1024;
 
 async function api(path, options = {}) {
   const response = await fetch(path, { credentials: "same-origin", cache: "no-store", ...options });
-  const data = await response.json().catch(() => ({}));
+  const data = await response.json().catch(() => null);
   if (response.status === 401) {
     showLogin("Sua sessão terminou. Entre novamente.");
     throw new Error("Sessão expirada");
   }
-  if (!response.ok) throw new Error(data.message || data.error || "Não foi possível consultar o NEXUS.");
+  if (!response.ok) throw new Error(data?.message || data?.error || "Não foi possível consultar o NEXUS.");
+  if (!data || typeof data !== "object" || data.ok === false) throw new Error(data?.message || data?.error || "A API não retornou dados válidos. Atualize e tente novamente.");
   return data;
 }
 
@@ -46,6 +47,7 @@ function showDashboard(data) {
     : "";
   const accountLabel = instagramHandle || data.name || "Cliente";
   $("#client-label").textContent = accountLabel;
+  $("#client-label").title = "Conta: " + data.id;
   $("#header-client-name").textContent = accountLabel;
   const logoKey = String(data.branding?.logoKey || "");
   const logo = $("#client-logo");
@@ -230,7 +232,9 @@ function renderPosts() {
 
 async function loadPosts() {
   try {
-    posts = (await api("/api/portal/posts")).posts || [];
+    const data = await api("/api/portal/posts");
+    if (!Array.isArray(data.posts)) throw new Error("A API não confirmou a lista de postagens.");
+    posts = [...new Map(data.posts.map(post => [post.id, post])).values()];
     renderPosts();
   } catch (error) {
     notice("Postagens: " + error.message);
@@ -339,10 +343,18 @@ function agentDisplayName(value) {
 function executionTime(item) {
   return item?.finishedAt || item?.completedAt || item?.updatedAt || item?.createdAt || item?.startedAt || null;
 }
+let agentTimer;
 
 async function loadAgents() {
   try {
     const data = await api("/api/portal/agent-core");
+    clearTimeout(agentTimer);
+    const pendingCycle = ["scheduled", "running"].includes(data.cycle?.status);
+    if (pendingCycle && activeTab === "agents") agentTimer = setTimeout(loadAgents, 7000);
+    $("#run-agent-cycle").disabled = pendingCycle;
+    $("#agent-cycle-status").textContent = data.cycle
+      ? "Último ciclo: " + data.cycle.status + " · " + formatDate(data.cycle.updatedAt) + (data.cycle.error ? " · " + data.cycle.error : "")
+      : "Ainda não há ciclo registrado para esta conta.";
     const modules = Array.isArray(data.modules) ? data.modules : [];
     const executions = Array.isArray(data.executions) ? data.executions : [];
 
@@ -373,7 +385,8 @@ async function loadAgents() {
       const moduleKey = normalizeAgentKey(
         typeof module === "string" ? module : (module.id || module.name || module.agent)
       );
-      const execution = latestByAgent.get(moduleKey) || {};
+      const saved = Object.entries(data.state?.modules || {}).find(([key]) => normalizeAgentKey(key) === moduleKey)?.[1] || {};
+      const execution = latestByAgent.get(moduleKey) || { ...saved, finishedAt: saved.lastExecutionAt };
       const card = document.createElement("article");
       card.className = "card agent-card";
 
@@ -381,17 +394,18 @@ async function loadAgents() {
       title.textContent = agentDisplayName(module);
 
       const status = document.createElement("span");
-      const state = String(execution.status || "waiting").toLowerCase();
+      const disabled = data.config?.enabled === false || data.config?.modules?.[moduleKey] === false;
+      const state = disabled ? "disabled" : String(execution.status || "not_run").toLowerCase();
       const failed = state === "failed" || state === "error" || state === "blocked";
       const warning = state === "warning";
       status.className = "status " + (state === "success" ? "published" : failed ? "failed" : "ready");
       status.textContent = state === "success"
-        ? "Ativo"
+        ? "Concluído"
         : failed
           ? "Falha"
           : warning
             ? "Atenção"
-            : "Aguardando";
+            : state === "disabled" ? "Desativado" : state === "running" ? "Em execução" : "Sem execução registrada";
 
       const detail = document.createElement("p");
       detail.className = "muted";
@@ -545,7 +559,7 @@ async function generateYouTubeVideo(url) {
   message.textContent = "Preparando o vídeo completo...";
   try {
     await api("/api/portal/videos/youtube", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url, title: selected?.title || $("#youtube-query").value.trim(), type: $("#youtube-type").value, catalogId: selected?.id || "", endContact: $("#video-whatsapp-number")?.value.trim() || "", overview: $("#youtube-overview").value.trim(), logoEnabled: $("#video-use-logo")?.checked !== false }) });
-    message.textContent = "Vídeo completo enviado para edição. Acompanhe abaixo.";
+    message.textContent = "Importação solicitada. O Laboratório será liberado após confirmar o MP4 original no R2.";
     await loadVideoJobs();
   } catch (error) { message.textContent = error.message; }
 }
@@ -588,10 +602,11 @@ async function loadVideoJobs() {
   try {
     const data = await api("/api/portal/videos");
     const jobs = Array.isArray(data.jobs) ? data.jobs : [];
+    if (!Array.isArray(data.jobs)) throw new Error("A API não confirmou a lista de vídeos.");
     clearTimeout(videoJobTimer);
     if (jobs.some(job => ['importing','cutting'].includes(job.status))) videoJobTimer = setTimeout(loadVideoJobs, 7000);
     root.replaceChildren();
-    if (!jobs.length) return;
+    if (!jobs.length) { const empty = document.createElement("p"); empty.textContent = "Nenhum vídeo registrado. Envie um MP4 para começar."; root.append(empty); return; }
 
     for (const job of jobs) {
       const card = document.createElement("article");
@@ -608,7 +623,7 @@ async function loadVideoJobs() {
         ready: "MP4 pronto",
         failed: "Falha na geração"
       };
-      status.textContent = (labels[job.status] || job.status || "Aguardando") + " · " + Math.round(Number(job.progress || 0)) + "%";
+      status.textContent = (labels[job.status] || job.status || "Aguardando") + (job.status === "ready" ? " · 100%" : "");
       card.append(title, status);
 
       if (job.message) {
@@ -624,11 +639,30 @@ async function loadVideoJobs() {
         synopsis.textContent = job.overview;
         card.append(synopsis);
       }
+      if (job.error || job.sourceError) {
+        const detail = document.createElement("p"); detail.className = "error";
+        detail.textContent = "Detalhe: " + (job.error || job.sourceError);
+        card.append(detail);
+      }
 
       const actions = document.createElement("div");
       actions.className = "post-actions";
 
-      if (["awaiting_configuration", "failed", "ready"].includes(job.status)) {
+      if (job.sourceReady === true && ["awaiting_configuration", "failed", "ready"].includes(job.status)) {
+        const laboratory = document.createElement("details");
+        const open = document.createElement("summary"); open.textContent = "Abrir Laboratório";
+        const fields = document.createElement("div"); fields.className = "media-upload";
+        const field = (label, value, multiline = false) => {
+          const wrapper = document.createElement("label"); wrapper.textContent = label;
+          const input = document.createElement(multiline ? "textarea" : "input"); input.value = value || "";
+          wrapper.append(input); fields.append(wrapper); return input;
+        };
+        const contentTitle = field("Título", job.contentTitle);
+        const overview = field("Sinopse dentro do smartphone", job.overview, true);
+        const year = field("Ano", job.releaseYear);
+        const sourceNote = document.createElement("p"); sourceNote.className = "muted";
+        sourceNote.textContent = "Original confirmado no R2 · Resultado vertical 9:16";
+        laboratory.append(open, sourceNote, fields);
         const generate = document.createElement("button");
         generate.type = "button";
         generate.className = "primary";
@@ -641,7 +675,7 @@ async function loadVideoJobs() {
             await api("/api/portal/videos/" + encodeURIComponent(job.id) + "/process", {
               method: "POST",
               headers: { "content-type": "application/json" },
-              body: JSON.stringify({ endContact: $("#video-whatsapp-number")?.value.trim() || "", logoEnabled: $("#video-use-logo")?.checked !== false })
+              body: JSON.stringify({ title: contentTitle.value.trim(), overview: overview.value.trim(), year: year.value.trim(), endContact: $("#video-whatsapp-number")?.value.trim() || "", logoEnabled: $("#video-use-logo")?.checked !== false })
             });
             notice("Vídeo enviado para renderização.");
             await loadVideoJobs();
@@ -652,7 +686,11 @@ async function loadVideoJobs() {
             generate.textContent = original;
           }
         });
-        actions.append(generate);
+        laboratory.append(generate); actions.append(laboratory);
+      } else if (!job.sourceReady && job.status !== "importing") {
+        const blocked = document.createElement("p"); blocked.className = "muted";
+        blocked.textContent = "Laboratório bloqueado: envie um vídeo original válido para continuar.";
+        actions.append(blocked);
       }
 
       const readyClip = (job.clips || []).find(clip => clip.status === "ready" && clip.previewUrl);
@@ -825,12 +863,12 @@ async function loadPerformance() {
     const data = await api("/api/portal/agent-core");
     const radar = data.state?.radar || {};
     const root = $("#top-media"); root.replaceChildren();
-    const hasSnapshot = radar.source === "instagram-api";
-    const hasFollowers = hasSnapshot && Number.isFinite(Number(radar.followersCount));
-    const hasMedia = hasSnapshot && Number.isFinite(Number(radar.scannedMedia));
+    const hasSnapshot = radar.source === "instagram-api" && !radar.error;
+    const hasFollowers = hasSnapshot && radar.followersCount != null && Number.isFinite(Number(radar.followersCount));
+    const hasMedia = hasSnapshot && radar.scannedMedia != null && Number.isFinite(Number(radar.scannedMedia));
     $("#followers").textContent = hasFollowers ? formatNumber(radar.followersCount) : "—";
-    $("#followers-delta").textContent = hasFollowers ? String(Number(radar.followersDelta || 0) >= 0 ? "+" : "") + formatNumber(radar.followersDelta) : "—";
-    $("#median-engagement").textContent = hasMedia ? formatNumber(radar.metrics?.medianEngagement || 0) : "—";
+    $("#followers-delta").textContent = hasFollowers && radar.followersDelta != null ? String(Number(radar.followersDelta) >= 0 ? "+" : "") + formatNumber(radar.followersDelta) : "—";
+    $("#median-engagement").textContent = hasMedia && radar.metrics?.medianEngagement != null ? formatNumber(radar.metrics.medianEngagement) : "—";
     $("#scanned-media").textContent = hasMedia ? formatNumber(radar.scannedMedia) : "—";
     for (const item of (Array.isArray(radar.topMedia) ? radar.topMedia : []).slice(0, 5)) {
       const row = document.createElement("div"); row.className = "media-row";
@@ -871,7 +909,7 @@ async function loadCampaigns() {
         const title = document.createElement("strong");
         title.textContent = item.title || "Campanha";
         const meta = document.createElement("small");
-        meta.textContent = "Início: " + (item.startDate || "—") + " · 7 dias";
+        meta.textContent = "Início: " + (item.startDate || "—") + " · " + (item.durationDays || 7) + " dias · " + (item.status || "Status indisponível");
         const brief = document.createElement("p");
         brief.textContent = item.brief || "";
         card.append(title, document.createElement("br"), meta, brief);
@@ -983,7 +1021,9 @@ async function refresh() {
   showDashboard(data);
   await Promise.all([
     loadInstagram(),
-    activeTab === "videos" ? Promise.all([loadMedia(), loadVideoJobs()]) : Promise.resolve()
+    activeTab === "videos" ? Promise.all([loadMedia(), loadVideoJobs()])
+      : activeTab === "agents" ? loadAgents() : activeTab === "posts" ? loadPosts()
+      : activeTab === "campaigns" ? loadCampaigns() : activeTab === "performance" ? loadPerformance() : Promise.resolve()
   ]);
 }
 
@@ -1015,6 +1055,13 @@ document.querySelectorAll("[data-refresh]").forEach(button => button.addEventLis
   return loadPerformance();
 }));
 $("#refresh").addEventListener("click", () => refresh().catch(error => notice(error.message)));
+$("#run-agent-cycle")?.addEventListener("click", async event => {
+  event.currentTarget.disabled = true;
+  try {
+    const data = await api("/api/portal/agent-core/run", { method: "POST" });
+    notice(data.message); await loadAgents();
+  } catch (error) { notice("Agentes: " + error.message); event.currentTarget.disabled = false; }
+});
 $("#profile-form")?.addEventListener("submit", submitProfile);
 $("#logo-form")?.addEventListener("submit", submitLogo);
 $("#logo-file")?.addEventListener("change", previewLogo);
