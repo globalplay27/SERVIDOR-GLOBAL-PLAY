@@ -165,15 +165,14 @@ async function searchTrailers(event) {
           renderTrailers(results);
           msg.textContent = "Confirme o filme e clique em Gerar vídeo 9:16.";
         }
+        btn.disabled = false;
+        btn.textContent = "Buscar trailer dublado";
       } catch (err) {
         msg.textContent = "Erro na busca: " + err.message;
-      }
-      if (statusDone(attempts)) {
         btn.disabled = false;
         btn.textContent = "Buscar trailer dublado";
       }
     };
-    function statusDone(n) { return n >= 24; }
     trailerSearchTimer = setTimeout(poll, 2000);
   } catch (error) {
     msg.textContent = "Erro: " + error.message;
