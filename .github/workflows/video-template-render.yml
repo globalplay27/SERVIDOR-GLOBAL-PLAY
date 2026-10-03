@@ -52,82 +52,20 @@ jobs:
             -H "x-nexus-callback-token: $CALLBACK_TOKEN" -o /tmp/source.mp4
           test -s /tmp/source.mp4
 
-      - name: Prepare poster and typography
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo poster_preparation_failed > /tmp/nexus-render-error.txt
-          if [ -n "$POSTER_URL" ]; then
-            if [[ "$POSTER_URL" == "$NEXUS_BASE_URL/media/"* ]]; then
-              curl --fail --max-time 20 "$NEXUS_BASE_URL/api/internal/video-render/poster" \
-                -H "x-nexus-job-id: $JOB_ID" \
-                -H "x-nexus-client-id: $CLIENT_ID" \
-                -H "x-nexus-callback-token: $CALLBACK_TOKEN" -o /tmp/poster.jpg
-            else
-              curl -L --fail --max-time 20 "$POSTER_URL" -o /tmp/poster.jpg
-            fi
-          fi
-          if [ "$LOGO_ENABLED" = "true" ]; then
-            curl --fail-with-body --retry 2 --retry-all-errors \
-              "$NEXUS_BASE_URL/api/internal/video-render/logo" \
-              -H "x-nexus-job-id: $JOB_ID" \
-              -H "x-nexus-client-id: $CLIENT_ID" \
-              -H "x-nexus-callback-token: $CALLBACK_TOKEN" \
-              -o /tmp/logo-input || rm -f /tmp/logo-input
-            if [ -s /tmp/logo-input ]; then
-              ffmpeg -y -i /tmp/logo-input -vf "scale=120:120:force_original_aspect_ratio=decrease,pad=120:120:(ow-iw)/2:(oh-ih)/2:color=black@0" /tmp/logo.png >/dev/null 2>&1 || rm -f /tmp/logo.png
-            fi
-          fi
-          python - <<'PY'
-          import os, textwrap
-          def clean(value):
-              return " ".join((value or "").replace("\n"," ").replace("\r"," ").split())
-          title=clean(os.getenv("TITLE","Conteúdo"))[:100]
-          overview=clean(os.getenv("OVERVIEW",""))[:600]
-          year=clean(os.getenv("RELEASE_YEAR",""))
-          media=clean(os.getenv("MEDIA_TYPE","")).upper()
-          end_text=clean(os.getenv("END_TEXT",""))
-          end_contact=clean(os.getenv("END_CONTACT",""))
-          with open("/tmp/title.txt","w",encoding="utf-8") as f:
-              f.write("\n".join(textwrap.wrap(title, 22)[:3]))
-          with open("/tmp/meta.txt","w",encoding="utf-8") as f:
-              bits=[b for b in [media,year] if b]
-              f.write("  •  ".join(bits) or "DESTAQUE")
-          with open("/tmp/overview.txt","w",encoding="utf-8") as f:
-              f.write("\n".join(textwrap.wrap(overview or "Confira este destaque selecionado para você.", 30)[:5]))
-          with open("/tmp/cta.txt","w",encoding="utf-8") as f:
-              f.write("  •  ".join([x for x in [end_text,end_contact] if x])[:160])
-          PY
-
-          python - <<'PY'
-          from PIL import Image, ImageDraw
-          w,h=440,880
-          img=Image.new("RGBA",(w,h),(0,0,0,0))
-          d=ImageDraw.Draw(img)
-          d.rounded_rectangle((5,5,w-5,h-5),radius=58,fill=(3,7,12,250),outline=(214,225,233,255),width=8)
-          d.rounded_rectangle((18,18,w-18,h-18),radius=46,outline=(68,86,100,255),width=3)
-          d.rounded_rectangle((145,24,295,48),radius=12,fill=(48,58,67,255))
-          d.rounded_rectangle((0,185,8,295),radius=4,fill=(180,192,200,255))
-          d.rounded_rectangle((432,220,440,350),radius=4,fill=(180,192,200,255))
-          d.rounded_rectangle((150,842,290,852),radius=5,fill=(110,123,132,255))
-          img.save("/tmp/phone-frame.png")
-          PY
-
-      - name: Render cinematic NEXUS template
+      - name: Convert full video to 9x16
         id: render
         shell: bash
         run: |
           set -euo pipefail
-          echo template_render_failed > /tmp/nexus-render-error.txt
-          SRC_DUR="$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 /tmp/source.mp4 | head -n1)"
-          export SRC_DUR
-          RENDER_DUR="$SRC_DUR"
-          export RENDER_DUR
-          RENDER_ARGS=(--source /tmp/source.mp4 --output /tmp/rendered.mp4 --work /tmp/movie-template)
-          if [ -s /tmp/logo.png ]; then
-            RENDER_ARGS+=(--logo /tmp/logo.png)
-          fi
-          /usr/bin/python3 scripts/render_video_template.py "${RENDER_ARGS[@]}"
+          echo video_9x16_render_failed > /tmp/nexus-render-error.txt
+          ffmpeg -hide_banner -loglevel error -y \
+            -i /tmp/source.mp4 \
+            -vf "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1" \
+            -map 0:v:0 -map 0:a? \
+            -c:v libx264 -preset superfast -crf 22 -threads 0 \
+            -c:a aac -b:a 128k \
+            -movflags +faststart \
+            /tmp/rendered.mp4
           test -s /tmp/rendered.mp4
 
       - name: Upload rendered video to NEXUS
