@@ -378,8 +378,16 @@ function renderAgentCore(){
   const moduleState=selected.state?.modules||{};
   if(live)live.innerHTML=moduleDefs.map(module=>{
     const item=moduleState[module.id]||{};
-    const [label,cls]=item.lastExecutionAt?agentCoreStatusMeta(item.status):["AGUARDANDO","running"];
-    return `<div class="agent-core-live-row"><div><strong>${escapeHtml(module.name)}</strong><small>${escapeHtml(item.message||"Ainda sem execução registrada.")}</small></div><div><span class="post-status ${cls}">${label}</span><small>${item.lastExecutionAt?formatPostDate(item.lastExecutionAt):"—"}</small></div></div>`;
+    const ranAt=Date.parse(String(item.lastExecutionAt||""));
+    const ageMinutes=Number.isFinite(ranAt)?Math.max(0,Math.round((Date.now()-ranAt)/60000)):null;
+    const stale=ageMinutes!==null&&ageMinutes>120;
+    const [baseLabel,baseCls]=item.lastExecutionAt?agentCoreStatusMeta(item.status):["AGUARDANDO","running"];
+    const label=stale?"PARADO":baseLabel;
+    const cls=stale?"failed":baseCls;
+    const detail=stale
+      ? "Sem execução há "+ageMinutes+" min. Verifique scheduler/fila."
+      : (item.message||"Ainda sem execução registrada.");
+    return `<div class="agent-core-live-row"><div><strong>${escapeHtml(module.name)}</strong><small>${escapeHtml(detail)}</small></div><div><span class="post-status ${cls}">${label}</span><small>${item.lastExecutionAt?formatPostDate(item.lastExecutionAt):"—"}</small></div></div>`;
   }).join("");
 
   const rows=Array.isArray(selected.lastExecutions)?[...selected.lastExecutions]:[];
