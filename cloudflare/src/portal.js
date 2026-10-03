@@ -530,7 +530,7 @@ export async function handlePortalApi(request, env, url, ctx) {
 
   if (url.pathname === "/api/portal/instagram/start" && request.method === "GET") {
     try {
-      return json({ ok: true, ...(await startInstagramOAuth(env, request, client.id)) });
+      return json({ ok: true, ...(await startInstagramOAuth(env, request, client.id, "/portal.html?tab=instagram")) });
     } catch (error) {
       const code = error instanceof Error ? error.message : String(error);
       if (code === "instagram_nexus_not_configured") {
