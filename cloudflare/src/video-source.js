@@ -31,8 +31,10 @@ export const videoErrorMessages = {
   youtube_downloader_transport_failed: "Não foi possível conectar ao importador. Use Enviar arquivo.",
   youtube_downloader_invalid_response: "O importador não confirmou o recebimento do trabalho.",
   youtube_ingest_timeout: "A importação não confirmou o MP4 no R2 dentro do prazo. Use Enviar arquivo.",
-  youtube_download_blocked: "O YouTube bloqueou o download automático. Envie o MP4 original pela opção Enviar arquivo.",
-  youtube_download_failed: "O download do YouTube falhou. Envie o MP4 original pela opção Enviar arquivo.",
+  youtube_authentication_required: "O YouTube bloqueou o download automático no servidor. Use Enviar MP4 e gerar; o NEXUS mantém os dados do filme.",
+  youtube_challenge_failed: "O YouTube exigiu uma validação adicional no servidor. Use Enviar MP4 e gerar; o NEXUS mantém os dados do filme.",
+  youtube_download_blocked: "O YouTube bloqueou o download automático. Use Enviar MP4 e gerar; o NEXUS mantém os dados do filme.",
+  youtube_download_failed: "O download do YouTube falhou. Use Enviar MP4 e gerar; o NEXUS mantém os dados do filme.",
   video_render_in_progress: "Este vídeo já está em processamento. Aguarde o resultado.",
   video_render_timeout: "A geração não concluiu no prazo e foi marcada como falha. Tente gerar novamente."
 };
