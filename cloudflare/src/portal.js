@@ -927,7 +927,7 @@ export async function handlePortalApi(request, env, url, ctx) {
 
   if (url.pathname === "/api/portal/agent-core/run" && request.method === "POST") {
     const queued = await enqueue(env, client.id, "agent-core-cycle", new Date(), { trigger: "manual", agent: "all" });
-    if (queued) ctx.waitUntil(processDueJobs(env, new Date()).catch(error => console.error("portal_cycle_failed", { clientId: client.id, code: String(error?.message || "cycle_failed").slice(0, 120) })));
+    ctx.waitUntil(processDueJobs(env, new Date(), { clientId: client.id, kind: "agent-core-cycle" }).catch(error => console.error("portal_cycle_failed", { clientId: client.id, code: String(error?.message || "cycle_failed").slice(0, 120) })));
     return json({ ok: true, queued, message: queued ? "Ciclo completo agendado. Acompanhe os resultados dos agentes." : "Já existe um ciclo pendente ou em execução para esta conta." }, 202);
   }
 

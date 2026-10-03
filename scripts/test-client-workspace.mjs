@@ -7,6 +7,8 @@ import { handlePortalApi } from '../cloudflare/src/portal.js';
 import { createPortalSession } from '../cloudflare/src/auth.js';
 import { handleGitHubVideoRenderCallback } from '../cloudflare/src/github-video-render.js';
 import { runAgentCoreCycle } from '../cloudflare/src/agent-runtime.js';
+import { processDueJobs } from '../cloudflare/src/executor.js';
+import { enqueue } from '../cloudflare/src/scheduler.js';
 
 const db = new DatabaseSync(':memory:');
 for (const name of (await readdir(new URL('../cloudflare/migrations/',import.meta.url))).sort()) db.exec(await readFile(new URL('../cloudflare/migrations/'+name,import.meta.url),'utf8'));
@@ -28,11 +30,12 @@ const env={DB,MEDIA,NEXUS_SECRET_KEY:'local-e2e-only',GITHUB_ACTIONS_TOKEN:'fixt
 db.prepare("INSERT INTO clients(id,name,instagram,status,config_json) VALUES('e2e-client','E2E client','@e2e','online',?1)").run({'?1':JSON.stringify({agentCore:{autoPublish:false,approvalRequired:true},postingProfile:{standardMediaUrls:[]}})});
 const session=await createPortalSession(env,'e2e-client');
 const nativeFetch=globalThis.fetch;
+const backgroundTasks=[];
 const server=createServer(async(req,res)=>{try{
   const bytes=[];for await(const chunk of req)bytes.push(chunk);
   const url=new URL(req.url,'http://127.0.0.1:'+server.address().port);
   const request=new Request(url,{method:req.method,headers:req.headers,...(!['GET','HEAD'].includes(req.method)?{body:Buffer.concat(bytes)}:{})});
-  const result=await handleGitHubVideoRenderCallback(request,env,url)||await handlePortalApi(request,env,url,{waitUntil(){}});
+  const result=await handleGitHubVideoRenderCallback(request,env,url)||await handlePortalApi(request,env,url,{waitUntil(task){backgroundTasks.push(task);}});
   res.writeHead(result?.status||404,Object.fromEntries(result?.headers||[]));res.end(result?Buffer.from(await result.arrayBuffer()):'not_found');
 }catch(error){res.writeHead(500,{'content-type':'application/json'});res.end(JSON.stringify({error:error.message}));}});
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
@@ -64,5 +67,12 @@ try{
   const cycle=await runAgentCoreCycle(env,'e2e-client',{trigger:'manual',agent:'all'});assert.equal(cycle.ok,true);
   r=await call('/api/portal/agent-core');assert.equal(new Set(r.data.executions.map(x=>x.agent)).size,13);assert.equal(r.data.state.lastCycleStatus,'success');assert.equal(r.data.state.radar.source,'local');
   evidence.push({test:'Complete 13-agent cycle records activity (no live Instagram credentials)',result:'PASS',agents:13,radarSource:r.data.state.radar.source});
+  db.exec("INSERT INTO clients(id,name,status,config_json) VALUES('other-client','Other client','online','{}')");
+  await enqueue(env,'other-client','agent-core-cycle',new Date(Date.now()-60000),{agent:'all'});
+  r=await call('/api/portal/agent-core/run',{method:'POST'});assert.equal(r.status,202);
+  await Promise.all(backgroundTasks);
+  assert.equal(db.prepare("SELECT status FROM scheduled_jobs WHERE client_id='other-client'").get().status,'scheduled');
+  assert.equal((await call('/api/portal/agent-core')).data.cycle.status,'completed');
+  evidence.push({test:'Manual cycle executes current client despite older jobs from another client',result:'PASS'});
   console.log(JSON.stringify(evidence,null,2));
 }finally{globalThis.fetch=nativeFetch;server.close();db.close();}

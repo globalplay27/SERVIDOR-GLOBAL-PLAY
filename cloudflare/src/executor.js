@@ -161,14 +161,17 @@ async function updateJob(env, id, status, attempts, lastError = "") {
   ).bind(id, status, attempts, String(lastError || "").slice(0, 900)).run();
 }
 
-export async function processDueJobs(env, scheduledAt = new Date()) {
+export async function processDueJobs(env, scheduledAt = new Date(), scope = {}) {
   const active = automationEnabled(env);
   const now = scheduledAt instanceof Date ? scheduledAt : new Date(scheduledAt || Date.now());
+  const scoped = Boolean(scope.clientId && scope.kind);
+  const filter = scoped ? " AND client_id = ?2 AND kind = ?3" : "";
+  const parameters = scoped ? [now.toISOString(), String(scope.clientId), String(scope.kind)] : [now.toISOString()];
 
   if (!active) {
     const shadowed = await env.DB.prepare(
-      "UPDATE scheduled_jobs SET status = 'shadow', updated_at = CURRENT_TIMESTAMP WHERE status = 'scheduled' AND due_at <= ?1"
-    ).bind(now.toISOString()).run();
+      "UPDATE scheduled_jobs SET status = 'shadow', updated_at = CURRENT_TIMESTAMP WHERE status = 'scheduled' AND due_at <= ?1" + filter
+    ).bind(...parameters).run();
     return {
       active: false,
       mode: "shadow",
@@ -177,19 +180,20 @@ export async function processDueJobs(env, scheduledAt = new Date()) {
     };
   }
 
-  await env.DB.prepare(
+  const staleQuery = env.DB.prepare(
     `UPDATE scheduled_jobs
      SET status='failed', last_error='stale_running_job_recovered', updated_at=CURRENT_TIMESTAMP
-     WHERE status='running' AND updated_at < datetime('now','-10 minutes')`
-  ).run();
+     WHERE status='running' AND updated_at < datetime('now','-10 minutes')${scoped ? " AND client_id = ?1 AND kind = ?2" : ""}`
+  );
+  await (scoped ? staleQuery.bind(String(scope.clientId), String(scope.kind)) : staleQuery).run();
 
   const result = await env.DB.prepare(
     `SELECT id, client_id, kind, due_at, status, attempts, payload_json
      FROM scheduled_jobs
-     WHERE status = 'scheduled' AND due_at <= ?1
+     WHERE status = 'scheduled' AND due_at <= ?1${filter}
      ORDER BY due_at ASC
      LIMIT 12`
-  ).bind(now.toISOString()).all();
+  ).bind(...parameters).all();
 
   const summary = { active: true, processed: 0, completed: 0, failed: 0, deferred: 0 };
 
@@ -197,7 +201,8 @@ export async function processDueJobs(env, scheduledAt = new Date()) {
 
   for (const job of dueJobs) {
     const attempts = Math.max(0, Number(job.attempts || 0)) + 1;
-    await updateJob(env, job.id, "running", attempts);
+    const claim = await env.DB.prepare("UPDATE scheduled_jobs SET status='running',attempts=?2,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND status='scheduled'").bind(job.id, attempts).run();
+    if (!claim?.meta?.changes) continue;
 
     try {
       if (job.kind === "publisher-sweep") {
