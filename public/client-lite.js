@@ -117,11 +117,12 @@ function renderTrailers(results) {
     title.textContent = item.title || "Trailer";
     const meta = document.createElement("small");
     const mins = item.duration ? Math.round(Number(item.duration) / 60) + " min" : "";
-    meta.textContent = [item.channel || "Canal", mins].filter(Boolean).join(" · ");
+    const format = item.verticalCandidate ? "VERTICAL / SHORTS PRIORITÁRIO" : "";
+    meta.textContent = [format, item.channel || "Canal", mins].filter(Boolean).join(" · ");
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "primary";
-    btn.textContent = "Gerar vídeo 9:16";
+    btn.textContent = item.verticalCandidate ? "Usar vertical oficial" : "Gerar vídeo 9:16";
     btn.addEventListener("click", () => startTrailerJob(item, btn));
     card.append(img, title, meta, btn);
     list.append(card);
@@ -139,7 +140,7 @@ async function searchTrailers(event) {
   pendingUploadMetadata = null;
   btn.disabled = true;
   btn.textContent = "Buscando...";
-  msg.textContent = "Procurando título e trailers oficiais dublados...";
+  msg.textContent = "Procurando primeiro material oficial vertical/Shorts...";
   $("#catalog-box").hidden = true;
   $("#trailer-results").hidden = true;
   if (trailerSearchTimer) clearTimeout(trailerSearchTimer);
@@ -151,7 +152,7 @@ async function searchTrailers(event) {
     });
     const catalog = Array.isArray(data.catalog) ? data.catalog : [];
     renderCatalog(catalog);
-    msg.textContent = "Buscando trailers oficiais no YouTube...";
+    msg.textContent = "Buscando vertical oficial e trailer oficial de reserva...";
     const searchId = data.searchId;
     let attempts = 0;
     const poll = async () => {
@@ -166,7 +167,7 @@ async function searchTrailers(event) {
         if (!results.length) msg.textContent = "Nenhum trailer oficial dublado encontrado. Tente outro nome.";
         else {
           renderTrailers(results);
-          msg.textContent = "Confirme o filme e clique em Gerar vídeo 9:16.";
+          msg.textContent = results.some(item => item.verticalCandidate) ? "Vertical oficial priorizado. Confirme o título e escolha o resultado." : "Não apareceu vertical oficial. Mostrando trailer oficial normal como alternativa.";
         }
         btn.disabled = false;
         btn.textContent = "Buscar trailer dublado";
