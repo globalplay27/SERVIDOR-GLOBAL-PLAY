@@ -321,7 +321,7 @@ async function loadInstagram() {
   try {
     const data = await api("/api/portal/connections");
     const ig = data.connections?.instagram || data.instagram || data.connection || {};
-    $("#instagram-handle").textContent = ig.handle || ig.username || ig.instagram || "Nenhuma conta conectada";
+    $("#instagram-handle").textContent = ig.handle || ig.username || ig.instagram || ig.label || (ig.connected ? "Instagram conectado" : "Nenhuma conta conectada");
     $("#instagram-state").textContent = ig.connected || ig.status === "connected" ? "Conectado" : (ig.status || "Não conectado");
     $("#instagram-expires").textContent = ig.expiresAt ? formatDate(ig.expiresAt) : "—";
     $("#instagram-scopes").textContent = Array.isArray(ig.scopes) ? ig.scopes.join(", ") : (ig.scopes || "—");
