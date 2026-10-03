@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#080d15"><title>NEXUS Vídeos</title>
-  <link rel="stylesheet" href="/client-lite.css?v=17"><script src="/client-lite.js?v=23" defer></script>
+  <link rel="stylesheet" href="/client-lite.css?v=18"><script src="/client-lite.js?v=24" defer></script>
 </head>
 <body><main class="shell">
   <section id="login" class="login card" hidden>
@@ -97,8 +97,41 @@
       <div class="card"><h2>Orientações ativas</h2><div id="directive-list" class="list"></div></div>
     </section>
     <section id="tab-videos" class="tab">
-      <div class="section-title"><div><p class="eyebrow">VÍDEOS</p><h1>Gerador de vídeos</h1><p class="muted">Envie um vídeo do computador, informe o WhatsApp e gere o resultado vertical 9:16.</p></div><button data-refresh="videos" type="button">Atualizar</button></div>
+      <div class="section-title">
+        <div>
+          <p class="eyebrow">VÍDEOS / TRAILER</p>
+          <h1>Trailers Oficiais 9:16</h1>
+          <p class="muted">Busque trailers oficiais dublados em português no YouTube e gere no formato vertical com template cinematográfico.</p>
+        </div>
+        <button data-refresh="videos" type="button">Atualizar</button>
+      </div>
+
+      <form id="trailer-search-form" class="card">
+        <h2>Buscar trailer oficial dublado</h2>
+        <div class="row" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end">
+          <label style="flex:1;min-width:220px">
+            Nome do filme ou série
+            <input id="trailer-query" name="query" required placeholder="Ex.: Duna 2, The Boys, Homem-Aranha" autocomplete="off">
+          </label>
+          <label>
+            Tipo
+            <select id="trailer-type">
+              <option value="movie">Filme</option>
+              <option value="series">Série</option>
+            </select>
+          </label>
+          <button class="primary" type="submit" id="trailer-search-btn">Buscar no YouTube</button>
+        </div>
+        <p id="trailer-search-message" class="muted" role="status"></p>
+      </form>
+
+      <div id="trailer-results" class="card" hidden>
+        <h2>Resultados</h2>
+        <div id="trailer-results-list" class="list"></div>
+      </div>
+
       <form id="media-upload-form" class="card media-upload">
+        <h2>Ou envie um vídeo do computador</h2>
         <label>Vídeo
           <input id="media-file" name="file" type="file" accept="video/mp4,video/webm,video/quicktime" required>
         </label>
@@ -106,17 +139,21 @@
         <label>Observação
           <textarea id="media-note" name="note" maxlength="800" placeholder="Opcional"></textarea>
         </label>
-        <p class="muted">O arquivo será convertido direto para 9:16. Não é necessário título, capa, ano ou sinopse.</p>
+        <p class="muted">O arquivo será convertido com o template cinematográfico 9:16.</p>
         <button class="primary" type="submit">Enviar e gerar 9:16</button>
         <p id="media-upload-message" class="muted" role="status"></p>
       </form>
+
       <form id="video-whatsapp-form" class="card">
         <h2><img src="/assets/video-template/whatsapp-official.svg" alt="WhatsApp" width="32" height="32"> WhatsApp no vídeo</h2>
-        <label>Número do WhatsApp<input id="video-whatsapp-number" type="tel" maxlength="40" inputmode="tel" placeholder="(11) 99999-9999"></label>
+        <label>Número do WhatsApp
+          <input id="video-whatsapp-number" type="tel" maxlength="40" inputmode="tel" placeholder="(11) 99999-9999">
+        </label>
         <p class="muted">Este número aparecerá ao lado do símbolo oficial no rodapé dos próximos vídeos.</p>
         <button type="submit">Salvar número</button>
         <p id="video-whatsapp-message" class="muted" role="status"></p>
       </form>
+
       <div class="card">
         <h2>Logo no vídeo</h2>
         <label class="check-row">
@@ -125,8 +162,8 @@
         </label>
         <p class="muted">Cadastre ou altere a marca na aba “Logo do cliente”. A marca será aplicada pequena no canto superior direito.</p>
       </div>
-      <div id="video-job-list" aria-live="polite"></div>
 
+      <div id="video-job-list" aria-live="polite"></div>
     </section>
     <section id="tab-performance" class="tab" hidden>
       <div class="section-title"><div><p class="eyebrow">RESULTADOS</p><h1>Desempenho</h1><p class="muted">Dados coletados da conta profissional conectada.</p></div><button data-refresh="performance" type="button">Atualizar</button></div>
