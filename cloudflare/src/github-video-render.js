@@ -160,9 +160,7 @@ export async function startGitHubVideoRender(env, clientId, jobId, patch = {}) {
       ...result,
       clips: [],
       progress: 25,
-      message: editStyle === "cinematic-card-v1"
-        ? "Aplicando o modelo cinematográfico NEXUS."
-        : "Aplicando o molde ao vídeo completo.",
+      message: "Convertendo o vídeo completo para 9:16.",
       error: ""
     })
   ).run();
@@ -508,7 +506,7 @@ export async function handleGitHubVideoRenderCallback(request, env, url) {
       String(jobId),
       String(clientId),
       JSON.stringify(settings),
-      JSON.stringify({ ...result, progress: 100, message: "Edição cinematográfica pronta para revisão.", error: "" })
+      JSON.stringify({ ...result, progress: 100, message: "Vídeo 9:16 pronto para baixar.", error: "" })
     ).run();
 
     return new Response(JSON.stringify({ ok: true, jobId, clipId, objectKey: key }), {
@@ -536,7 +534,7 @@ export async function handleGitHubVideoRenderCallback(request, env, url) {
       JSON.stringify({
         ...result,
         progress: 0,
-        message: body.error === "trailer_not_portuguese" ? "O áudio deste trailer não foi confirmado em português. Escolha outro trailer oficial dublado." : body.error === "trailer_not_official" ? "Este vídeo não foi confirmado como trailer de um canal oficial. Escolha outro resultado." : "A renderização do modelo NEXUS falhou.",
+        message: body.error === "trailer_not_portuguese" ? "O áudio deste trailer não foi confirmado em português. Escolha outro trailer oficial dublado." : body.error === "trailer_not_official" ? "Este vídeo não foi confirmado como trailer de um canal oficial. Escolha outro resultado." : "A conversão do vídeo para 9:16 falhou.",
         error: String(body.error || "github_render_failed").slice(0, 500)
       })
     ).run();
