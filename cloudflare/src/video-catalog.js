@@ -3,7 +3,7 @@ export function portugueseTrailerScore(item) {
   const clean = value => String(value || "").normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   const title = clean(item.title), channel = clean(item.channel);
   if (/legendad|subtitled|english|ingles/.test(title)) return -1;
-  const studio = /prime video|netflix|warner|universal|paramount|sony pictures|disney|20th century|diamond films|paris filmes|imagem filmes|hbo|max brasil|globoplay|lionsgate|mubi/.test(channel);
+  const studio = /^(?:amazon )?(?:prime video|netflix|warner bros\.? pictures|warner play|universal pictures|paramount pictures|sony pictures|disney|disney studios|20th century studios|diamond films|paris filmes|imagem filmes|hbo|max|globoplay|lionsgate|mubi)(?: brasil| brazil| br)?$/.test(channel);
   const brazil = /brasil|brazil|\bbr\b|portugues/.test(channel);
   const dubbed = /dublad|portugues|pt[- ]?br/.test(title);
   if (!studio || !item.channelVerified || (!brazil && !dubbed) || !/trailer/.test(title)) return -1;

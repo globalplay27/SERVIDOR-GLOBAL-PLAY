@@ -15,7 +15,7 @@ def reject(code):
 def verify(info_path, source):
     info = json.loads(Path(info_path).read_text(encoding='utf-8'))
     title, channel = clean(info.get('title')), clean(info.get('channel') or info.get('uploader'))
-    studio = re.search(r'prime video|netflix|warner|universal|paramount|sony pictures|disney|20th century|diamond films|paris filmes|imagem filmes|hbo|max brasil|globoplay|lionsgate|mubi', channel)
+    studio = re.fullmatch(r'(?:amazon )?(?:prime video|netflix|warner bros\.? pictures|warner play|universal pictures|paramount pictures|sony pictures|disney|disney studios|20th century studios|diamond films|paris filmes|imagem filmes|hbo|max|globoplay|lionsgate|mubi)(?: brasil| brazil| br)?', channel)
     if not studio or not info.get('channel_is_verified') or 'trailer' not in title:
         reject('trailer_not_official')
     if re.search(r'legendad|subtitled|english|ingles', title):

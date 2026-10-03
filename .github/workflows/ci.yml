@@ -29,6 +29,9 @@ jobs:
       - name: Test visual quality gate
         run: node --test cloudflare/test/*.test.mjs
 
+      - name: Test official Portuguese trailer verification
+        run: python scripts/test_portuguese_trailer.py
+
       - name: Smoke test five-part Michael video template
         shell: bash
         run: |
