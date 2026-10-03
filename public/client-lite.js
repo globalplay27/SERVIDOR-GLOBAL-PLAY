@@ -337,6 +337,28 @@ async function loadVideoJobs() {
         a.textContent = "Baixar vídeo 9:16";
         actions.append(a);
       }
+      if (["ready", "failed", "awaiting_configuration"].includes(job.status)) {
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "danger";
+        remove.textContent = "Excluir";
+        remove.addEventListener("click", async () => {
+          const label = job.contentTitle || job.filename || "este vídeo";
+          if (!window.confirm("Excluir " + label + " definitivamente?")) return;
+          remove.disabled = true;
+          remove.textContent = "Excluindo...";
+          try {
+            await api("/api/portal/videos/" + encodeURIComponent(job.id), { method: "DELETE" });
+            notice("Vídeo excluído.");
+            await loadVideoJobs();
+          } catch (error) {
+            notice("Não foi possível excluir: " + error.message);
+            remove.disabled = false;
+            remove.textContent = "Excluir";
+          }
+        });
+        actions.append(remove);
+      }
       if (actions.children.length) card.append(actions);
       return card;
     };
@@ -383,10 +405,10 @@ async function uploadMedia(event) {
   message.textContent = "Enviando...";
   try {
     const data = await api("/api/portal/media", { method: "POST", body });
-    message.textContent = data.message || "Vídeo enviado. Gerando 9:16...";
+    message.textContent = data.message || "Vídeo enviado. Convertendo para 9:16...";
     form.reset();
     showTab("videos");
-    if (uploadMetadata?.title) notice("Gerando " + uploadMetadata.title + " no modelo 9:16 com sinopse dentro do smartphone.");
+    if (uploadMetadata?.title) notice("Convertendo " + uploadMetadata.title + " para 9:16.");
     pendingUploadMetadata = null;
     await loadVideoJobs();
     $("#video-job-list")?.scrollIntoView({ behavior: "smooth", block: "start" });
