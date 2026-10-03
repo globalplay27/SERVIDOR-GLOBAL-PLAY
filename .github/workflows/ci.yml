@@ -108,6 +108,8 @@ jobs:
               && grep -Fq 'id="video-job-list"' <<<"$portal" \
               && grep -Fq 'async function loadVideoJobs()' <<<"$js" \
               && grep -Fq 'MAX_VIDEO_UPLOAD_BYTES = 90 * 1024 * 1024' <<<"$js" \
+              && grep -Fq 'id="connect-instagram"' <<<"$portal" \
+              && grep -Fq 'data.connections?.instagram' <<<"$js" \
               && grep -qi 'cache-control:.*no-store' <<<"$headers"; then
               echo "Client video workspace verified on attempt $attempt."
               exit 0
