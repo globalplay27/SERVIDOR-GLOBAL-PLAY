@@ -854,20 +854,15 @@ async function uploadMedia(event) {
 
   const body = new FormData();
   body.append("file", file);
-  const poster = $("#video-poster-file")?.files?.[0];
-  if (poster) body.append("poster", poster);
-  body.append("title", $("#video-title")?.value?.trim() || "");
-  body.append("overview", $("#video-overview")?.value?.trim() || "");
-  body.append("year", $("#video-year")?.value?.trim() || "");
-  body.append("mediaType", $("#video-media-type")?.value || "FILME");
-  body.append("purpose", $("#media-purpose").value);
-  body.append("note", $("#media-note").value.trim());
+  body.append("purpose", "publish");
+  body.append("logoEnabled", $("#video-use-logo")?.checked !== false ? "1" : "0");
+  body.append("endContact", $("#video-whatsapp-number")?.value.trim() || "");
 
   button.disabled = true;
-  message.textContent = "Enviando...";
+  message.textContent = "Enviando o vídeo...";
   try {
     const data = await api("/api/portal/media", { method: "POST", body });
-    message.textContent = data.message || "Mídia enviada.";
+    message.textContent = data.message || "Vídeo enviado e geração iniciada.";
     form.reset();
     await loadVideoJobs();
   } catch (error) {
