@@ -18,7 +18,7 @@ import { leadsForClient, leadHunterSummary } from "./leads.js";
 import { leadHunterView, saveLeadHunterConfig, runLeadHunter, discardLead } from "./lead-hunter.js";
 import { decidePost, requestPostRevision, cancelPost, saveOwnPostContent, publishPostNow, useLibraryImageForPost } from "./posts.js";
 import { addDirective, createCampaign, masterWorkspace } from "./master-workspace.js";
-import { startGitHubVideoRender } from "./github-video-render.js";
+import { startGitHubVideoRender, startYouTubeVideoIngest } from "./github-video-render.js";
 import { youtubeUrl, searchCatalog, catalogMetadata, dispatchVideoSearch } from "./video-catalog.js";
 
 function json(data, status = 200, headers = {}) {
