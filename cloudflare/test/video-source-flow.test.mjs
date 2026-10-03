@@ -33,12 +33,15 @@ test('source confirmation rejects missing, wrong-client, empty and incomplete ob
   assert.equal(isMp4Header(new TextEncoder().encode('<html>error</html>')),false);
 });
 
-test('network timeout and rejected acknowledgements persist ingestion failure instead of ten percent forever',async()=>{
+test('YouTube ingest dispatch failures are persisted instead of staying at ten percent',async()=>{
   const original=globalThis.fetch;
   try{
-    for(const fail of [async()=>{throw new DOMException('timeout','TimeoutError');},async()=>Response.json({ok:true})]){
+    for(const [fail,pattern] of [
+      [async()=>{throw new DOMException('timeout','TimeoutError');},/youtube_ingest_dispatch_timeout/],
+      [async()=>Response.json({ok:true}),/youtube_ingest_dispatch_200/]
+    ]){
       const f=fixture();globalThis.fetch=fail;
-      await assert.rejects(startYouTubeVideoIngest(f.env,'client-a','job'),/youtube_downloader_(timeout|invalid_response)/);
+      await assert.rejects(startYouTubeVideoIngest(f.env,'client-a','job'),pattern);
       assert.equal(f.row.status,'failed');assert.equal(JSON.parse(f.row.result_json).progress,0);
       assert.equal(JSON.parse(f.row.settings_json).ingestCallbackToken,undefined);
     }
@@ -51,13 +54,18 @@ test('render never dispatches if the database key has no confirmed R2 object',as
   assert.equal(f.updates.length,0);
 });
 
-test('ingest upload confirms R2 and unlocks configuration without starting a render',async()=>{
+test('ingest upload confirms R2 and starts the fixed 9x16 render automatically',async()=>{
   const f=fixture();const url=new URL('https://nexus.test/api/internal/video-ingest/upload');
   const request=new Request(url,{method:'PUT',body:'xxxxftypisom',headers:{'content-length':'12','content-type':'video/mp4','x-nexus-client-id':'client-a','x-nexus-job-id':'job','x-nexus-callback-token':'ingest-secret'}});
-  const response=await handleGitHubVideoRenderCallback(request,f.env,url);
-  assert.equal(response.status,201);assert.equal(f.row.status,'awaiting_configuration');
-  assert.equal((await f.env.MEDIA.head(f.row.source_object_key)).size,12);
-  assert.equal(f.updates.some(x=>x.sql.includes("status='cutting'")),false);
+  const original=globalThis.fetch;
+  globalThis.fetch=async()=>new Response(null,{status:204});
+  try{
+    const response=await handleGitHubVideoRenderCallback(request,f.env,url);
+    assert.equal(response.status,201);assert.equal(f.row.status,'cutting');
+    assert.equal((await f.env.MEDIA.head(f.row.source_object_key)).size,12);
+    assert.equal(f.updates.some(x=>x.sql.includes("status='cutting'")),true);
+    assert.equal((await response.json()).renderStarted,true);
+  }finally{globalThis.fetch=original;}
 });
 
 test('a renderer transport failure is stored as failure and can be retried',async()=>{
