@@ -13,6 +13,7 @@ let selectedCatalog = null;
 let searchType = "movie";
 let trailerSearchTimer = null;
 let videoJobTimer = null;
+let pendingUploadMetadata = null;
 const MAX_VIDEO_UPLOAD_BYTES = 90 * 1024 * 1024;
 
 async function api(path, options = {}) {
@@ -86,6 +87,7 @@ function renderCatalog(items) {
     card.append(title, meta);
     card.addEventListener("click", () => {
       selectedCatalog = item;
+      pendingUploadMetadata = null;
       renderCatalog(items);
       notice("Título selecionado: " + item.title);
     });
@@ -134,6 +136,7 @@ async function searchTrailers(event) {
   const msg = $("#trailer-search-message");
   if (!query) { msg.textContent = "Digite o nome do filme ou série."; return; }
   selectedCatalog = null;
+  pendingUploadMetadata = null;
   btn.disabled = true;
   btn.textContent = "Buscando...";
   msg.textContent = "Procurando título e trailers oficiais dublados...";
@@ -255,8 +258,16 @@ async function loadVideoJobs() {
         uploadFallback.className = "primary";
         uploadFallback.textContent = "Enviar MP4 e gerar";
         uploadFallback.addEventListener("click", () => {
+          pendingUploadMetadata = {
+            title: job.contentTitle || job.filename || "",
+            overview: job.overview || "",
+            year: job.releaseYear || "",
+            mediaType: job.mediaType || "",
+            catalogId: "",
+            catalogType: /s[eé]rie|series|tv/i.test(String(job.mediaType || "")) ? "series" : "movie"
+          };
           showTab("upload");
-          notice("O YouTube bloqueou o download automático. Envie o MP4; o NEXUS mantém o título e gera o 9:16.");
+          notice("O YouTube bloqueou o download automático. Envie o MP4; o NEXUS mantém o título, a sinopse e gera o 9:16.");
         });
         actions.append(uploadFallback);
       }
@@ -313,13 +324,14 @@ async function uploadMedia(event) {
   body.append("file", file);
   body.append("purpose", "publish");
   if ($("#media-note")?.value) body.append("note", $("#media-note").value);
-  if (selectedCatalog) {
-    body.append("title", String(selectedCatalog.title || ""));
-    body.append("overview", String(selectedCatalog.overview || ""));
-    body.append("year", String(selectedCatalog.year || ""));
-    body.append("mediaType", String(selectedCatalog.mediaType || ""));
-    body.append("catalogId", String(selectedCatalog.id || ""));
-    body.append("catalogType", searchType === "series" ? "series" : "movie");
+  const uploadMetadata = pendingUploadMetadata || selectedCatalog;
+  if (uploadMetadata) {
+    body.append("title", String(uploadMetadata.title || ""));
+    body.append("overview", String(uploadMetadata.overview || ""));
+    body.append("year", String(uploadMetadata.year || ""));
+    body.append("mediaType", String(uploadMetadata.mediaType || ""));
+    body.append("catalogId", String(uploadMetadata.id || uploadMetadata.catalogId || ""));
+    body.append("catalogType", String(uploadMetadata.catalogType || (searchType === "series" ? "series" : "movie")));
   }
   body.append("logoEnabled", $("#video-use-logo")?.checked === false ? "0" : "1");
   body.append("endContact", $("#video-whatsapp-number")?.value.trim() || "");
@@ -330,7 +342,8 @@ async function uploadMedia(event) {
     message.textContent = data.message || "Vídeo enviado. Gerando 9:16...";
     form.reset();
     showTab("videos");
-    if (selectedCatalog?.title) notice("Gerando " + selectedCatalog.title + " no modelo 9:16 com sinopse dentro do smartphone.");
+    if (uploadMetadata?.title) notice("Gerando " + uploadMetadata.title + " no modelo 9:16 com sinopse dentro do smartphone.");
+    pendingUploadMetadata = null;
     await loadVideoJobs();
   } catch (error) {
     message.textContent = "Erro: " + error.message;
