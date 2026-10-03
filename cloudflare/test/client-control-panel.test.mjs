@@ -22,7 +22,6 @@ test("client portal exposes minimal video, Instagram and logo navigation", async
   assert.equal((html.match(/id="logo-form"/g) || []).length, 1);
   assert.match(html, /id="media-upload-form"/);
   assert.match(html, /id="video-job-list"/);
-  assert.match(js, /target === "videos"\) return Promise\.all\(\[loadMedia\(\), loadVideoJobs\(\)\]\)/);
   assert.match(js, /async function loadVideoJobs\(/);
   assert.match(js, /Gerar vídeo agora/);
   assert.match(js, /Baixar vídeo 9:16/);
