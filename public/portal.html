@@ -167,6 +167,29 @@
         <button class="primary" type="submit">Enviar vídeo</button>
         <p id="media-upload-message" class="muted" role="status"></p>
       </form>
+      <div class="card">
+        <h2>Logo no vídeo</h2>
+        <p class="muted">Envie sua logo uma vez e escolha se ela deve aparecer no vídeo atual.</p>
+        <form id="logo-form" class="logo-form">
+          <label>Arquivo
+            <input id="logo-file" name="logo" type="file" accept="image/png,image/jpeg,image/webp">
+          </label>
+          <label class="check-row">
+            <input id="logo-remove-bg" type="checkbox" checked>
+            <span>Remover fundo automaticamente</span>
+          </label>
+          <div id="logo-preview-wrap" class="logo-preview-wrap" hidden>
+            <img id="logo-preview" class="logo-preview" alt="Prévia da logo">
+          </div>
+          <button type="submit">Salvar logo</button>
+          <p id="logo-message" class="muted" role="status"></p>
+        </form>
+        <label class="check-row">
+          <input id="video-use-logo" type="checkbox" checked>
+          <span>Usar esta logo neste vídeo</span>
+        </label>
+        <p class="muted">A marca será aplicada pequena no canto superior direito.</p>
+      </div>
       <div id="video-job-list" class="media-grid" aria-live="polite"></div>
       <form id="video-whatsapp-form" class="card">
         <h2><img src="/assets/video-template/whatsapp-official.svg" alt="WhatsApp" width="32" height="32"> WhatsApp no vídeo</h2>
