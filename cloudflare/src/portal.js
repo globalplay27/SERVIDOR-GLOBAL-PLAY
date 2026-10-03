@@ -569,6 +569,75 @@ export async function handlePortalApi(request, env, url, ctx) {
     return json({ ok: true, jobs: await listVideoJobs(env, client.id) });
   }
 
+  if (url.pathname === "/api/portal/videos/failed" && request.method === "DELETE") {
+    const failedRows = await env.DB.prepare(
+      "SELECT id, source_object_key FROM video_jobs WHERE client_id=?1 AND status='failed'"
+    ).bind(client.id).all();
+    const rows = failedRows?.results || [];
+    if (!rows.length) return json({ ok: true, deleted: 0 });
+
+    const clipRows = await env.DB.prepare(
+      `SELECT vc.output_object_key
+       FROM video_clips vc
+       JOIN video_jobs vj ON vj.id=vc.job_id AND vj.client_id=vc.client_id
+       WHERE vj.client_id=?1 AND vj.status='failed'`
+    ).bind(client.id).all();
+
+    const keys = [
+      ...rows.map(row => String(row.source_object_key || "")),
+      ...(clipRows?.results || []).map(row => String(row.output_object_key || ""))
+    ].filter(Boolean);
+
+    await env.DB.prepare(
+      `DELETE FROM video_clips
+       WHERE client_id=?1
+         AND job_id IN (SELECT id FROM video_jobs WHERE client_id=?1 AND status='failed')`
+    ).bind(client.id).run();
+    const deleted = await env.DB.prepare(
+      "DELETE FROM video_jobs WHERE client_id=?1 AND status='failed'"
+    ).bind(client.id).run();
+
+    for (const key of keys) {
+      if (/^(videos|library)\//.test(key) && !key.includes("..") && !key.includes("\\")) {
+        await env.MEDIA?.delete(key).catch(() => {});
+      }
+    }
+
+    return json({ ok: true, deleted: Number(deleted?.meta?.changes || rows.length) });
+  }
+
+  const failedVideoDeleteMatch = url.pathname.match(/^\/api\/portal\/videos\/([^/]+)$/);
+  if (failedVideoDeleteMatch && request.method === "DELETE") {
+    const jobId = decodeURIComponent(failedVideoDeleteMatch[1]);
+    const row = await env.DB.prepare(
+      "SELECT id, source_object_key, status FROM video_jobs WHERE id=?1 AND client_id=?2 LIMIT 1"
+    ).bind(jobId, client.id).first();
+    if (!row) return json({ error: "video_not_found", message: "Vídeo não encontrado." }, 404);
+    if (row.status !== "failed") {
+      return json({ error: "video_delete_not_allowed", message: "Só vídeos com falha podem ser apagados por esta opção." }, 409);
+    }
+
+    const clipRows = await env.DB.prepare(
+      "SELECT output_object_key FROM video_clips WHERE job_id=?1 AND client_id=?2"
+    ).bind(jobId, client.id).all();
+    const keys = [
+      String(row.source_object_key || ""),
+      ...(clipRows?.results || []).map(clip => String(clip.output_object_key || ""))
+    ].filter(Boolean);
+
+    await env.DB.prepare("DELETE FROM video_clips WHERE job_id=?1 AND client_id=?2")
+      .bind(jobId, client.id).run();
+    await env.DB.prepare("DELETE FROM video_jobs WHERE id=?1 AND client_id=?2 AND status='failed'")
+      .bind(jobId, client.id).run();
+
+    for (const key of keys) {
+      if (/^(videos|library)\//.test(key) && !key.includes("..") && !key.includes("\\")) {
+        await env.MEDIA?.delete(key).catch(() => {});
+      }
+    }
+    return json({ ok: true, deleted: true });
+  }
+
   if (url.pathname === "/api/portal/videos/search" && request.method === "POST") {
     const body = await request.json().catch(() => ({}));
     const query = String(body.query || "").trim().slice(0, 120);
