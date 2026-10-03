@@ -1,0 +1,35 @@
+name: NEXUS YouTube Search
+on:
+  repository_dispatch:
+    types: [video-youtube-search]
+jobs:
+  search:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      QUERY: ${{ github.event.client_payload.query }}
+      JOB_ID: ${{ github.event.client_payload.job_id }}
+      CLIENT_ID: ${{ github.event.client_payload.client_id }}
+      CALLBACK_TOKEN: ${{ github.event.client_payload.callback_token }}
+      NEXUS_BASE_URL: https://servidor-nexus.diamantehinode2015.workers.dev
+    steps:
+      - name: Search public YouTube videos
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade yt-dlp
+          yt-dlp --flat-playlist --dump-single-json --skip-download --socket-timeout 20 "ytsearch8:$QUERY" > /tmp/search.json
+          python - <<'PY'
+          import json
+          data=json.load(open('/tmp/search.json'))
+          result={'results':[{'id':v.get('id'), 'title':v.get('title'), 'channel':v.get('channel') or v.get('uploader'), 'duration':v.get('duration')} for v in data.get('entries',[]) if v]}
+          json.dump(result,open('/tmp/results.json','w'))
+          PY
+          curl --fail-with-body -X POST "$NEXUS_BASE_URL/api/internal/video-render/search-results" \
+            -H "x-nexus-job-id: $JOB_ID" -H "x-nexus-client-id: $CLIENT_ID" \
+            -H "x-nexus-callback-token: $CALLBACK_TOKEN" -H 'content-type: application/json' --data-binary @/tmp/results.json
+      - name: Report search failure
+        if: failure()
+        run: |
+          curl --fail-with-body -X POST "$NEXUS_BASE_URL/api/internal/video-render/fail" \
+            -H "x-nexus-job-id: $JOB_ID" -H "x-nexus-client-id: $CLIENT_ID" \
+            -H "x-nexus-callback-token: $CALLBACK_TOKEN" -H 'content-type: application/json' --data '{"error":"youtube_search_failed"}'

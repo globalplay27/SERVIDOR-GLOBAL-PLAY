@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import urllib.request
 from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageFilter
 
 W, H = 1080, 1920
@@ -29,7 +30,7 @@ def lines(draw, text, face, width):
         result.append(line)
     return result
 
-def text_block(draw, text, box, size=30, bold=False, fill='white', centered=False):
+def text_block(draw, text, box, size=30, bold=False, fill='white', centered=False, excerpt=False):
     x,y,right,bottom = box
     while size >= 16:
         face = font(size,bold)
@@ -39,7 +40,9 @@ def text_block(draw, text, box, size=30, bold=False, fill='white', centered=Fals
             break
         size -= 1
     if len(wrapped)*spacing > bottom-y:
-        raise ValueError('text_does_not_fit')
+        if not excerpt: raise ValueError('text_does_not_fit')
+        wrapped=wrapped[:max(1,int((bottom-y)/spacing))]
+        wrapped[-1]=wrapped[-1].rsplit(' ',1)[0]+'…'
     for line in wrapped:
         at = x+(right-x-draw.textlength(line,font=face))/2 if centered else x
         draw.text((at,y),line,font=face,fill=fill)
@@ -110,9 +113,14 @@ def prepare(work, metadata, poster_path=None):
     work=Path(work); work.mkdir(parents=True,exist_ok=True)
     folder=Path(metadata['_folder'])
     poster=Image.open(poster_path or folder/metadata['poster']).convert('RGB')
-    required=['title','overview','cast','reviews','related']
+    required=['title','overview']
     if any(not metadata.get(field) for field in required):
         raise ValueError('movie_metadata_incomplete')
+    # The full synopsis remains in the job; the phone uses a bounded readable excerpt.
+    overview=str(metadata['overview'])
+    if len(overview)>460:
+        overview=overview[:457].rsplit(' ',1)[0]+'…'
+    metadata=dict(metadata,overview=overview)
     bg=background(poster)
     bg.save(work/'background.png')
     contact=os.getenv('END_CONTACT','')
@@ -135,7 +143,7 @@ def prepare(work, metadata, poster_path=None):
     d=ImageDraw.Draw(intro)
     text_block(d,metadata['title'],(312,1258,748,1308),36,True,centered=True)
     text_block(d,' • '.join(filter(None,[metadata.get('year'),metadata.get('runtime')])),(310,1320,747,1360),23,centered=True)
-    text_block(d,metadata['overview'],(311,1370,747,1528),25,centered=True)
+    text_block(d,metadata['overview'],(311,1370,747,1528),25,centered=True,excerpt=True)
     footer(intro,contact)
     intro.save(work/'phase-0.png')
 
@@ -150,7 +158,7 @@ def prepare(work, metadata, poster_path=None):
     d.rounded_rectangle((620,600,1020,1260),35,outline='white',width=4)
     text_block(d,metadata['title'],(100,1320,580,1420),31,True)
     text_block(d,' • '.join(filter(None,[metadata.get('year'),metadata.get('genres'),metadata.get('runtime'),metadata.get('rating')])),(100,1425,580,1495),20)
-    text_block(d,metadata['overview'],(100,1500,550,1700),24)
+    text_block(d,metadata['overview'],(100,1500,550,1700),24,excerpt=True)
     popcorn=Image.open(ASSETS/'popcorn.webp').convert('RGBA')
     popcorn.thumbnail((640,740),Image.Resampling.LANCZOS)
     launch.alpha_composite(popcorn,(550,1195))
@@ -158,9 +166,12 @@ def prepare(work, metadata, poster_path=None):
     launch.save(work/'phase-1.png')
 
     cast=bg.copy(); d=ImageDraw.Draw(cast)
+    if not metadata.get('cast'):
+        text_block(d,'ELENCO',(180,730,900,830),55,True,centered=True)
+        text_block(d,'Informações de elenco ainda não disponíveis na fonte.',(180,1000,900,1250),34,centered=True)
     for i,person in enumerate(metadata['cast'][:9]):
         cx=195+(i%3)*345; cy=750+(i//3)*425
-        image=ImageOps.fit(Image.open(folder/person['image']).convert('RGB'),(250,250),centering=(.5,.25))
+        image=ImageOps.fit(Image.open(folder/person['image']).convert('RGB'),(250,250),centering=(.5,.25)) if person.get('image') else Image.new('RGB',(250,250),'#243447')
         mask=Image.new('L',(250,250)); ImageDraw.Draw(mask).ellipse((0,0,249,249),fill=255)
         glow=Image.new('RGBA',(W,H)); ImageDraw.Draw(glow).ellipse((cx-141,cy-141,cx+141,cy+141),fill='white')
         cast.alpha_composite(glow.filter(ImageFilter.GaussianBlur(9)))
@@ -171,6 +182,9 @@ def prepare(work, metadata, poster_path=None):
     cast.save(work/'phase-2.png')
 
     reviews=bg.copy(); d=ImageDraw.Draw(reviews)
+    if not metadata.get('reviews'):
+        text_block(d,'AVALIAÇÕES',(180,730,900,830),55,True,centered=True)
+        text_block(d,'Ainda não há avaliações verificadas para este título.',(180,1000,900,1250),34,centered=True)
     for i,review in enumerate(metadata['reviews'][:3]):
         y=660+i*340
         points=[]
@@ -183,12 +197,14 @@ def prepare(work, metadata, poster_path=None):
         text_block(d,review['author'],(240,y+27,900,y+70),27,True,fill='#17202c')
         text_block(d,review.get('source',''),(240,y+67,900,y+100),18,fill='#333545')
         text_block(d,review['text'],(145,y+119,925,y+230),28,fill='#17202c')
-        text_block(d,'Síntese em português',(145,y+244,925,y+275),17,fill='#51425b')
+        text_block(d,'Síntese em português' if review.get('summary',True) else 'Nota da fonte',(145,y+244,925,y+275),17,fill='#51425b')
     footer(reviews,contact)
     reviews.save(work/'phase-3.png')
 
     related=bg.copy(); d=ImageDraw.Draw(related)
-    text_block(d,'FILMES PARECIDOS',(180,685,900,740),33,True,centered=True)
+    text_block(d,'SÉRIES PARECIDAS' if metadata.get('media_type') == 'SÉRIE' else 'FILMES PARECIDOS',(180,685,900,740),33,True,centered=True)
+    if not metadata.get('related'):
+        text_block(d,'Sugestões ainda não disponíveis.',(180,1000,900,1250),34,centered=True)
     for i,movie in enumerate(metadata['related'][:3]):
         y=795+i*305
         rounded_image(related,Image.open(folder/movie['image']),(180,y,900,y+265),30)
@@ -197,6 +213,12 @@ def prepare(work, metadata, poster_path=None):
         text_block(d,f"{movie['title']} ({movie.get('year','')})",(210,y+205,870,y+250),27,True,centered=True)
     footer(related,contact)
     related.save(work/'phase-4.png')
+    for i in range(5):
+        if metadata.get('sources'):
+            path=work/f'phase-{i}.png'; panel=Image.open(path).convert('RGBA')
+            source='TVmaze • CC BY-SA' if any('tvmaze' in x for x in metadata['sources']) else 'Fonte: Apple / iTunes'
+            ImageDraw.Draw(panel).text((15,1900),source,font=font(12),fill='#adbdc7')
+            panel.save(path)
 
 def render(source,output,work,duration=30,source_crop=None):
     # The proportions 5/15/25/35s of the 42.773s reference scale with the requested duration.
@@ -236,13 +258,56 @@ def load_metadata(path=None):
             data[key]=os.environ[env].strip()
     return data
 
+def materialize_metadata(data, work, private_poster=None):
+    folder=Path(work)/'assets'; folder.mkdir(parents=True,exist_ok=True)
+    def download(url,name,required=False):
+        if not url:
+            if required: raise ValueError('official_poster_required')
+            return ''
+        # Only known public catalogue image hosts; never arbitrary internal URLs.
+        from urllib.parse import urlparse
+        host=urlparse(url).hostname or ''
+        allowed=('tvmaze.com','mzstatic.com','tmdb.org')
+        if urlparse(url).scheme != 'https' or not any(host==h or host.endswith('.'+h) for h in allowed):
+            if required: raise ValueError('poster_host_not_allowed')
+            return ''
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url,headers={'User-Agent':'NEXUS-video-template'}),timeout=30) as r:
+                raw=r.read(10*1024*1024+1)
+            if len(raw)>10*1024*1024: raise ValueError('image_too_large')
+            p=folder/name; p.write_bytes(raw)
+            with Image.open(p) as img: img.verify()
+            return name
+        except Exception:
+            if required: raise
+            return ''
+    data['poster']=str(Path(private_poster).resolve()) if private_poster else download(data.get('posterUrl'),'poster.jpg',True)
+    data['media_type']=data.get('mediaType','FILME')
+    data['_folder']=str(folder)
+    for i,person in enumerate(data.get('cast',[])[:9]): person['image']=download(person.get('image'),f'cast-{i}.jpg')
+    data['related']=[dict(x,image=download(x.get('image'),f'related-{i}.jpg')) for i,x in enumerate(data.get('related',[])[:3])]
+    data['related']=[x for x in data['related'] if x['image']]
+    data.setdefault('cast',[]); data.setdefault('reviews',[]); data.setdefault('related',[])
+    data['overview']=os.getenv('OVERVIEW') or data.get('overview','')
+    return data
+
 if __name__=='__main__':
     parser=argparse.ArgumentParser()
     for key in ['source','output','work']:
         parser.add_argument('--'+key,required=True)
     parser.add_argument('--metadata'); parser.add_argument('--poster')
-    parser.add_argument('--duration',type=float,default=30)
+    parser.add_argument('--duration',type=float,default=0)
     parser.add_argument('--source-crop')
     args=parser.parse_args()
-    prepare(args.work,load_metadata(args.metadata),args.poster)
-    render(args.source,args.output,args.work,max(1,min(90,args.duration)),args.source_crop)
+    supplied=os.getenv('MOVIE_METADATA','').strip()
+    title=' '.join(os.getenv('TITLE','').lower().split())
+    if args.metadata or title in ('michael','michael jackson'):
+        metadata=load_metadata(args.metadata)
+    else:
+        data=json.loads(supplied)
+        private_poster='/tmp/poster.jpg' if str(data.get('posterUrl','')).startswith(os.environ.get('NEXUS_BASE_URL','https://invalid.example')+'/media/') and Path('/tmp/poster.jpg').exists() else None
+        metadata=materialize_metadata(data,args.work,private_poster)
+    prepare(args.work,metadata,args.poster)
+    source_duration=float(json.loads(subprocess.check_output(['ffprobe','-v','error','-show_entries','format=duration','-of','json',args.source]))['format']['duration'])
+    duration=min(source_duration,args.duration) if args.duration>0 else source_duration
+    render(args.source,args.output,args.work,max(.1,duration),args.source_crop)

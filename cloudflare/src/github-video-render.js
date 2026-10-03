@@ -29,11 +29,11 @@ export async function startGitHubVideoRender(env, clientId, jobId, patch = {}) {
 
   const row = await loadJob(env, jobId, clientId);
   if (!row) throw new Error("video_not_found");
-  if (!row.source_object_key) throw new Error("video_source_missing");
+  if (!row.source_object_key && !parseJson(row.settings_json).sourceUrl) throw new Error("video_source_missing");
 
   const settings = parseJson(row.settings_json, {});
   const result = parseJson(row.result_json, {});
-  const duration = Math.max(10, Math.min(90, Number(patch.duration || patch.clipDuration || settings.clipDuration || 30)));
+  const duration = null; // Customer template always edits the complete source.
   const clips = Math.max(1, Math.min(12, Number(patch.clips || patch.requestedClips || settings.requestedClips || 3)));
   const outputFormat = ["reel","feed","square"].includes(String(patch.outputFormat || settings.outputFormat || "reel"))
     ? String(patch.outputFormat || settings.outputFormat || "reel") : "reel";
@@ -92,6 +92,8 @@ export async function startGitHubVideoRender(env, clientId, jobId, patch = {}) {
           year: String(settings.releaseYear || "").slice(0, 12),
           media_type: String(settings.mediaType || "").slice(0, 24),
           poster_url: String(settings.posterUrl || "").slice(0, 1200),
+          source_url: String(settings.sourceUrl || ""),
+          metadata: settings.movieMetadata || null,
           logo_enabled: settings.logoEnabled === true && Boolean(settings.logoObjectKey),
           duration,
           edit_style: editStyle,
@@ -150,6 +152,19 @@ export async function handleGitHubVideoRenderCallback(request, env, url) {
     });
   }
 
+  if (url.pathname === "/api/internal/video-render/search-results" && request.method === "POST") {
+    const settings = parseJson(row.settings_json);
+    if (!settings.searchOnly) return new Response("invalid_search_job", { status: 400 });
+    const body = await request.json();
+    const results = (Array.isArray(body.results) ? body.results : []).slice(0, 8)
+      .filter(x => /^[a-zA-Z0-9_-]{11}$/.test(String(x.id || "")))
+      .map(x => ({ id: x.id, title: String(x.title || "").slice(0, 220), channel: String(x.channel || "").slice(0, 120), duration: Number(x.duration) || null, url: "https://www.youtube.com/watch?v=" + x.id, thumbnail: "https://i.ytimg.com/vi/" + x.id + "/hqdefault.jpg" }));
+    delete settings.githubRenderToken;
+    await env.DB.prepare("UPDATE video_jobs SET status='search_results',settings_json=?3,result_json=?4,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2")
+      .bind(jobId, clientId, JSON.stringify(settings), JSON.stringify({ results })).run();
+    return Response.json({ ok: true });
+  }
+
   if (url.pathname === "/api/internal/video-render/poster" && request.method === "GET") {
     const settings = parseJson(row.settings_json, {});
     let key = "";
@@ -198,12 +213,31 @@ export async function handleGitHubVideoRenderCallback(request, env, url) {
     return new Response(object.body, { status: 200, headers });
   }
 
-  if (url.pathname === "/api/internal/video-render/upload" && request.method === "PUT") {
+  if (url.pathname.startsWith("/api/internal/video-render/upload/") && !env.MEDIA) return new Response("r2_unavailable", { status: 503 });
+  if (url.pathname === "/api/internal/video-render/upload/start" && request.method === "POST") {
+    const settings = parseJson(row.settings_json);
+    const clipId = "clip_" + crypto.randomUUID().replace(/-/g, "").slice(0, 20);
+    const key = clipKeyPrefix(clientId) + clipId + ".mp4";
+    const upload = await env.MEDIA.createMultipartUpload(key, { httpMetadata: { contentType: "video/mp4", cacheControl: "private, no-store" }, customMetadata: { clientId, jobId, kind: "video-clip" } });
+    settings.renderUpload = { key, clipId, uploadId: upload.uploadId };
+    await env.DB.prepare("UPDATE video_jobs SET settings_json=?3,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2").bind(jobId, clientId, JSON.stringify(settings)).run();
+    return Response.json({ ok: true });
+  }
+  if (url.pathname === "/api/internal/video-render/upload/part" && request.method === "PUT") {
+    const upload = parseJson(row.settings_json).renderUpload;
+    const number = Number(url.searchParams.get("part"));
+    const size = Number(request.headers.get("content-length"));
+    if (!upload?.key?.startsWith(clipKeyPrefix(clientId)) || !Number.isInteger(number) || number < 1 || number > 10000 || !size || size > 90 * 1024 * 1024) return new Response("invalid_part", { status: 400 });
+    const part = await env.MEDIA.resumeMultipartUpload(upload.key, upload.uploadId).uploadPart(number, request.body);
+    return Response.json(part);
+  }
+  if ((url.pathname === "/api/internal/video-render/upload" && request.method === "PUT") || (url.pathname === "/api/internal/video-render/upload/complete" && request.method === "POST")) {
     if (!env.MEDIA || !request.body) {
       return new Response(JSON.stringify({ error: "r2_unavailable" }), { status: 503, headers: { "content-type": "application/json" } });
     }
+    const multipart = url.pathname.endsWith("/complete");
     const declared = Number(request.headers.get("content-length") || 0);
-    if (!declared || declared > 95 * 1024 * 1024) {
+    if (!multipart && (!declared || declared > 95 * 1024 * 1024)) {
       return new Response(JSON.stringify({ error: declared ? "video_too_large" : "video_size_required" }), {
         status: declared ? 413 : 400,
         headers: { "content-type": "application/json" }
@@ -212,9 +246,16 @@ export async function handleGitHubVideoRenderCallback(request, env, url) {
 
     const settings = parseJson(row.settings_json, {});
     const result = parseJson(row.result_json, {});
-    const clipId = "clip_" + crypto.randomUUID().replace(/-/g, "").slice(0, 20);
-    const key = clipKeyPrefix(clientId) + clipId + ".mp4";
-    const object = await env.MEDIA.put(key, request.body, {
+    const clipId = multipart ? settings.renderUpload?.clipId : "clip_" + crypto.randomUUID().replace(/-/g, "").slice(0, 20);
+    const key = multipart ? settings.renderUpload?.key : clipKeyPrefix(clientId) + clipId + ".mp4";
+    let object;
+    if (multipart) {
+      const upload = settings.renderUpload;
+      const body = await request.json();
+      if (!upload?.key?.startsWith(clipKeyPrefix(clientId)) || !Array.isArray(body.parts) || !body.parts.length || body.parts.length > 10000 || !body.parts.every((p, i) => p.partNumber === i + 1 && typeof p.etag === "string" && p.etag.length < 200)) return new Response("invalid_upload", { status: 400 });
+      object = await env.MEDIA.resumeMultipartUpload(upload.key, upload.uploadId).complete(body.parts);
+      delete settings.renderUpload;
+    } else object = await env.MEDIA.put(key, request.body, {
       httpMetadata: { contentType: "video/mp4", cacheControl: "private, no-store" },
       customMetadata: { clientId: String(clientId), jobId: String(jobId), kind: "video-clip", template: String(settings.editStyle || "cinematic-card-v1") }
     });
@@ -225,7 +266,7 @@ export async function handleGitHubVideoRenderCallback(request, env, url) {
       title: settings.contentTitle || settings.displayName || "Corte NEXUS",
       caption: settings.contentTitle || "",
       start: 0,
-      end: Number(settings.clipDuration || 30),
+      end: Number(request.headers.get("x-nexus-duration") || settings.clipDuration || 0),
       endText: settings.endText || "",
       endContact: settings.endContact || "",
       templateStyle: settings.editStyle || "cinematic-card-v1",
@@ -274,6 +315,10 @@ export async function handleGitHubVideoRenderCallback(request, env, url) {
     const body = await request.json().catch(() => ({}));
     const settings = parseJson(row.settings_json, {});
     const result = parseJson(row.result_json, {});
+    if (settings.renderUpload?.key?.startsWith(clipKeyPrefix(clientId))) {
+      await env.MEDIA?.resumeMultipartUpload(settings.renderUpload.key, settings.renderUpload.uploadId).abort().catch(() => {});
+      delete settings.renderUpload;
+    }
     settings.githubRenderState = "failed";
     delete settings.githubRenderToken;
     await env.DB.prepare(

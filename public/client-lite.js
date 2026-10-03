@@ -534,12 +534,60 @@ async function loadMedia() {
 }
 
 
+let youtubeCatalog = [];
+let videoSearchTimer;
+let videoJobTimer;
+async function generateYouTubeVideo(url) {
+  const selected = youtubeCatalog.find(x => x.id === $("#youtube-catalog").value);
+  const message = $("#youtube-search-message");
+  message.textContent = "Preparando o vídeo completo...";
+  try {
+    await api("/api/portal/videos/youtube", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url, title: selected?.title || $("#youtube-query").value.trim(), type: $("#youtube-type").value, catalogId: selected?.id || "", overview: $("#youtube-overview").value.trim() }) });
+    message.textContent = "Vídeo completo enviado para edição. Acompanhe abaixo.";
+    await loadVideoJobs();
+  } catch (error) { message.textContent = error.message; }
+}
+async function searchYouTube(event) {
+  event.preventDefault(); clearTimeout(videoSearchTimer);
+  const button = event.currentTarget.querySelector('button');
+  const message = $("#youtube-search-message");
+  button.disabled = true; message.textContent = "Buscando título e vídeos no YouTube...";
+  $("#youtube-results").replaceChildren();
+  try {
+    const data = await api("/api/portal/videos/search", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ query: $("#youtube-query").value.trim(), type: $("#youtube-type").value }) });
+    youtubeCatalog = data.catalog || [];
+    $("#youtube-catalog").replaceChildren(...youtubeCatalog.map(item => { const o = document.createElement('option'); o.value = item.id; o.textContent = item.title + ' (' + item.year + ')'; return o; }));
+    $("#youtube-overview").value = youtubeCatalog[0]?.overview || '';
+    const poll = async () => {
+      try {
+        const state = await api('/api/portal/videos/search/' + encodeURIComponent(data.searchId));
+        if (state.status === 'searching') { videoSearchTimer = setTimeout(poll, 5000); return; }
+        if (state.status !== 'search_results') throw new Error('A busca do YouTube falhou. Você pode informar um link abaixo.');
+        message.textContent = state.results.length ? 'Escolha o vídeo e confira o título e a sinopse.' : 'Nenhum vídeo encontrado. Informe um link do YouTube abaixo.';
+        for (const result of state.results) {
+          const card = document.createElement('article'); card.className = 'card media-card';
+          const image = document.createElement('img'); image.src = result.thumbnail; image.alt = result.title;
+          const title = document.createElement('strong'); title.textContent = result.title;
+          const info = document.createElement('p'); info.className = 'muted'; info.textContent = result.channel + (result.duration ? ' · ' + Math.floor(result.duration / 60) + ' min ' + Math.round(result.duration % 60) + ' s' : '');
+          const choose = document.createElement('button'); choose.textContent = 'Gerar vídeo completo'; choose.className = 'primary';
+          choose.addEventListener('click', async () => { choose.disabled = true; await generateYouTubeVideo(result.url); choose.disabled = false; });
+          const view = document.createElement('a'); view.href = result.url; view.target = '_blank'; view.rel = 'noopener'; view.textContent = 'Ver no YouTube';
+          card.append(image, title, info, view, choose); $("#youtube-results").append(card);
+        }
+      } catch (error) { message.textContent = error.message; }
+    };
+    videoSearchTimer = setTimeout(poll, 5000);
+  } catch (error) { message.textContent = error.message; }
+  finally { button.disabled = false; }
+}
 async function loadVideoJobs() {
   const root = $("#video-job-list");
   if (!root) return;
   try {
     const data = await api("/api/portal/videos");
     const jobs = Array.isArray(data.jobs) ? data.jobs : [];
+    clearTimeout(videoJobTimer);
+    if (jobs.some(job => job.status === 'cutting')) videoJobTimer = setTimeout(loadVideoJobs, 7000);
     root.replaceChildren();
     if (!jobs.length) return;
 
@@ -974,6 +1022,14 @@ $("#logo-form")?.addEventListener("submit", submitLogo);
 $("#logo-file")?.addEventListener("change", previewLogo);
 $("#logo-remove-bg")?.addEventListener("change", previewLogo);
 $("#media-upload-form")?.addEventListener("submit", uploadMedia);
+$("#video-search-form")?.addEventListener("submit", searchYouTube);
+$("#youtube-catalog")?.addEventListener("change", () => { $("#youtube-overview").value = youtubeCatalog.find(x => x.id === $("#youtube-catalog").value)?.overview || ''; });
+$("#youtube-link-form")?.addEventListener("submit", event => { event.preventDefault(); generateYouTubeVideo($("#youtube-url").value.trim()); });
+$$('[data-video-source]').forEach(button => button.addEventListener('click', () => {
+  const youtube = button.dataset.videoSource === 'youtube';
+  $("#video-youtube-panel").hidden = !youtube; $("#media-upload-form").hidden = youtube;
+  $$('[data-video-source]').forEach(tab => tab.setAttribute('aria-selected', String(tab === button)));
+}));
 $("#campaign-form")?.addEventListener("submit", submitCampaign);
 $("#directive-form")?.addEventListener("submit", submitDirective);
 $("#logout").addEventListener("click", async () => {
