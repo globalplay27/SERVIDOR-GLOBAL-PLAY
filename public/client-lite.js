@@ -249,6 +249,17 @@ async function loadVideoJobs() {
       card.append(title, status, meta);
       const actions = document.createElement("div");
       actions.className = "post-actions";
+      if (job.status === "failed" && /^youtube_(authentication_required|challenge_failed|download_failed)/.test(String(job.error || ""))) {
+        const uploadFallback = document.createElement("button");
+        uploadFallback.type = "button";
+        uploadFallback.className = "primary";
+        uploadFallback.textContent = "Enviar MP4 e gerar";
+        uploadFallback.addEventListener("click", () => {
+          showTab("upload");
+          notice("O YouTube bloqueou o download automático. Envie o MP4; o NEXUS mantém o título e gera o 9:16.");
+        });
+        actions.append(uploadFallback);
+      }
       if (job.status === "awaiting_configuration" && job.sourceReady === true) {
         const generate = document.createElement("button");
         generate.type = "button";
@@ -302,6 +313,16 @@ async function uploadMedia(event) {
   body.append("file", file);
   body.append("purpose", "publish");
   if ($("#media-note")?.value) body.append("note", $("#media-note").value);
+  if (selectedCatalog) {
+    body.append("title", String(selectedCatalog.title || ""));
+    body.append("overview", String(selectedCatalog.overview || ""));
+    body.append("year", String(selectedCatalog.year || ""));
+    body.append("mediaType", String(selectedCatalog.mediaType || ""));
+    body.append("catalogId", String(selectedCatalog.id || ""));
+    body.append("catalogType", searchType === "series" ? "series" : "movie");
+  }
+  body.append("logoEnabled", $("#video-use-logo")?.checked === false ? "0" : "1");
+  body.append("endContact", $("#video-whatsapp-number")?.value.trim() || "");
   button.disabled = true;
   message.textContent = "Enviando...";
   try {
@@ -309,6 +330,7 @@ async function uploadMedia(event) {
     message.textContent = data.message || "Vídeo enviado. Gerando 9:16...";
     form.reset();
     showTab("videos");
+    if (selectedCatalog?.title) notice("Gerando " + selectedCatalog.title + " no modelo 9:16 com sinopse dentro do smartphone.");
     await loadVideoJobs();
   } catch (error) {
     message.textContent = "Erro: " + error.message;
