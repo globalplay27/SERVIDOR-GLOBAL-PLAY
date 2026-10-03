@@ -558,7 +558,7 @@ async function generateYouTubeVideo(url) {
   const message = $("#youtube-search-message");
   message.textContent = "Preparando o vídeo completo...";
   try {
-    await api("/api/portal/videos/youtube", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url, title: selected?.title || $("#youtube-query").value.trim(), type: $("#youtube-type").value, catalogId: selected?.id || "", endContact: $("#video-whatsapp-number")?.value.trim() || "", overview: $("#youtube-overview").value.trim(), logoEnabled: $("#video-use-logo")?.checked !== false }) });
+    await api("/api/portal/videos/youtube", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url, title: selected?.title || $("#youtube-query").value.trim(), type: $("#youtube-type").value, catalogId: selected?.id || "", endContact: $("#video-whatsapp-number")?.value.trim() || "", logoEnabled: $("#video-use-logo")?.checked !== false }) });
     message.textContent = "Importação iniciada. Acompanhe abaixo: IMPORTANDO → PRONTO PARA GERAR → GERANDO → CONCLUÍDO.";
     await loadVideoJobs();
   } catch (error) {
@@ -576,7 +576,6 @@ async function searchYouTube(event) {
     const data = await api("/api/portal/videos/search", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ query: $("#youtube-query").value.trim(), type: $("#youtube-type").value }) });
     youtubeCatalog = data.catalog || [];
     $("#youtube-catalog").replaceChildren(...youtubeCatalog.map(item => { const o = document.createElement('option'); o.value = item.id; o.textContent = item.title + ' (' + item.year + ')'; return o; }));
-    $("#youtube-overview").value = youtubeCatalog[0]?.overview || '';
     const poll = async () => {
       try {
         const state = await api('/api/portal/videos/search/' + encodeURIComponent(data.searchId));
@@ -672,12 +671,6 @@ async function loadVideoJobs() {
         card.append(message);
       }
 
-      if (job.overview) {
-        const synopsis = document.createElement("p");
-        synopsis.className = "muted";
-        synopsis.textContent = job.overview;
-        card.append(synopsis);
-      }
       if (job.error || job.sourceError) {
         const detail = document.createElement("p"); detail.className = "error";
         detail.textContent = "Detalhe: " + (job.error || job.sourceError);
@@ -688,20 +681,11 @@ async function loadVideoJobs() {
       actions.className = "post-actions";
 
       if (job.sourceReady === true && ["awaiting_configuration", "failed", "ready"].includes(job.status)) {
-        const laboratory = document.createElement("details");
-        const open = document.createElement("summary"); open.textContent = "Abrir Laboratório";
-        const fields = document.createElement("div"); fields.className = "media-upload";
-        const field = (label, value, multiline = false) => {
-          const wrapper = document.createElement("label"); wrapper.textContent = label;
-          const input = document.createElement(multiline ? "textarea" : "input"); input.value = value || "";
-          wrapper.append(input); fields.append(wrapper); return input;
-        };
-        const contentTitle = field("Título", job.contentTitle);
-        const overview = field("Sinopse dentro do smartphone", job.overview, true);
-        const year = field("Ano", job.releaseYear);
-        const sourceNote = document.createElement("p"); sourceNote.className = "muted";
+        const sourceNote = document.createElement("p");
+        sourceNote.className = "muted";
         sourceNote.textContent = "Original confirmado no R2 · Resultado vertical 9:16";
-        laboratory.append(open, sourceNote, fields);
+        actions.append(sourceNote);
+
         const generate = document.createElement("button");
         generate.type = "button";
         generate.className = "primary";
@@ -714,7 +698,10 @@ async function loadVideoJobs() {
             await api("/api/portal/videos/" + encodeURIComponent(job.id) + "/process", {
               method: "POST",
               headers: { "content-type": "application/json" },
-              body: JSON.stringify({ title: contentTitle.value.trim(), overview: overview.value.trim(), year: year.value.trim(), endContact: $("#video-whatsapp-number")?.value.trim() || "", logoEnabled: $("#video-use-logo")?.checked !== false })
+              body: JSON.stringify({
+                endContact: $("#video-whatsapp-number")?.value.trim() || "",
+                logoEnabled: $("#video-use-logo")?.checked !== false
+              })
             });
             notice("Vídeo enviado para renderização.");
             await loadVideoJobs();
@@ -725,7 +712,7 @@ async function loadVideoJobs() {
             generate.textContent = original;
           }
         });
-        laboratory.append(generate); actions.append(laboratory);
+        actions.append(generate);
       } else if (!job.sourceReady && job.status !== "importing") {
         const blocked = document.createElement("p");
         blocked.className = job.status === "failed" ? "error" : "muted";
@@ -778,12 +765,6 @@ async function uploadMedia(event) {
 
   const body = new FormData();
   body.append("file", file);
-  const poster = $("#video-poster-file")?.files?.[0];
-  if (poster) body.append("poster", poster);
-  body.append("title", $("#video-title")?.value?.trim() || "");
-  body.append("overview", $("#video-overview")?.value?.trim() || "");
-  body.append("year", $("#video-year")?.value?.trim() || "");
-  body.append("mediaType", $("#video-media-type")?.value || "FILME");
   body.append("purpose", $("#media-purpose").value);
   body.append("note", $("#media-note").value.trim());
 
@@ -1119,7 +1100,6 @@ $("#video-whatsapp-form")?.addEventListener("submit", async event => {
   finally { button.disabled = false; }
 });
 $("#video-search-form")?.addEventListener("submit", searchYouTube);
-$("#youtube-catalog")?.addEventListener("change", () => { $("#youtube-overview").value = youtubeCatalog.find(x => x.id === $("#youtube-catalog").value)?.overview || ''; });
 $("#youtube-link-form")?.addEventListener("submit", event => { event.preventDefault(); generateYouTubeVideo($("#youtube-url").value.trim()); });
 $$('[data-video-source]').forEach(button => button.addEventListener('click', () => {
   const youtube = button.dataset.videoSource === 'youtube';
