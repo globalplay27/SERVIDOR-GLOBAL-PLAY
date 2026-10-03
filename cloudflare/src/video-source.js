@@ -33,5 +33,6 @@ export const videoErrorMessages = {
   youtube_ingest_timeout: "A importação não confirmou o MP4 no R2 dentro do prazo. Use Enviar arquivo.",
   youtube_download_blocked: "O YouTube bloqueou o download automático. Envie o MP4 original pela opção Enviar arquivo.",
   youtube_download_failed: "O download do YouTube falhou. Envie o MP4 original pela opção Enviar arquivo.",
-  video_render_in_progress: "Este vídeo já está em processamento. Aguarde o resultado."
+  video_render_in_progress: "Este vídeo já está em processamento. Aguarde o resultado.",
+  video_render_timeout: "A geração não concluiu no prazo e foi marcada como falha. Tente gerar novamente."
 };
