@@ -1,0 +1,77 @@
+name: NEXUS YouTube Ingest
+
+on:
+  repository_dispatch:
+    types: [video-youtube-ingest]
+
+concurrency:
+  group: nexus-video-youtube-${{ github.event.client_payload.job_id }}
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      JOB_ID: ${{ github.event.client_payload.job_id }}
+      CLIENT_ID: ${{ github.event.client_payload.client_id }}
+      CALLBACK_TOKEN: ${{ github.event.client_payload.callback_token }}
+      SOURCE_URL: ${{ github.event.client_payload.source_url }}
+      NEXUS_BASE_URL: https://servidor-nexus.diamantehinode2015.workers.dev
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install downloader
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          python3 -m pip install --disable-pip-version-check --quiet --upgrade yt-dlp
+
+      - name: Download YouTube source
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo youtube_download_failed > /tmp/nexus-ingest-error.txt
+          yt-dlp             --no-playlist             --retries 5             --fragment-retries 5             --concurrent-fragments 4             --merge-output-format mp4             -f "bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[height<=720][ext=mp4]/b[height<=720]"             -o /tmp/source.%(ext)s             "$SOURCE_URL"
+          FILE="$(find /tmp -maxdepth 1 -type f -name 'source.*' | head -n1)"
+          test -n "$FILE"
+          if [ "$FILE" != "/tmp/source.mp4" ]; then
+            ffmpeg -y -i "$FILE" -c:v libx264 -preset veryfast -crf 24 -c:a aac -b:a 128k -movflags +faststart /tmp/source.mp4
+          fi
+          test -s /tmp/source.mp4
+
+      - name: Keep source inside R2 upload limit
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo youtube_prepare_failed > /tmp/nexus-ingest-error.txt
+          SIZE="$(stat -c%s /tmp/source.mp4)"
+          LIMIT=$((88*1024*1024))
+          if [ "$SIZE" -gt "$LIMIT" ]; then
+            ffmpeg -y -i /tmp/source.mp4               -vf "scale='min(1280,iw)':-2"               -c:v libx264 -preset veryfast -crf 29               -c:a aac -b:a 96k -movflags +faststart /tmp/source-small.mp4
+            mv /tmp/source-small.mp4 /tmp/source.mp4
+          fi
+          test "$(stat -c%s /tmp/source.mp4)" -le "$LIMIT"
+
+      - name: Upload source to NEXUS
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo youtube_upload_failed > /tmp/nexus-ingest-error.txt
+          curl --fail-with-body --retry 3 --retry-all-errors             -X PUT "$NEXUS_BASE_URL/api/internal/video-ingest/upload"             -H "x-nexus-job-id: $JOB_ID"             -H "x-nexus-client-id: $CLIENT_ID"             -H "x-nexus-callback-token: $CALLBACK_TOKEN"             -H "content-type: video/mp4"             -H "content-length: $(stat -c%s /tmp/source.mp4)"             --data-binary @/tmp/source.mp4
+
+      - name: Report ingest failure
+        if: failure()
+        continue-on-error: true
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('/tmp/nexus-ingest-error.txt')
+          error=p.read_text().strip() if p.exists() else 'youtube_ingest_failed'
+          Path('/tmp/failure.json').write_text(json.dumps({'error': error}))
+          PY
+          curl --silent --show-error             -X POST "$NEXUS_BASE_URL/api/internal/video-ingest/fail"             -H "x-nexus-job-id: $JOB_ID"             -H "x-nexus-client-id: $CLIENT_ID"             -H "x-nexus-callback-token: $CALLBACK_TOKEN"             -H "content-type: application/json"             --data-binary @/tmp/failure.json
