@@ -93,8 +93,6 @@ export async function startGitHubVideoRender(env, clientId, jobId, patch = {}) {
           year: String(settings.releaseYear || "").slice(0, 12),
           media_type: String(settings.mediaType || "").slice(0, 24),
           poster_url: String(settings.posterUrl || "").slice(0, 1200),
-          source_url: String(settings.sourceUrl || ""),
-          require_portuguese: Boolean(settings.sourceUrl),
           metadata: settings.movieMetadata || null,
           logo_enabled: settings.logoEnabled === true && Boolean(settings.logoObjectKey),
           duration,
