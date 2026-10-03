@@ -20,6 +20,7 @@
     "NEXUS_AI_PROVIDER": "local-first",
     "NEXUS_OPENAI_DAILY_TOKEN_LIMIT": "30000",
     "NEXUS_OPENAI_MAX_OUTPUT_TOKENS": "1200",
+    "NEXUS_DOWNLOADER_URL": "https://nexus-video-engine.onrender.com",
     "INSTAGRAM_APP_ID": "1053178344199625",
     "WHATSAPP_CLIENT_ID": "globalplay-streaming",
     "WHATSAPP_GRAPH_VERSION": "v26.0",
