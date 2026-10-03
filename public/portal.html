@@ -22,13 +22,9 @@
       <div class="header-actions"><span id="client-label"></span><button id="refresh" type="button">Atualizar</button><button id="logout" type="button">Sair</button></div>
     </header>
     <nav class="tabs" aria-label="Seções do painel">
-      <button data-tab="overview" class="active" type="button">Visão geral</button>
-      <button data-tab="posts" type="button">Postagens</button>
-      <button data-tab="agents" type="button">Agentes</button>
-      <button data-tab="videos" type="button">Vídeos</button>
-      <button data-tab="campaigns" type="button">Campanhas</button>
-      <button data-tab="performance" type="button">Desempenho</button>
+      <button data-tab="videos" class="active" type="button">Vídeos / Trailer</button>
       <button data-tab="instagram" type="button">Instagram</button>
+      <button data-tab="logo" type="button">Logo do cliente</button>
     </nav>
     <div id="notice" class="notice" role="status" hidden></div>
     <section id="tab-overview" class="tab" hidden>
@@ -49,24 +45,6 @@
             </label>
             <button class="primary" type="submit">Salvar dados</button>
             <p id="profile-message" class="muted" role="status"></p>
-          </form>
-        </div>
-        <div class="account-logo">
-          <p class="eyebrow">IDENTIDADE VISUAL</p>
-          <h2>Logo da sua marca</h2>
-          <form id="logo-form" class="logo-form">
-            <label>Arquivo
-              <input id="logo-file" name="logo" type="file" accept="image/png,image/jpeg,image/webp" required>
-            </label>
-            <label class="check-row">
-              <input id="logo-remove-bg" type="checkbox" checked>
-              <span>Remover fundo automaticamente</span>
-            </label>
-            <div id="logo-preview-wrap" class="logo-preview-wrap" hidden>
-              <img id="logo-preview" class="logo-preview" alt="Prévia da logo">
-            </div>
-            <button class="primary" type="submit">Salvar logo</button>
-            <p id="logo-message" class="muted" role="status"></p>
           </form>
         </div>
       </div>
@@ -171,26 +149,11 @@
       </form>
       <div class="card">
         <h2>Logo no vídeo</h2>
-        <p class="muted">Envie sua logo uma vez e escolha se ela deve aparecer no vídeo atual.</p>
-        <form id="logo-form" class="logo-form">
-          <label>Arquivo
-            <input id="logo-file" name="logo" type="file" accept="image/png,image/jpeg,image/webp">
-          </label>
-          <label class="check-row">
-            <input id="logo-remove-bg" type="checkbox" checked>
-            <span>Remover fundo automaticamente</span>
-          </label>
-          <div id="logo-preview-wrap" class="logo-preview-wrap" hidden>
-            <img id="logo-preview" class="logo-preview" alt="Prévia da logo">
-          </div>
-          <button type="submit">Salvar logo</button>
-          <p id="logo-message" class="muted" role="status"></p>
-        </form>
         <label class="check-row">
           <input id="video-use-logo" type="checkbox" checked>
-          <span>Usar esta logo neste vídeo</span>
+          <span>Usar a logo salva neste vídeo</span>
         </label>
-        <p class="muted">A marca será aplicada pequena no canto superior direito.</p>
+        <p class="muted">Cadastre ou altere a marca na aba “Logo do cliente”. A marca será aplicada pequena no canto superior direito.</p>
       </div>
       <div id="video-job-list" class="media-grid" aria-live="polite"></div>
       <form id="video-whatsapp-form" class="card">
@@ -221,6 +184,27 @@
         <p id="ai-usage-note" class="muted">Carregando consumo...</p>
       </div>
       <div class="card"><h2>Publicações com maior interação</h2><div id="top-media" class="list"></div><p id="performance-note" class="muted"></p></div>
+    </section>
+    <section id="tab-logo" class="tab" hidden>
+      <p class="eyebrow">IDENTIDADE VISUAL</p>
+      <h1>Logo do cliente</h1>
+      <p class="muted">Envie a marca do cliente uma vez. Ela ficará disponível para os próximos vídeos.</p>
+      <div class="card account-logo">
+        <form id="logo-form" class="logo-form">
+          <label>Arquivo
+            <input id="logo-file" name="logo" type="file" accept="image/png,image/jpeg,image/webp" required>
+          </label>
+          <label class="check-row">
+            <input id="logo-remove-bg" type="checkbox" checked>
+            <span>Remover fundo automaticamente</span>
+          </label>
+          <div id="logo-preview-wrap" class="logo-preview-wrap" hidden>
+            <img id="logo-preview" class="logo-preview" alt="Prévia da logo">
+          </div>
+          <button class="primary" type="submit">Salvar logo</button>
+          <p id="logo-message" class="muted" role="status"></p>
+        </form>
+      </div>
     </section>
     <section id="tab-instagram" class="tab" hidden>
       <p class="eyebrow">AUTORIZAÇÃO OFICIAL</p><h1>Instagram</h1>
