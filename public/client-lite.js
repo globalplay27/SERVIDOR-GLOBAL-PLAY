@@ -320,7 +320,7 @@ async function uploadMedia(event) {
 async function loadInstagram() {
   try {
     const data = await api("/api/portal/connections");
-    const ig = data.instagram || data.connection || data;
+    const ig = data.connections?.instagram || data.instagram || data.connection || {};
     $("#instagram-handle").textContent = ig.handle || ig.username || ig.instagram || "Nenhuma conta conectada";
     $("#instagram-state").textContent = ig.connected || ig.status === "connected" ? "Conectado" : (ig.status || "Não conectado");
     $("#instagram-expires").textContent = ig.expiresAt ? formatDate(ig.expiresAt) : "—";
@@ -334,7 +334,16 @@ async function boot() {
   try {
     const data = await api("/api/portal/session");
     showDashboard(data.client || data);
-    showTab("videos");
+    const params = new URLSearchParams(window.location.search);
+    const requestedTab = params.get("tab");
+    showTab(requestedTab === "instagram" ? "instagram" : "videos");
+    if (params.get("oauth") === "success") {
+      notice("Instagram conectado com sucesso.");
+      history.replaceState({}, "", window.location.pathname);
+    } else if (params.get("oauth")) {
+      notice("A conexão com o Instagram não foi concluída. Tente novamente.");
+      history.replaceState({}, "", window.location.pathname);
+    }
   } catch {
     showLogin();
   }
