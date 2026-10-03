@@ -5,6 +5,10 @@ on:
     branches: [main, cloudflare-migration]
   pull_request:
 
+concurrency:
+  group: nexus-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   cloudflare:
     runs-on: ubuntu-latest
