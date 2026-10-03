@@ -559,7 +559,7 @@ async function generateYouTubeVideo(url) {
   message.textContent = "Preparando o vídeo completo...";
   try {
     await api("/api/portal/videos/youtube", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url, title: selected?.title || $("#youtube-query").value.trim(), type: $("#youtube-type").value, catalogId: selected?.id || "", endContact: $("#video-whatsapp-number")?.value.trim() || "", logoEnabled: $("#video-use-logo")?.checked !== false }) });
-    message.textContent = "Importação iniciada. Acompanhe abaixo: IMPORTANDO → PRONTO PARA GERAR → GERANDO → CONCLUÍDO.";
+    message.textContent = "Download iniciado. O NEXUS vai baixar, aplicar o modelo 9:16 e gerar automaticamente.";
     await loadVideoJobs();
   } catch (error) {
     message.textContent = "Falha ao iniciar: " + error.message;
@@ -580,8 +580,8 @@ async function searchYouTube(event) {
       try {
         const state = await api('/api/portal/videos/search/' + encodeURIComponent(data.searchId));
         if (state.status === 'searching') { videoSearchTimer = setTimeout(poll, 5000); return; }
-        if (state.status !== 'search_results') throw new Error('A busca do YouTube falhou. Você pode informar um link abaixo.');
-        message.textContent = state.results.length ? 'Somente canais oficiais verificados. O áudio em português será conferido antes da geração.' : 'Nenhum trailer oficial dublado em português encontrado. Um link informado também precisa passar pela verificação.';
+        if (state.status !== 'search_results') throw new Error('A busca do YouTube falhou. Tente buscar novamente.');
+        message.textContent = state.results.length ? 'Escolha um resultado para baixar e gerar automaticamente.' : 'Nenhum trailer oficial dublado em português encontrado. Tente outra busca.';
         for (const result of state.results) {
           const card = document.createElement('article'); card.className = 'card media-card';
           const image = document.createElement('img'); image.src = result.thumbnail; image.alt = result.title;
@@ -605,41 +605,54 @@ async function loadVideoJobs() {
     const data = await api("/api/portal/videos");
     const jobs = Array.isArray(data.jobs) ? data.jobs : [];
     if (!Array.isArray(data.jobs)) throw new Error("A API não confirmou a lista de vídeos.");
+
     clearTimeout(videoJobTimer);
-    if (jobs.some(job => ["importing","cutting"].includes(job.status))) videoJobTimer = setTimeout(loadVideoJobs, 5000);
+    if (jobs.some(job => ["importing","cutting"].includes(job.status))) {
+      videoJobTimer = setTimeout(loadVideoJobs, 5000);
+    }
+
     root.replaceChildren();
-    if (!jobs.length) { const empty = document.createElement("p"); empty.textContent = "Nenhum vídeo registrado. Envie um MP4 para começar."; root.append(empty); return; }
+
+    const groups = {
+      processing: jobs.filter(job => ["importing","cutting"].includes(job.status)),
+      waiting: jobs.filter(job => job.status === "awaiting_configuration"),
+      ready: jobs.filter(job => job.status === "ready"),
+      failed: jobs.filter(job => job.status === "failed")
+    };
 
     const summary = document.createElement("div");
     summary.className = "video-status-summary";
-    const counts = {
-      processing: jobs.filter(job => ["importing","cutting"].includes(job.status)).length,
-      waiting: jobs.filter(job => job.status === "awaiting_configuration").length,
-      ready: jobs.filter(job => job.status === "ready").length,
-      failed: jobs.filter(job => job.status === "failed").length
-    };
-    [
-      ["Em andamento", counts.processing, "processing"],
-      ["Prontos para gerar", counts.waiting, "waiting"],
-      ["Concluídos", counts.ready, "done"],
-      ["Falharam", counts.failed, "failed"]
-    ].forEach(([label, value, kind]) => {
-      const item = document.createElement("div");
-      item.className = "video-summary-item " + kind;
+    const summaryDefs = [
+      ["Em andamento", groups.processing.length, "processing", ""],
+      ["Prontos", groups.waiting.length, "waiting", "waiting"],
+      ["Concluídos", groups.ready.length, "done", "ready"],
+      ["Falharam", groups.failed.length, "failed", "failed"]
+    ];
+
+    const drawer = document.createElement("div");
+    drawer.className = "video-status-drawer";
+    drawer.hidden = true;
+
+    function addSummary(label, value, kind, target) {
+      const item = document.createElement(target ? "button" : "div");
+      item.className = "video-summary-item " + kind + (target ? " clickable" : "");
+      if (target) item.type = "button";
       const strong = document.createElement("strong"); strong.textContent = String(value);
       const small = document.createElement("small"); small.textContent = label;
-      item.append(strong, small); summary.append(item);
-    });
+      item.append(strong, small);
+      if (target) {
+        item.addEventListener("click", () => {
+          if (!value) return;
+          renderDrawer(target);
+        });
+      }
+      summary.append(item);
+    }
+
+    summaryDefs.forEach(def => addSummary(...def));
     root.append(summary);
 
-    const rank = { cutting: 0, importing: 1, awaiting_configuration: 2, failed: 3, ready: 4 };
-    const orderedJobs = [...jobs].sort((a, b) => {
-      const ar = rank[a.status] ?? 9, br = rank[b.status] ?? 9;
-      if (ar !== br) return ar - br;
-      return String(b.updatedAt || b.createdAt || "").localeCompare(String(a.updatedAt || a.createdAt || ""));
-    });
-
-    for (const job of orderedJobs) {
+    function createCard(job) {
       const card = document.createElement("article");
       card.className = "card media-card video-render-job";
 
@@ -648,52 +661,39 @@ async function loadVideoJobs() {
 
       const status = document.createElement("span");
       const labels = {
-        importing: "IMPORTANDO",
-        awaiting_configuration: "PRONTO PARA GERAR",
+        importing: "BAIXANDO",
+        awaiting_configuration: "PRONTO",
         cutting: "GERANDO",
         ready: "CONCLUÍDO",
         failed: "FALHOU"
       };
-      const statusKind = job.status === "ready" ? "published" : job.status === "failed" ? "failed" : "ready";
-      status.className = "status " + statusKind;
+      status.className = "status " + (job.status === "ready" ? "published" : job.status === "failed" ? "failed" : "ready");
       status.textContent = labels[job.status] || String(job.status || "AGUARDANDO").toUpperCase();
 
       const meta = document.createElement("small");
       const progress = Number(job.progress || 0);
-      const progressText = ["importing","cutting"].includes(job.status) && progress ? " · " + progress + "%" : "";
-      meta.textContent = "Atualizado: " + formatDate(job.updatedAt || job.createdAt) + progressText;
+      meta.textContent = "Atualizado: " + formatDate(job.updatedAt || job.createdAt)
+        + (["importing","cutting"].includes(job.status) && progress ? " · " + progress + "%" : "");
+
       card.append(title, status, meta);
 
-      if (job.message) {
+      if (job.message && ["importing","cutting"].includes(job.status)) {
         const message = document.createElement("p");
-        message.className = job.status === "failed" ? "error" : "muted";
+        message.className = "muted";
         message.textContent = job.message;
         card.append(message);
-      }
-
-      if (job.error || job.sourceError) {
-        const detail = document.createElement("p"); detail.className = "error";
-        detail.textContent = "Detalhe: " + (job.error || job.sourceError);
-        card.append(detail);
       }
 
       const actions = document.createElement("div");
       actions.className = "post-actions";
 
-      if (job.sourceReady === true && ["awaiting_configuration", "failed", "ready"].includes(job.status)) {
-        const sourceNote = document.createElement("p");
-        sourceNote.className = "muted";
-        sourceNote.textContent = "Original confirmado no R2 · Resultado vertical 9:16";
-        actions.append(sourceNote);
-
+      if (job.status === "awaiting_configuration" && job.sourceReady === true) {
         const generate = document.createElement("button");
         generate.type = "button";
         generate.className = "primary";
-        generate.textContent = job.status === "awaiting_configuration" ? "Gerar MP4" : "Gerar novamente";
+        generate.textContent = "Gerar agora";
         generate.addEventListener("click", async () => {
           generate.disabled = true;
-          const original = generate.textContent;
-          generate.textContent = "Iniciando...";
           try {
             await api("/api/portal/videos/" + encodeURIComponent(job.id) + "/process", {
               method: "POST",
@@ -703,33 +703,40 @@ async function loadVideoJobs() {
                 logoEnabled: $("#video-use-logo")?.checked !== false
               })
             });
-            notice("Vídeo enviado para renderização.");
             await loadVideoJobs();
-            setTimeout(() => loadVideoJobs(), 5000);
           } catch (error) {
             notice("Vídeos: " + error.message);
             generate.disabled = false;
-            generate.textContent = original;
           }
         });
         actions.append(generate);
-      } else if (!job.sourceReady && job.status !== "importing") {
-        const blocked = document.createElement("p");
-        blocked.className = job.status === "failed" ? "error" : "muted";
-        blocked.textContent = job.status === "failed"
-          ? "Este trabalho falhou antes de receber o vídeo original. Use “Enviar arquivo” para criar uma nova geração."
-          : "Laboratório bloqueado: envie um vídeo original válido para continuar.";
-        actions.append(blocked);
       }
 
       const readyClip = (job.clips || []).find(clip => clip.status === "ready" && clip.previewUrl);
-      if (readyClip && job.status === "ready") {
+      if (job.status === "ready" && readyClip) {
         const download = document.createElement("a");
         download.className = "primary";
         download.href = readyClip.previewUrl;
         download.download = "nexus-video.mp4";
         download.textContent = "Baixar MP4";
         actions.append(download);
+      }
+
+      if (job.status === "failed") {
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.textContent = "Apagar";
+        remove.addEventListener("click", async () => {
+          remove.disabled = true;
+          try {
+            await api("/api/portal/videos/" + encodeURIComponent(job.id), { method: "DELETE" });
+            await loadVideoJobs();
+          } catch (error) {
+            notice("Vídeos: " + error.message);
+            remove.disabled = false;
+          }
+        });
+        actions.append(remove);
       }
 
       if (job.status === "cutting") {
@@ -741,7 +748,56 @@ async function loadVideoJobs() {
       }
 
       if (actions.children.length) card.append(actions);
-      root.append(card);
+      return card;
+    }
+
+    function renderDrawer(target) {
+      drawer.replaceChildren();
+      const titleRow = document.createElement("div");
+      titleRow.className = "video-drawer-title";
+      const heading = document.createElement("strong");
+      const labels = { waiting: "Prontos para gerar", ready: "Concluídos", failed: "Falharam" };
+      heading.textContent = labels[target] || "Vídeos";
+      titleRow.append(heading);
+
+      if (target === "failed" && groups.failed.length) {
+        const clear = document.createElement("button");
+        clear.type = "button";
+        clear.textContent = "Apagar todos os que falharam";
+        clear.addEventListener("click", async () => {
+          clear.disabled = true;
+          try {
+            await api("/api/portal/videos/failed", { method: "DELETE" });
+            await loadVideoJobs();
+          } catch (error) {
+            notice("Vídeos: " + error.message);
+            clear.disabled = false;
+          }
+        });
+        titleRow.append(clear);
+      }
+
+      drawer.append(titleRow);
+      for (const job of groups[target] || []) drawer.append(createCard(job));
+      drawer.hidden = false;
+    }
+
+    root.append(drawer);
+
+    if (groups.processing.length) {
+      const currentTitle = document.createElement("h2");
+      currentTitle.className = "video-current-title";
+      currentTitle.textContent = "Gerando agora";
+      root.append(currentTitle);
+      const current = document.createElement("div");
+      current.className = "media-grid video-current-grid";
+      groups.processing.forEach(job => current.append(createCard(job)));
+      root.append(current);
+    } else if (!jobs.length) {
+      const empty = document.createElement("p");
+      empty.className = "muted";
+      empty.textContent = "Nenhum vídeo registrado.";
+      root.append(empty);
     }
   } catch (error) {
     notice("Vídeos: " + error.message);
@@ -1073,7 +1129,7 @@ document.querySelectorAll("[data-refresh]").forEach(button => button.addEventLis
   if (target === "posts") return loadPosts();
   if (target === "agents") return loadAgents();
   if (target === "campaigns") return loadCampaigns();
-  if (target === "videos") return Promise.all([loadMedia(), loadVideoJobs()]);
+  if (target === "videos") return loadVideoJobs();
   if (target === "instagram") return loadInstagram();
   return loadPerformance();
 }));
@@ -1100,7 +1156,6 @@ $("#video-whatsapp-form")?.addEventListener("submit", async event => {
   finally { button.disabled = false; }
 });
 $("#video-search-form")?.addEventListener("submit", searchYouTube);
-$("#youtube-link-form")?.addEventListener("submit", event => { event.preventDefault(); generateYouTubeVideo($("#youtube-url").value.trim()); });
 $$('[data-video-source]').forEach(button => button.addEventListener('click', () => {
   const youtube = button.dataset.videoSource === 'youtube';
   $("#video-youtube-panel").hidden = !youtube; $("#media-upload-form").hidden = youtube;
