@@ -208,6 +208,7 @@ async function startTrailerJob(item, button) {
     });
     notice(data.message || "Trailer enviado. O corte 9:16 está sendo gerado.");
     await loadVideoJobs();
+    $("#video-job-list")?.scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (error) {
     notice("Trailer: " + error.message);
   } finally {
@@ -224,32 +225,63 @@ async function loadVideoJobs() {
     let jobs = Array.isArray(data.jobs) ? data.jobs : [];
     clearTimeout(videoJobTimer);
     if (jobs.some(job => ["importing", "cutting", "searching"].includes(job.status))) {
-      videoJobTimer = setTimeout(loadVideoJobs, 5000);
+      videoJobTimer = setTimeout(loadVideoJobs, 4000);
     }
     root.replaceChildren();
+    const visible = jobs
+      .filter(job => job.status !== "searching" && job.status !== "search_results")
+      .sort((a, b) => {
+        const priority = { cutting: 0, importing: 1, awaiting_configuration: 2, ready: 3, failed: 4 };
+        const pa = priority[a.status] ?? 9;
+        const pb = priority[b.status] ?? 9;
+        if (pa !== pb) return pa - pb;
+        return String(b.updatedAt || b.createdAt || "").localeCompare(String(a.updatedAt || a.createdAt || ""));
+      });
+
+    const headingRow = document.createElement("div");
+    headingRow.className = "video-status-heading";
     const heading = document.createElement("h2");
-    heading.textContent = "Vídeos em andamento e prontos";
-    root.append(heading);
-    const visible = jobs.filter(job => job.status !== "searching" && job.status !== "search_results");
+    heading.textContent = visible.length ? "Seu vídeo" : "Status da geração";
+    const hint = document.createElement("small");
+    hint.textContent = visible.length ? "Acompanhe aqui. Não precisa rolar a página." : "Quando você gerar um vídeo, ele aparece aqui.";
+    headingRow.append(heading, hint);
+    root.append(headingRow);
+
     if (!visible.length) {
-      const empty = document.createElement("p");
-      empty.className = "muted";
-      empty.textContent = "Nenhum vídeo gerado ainda.";
+      const empty = document.createElement("div");
+      empty.className = "video-empty-state";
+      empty.textContent = "Nenhum vídeo em geração.";
       root.append(empty);
       return;
     }
-    visible.forEach(job => {
+
+    const renderJobCard = job => {
       const card = document.createElement("article");
       card.className = "card media-card video-render-job";
+      const top = document.createElement("div");
+      top.className = "video-job-top";
       const title = document.createElement("strong");
       title.textContent = job.contentTitle || job.filename || "Vídeo";
       const status = document.createElement("span");
-      const labels = { importing: "BAIXANDO VÍDEO", awaiting_configuration: "PRONTO PARA GERAR", cutting: "GERANDO VÍDEO", ready: "VÍDEO PRONTO", failed: "FALHOU" };
+      const labels = { importing: "BAIXANDO", awaiting_configuration: "PRONTO PARA GERAR", cutting: "GERANDO", ready: "PRONTO", failed: "FALHOU" };
       status.className = "status " + (job.status === "ready" ? "published" : job.status === "failed" ? "failed" : "ready");
       status.textContent = labels[job.status] || String(job.status || "").toUpperCase();
+      top.append(title, status);
+      card.append(top);
+
+      const progressValue = Math.max(0, Math.min(100, Number(job.progress || 0)));
+      if (["importing", "cutting"].includes(job.status)) {
+        const progress = document.createElement("progress");
+        progress.max = 100;
+        progress.value = progressValue || (job.status === "cutting" ? 35 : 10);
+        progress.className = "video-progress";
+        card.append(progress);
+      }
+
       const meta = document.createElement("small");
       meta.textContent = (job.message || "") + " · " + formatDate(job.updatedAt || job.createdAt);
-      card.append(title, status, meta);
+      card.append(meta);
+
       const actions = document.createElement("div");
       actions.className = "post-actions";
       if (job.status === "failed" && /^youtube_(authentication_required|challenge_failed|download_failed)/.test(String(job.error || ""))) {
@@ -267,7 +299,8 @@ async function loadVideoJobs() {
             catalogType: /s[eé]rie|series|tv/i.test(String(job.mediaType || "")) ? "series" : "movie"
           };
           showTab("upload");
-          notice("O YouTube bloqueou o download automático. Envie o MP4; o NEXUS mantém o título, a sinopse e gera o 9:16.");
+          notice("Envie o MP4. O NEXUS mantém título e sinopse.");
+          window.scrollTo({ top: 0, behavior: "smooth" });
         });
         actions.append(uploadFallback);
       }
@@ -305,8 +338,19 @@ async function loadVideoJobs() {
         actions.append(a);
       }
       if (actions.children.length) card.append(actions);
-      root.append(card);
-    });
+      return card;
+    };
+
+    root.append(renderJobCard(visible[0]));
+    if (visible.length > 1) {
+      const history = document.createElement("details");
+      history.className = "video-history";
+      const summary = document.createElement("summary");
+      summary.textContent = "Histórico (" + (visible.length - 1) + ")";
+      history.append(summary);
+      visible.slice(1, 6).forEach(job => history.append(renderJobCard(job)));
+      root.append(history);
+    }
   } catch (error) {
     notice("Vídeos: " + error.message);
   }
@@ -345,6 +389,7 @@ async function uploadMedia(event) {
     if (uploadMetadata?.title) notice("Gerando " + uploadMetadata.title + " no modelo 9:16 com sinopse dentro do smartphone.");
     pendingUploadMetadata = null;
     await loadVideoJobs();
+    $("#video-job-list")?.scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (error) {
     message.textContent = "Erro: " + error.message;
   } finally {
