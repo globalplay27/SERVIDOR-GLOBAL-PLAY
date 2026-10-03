@@ -13,17 +13,52 @@ jobs:
       CALLBACK_TOKEN: ${{ github.event.client_payload.callback_token }}
       NEXUS_BASE_URL: https://servidor-nexus.diamantehinode2015.workers.dev
     steps:
-      - name: Search public YouTube videos
+      - name: Search official vertical first, then standard trailers
         run: |
           set -euo pipefail
           python -m pip install --upgrade yt-dlp
-          yt-dlp --flat-playlist --dump-single-json --skip-download --socket-timeout 20 "ytsearch20:$QUERY" > /tmp/search.json
+
+          yt-dlp --flat-playlist --dump-single-json --skip-download --socket-timeout 20 \
+            "ytsearch18:$QUERY shorts vertical teaser" > /tmp/search-vertical.json || echo '{"entries":[]}' > /tmp/search-vertical.json
+
+          yt-dlp --flat-playlist --dump-single-json --skip-download --socket-timeout 20 \
+            "ytsearch20:$QUERY" > /tmp/search-standard.json
+
           python - <<'PY'
           import json
-          data=json.load(open('/tmp/search.json'))
-          result={'results':[{'id':v.get('id'), 'title':v.get('title'), 'channel':v.get('channel') or v.get('uploader'), 'channelId':v.get('channel_id'), 'channelVerified':v.get('channel_is_verified',False), 'duration':v.get('duration')} for v in data.get('entries',[]) if v]}
-          json.dump(result,open('/tmp/results.json','w'))
+
+          def rows(path, vertical):
+              try:
+                  data=json.load(open(path))
+              except Exception:
+                  return []
+              out=[]
+              for v in data.get('entries',[]) or []:
+                  if not v:
+                      continue
+                  out.append({
+                      'id':v.get('id'),
+                      'title':v.get('title'),
+                      'channel':v.get('channel') or v.get('uploader'),
+                      'channelId':v.get('channel_id'),
+                      'channelVerified':v.get('channel_is_verified',False),
+                      'duration':v.get('duration'),
+                      'verticalCandidate':bool(vertical)
+                  })
+              return out
+
+          seen=set()
+          merged=[]
+          for item in rows('/tmp/search-vertical.json', True) + rows('/tmp/search-standard.json', False):
+              vid=item.get('id')
+              if not vid or vid in seen:
+                  continue
+              seen.add(vid)
+              merged.append(item)
+
+          json.dump({'results':merged[:38]},open('/tmp/results.json','w'))
           PY
+
           curl --fail-with-body -X POST "$NEXUS_BASE_URL/api/internal/video-render/search-results" \
             -H "x-nexus-job-id: $JOB_ID" -H "x-nexus-client-id: $CLIENT_ID" \
             -H "x-nexus-callback-token: $CALLBACK_TOKEN" -H 'content-type: application/json' --data-binary @/tmp/results.json
