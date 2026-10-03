@@ -713,7 +713,7 @@ export async function handlePortalApi(request, env, url, ctx) {
       outputFormat: "reel",
       logoEnabled: body.logoEnabled !== false && Boolean(branding.logoKey),
       logoObjectKey: body.logoEnabled !== false ? String(branding.logoKey || "") : "",
-      endText: String(body.endText || current.endText || "").trim().slice(0, 120),
+      endText: "",
       endContact: String(body.endContact ?? client.config?.videoTemplate?.whatsappNumber ?? current.endContact ?? "").trim().slice(0, 40)
     };
     if (!settings.movieMetadata && !/^(michael|michael jackson)$/i.test(settings.contentTitle)) {
