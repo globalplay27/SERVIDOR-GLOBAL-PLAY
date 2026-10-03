@@ -3,7 +3,11 @@ import json, os, urllib.request, subprocess
 
 base=os.environ['NEXUS_BASE_URL']+'/api/internal/video-render/upload/'
 headers={'x-nexus-job-id':os.environ['JOB_ID'],'x-nexus-client-id':os.environ['CLIENT_ID'],'x-nexus-callback-token':os.environ['CALLBACK_TOKEN']}
-duration=json.loads(subprocess.check_output(['ffprobe','-v','error','-show_entries','format=duration','-of','json','/tmp/rendered.mp4']))['format']['duration']
+probe=json.loads(subprocess.check_output(['ffprobe','-v','error','-select_streams','v:0','-show_entries','stream=width,height:format=duration','-of','json','/tmp/rendered.mp4']))
+stream=(probe.get('streams') or [{}])[0]
+if int(stream.get('width') or 0) != 1080 or int(stream.get('height') or 0) != 1920:
+    raise RuntimeError(f"render_not_vertical_9x16:{stream.get('width')}x{stream.get('height')}")
+duration=probe['format']['duration']
 def send(path,data,method='POST'):
     request=urllib.request.Request(base+path,data=data,method=method,headers={**headers,'content-type':'application/octet-stream','x-nexus-duration':duration})
     with urllib.request.urlopen(request,timeout=180) as r: return json.load(r)
