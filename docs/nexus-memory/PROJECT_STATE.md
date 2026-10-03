@@ -99,3 +99,10 @@ Retomada em 27/09/2026: main 45de28b; CI/deploy 36338210500 concluído com suces
 - O limite local de upload deixou de ser 25 MB. Vídeos são aceitos até 90 MB e enviados ao R2 com `file.stream()`, reservando margem dentro do limite total de 100 MB da requisição Cloudflare Free para capa e campos multipart.
 - O fluxo já existente de vídeo permanece: upload → `video_jobs` → geração pelo workflow FFmpeg → MP4 → download pelo cliente. O template do workflow já desenha smartphone, título, metadados e sinopse; ele não foi reescrito nesta correção.
 - GitHub Actions comprovou sintaxe, testes e bundle. Deploys dos commits `e824ac47`, `ede028ed` e `3f934cf1` concluíram a etapa Cloudflare com sucesso. As duas últimas verificações pós-deploy ficaram vermelhas por problemas no verificador; o último deles foi identificado como `pipefail` + `grep -q`, corrigido em seguida. A validação autenticada upload → render → download ainda precisa ser feita no painel pelo proprietário.
+
+## 2026-10-02 — redirecionamento circular do portal confirmado
+- Sessão desktop retomou os chats sobre painel do cliente, aba Vídeos e render MP4. Fonte operacional main c664e44a58b695a710df70cac68da35873fa9a69.
+- Produção: GET /portal e /portal.html retornaram HTTP 307 Location: /portal; fetch seguindo redirects terminou em redirect count exceeded. /client-lite.js respondeu 200/no-store.
+- Run 37022109435: deploy Cloudflare passou, Verify client video workspace falhou. Não era apenas propagação/cache.
+- Correção: ASSETS busca /portal, caminho canônico de portal.html, evitando devolver redirect para a própria rota. Cache no-store preservado.
+- Validação local: 102/102 testes passaram, incluindo seis testes GET/HEAD para /portal, /portal.html e /login simulando canonicalização Cloudflare. Produção corrigida ainda depende de implantação; upload/render/download autenticados continuam pendentes.

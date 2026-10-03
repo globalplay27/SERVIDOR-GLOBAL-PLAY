@@ -74,3 +74,6 @@ Prioridade atual: concluir CI/deploy da revisão visual Global Play, obter evid�
 2. No painel autenticado, abrir `Vídeos`, enviar um MP4 real com menos de 90 MB, preencher título e sinopse, gerar o MP4 e baixar o resultado.
 3. Inspecionar o arquivo final: smartphone visível em primeiro plano, título/sinopse alinhados, sem elementos gráficos indevidos e download funcional. Se falhar, usar o ID/status de `video_jobs` e o run `video-template-render` para localizar a etapa; não alterar publicação Instagram para esse teste.
 4. Tratar separadamente os problemas preexistentes de `Verify Nexus production autonomy` e `Workers Builds: servidor-nexus`.
+
+## 2026-10-02 — retomada desktop
+Implantar correção do redirect circular, exigir GET /portal = 200 sem Location e aba Vídeos presente. Depois validar upload/render/download com sessão de cliente autorizada.

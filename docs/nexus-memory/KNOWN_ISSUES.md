@@ -62,3 +62,10 @@ Pendências desta retomada: fonte contínua de mídia nova continua ausente; Glo
 - Causa provável para a aba parecer alternar/sumir: rotas do portal e seus assets podiam ser servidas diretamente como Static Assets, fora do Worker. Agora passam por `run_worker_first` e recebem `no-store`; confirmar no navegador do cliente após novo login/reload.
 - A checagem externa `Workers Builds: servidor-nexus` já aparecia vermelha no `main` antes destas mudanças. A implantação oficial de `.github/workflows/ci.yml` consegue executar `wrangler deploy`; investigar o build externo separadamente para não confundi-lo com o deploy canônico.
 - A checagem `Verify Nexus production autonomy` também já falhava depois de deploys bem-sucedidos e é independente do workspace de vídeos.
+
+## 2026-10-02 — redirecionamento circular do portal confirmado
+- Sessão desktop retomou os chats sobre painel do cliente, aba Vídeos e render MP4. Fonte operacional main c664e44a58b695a710df70cac68da35873fa9a69.
+- Produção: GET /portal e /portal.html retornaram HTTP 307 Location: /portal; fetch seguindo redirects terminou em redirect count exceeded. /client-lite.js respondeu 200/no-store.
+- Run 37022109435: deploy Cloudflare passou, Verify client video workspace falhou. Não era apenas propagação/cache.
+- Correção: ASSETS busca /portal, caminho canônico de portal.html, evitando devolver redirect para a própria rota. Cache no-store preservado.
+- Validação local: 102/102 testes passaram, incluindo seis testes GET/HEAD para /portal, /portal.html e /login simulando canonicalização Cloudflare. Produção corrigida ainda depende de implantação; upload/render/download autenticados continuam pendentes.
