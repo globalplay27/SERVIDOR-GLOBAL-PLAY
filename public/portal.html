@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#080d15"><title>NEXUS Vídeos</title>
-  <link rel="stylesheet" href="/client-lite.css?v=17"><script src="/client-lite.js?v=22" defer></script>
+  <link rel="stylesheet" href="/client-lite.css?v=18"><script src="/client-lite.js?v=23" defer></script>
 </head>
 <body><main class="shell">
   <section id="login" class="login card" hidden>
@@ -118,33 +118,12 @@
         </form>
         <p class="muted">Escolha o vídeo, gere o resultado e publique quando quiser.</p>
       </section>
-      <form id="media-upload-form" class="card media-upload" hidden>
-        <label>Vídeo
+      <form id="media-upload-form" class="card media-upload upload-direct" hidden>
+        <label>Escolha o vídeo
           <input id="media-file" name="file" type="file" accept="video/mp4,video/webm,video/quicktime" required>
         </label>
-        <label>Capa
-          <input id="video-poster-file" name="poster" type="file" accept="image/png,image/jpeg,image/webp">
-        </label>
-        <label>Título
-          <input id="video-title" name="title" type="text" maxlength="180" placeholder="Nome do filme ou série">
-        </label>
-        <label>Ano / tipo
-          <div class="video-meta-fields">
-            <input id="video-year" name="year" type="text" maxlength="12" placeholder="2026">
-            <select id="video-media-type" name="mediaType">
-              <option value="FILME">Filme</option>
-              <option value="SÉRIE">Série</option>
-            </select>
-          </div>
-        </label>
-        <label>Sinopse
-          <textarea id="video-overview" name="overview" maxlength="1800" placeholder="Sinopse que aparecerá dentro do smartphone"></textarea>
-        </label>
         <input id="media-purpose" name="purpose" type="hidden" value="publish">
-        <label>Observação
-          <textarea id="media-note" name="note" maxlength="800" placeholder="Opcional"></textarea>
-        </label>
-        <button class="primary" type="submit">Enviar vídeo</button>
+        <button class="primary" type="submit">Enviar e gerar vídeo</button>
         <p id="media-upload-message" class="muted" role="status"></p>
       </form>
       <div class="card">
