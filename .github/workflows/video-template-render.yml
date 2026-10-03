@@ -78,7 +78,7 @@ jobs:
           import os, textwrap
           def clean(value):
               return " ".join((value or "").replace("\n"," ").replace("\r"," ").split())
-          title=clean(os.getenv("TITLE","Conteúdo"))[:100]
+          title=clean(os.getenv("TITLE","ConteÃºdo"))[:100]
           overview=clean(os.getenv("OVERVIEW",""))[:600]
           year=clean(os.getenv("RELEASE_YEAR",""))
           media=clean(os.getenv("MEDIA_TYPE","")).upper()
@@ -88,11 +88,11 @@ jobs:
               f.write("\n".join(textwrap.wrap(title, 22)[:3]))
           with open("/tmp/meta.txt","w",encoding="utf-8") as f:
               bits=[b for b in [media,year] if b]
-              f.write("  •  ".join(bits) or "DESTAQUE")
+              f.write("  â€¢  ".join(bits) or "DESTAQUE")
           with open("/tmp/overview.txt","w",encoding="utf-8") as f:
-              f.write("\n".join(textwrap.wrap(overview or "Confira este destaque selecionado para você.", 30)[:5]))
+              f.write("\n".join(textwrap.wrap(overview or "Confira este destaque selecionado para vocÃª.", 30)[:5]))
           with open("/tmp/cta.txt","w",encoding="utf-8") as f:
-              f.write("  •  ".join([x for x in [end_text,end_contact] if x])[:160])
+              f.write("  â€¢  ".join([x for x in [end_text,end_contact] if x])[:160])
           PY
 
           python - <<'PY'
@@ -135,7 +135,7 @@ jobs:
               -map 0:v:0 -map 0:a? -c:v libx264 -preset veryfast -crf 24 -c:a aac -b:a 128k -movflags +faststart /tmp/rendered-base.mp4
           elif [[ "${TITLE,,}" == "michael" || "${TITLE,,}" == "michael jackson" ]] && [[ -z "$RELEASE_YEAR" || "$RELEASE_YEAR" == "2026" ]]; then
             POSTER_ARGS=()
-            if [ -s /tmp/poster.jpg ]; then POSTER_ARGS=(--poster /tmp/poster.jpg); fi
+            # Michael always uses the verified official movie poster from its preset.
             /usr/bin/python3 scripts/render_video_template.py --source /tmp/source.mp4 \
               --output /tmp/rendered-base.mp4 --work /tmp/movie-template \
               --duration "$RENDER_DUR" "${POSTER_ARGS[@]}"
