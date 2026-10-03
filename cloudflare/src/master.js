@@ -553,8 +553,13 @@ export async function handleMaster(request, env, url) {
 
   if (url.pathname === "/api/clients" && request.method === "POST") {
     const body = await request.json().catch(() => ({}));
-    let id = slug(body.id || body.name || "cliente") || crypto.randomUUID();
-    if (await getClient(env, id)) id += "-" + String(Date.now()).slice(-5);
+    const id = slug(body.id || body.name || "cliente") || crypto.randomUUID();
+    if (await getClient(env, id)) {
+      return json({
+        error: "client_already_exists",
+        message: "Já existe um cliente com este identificador. Use outro nome ou ID."
+      }, 409);
+    }
 
     const config = {
       theme: body.theme || "green-black",
