@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#080d15"><title>NEXUS Vídeos</title>
-  <link rel="stylesheet" href="/client-lite.css?v=18"><script src="/client-lite.js?v=24" defer></script>
+  <link rel="stylesheet" href="/client-lite.css?v=19"><script src="/client-lite.js?v=25" defer></script>
 </head>
 <body><main class="shell">
   <section id="login" class="login card" hidden>
     <div class="brand"><strong>NEXUS AI</strong></div>
     <p class="eyebrow">ACESSO AO PAINEL</p><h1>Entre na sua conta</h1>
-    <p class="muted">Conecte seu Instagram e gere vídeos para publicar.</p>
+    <p class="muted">Busque trailers oficiais dublados e gere o corte 9:16.</p>
     <form id="login-form">
       <label>Usuário<input name="username" autocomplete="username" required></label>
       <label>Senha<input name="password" type="password" autocomplete="current-password" required></label>
@@ -18,120 +18,68 @@
   </section>
   <section id="dashboard" hidden>
     <header class="topbar">
-      <div class="brand client-brand"><img id="client-logo" class="client-logo" alt="" hidden><div><strong id="header-client-name">NEXUS AI</strong><small>ACOMPANHAMENTO</small></div></div>
+      <div class="brand client-brand"><img id="client-logo" class="client-logo" alt="" hidden><div><strong id="header-client-name">NEXUS AI</strong><small>FILMES E TRAILERS</small></div></div>
       <div class="header-actions"><span id="client-label"></span><button id="refresh" type="button">Atualizar</button><button id="logout" type="button">Sair</button></div>
     </header>
     <nav class="tabs" aria-label="Seções do painel">
-      <button data-tab="videos" class="active" type="button">Vídeos / Trailer</button>
+      <button data-tab="videos" class="active" type="button">Filmes / Trailers</button>
+      <button data-tab="upload" type="button">Enviar vídeo</button>
       <button data-tab="instagram" type="button">Instagram</button>
       <button data-tab="logo" type="button">Logo do cliente</button>
     </nav>
     <div id="notice" class="notice" role="status" hidden></div>
-    <section id="tab-overview" class="tab" hidden>
-      <p class="eyebrow">VISÃO GERAL</p>
-<div class="card account-setup">
-        <div class="account-profile">
-          <p class="eyebrow">CONFIGURAÇÃO DA CONTA</p>
-          <h2>Dados do cliente</h2>
-          <form id="profile-form" class="profile-form">
-            <label>Nome
-              <input id="profile-name" name="name" autocomplete="name" required placeholder="Nome ou empresa">
-            </label>
-            <label>Telefone / WhatsApp
-              <input id="profile-phone" name="phone" inputmode="tel" autocomplete="tel" placeholder="(00) 00000-0000">
-            </label>
-            <label>@ do Instagram
-              <input id="profile-instagram" name="instagram" required placeholder="@seuperfil">
-            </label>
-            <button class="primary" type="submit">Salvar dados</button>
-            <p id="profile-message" class="muted" role="status"></p>
-          </form>
-        </div>
-      </div>
-      <div class="metrics">
-        <article class="card"><span>Instagram</span><strong id="overview-instagram">—</strong></article>
-        <article class="card"><span>Postagens</span><strong id="next-post">Automática pelo NEXUS</strong></article>
-        <article class="card"><span>Publicadas</span><strong id="published-count">—</strong></article>
-        <article class="card"><span>Precisam de atenção</span><strong id="attention-count">—</strong></article>
-      </div>
-      <div class="card"><h2>Última atividade</h2><p id="last-activity" class="muted">Carregando...</p></div>
-    </section>
-    <section id="tab-posts" class="tab" hidden>
-      <div class="section-title"><div><p class="eyebrow">PUBLICAÇÕES</p><h1>Postagens</h1><p class="muted">Revise cada criativo antes da publicação. Aprove, mande refazer, cancele ou publique quando estiver pronto.</p></div><button data-refresh="posts" type="button">Atualizar</button></div>
-      <div id="post-list" class="list" aria-live="polite"></div>
-    </section>
-    <section id="tab-agents" class="tab" hidden>
-      <div class="section-title"><div><p class="eyebrow">OPERAÇÃO AO VIVO</p><h1>Agentes em atividade</h1><p class="muted">Veja quais agentes estão trabalhando, o que fizeram e quando executaram pela última vez.</p></div><button data-refresh="agents" type="button">Atualizar</button></div>
-      <div class="metrics">
-        <article class="card"><span>Agentes disponíveis</span><strong id="agent-count">—</strong></article>
-        <article class="card"><span>Execuções recentes</span><strong id="execution-count">—</strong></article>
-        <article class="card"><span>Aguardando aprovação</span><strong id="agent-pending-count">—</strong></article>
-        <article class="card"><span>Correções solicitadas</span><strong id="agent-correction-count">—</strong></article>
-      </div>
-      <div id="agent-list" class="list" aria-live="polite"></div>
-      <div class="post-actions"><button id="run-agent-cycle" class="primary" type="button">Executar ciclo completo</button></div>
-      <p id="agent-cycle-status" class="muted" role="status"></p>
-    </section>
-    <section id="tab-campaigns" class="tab" hidden>
-      <div class="section-title"><div><p class="eyebrow">CAMPANHAS E ORIENTAÇÕES</p><h1>Campanhas</h1><p class="muted">Envie uma campanha de 7 dias ou uma orientação que será lida somente pelos agentes da sua conta.</p></div><button data-refresh="campaigns" type="button">Atualizar</button></div>
-      <div class="card">
-        <h2>Nova campanha de 7 dias</h2>
-        <form id="campaign-form">
-          <label>Nome da campanha<input name="title" required placeholder="Ex.: Semana do entretenimento"></label>
-          <label>Data inicial<input name="startDate" type="date"></label>
-          <label>Briefing<textarea name="brief" rows="5" required placeholder="Objetivo, oferta, CTA, público e direção visual."></textarea></label>
-          <label>Criativo de referência<input name="creative" type="file" accept="image/png,image/jpeg,image/webp"></label>
-          <button class="primary" type="submit">Enviar campanha</button>
-          <p id="campaign-message" class="muted" role="status"></p>
-        </form>
-      </div>
-      <div class="card">
-        <h2>Orientar meus agentes</h2>
-        <form id="directive-form">
-          <label>Orientação<textarea name="text" rows="4" required placeholder="Ex.: nesta semana priorize conteúdo para cliente final e evite revenda."></textarea></label>
-          <button class="primary" type="submit">Salvar orientação</button>
-          <p id="directive-message" class="muted" role="status"></p>
-        </form>
-      </div>
-      <div class="card"><h2>Campanhas ativas</h2><div id="campaign-list" class="list"></div></div>
-      <div class="card"><h2>Orientações ativas</h2><div id="directive-list" class="list"></div></div>
-    </section>
+
     <section id="tab-videos" class="tab">
       <div class="section-title">
         <div>
-          <p class="eyebrow">VÍDEOS / TRAILER</p>
-          <h1>Trailers Oficiais 9:16</h1>
-          <p class="muted">Busque trailers oficiais dublados em português no YouTube e gere no formato vertical com template cinematográfico.</p>
+          <p class="eyebrow">YOUTUBE OFICIAL</p>
+          <h1>Filmes e trailers dublados</h1>
+          <p class="muted">1) Busque o filme ou série. 2) Confirme o título. 3) Escolha o trailer oficial dublado. 4) Gere o corte 9:16.</p>
         </div>
-        <button data-refresh="videos" type="button">Atualizar</button>
+        <button data-refresh="videos" type="button">Atualizar cortes</button>
       </div>
 
-      <form id="trailer-search-form" class="card">
-        <h2>Buscar trailer oficial dublado</h2>
-        <div class="row" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end">
-          <label style="flex:1;min-width:220px">
-            Nome do filme ou série
+      <form id="trailer-search-form" class="card" data-panel="youtube">
+        <h2>Buscar no YouTube</h2>
+        <div class="trailer-search-row">
+          <label>Nome do filme ou série
             <input id="trailer-query" name="query" required placeholder="Ex.: Duna 2, The Boys, Homem-Aranha" autocomplete="off">
           </label>
-          <label>
-            Tipo
+          <label>Tipo
             <select id="trailer-type">
               <option value="movie">Filme</option>
               <option value="series">Série</option>
             </select>
           </label>
-          <button class="primary" type="submit" id="trailer-search-btn">Buscar no YouTube</button>
+          <button class="primary" type="submit" id="trailer-search-btn">Buscar trailer dublado</button>
         </div>
-        <p id="trailer-search-message" class="muted" role="status"></p>
+        <p id="trailer-search-message" class="muted" role="status">Digite o nome e clique em buscar.</p>
       </form>
 
-      <div id="trailer-results" class="card" hidden>
-        <h2>Resultados</h2>
-        <div id="trailer-results-list" class="list"></div>
+      <div id="catalog-box" class="card" hidden>
+        <h2>1. Confirme o filme ou série</h2>
+        <p class="muted">Selecione o título certo. Isso entra no template cinematográfico.</p>
+        <div id="catalog-list" class="catalog-grid"></div>
       </div>
 
+      <div id="trailer-results" class="card" hidden>
+        <h2>2. Escolha o trailer oficial e gere o corte</h2>
+        <p class="muted">Só trailers oficiais dublados em português. O corte sai em 9:16 com o template cinematográfico.</p>
+        <div id="youtube-results" class="youtube-grid"></div>
+      </div>
+
+      <div id="video-job-list" aria-live="polite"></div>
+    </section>
+
+    <section id="tab-upload" class="tab" hidden>
+      <div class="section-title">
+        <div>
+          <p class="eyebrow">ARQUIVO LOCAL</p>
+          <h1>Enviar vídeo</h1>
+          <p class="muted">Se você já tem o MP4, envie aqui para gerar o 9:16.</p>
+        </div>
+      </div>
       <form id="media-upload-form" class="card media-upload">
-        <h2>Ou envie um vídeo do computador</h2>
         <label>Vídeo
           <input id="media-file" name="file" type="file" accept="video/mp4,video/webm,video/quicktime" required>
         </label>
@@ -139,56 +87,29 @@
         <label>Observação
           <textarea id="media-note" name="note" maxlength="800" placeholder="Opcional"></textarea>
         </label>
-        <p class="muted">O arquivo será convertido com o template cinematográfico 9:16.</p>
         <button class="primary" type="submit">Enviar e gerar 9:16</button>
         <p id="media-upload-message" class="muted" role="status"></p>
       </form>
-
       <form id="video-whatsapp-form" class="card">
-        <h2><img src="/assets/video-template/whatsapp-official.svg" alt="WhatsApp" width="32" height="32"> WhatsApp no vídeo</h2>
+        <h2>WhatsApp no vídeo</h2>
         <label>Número do WhatsApp
           <input id="video-whatsapp-number" type="tel" maxlength="40" inputmode="tel" placeholder="(11) 99999-9999">
         </label>
-        <p class="muted">Este número aparecerá ao lado do símbolo oficial no rodapé dos próximos vídeos.</p>
         <button type="submit">Salvar número</button>
         <p id="video-whatsapp-message" class="muted" role="status"></p>
       </form>
-
       <div class="card">
         <h2>Logo no vídeo</h2>
         <label class="check-row">
           <input id="video-use-logo" type="checkbox" checked>
           <span>Usar a logo salva neste vídeo</span>
         </label>
-        <p class="muted">Cadastre ou altere a marca na aba “Logo do cliente”. A marca será aplicada pequena no canto superior direito.</p>
       </div>
+    </section>
 
-      <div id="video-job-list" aria-live="polite"></div>
-    </section>
-    <section id="tab-performance" class="tab" hidden>
-      <div class="section-title"><div><p class="eyebrow">RESULTADOS</p><h1>Desempenho</h1><p class="muted">Dados coletados da conta profissional conectada.</p></div><button data-refresh="performance" type="button">Atualizar</button></div>
-      <div class="metrics">
-        <article class="card"><span>Seguidores</span><strong id="followers">—</strong></article>
-        <article class="card"><span>Variação no último ciclo</span><strong id="followers-delta">—</strong></article>
-        <article class="card"><span>Interações medianas por post</span><strong id="median-engagement">—</strong></article>
-        <article class="card"><span>Publicações analisadas</span><strong id="scanned-media">—</strong></article>
-      </div>
-      <div class="card">
-        <div class="section-title"><div><p class="eyebrow">CONSUMO</p><h2>Uso de OpenAI</h2><p class="muted">Acompanhe tokens, limite diário e custo estimado da sua conta.</p></div></div>
-        <div class="metrics">
-          <article class="card"><span>Tokens usados</span><strong id="ai-used-tokens">—</strong></article>
-          <article class="card"><span>Limite diário</span><strong id="ai-limit-tokens">—</strong></article>
-          <article class="card"><span>Restante hoje</span><strong id="ai-remaining-tokens">—</strong></article>
-          <article class="card"><span>Custo estimado hoje</span><strong id="ai-estimated-cost">—</strong></article>
-        </div>
-        <p id="ai-usage-note" class="muted">Carregando consumo...</p>
-      </div>
-      <div class="card"><h2>Publicações com maior interação</h2><div id="top-media" class="list"></div><p id="performance-note" class="muted"></p></div>
-    </section>
     <section id="tab-logo" class="tab" hidden>
       <p class="eyebrow">IDENTIDADE VISUAL</p>
       <h1>Logo do cliente</h1>
-      <p class="muted">Envie a marca do cliente uma vez. Ela ficará disponível para os próximos vídeos.</p>
       <div class="card account-logo">
         <form id="logo-form" class="logo-form">
           <label>Arquivo
@@ -206,9 +127,9 @@
         </form>
       </div>
     </section>
+
     <section id="tab-instagram" class="tab" hidden>
       <p class="eyebrow">AUTORIZAÇÃO OFICIAL</p><h1>Instagram</h1>
-      <p class="muted">Entre na sua conta profissional na página oficial do Instagram e conceda acesso ao NEXUS. Sua senha não é armazenada aqui.</p>
       <div class="card connection">
         <div><span>Conta</span><strong id="instagram-handle">Nenhuma conta conectada</strong></div>
         <div><span>Status</span><strong id="instagram-state">Verificando...</strong></div>
