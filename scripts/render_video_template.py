@@ -86,7 +86,7 @@ def heart_eyes(canvas):
 def footer(canvas, contact=''):
     d=ImageDraw.Draw(canvas)
     d.rectangle((0,1738,W,H),fill=(1,7,11,240))
-    text_block(d,os.getenv('END_TEXT') or 'DISPONÍVEL EM NOSSO APLICATIVO',(100,1740,980,1772),24,centered=True)
+    text_block(d,'DISPONÍVEL EM NOSSO APLICATIVO',(100,1740,980,1772),24,centered=True)
     labels=['TV SMART','TV BOX','PC/NOTE','CELULAR','XBOX','CAST']
     for i,label in enumerate(labels):
         x=200+i*130
