@@ -34,7 +34,15 @@ jobs:
         run: |
           set -euo pipefail
           echo youtube_download_failed > /tmp/nexus-ingest-error.txt
-          yt-dlp             --no-playlist             --retries 5             --fragment-retries 5             --concurrent-fragments 4             --merge-output-format mp4             -f "bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[height<=720][ext=mp4]/b[height<=720]"             -o /tmp/source.%(ext)s             "$SOURCE_URL"
+          yt-dlp \
+            --no-playlist \
+            --retries 5 \
+            --fragment-retries 5 \
+            --concurrent-fragments 4 \
+            --merge-output-format mp4 \
+            -f "bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[height<=720][ext=mp4]/b[height<=720]" \
+            -o "/tmp/source.%(ext)s" \
+            "$SOURCE_URL"
           FILE="$(find /tmp -maxdepth 1 -type f -name 'source.*' | head -n1)"
           test -n "$FILE"
           if [ "$FILE" != "/tmp/source.mp4" ]; then
