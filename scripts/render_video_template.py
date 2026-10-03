@@ -258,7 +258,7 @@ def load_metadata(path=None):
             data[key]=os.environ[env].strip()
     return data
 
-def materialize_metadata(data, work):
+def materialize_metadata(data, work, private_poster=None):
     folder=Path(work)/'assets'; folder.mkdir(parents=True,exist_ok=True)
     def download(url,name,required=False):
         if not url:
@@ -281,7 +281,7 @@ def materialize_metadata(data, work):
         except Exception:
             if required: raise
             return ''
-    data['poster']=download(data.get('posterUrl'),'poster.jpg',True)
+    data['poster']=str(Path(private_poster).resolve()) if private_poster else download(data.get('posterUrl'),'poster.jpg',True)
     data['media_type']=data.get('mediaType','FILME')
     data['_folder']=str(folder)
     for i,person in enumerate(data.get('cast',[])[:9]): person['image']=download(person.get('image'),f'cast-{i}.jpg')
@@ -301,7 +301,12 @@ if __name__=='__main__':
     args=parser.parse_args()
     supplied=os.getenv('MOVIE_METADATA','').strip()
     title=' '.join(os.getenv('TITLE','').lower().split())
-    metadata=load_metadata(args.metadata) if args.metadata or title in ('michael','michael jackson') else materialize_metadata(json.loads(supplied),args.work)
+    if args.metadata or title in ('michael','michael jackson'):
+        metadata=load_metadata(args.metadata)
+    else:
+        data=json.loads(supplied)
+        private_poster='/tmp/poster.jpg' if str(data.get('posterUrl','')).startswith(os.environ.get('NEXUS_BASE_URL','https://invalid.example')+'/media/') and Path('/tmp/poster.jpg').exists() else None
+        metadata=materialize_metadata(data,args.work,private_poster)
     prepare(args.work,metadata,args.poster)
     source_duration=float(json.loads(subprocess.check_output(['ffprobe','-v','error','-show_entries','format=duration','-of','json',args.source]))['format']['duration'])
     duration=min(source_duration,args.duration) if args.duration>0 else source_duration
