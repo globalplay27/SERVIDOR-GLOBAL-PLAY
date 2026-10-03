@@ -6,11 +6,14 @@ export function portugueseTrailerScore(item) {
   const studio = /^(?:amazon )?(?:prime video|netflix|warner bros\.? pictures|warner play|universal pictures|paramount pictures|sony pictures|disney|disney studios|20th century studios|diamond films|paris filmes|imagem filmes|hbo|max|globoplay|lionsgate|mubi)(?: brasil| brazil| br)?$/.test(channel);
   const brazil = /brasil|brazil|\bbr\b|portugues/.test(channel);
   const dubbed = /dublad|portugues|pt[- ]?br/.test(title);
+  const promo = /trailer|teaser|shorts?|vertical|spot|previa/.test(title);
   // Prime Video BR omits its badge in search metadata. Match its immutable channel ID,
   // confirmed through the trailer embedded by About Amazon Brasil, not its display name.
   const officialIdentity = item.channelVerified || item.channelId === 'UCuNjvqjTzw9LcD9PVpTVWRA';
-  if (!studio || !officialIdentity || (!brazil && !dubbed) || !/trailer/.test(title)) return -1;
-  return (dubbed ? 100 : 0) + (brazil ? 70 : 0) + (/oficial/.test(title) ? 30 : 0) + (item.channelVerified ? 20 : 0);
+  if (!studio || !officialIdentity || (!brazil && !dubbed) || !promo) return -1;
+  const verticalBonus = item.verticalCandidate === true ? 180 : 0;
+  const explicitVerticalBonus = /shorts?|vertical/.test(title) ? 80 : 0;
+  return verticalBonus + explicitVerticalBonus + (dubbed ? 100 : 0) + (brazil ? 70 : 0) + (/oficial/.test(title) ? 30 : 0) + (item.channelVerified ? 20 : 0);
 }
 export function youtubeUrl(value) {
   try {
@@ -70,7 +73,7 @@ export async function dispatchVideoSearch(env, clientId, query, type) {
     .bind(id, clientId, JSON.stringify({ contentTitle: query, githubRenderToken: callbackToken, searchOnly: true })).run();
   const r = await fetch("https://api.github.com/repos/" + (env.GITHUB_INGEST_REPOSITORY || "globalplay27/SERVIDOR-GLOBAL-PLAY") + "/dispatches", {
     method: "POST", headers: { authorization: "Bearer " + token, accept: "application/vnd.github+json", "content-type": "application/json", "user-agent": "NEXUS" },
-    body: JSON.stringify({ event_type: "video-youtube-search", client_payload: { job_id: id, client_id: clientId, callback_token: callbackToken, query: query.slice(0, 120) + " trailer oficial dublado português Brasil" } })
+    body: JSON.stringify({ event_type: "video-youtube-search", client_payload: { job_id: id, client_id: clientId, callback_token: callbackToken, query: query.slice(0, 120) + " oficial dublado português Brasil" } })
   });
   if (r.status !== 204) throw new Error("youtube_search_dispatch_failed");
   return id;
