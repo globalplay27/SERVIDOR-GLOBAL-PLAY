@@ -8,33 +8,31 @@ on:
 jobs:
   smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Install yt-dlp
+      - name: Install yt-dlp and PO token provider
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m pip install --disable-pip-version-check --quiet --upgrade "yt-dlp[default]"
-      - name: Test YouTube clients
+          python3 -m pip install --disable-pip-version-check --quiet --upgrade "yt-dlp[default]" bgutil-ytdlp-pot-provider
+          git clone --depth 1 --branch 2.0.1 https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git /tmp/bgutil
+          cd /tmp/bgutil/server
+          npm ci --silent
+          npx tsc
+      - name: Test YouTube with generated PO token
         shell: bash
         env:
           URL: https://www.youtube.com/watch?v=WlpK6_BDNgE
         run: |
-          set -u
-          for CLIENT in web_safari tv tv_simply web_embedded android_vr; do
-            echo "=== CLIENT:$CLIENT ==="
-            rm -f /tmp/urls.txt
-            if yt-dlp --js-runtimes node --no-playlist               --extractor-args "youtube:player-client=$CLIENT"               -f "b[height<=720]/b" -g "$URL" > /tmp/urls.txt 2>&1; then
-              echo "CLIENT_OK:$CLIENT"
-              head -c 240 /tmp/urls.txt
-              echo
-              exit 0
-            else
-              echo "CLIENT_FAIL:$CLIENT"
-              tail -n 12 /tmp/urls.txt
-            fi
-          done
-          exit 1
+          set -euo pipefail
+          yt-dlp \
+            --js-runtimes node \
+            --no-playlist \
+            --extractor-args "youtube:player-client=mweb,tv,web_safari;youtubepot-bgutilscript:server_home=/tmp/bgutil/server" \
+            -f "b[height<=720]/b" \
+            -g "$URL" | tee /tmp/result.txt
+          test -s /tmp/result.txt
