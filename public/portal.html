@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#080d15"><title>NEXUS Vídeos</title>
-  <link rel="stylesheet" href="/client-lite.css?v=16"><script src="/client-lite.js?v=21" defer></script>
+  <link rel="stylesheet" href="/client-lite.css?v=18"><script src="/client-lite.js?v=25" defer></script>
 </head>
 <body><main class="shell">
   <section id="login" class="login card" hidden>
@@ -112,39 +112,14 @@
         <label>Título no catálogo<select id="youtube-catalog"><option value="">Busque um filme ou série</option></select></label>
         <label>Sinopse<textarea id="youtube-overview" maxlength="1800" placeholder="Sinopse que ficará dentro do celular"></textarea></label>
         <div id="youtube-results" class="media-grid"></div>
-        <form id="youtube-link-form" class="media-upload">
-          <label>Link do YouTube<input id="youtube-url" type="url" placeholder="https://www.youtube.com/watch?v=..."></label>
-          <button class="primary" type="submit">Gerar vídeo completo</button>
-        </form>
-        <p class="muted">Escolha o vídeo, gere o resultado e publique quando quiser.</p>
+        <p class="muted">Escolha um resultado e clique em “Gerar vídeo completo”.</p>
       </section>
-      <form id="media-upload-form" class="card media-upload" hidden>
-        <label>Vídeo
+      <form id="media-upload-form" class="card media-upload upload-direct" hidden>
+        <label>Escolha o vídeo
           <input id="media-file" name="file" type="file" accept="video/mp4,video/webm,video/quicktime" required>
         </label>
-        <label>Capa
-          <input id="video-poster-file" name="poster" type="file" accept="image/png,image/jpeg,image/webp">
-        </label>
-        <label>Título
-          <input id="video-title" name="title" type="text" maxlength="180" placeholder="Nome do filme ou série">
-        </label>
-        <label>Ano / tipo
-          <div class="video-meta-fields">
-            <input id="video-year" name="year" type="text" maxlength="12" placeholder="2026">
-            <select id="video-media-type" name="mediaType">
-              <option value="FILME">Filme</option>
-              <option value="SÉRIE">Série</option>
-            </select>
-          </div>
-        </label>
-        <label>Sinopse
-          <textarea id="video-overview" name="overview" maxlength="1800" placeholder="Sinopse que aparecerá dentro do smartphone"></textarea>
-        </label>
         <input id="media-purpose" name="purpose" type="hidden" value="publish">
-        <label>Observação
-          <textarea id="media-note" name="note" maxlength="800" placeholder="Opcional"></textarea>
-        </label>
-        <button class="primary" type="submit">Enviar vídeo</button>
+        <button class="primary" type="submit">Enviar e gerar vídeo</button>
         <p id="media-upload-message" class="muted" role="status"></p>
       </form>
       <div class="card">
@@ -163,7 +138,6 @@
         <button type="submit">Salvar número</button>
         <p id="video-whatsapp-message" class="muted" role="status"></p>
       </form>
-      <div id="media-list" class="media-grid" aria-live="polite"></div>
     </section>
     <section id="tab-performance" class="tab" hidden>
       <div class="section-title"><div><p class="eyebrow">RESULTADOS</p><h1>Desempenho</h1><p class="muted">Dados coletados da conta profissional conectada.</p></div><button data-refresh="performance" type="button">Atualizar</button></div>

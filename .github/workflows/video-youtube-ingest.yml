@@ -1,0 +1,59 @@
+name: NEXUS YouTube Ingest
+
+on:
+  repository_dispatch:
+    types: [video-youtube-ingest]
+
+concurrency:
+  group: nexus-youtube-ingest-${{ github.event.client_payload.job_id }}
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      JOB_ID: ${{ github.event.client_payload.job_id }}
+      CLIENT_ID: ${{ github.event.client_payload.client_id }}
+      CALLBACK_TOKEN: ${{ github.event.client_payload.callback_token }}
+      CALLBACK_BASE: ${{ github.event.client_payload.callback_base }}
+      SOURCE_URL: ${{ github.event.client_payload.source_url }}
+    steps:
+      - name: Install yt-dlp and FFmpeg
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade yt-dlp
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+
+      - name: Download YouTube video
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo youtube_download_failed > /tmp/nexus-ingest-error.txt
+          yt-dlp --no-playlist --socket-timeout 30 --retries 5 --fragment-retries 5             --merge-output-format mp4 --max-filesize 90M             -f "bv*[height<=720]+ba/b[height<=720]/best[height<=720]"             -o "/tmp/source.%(ext)s" "$SOURCE_URL"
+          FILE="$(find /tmp -maxdepth 1 -type f -name 'source.*' | head -n1)"
+          test -n "$FILE"
+          ffmpeg -y -i "$FILE" -c copy -movflags +faststart /tmp/source.mp4 >/dev/null 2>&1 || cp "$FILE" /tmp/source.mp4
+          test -s /tmp/source.mp4
+          SIZE="$(stat -c%s /tmp/source.mp4)"
+          test "$SIZE" -le 94371840
+          echo "$SIZE" > /tmp/source-size.txt
+
+      - name: Upload original to NEXUS
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo youtube_upload_failed > /tmp/nexus-ingest-error.txt
+          SIZE="$(cat /tmp/source-size.txt)"
+          curl --fail-with-body --retry 2 --retry-all-errors             -X PUT "$CALLBACK_BASE/api/internal/video-ingest/upload"             -H "x-nexus-job-id: $JOB_ID"             -H "x-nexus-client-id: $CLIENT_ID"             -H "x-nexus-callback-token: $CALLBACK_TOKEN"             -H "content-type: video/mp4"             -H "content-length: $SIZE"             --data-binary @/tmp/source.mp4
+
+      - name: Report ingest failure
+        if: failure()
+        continue-on-error: true
+        shell: bash
+        run: |
+          ERROR="$(cat /tmp/nexus-ingest-error.txt 2>/dev/null || echo youtube_ingest_failed)"
+          printf '{"error":"%s"}' "$ERROR" >/tmp/failure.json
+          curl --silent --show-error             -X POST "$CALLBACK_BASE/api/internal/video-ingest/fail"             -H "x-nexus-job-id: $JOB_ID"             -H "x-nexus-client-id: $CLIENT_ID"             -H "x-nexus-callback-token: $CALLBACK_TOKEN"             -H "content-type: application/json"             --data-binary @/tmp/failure.json

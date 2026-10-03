@@ -569,6 +569,73 @@ export async function handlePortalApi(request, env, url, ctx) {
     return json({ ok: true, jobs: await listVideoJobs(env, client.id) });
   }
 
+  if (url.pathname === "/api/portal/videos/failed" && request.method === "DELETE") {
+    const rows = await env.DB.prepare(
+      "SELECT id,source_object_key FROM video_jobs WHERE client_id=?1 AND status='failed'"
+    ).bind(client.id).all();
+    const failed = rows.results || [];
+    let deleted = 0;
+    for (const row of failed) {
+      const clips = await env.DB.prepare(
+        "SELECT output_object_key FROM video_clips WHERE job_id=?1 AND client_id=?2"
+      ).bind(row.id, client.id).all();
+      for (const clip of (clips.results || [])) {
+        const outputKey = String(clip.output_object_key || "");
+        if (env.MEDIA && outputKey.startsWith("videos/" + String(client.id).replace(/[^a-zA-Z0-9_-]+/g, "-") + "/")) {
+          await env.MEDIA.delete(outputKey).catch(() => {});
+        }
+      }
+      const sourceKey = String(row.source_object_key || "");
+      if (env.MEDIA && (
+        sourceKey.startsWith("library/" + String(client.id) + "/") ||
+        sourceKey.startsWith("videos/" + String(client.id).replace(/[^a-zA-Z0-9_-]+/g, "-") + "/")
+      )) {
+        await env.MEDIA.delete(sourceKey).catch(() => {});
+      }
+      await env.DB.prepare("DELETE FROM video_clips WHERE job_id=?1 AND client_id=?2").bind(row.id, client.id).run();
+      const result = await env.DB.prepare(
+        "DELETE FROM video_jobs WHERE id=?1 AND client_id=?2 AND status='failed'"
+      ).bind(row.id, client.id).run();
+      deleted += Number(result?.meta?.changes || 0);
+    }
+    return json({ ok: true, deleted, message: deleted ? deleted + " vídeo(s) com falha apagado(s)." : "Nenhum vídeo com falha para apagar." });
+  }
+
+  const videoDeleteMatch = url.pathname.match(/^\/api\/portal\/videos\/([^/]+)$/);
+  if (videoDeleteMatch && request.method === "DELETE") {
+    const jobId = decodeURIComponent(videoDeleteMatch[1]);
+    const row = await env.DB.prepare(
+      "SELECT id,status,source_object_key FROM video_jobs WHERE id=?1 AND client_id=?2 LIMIT 1"
+    ).bind(jobId, client.id).first();
+    if (!row) return json({ error: "video_not_found", message: "Vídeo não encontrado." }, 404);
+    if (row.status !== "failed") {
+      return json({ error: "video_delete_not_allowed", message: "Só é possível apagar vídeos que falharam." }, 409);
+    }
+
+    const clips = await env.DB.prepare(
+      "SELECT output_object_key FROM video_clips WHERE job_id=?1 AND client_id=?2"
+    ).bind(jobId, client.id).all();
+    for (const clip of (clips.results || [])) {
+      const outputKey = String(clip.output_object_key || "");
+      if (env.MEDIA && outputKey.startsWith("videos/" + String(client.id).replace(/[^a-zA-Z0-9_-]+/g, "-") + "/")) {
+        await env.MEDIA.delete(outputKey).catch(() => {});
+      }
+    }
+    const sourceKey = String(row.source_object_key || "");
+    if (env.MEDIA && (
+      sourceKey.startsWith("library/" + String(client.id) + "/") ||
+      sourceKey.startsWith("videos/" + String(client.id).replace(/[^a-zA-Z0-9_-]+/g, "-") + "/")
+    )) {
+      await env.MEDIA.delete(sourceKey).catch(() => {});
+    }
+
+    await env.DB.prepare("DELETE FROM video_clips WHERE job_id=?1 AND client_id=?2").bind(jobId, client.id).run();
+    await env.DB.prepare(
+      "DELETE FROM video_jobs WHERE id=?1 AND client_id=?2 AND status='failed'"
+    ).bind(jobId, client.id).run();
+    return json({ ok: true, deleted: true, message: "Vídeo com falha apagado." });
+  }
+
   if (url.pathname === "/api/portal/videos/search" && request.method === "POST") {
     const body = await request.json().catch(() => ({}));
     const query = String(body.query || "").trim().slice(0, 120);
@@ -763,20 +830,27 @@ export async function handlePortalApi(request, env, url, ctx) {
     }
 
     let videoJobId = "";
+    let renderStarted = false;
     if (purpose === "publish" && contentType.startsWith("video/")) {
       videoJobId = "video_" + crypto.randomUUID().replace(/-/g, "").slice(0, 24);
+      const cleanName = originalName.replace(/\.[a-z0-9]{2,5}$/i, "").trim() || "Vídeo";
+      const branding = client.config?.branding && typeof client.config.branding === "object" ? client.config.branding : {};
+      const logoEnabled = String(form.get("logoEnabled") || "1") !== "0" && Boolean(branding.logoKey);
       const settings = {
         filename: originalName,
-        displayName: originalName.replace(/\.[a-z0-9]{2,5}$/i, ""),
-        contentTitle: String(form.get("title") || "").trim().slice(0, 180),
-        overview: String(form.get("overview") || "").trim().slice(0, 1800),
-        releaseYear: String(form.get("year") || "").trim().slice(0, 12),
-        mediaType: String(form.get("mediaType") || "").trim().slice(0, 24),
-        posterUrl: posterUrl || String(form.get("posterUrl") || "").trim().slice(0, 1200),
+        displayName: cleanName,
+        contentTitle: cleanName,
+        overview: "Confira este conteúdo em destaque.",
+        releaseYear: "",
+        mediaType: "VÍDEO",
+        posterUrl: "",
         clipDuration: null,
         requestedClips: 1,
         outputFormat: "reel",
-        editStyle: "cinematic-card-v1"
+        editStyle: "cinematic-card-v1",
+        logoEnabled,
+        logoObjectKey: logoEnabled ? String(branding.logoKey || "") : "",
+        endContact: String(form.get("endContact") || client.config?.videoTemplate?.whatsappNumber || "").trim().slice(0, 40)
       };
       await env.DB.prepare(
         `INSERT INTO video_jobs(id, client_id, source_object_key, status, settings_json, result_json, created_at, updated_at)
@@ -786,18 +860,33 @@ export async function handlePortalApi(request, env, url, ctx) {
         String(client.id),
         key,
         JSON.stringify(settings),
-        JSON.stringify({ progress: 0, message: "Vídeo original confirmado no R2. Configure o Laboratório e gere o MP4.", error: "" })
+        JSON.stringify({ progress: 20, message: "Upload concluído. Iniciando geração automática.", error: "" })
       ).run();
+
+      try {
+        await startGitHubVideoRender(env, client.id, videoJobId, settings);
+        renderStarted = true;
+      } catch (error) {
+        const code = error instanceof Error ? error.message : String(error);
+        await env.DB.prepare(
+          "UPDATE video_jobs SET status='failed',result_json=?3,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2 AND status!='failed'"
+        ).bind(
+          videoJobId,
+          String(client.id),
+          JSON.stringify({ progress: 0, message: "O upload terminou, mas a geração não iniciou.", error: code })
+        ).run();
+      }
     }
 
     return json({
       ok: true,
-      message: videoJobId ? "Vídeo enviado. Agora complete os dados e gere o MP4." : (purpose === "reference"
-        ? "Mídia salva como referência de estilo."
-        : "Mídia salva na biblioteca do cliente."),
+      message: videoJobId
+        ? (renderStarted ? "Vídeo enviado. A geração começou automaticamente." : "Vídeo enviado, mas a geração falhou ao iniciar. Veja em Falharam.")
+        : (purpose === "reference" ? "Mídia salva como referência de estilo." : "Mídia salva na biblioteca do cliente."),
       videoJobId,
+      renderStarted,
       media: (await listClientMedia(env, client.id, url.origin)).find(item => item.key === key) || { key, url: url.origin + "/media/" + key }
-    }, 201);
+    }, videoJobId ? 202 : 201);
   }
 
   if (url.pathname === "/api/portal/media/use" && request.method === "POST") {

@@ -44,60 +44,75 @@ export async function startYouTubeVideoIngest(env, clientId, jobId) {
   const sourceUrl = String(settings.sourceUrl || "").trim();
   if (!sourceUrl) throw new Error("video_source_missing");
 
-  const downloaderUrl = String(env.NEXUS_DOWNLOADER_URL || "").trim().replace(/\/+$/, "");
-  settings.ingestStartedAt = new Date().toISOString();
+  const ghToken = String(env.GITHUB_ACTIONS_TOKEN || env.GITHUB_TOKEN || "").trim();
+  if (!ghToken) throw new Error("github_actions_token_missing");
 
+  settings.ingestStartedAt = new Date().toISOString();
+  settings.ingestTransport = "github-actions";
   settings.ingestCallbackToken = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
+
   await env.DB.prepare(
     "UPDATE video_jobs SET status='importing',settings_json=?3,result_json=?4,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2"
   ).bind(
     String(jobId),
     String(clientId),
     JSON.stringify(settings),
-    JSON.stringify({ ...result, progress: 10, message: "Importando o vídeo para o NEXUS antes da renderização.", error: "" })
+    JSON.stringify({ ...result, progress: 10, message: "Importando o vídeo pelo NEXUS. Aguarde a confirmação do MP4.", error: "" })
   ).run();
 
+  const repo = String(env.GITHUB_INGEST_REPOSITORY || "globalplay27/SERVIDOR-GLOBAL-PLAY");
+  const [owner, name] = repo.split("/");
+  let response;
   try {
-  if (!downloaderUrl) throw new Error("youtube_downloader_not_configured");
-  const response = await fetch(downloaderUrl + "/ingest", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      ...(String(env.NEXUS_DOWNLOADER_SECRET || "").trim()
-        ? { authorization: "Bearer " + String(env.NEXUS_DOWNLOADER_SECRET).trim() }
-        : {})
-    },
-    body: JSON.stringify({
-      source_url: sourceUrl,
-      job_id: String(jobId),
-      client_id: String(clientId),
-      callback_token: settings.ingestCallbackToken,
-      callback_base: String(env.PUBLIC_BASE_URL || "https://servidor-nexus.diamantehinode2015.workers.dev").replace(/\/+$/, ""),
-      title: String(settings.contentTitle || settings.displayName || "video-youtube").slice(0, 180)
-    }),
-    signal: AbortSignal.timeout(10000)
-  });
-
-  if (!response.ok) {
-    throw new Error("youtube_downloader_http_" + response.status);
-  }
-  const accepted = await response.json().catch(() => null);
-  if (accepted?.accepted !== true || String(accepted.job_id || accepted.jobId || "") !== String(jobId)) {
-    throw new Error("youtube_downloader_invalid_response");
-  }
+    response = await fetch(`https://api.github.com/repos/${owner}/${name}/dispatches`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${ghToken}`,
+        accept: "application/vnd.github+json",
+        "content-type": "application/json",
+        "user-agent": "NEXUS-Cloudflare-Worker"
+      },
+      signal: AbortSignal.timeout(15000),
+      body: JSON.stringify({
+        event_type: "video-youtube-ingest",
+        client_payload: {
+          job_id: String(jobId),
+          client_id: String(clientId),
+          callback_token: settings.ingestCallbackToken,
+          callback_base: String(env.PUBLIC_BASE_URL || "https://servidor-nexus.diamantehinode2015.workers.dev").replace(/\/+$/, ""),
+          source_url: sourceUrl,
+          title: String(settings.contentTitle || settings.displayName || "video-youtube").slice(0, 180)
+        }
+      })
+    });
   } catch (error) {
-    const code = /^(youtube_downloader_)/.test(String(error?.message || "")) ? error.message
-      : ["TimeoutError", "AbortError"].includes(error?.name) ? "youtube_downloader_timeout" : "youtube_downloader_transport_failed";
+    const code = ["TimeoutError", "AbortError"].includes(error?.name)
+      ? "youtube_ingest_dispatch_timeout"
+      : "youtube_ingest_dispatch_transport_failed";
     delete settings.ingestCallbackToken;
     await env.DB.prepare(
-      "UPDATE video_jobs SET status='failed',settings_json=?3,result_json=?4,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2 AND status='importing'"
+      "UPDATE video_jobs SET status='failed',settings_json=?3,result_json=?4,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2"
     ).bind(
       String(jobId),
       String(clientId),
       JSON.stringify(settings),
-      JSON.stringify({ ...result, progress: 0, message: videoErrorMessages[code] || "O importador recusou o pedido: " + code + ". Use Enviar arquivo.", error: code })
+      JSON.stringify({ ...result, progress: 0, message: "Não foi possível iniciar a importação do YouTube.", error: code })
     ).run();
     throw new Error(code);
+  }
+
+  if (response.status !== 204) {
+    const detail = (await response.text().catch(() => "")).slice(0, 250);
+    delete settings.ingestCallbackToken;
+    await env.DB.prepare(
+      "UPDATE video_jobs SET status='failed',settings_json=?3,result_json=?4,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2"
+    ).bind(
+      String(jobId),
+      String(clientId),
+      JSON.stringify(settings),
+      JSON.stringify({ ...result, progress: 0, message: "O GitHub recusou a importação do YouTube.", error: ("youtube_ingest_dispatch_" + response.status + ":" + detail).slice(0, 500) })
+    ).run();
+    throw new Error("youtube_ingest_dispatch_failed");
   }
 
   return { ok: true, jobId };

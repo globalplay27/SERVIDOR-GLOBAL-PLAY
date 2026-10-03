@@ -302,7 +302,7 @@ if __name__=='__main__':
         metadata=load_metadata(args.metadata)
     else:
         data=json.loads(supplied)
-        private_poster='/tmp/poster.jpg' if str(data.get('posterUrl','')).startswith(os.environ.get('NEXUS_BASE_URL','https://invalid.example')+'/media/') and Path('/tmp/poster.jpg').exists() else None
+        private_poster='/tmp/poster.jpg' if Path('/tmp/poster.jpg').exists() else None
         metadata=materialize_metadata(data,args.work,private_poster)
     prepare(args.work,metadata,args.poster)
     source_duration=float(json.loads(subprocess.check_output(['ffprobe','-v','error','-show_entries','format=duration','-of','json',args.source]))['format']['duration'])
