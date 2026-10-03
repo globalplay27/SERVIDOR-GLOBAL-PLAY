@@ -29,6 +29,18 @@ jobs:
       - name: Test visual quality gate
         run: node --test cloudflare/test/*.test.mjs
 
+      - name: Smoke test five-part Michael video template
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg fonts-dejavu-core python3-pil
+          ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=c=navy:s=640x360:r=30:d=3' -c:v libx264 /tmp/template-source.mp4
+          TITLE=Michael RELEASE_YEAR=2026 /usr/bin/python3 scripts/render_video_template.py \
+            --source /tmp/template-source.mp4 --output /tmp/template-output.mp4 --work /tmp/template-smoke --duration 3
+          ffmpeg -hide_banner -loglevel error -i /tmp/template-output.mp4 -f null -
+          test "$(ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 /tmp/template-output.mp4)" = '1080x1920'
+
       - name: Validate Wrangler bundle
         working-directory: cloudflare
         run: |

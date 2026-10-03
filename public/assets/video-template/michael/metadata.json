@@ -1,0 +1,107 @@
+{
+  "title": "Michael",
+  "aliases": [
+    "michael",
+    "michael jackson"
+  ],
+  "year": "2026",
+  "media_type": "FILME",
+  "genres": "Biografia • Drama • Música",
+  "runtime": "2h 7min",
+  "rating": "IMDb 7,4",
+  "overview": "Da descoberta de seu talento nos Jackson Five à carreira solo, o filme acompanha a vida e o legado de Michael Jackson, dentro e fora dos palcos.",
+  "poster": "poster.jpg",
+  "cast": [
+    {
+      "name": "Jaafar Jackson",
+      "image": "cast-0.jpg",
+      "source": "https://www.rottentomatoes.com/celebrity/jaafar_jackson"
+    },
+    {
+      "name": "Nia Long",
+      "image": "cast-1.jpg",
+      "source": "https://www.rottentomatoes.com/celebrity/nia_long"
+    },
+    {
+      "name": "Colman Domingo",
+      "image": "cast-2.jpg",
+      "source": "https://www.rottentomatoes.com/celebrity/colman_domingo"
+    },
+    {
+      "name": "Miles Teller",
+      "image": "cast-3.jpg",
+      "source": "https://www.rottentomatoes.com/celebrity/miles_teller"
+    },
+    {
+      "name": "Laura Harrier",
+      "image": "cast-4.jpg",
+      "source": "https://www.rottentomatoes.com/celebrity/laura_harrier"
+    },
+    {
+      "name": "Juliano Valdi",
+      "image": "cast-5.jpg",
+      "source": "https://www.rottentomatoes.com/celebrity/juliano_valdi_2"
+    },
+    {
+      "name": "Jamal Henderson",
+      "image": "cast-6.jpg",
+      "source": "https://www.rottentomatoes.com/celebrity/jamal_henderson"
+    },
+    {
+      "name": "Jessica Sula",
+      "image": "cast-7.jpg",
+      "source": "https://www.rottentomatoes.com/celebrity/jessica_sula"
+    },
+    {
+      "name": "Kendrick Sampson",
+      "image": "cast-8.jpg",
+      "source": "https://www.rottentomatoes.com/celebrity/kendrick_sampson"
+    }
+  ],
+  "related": [
+    {
+      "title": "Moonwalker",
+      "year": "1988",
+      "image": "related-0.jpg",
+      "source": "https://www.rottentomatoes.com/m/michael_jackson_moonwalker"
+    },
+    {
+      "title": "This Is It",
+      "year": "2009",
+      "image": "related-1.jpg",
+      "source": "https://www.rottentomatoes.com/m/michael_jackson_this_is_it"
+    },
+    {
+      "title": "Get on Up",
+      "year": "2014",
+      "image": "related-2.jpg",
+      "source": "https://www.rottentomatoes.com/m/get_on_up"
+    }
+  ],
+  "reviews": [
+    {
+      "author": "Curtis",
+      "text": "Conta que foi ao cinema sem intenção de dançar, mas acabou dançando durante a sessão.",
+      "source": "Rotten Tomatoes"
+    },
+    {
+      "author": "Steve",
+      "text": "Gostou do filme e diz que está esperando uma continuação.",
+      "source": "Rotten Tomatoes"
+    },
+    {
+      "author": "Judith",
+      "text": "Elogia a atuação e considera o filme divertido.",
+      "source": "Rotten Tomatoes"
+    }
+  ],
+  "sources": [
+    "https://michael.movie/",
+    "https://www.rottentomatoes.com/m/michael",
+    "https://www.rottentomatoes.com/m/michael/cast-and-crew",
+    "https://www.imdb.com/title/tt11378946/ratings/"
+  ],
+  "verified_on": "2026-10-03",
+  "reviews_are_translated_summaries": true,
+  "related_are_editorial_suggestions": true
+}

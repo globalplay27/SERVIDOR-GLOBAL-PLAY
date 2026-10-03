@@ -28,6 +28,8 @@ jobs:
       END_CONTACT: ${{ github.event.client_payload.render.end_contact }}
       NEXUS_BASE_URL: https://servidor-nexus.diamantehinode2015.workers.dev
     steps:
+      - uses: actions/checkout@v4
+
       - name: Install FFmpeg
         shell: bash
         run: |
@@ -52,7 +54,14 @@ jobs:
         run: |
           set -euo pipefail
           if [ -n "$POSTER_URL" ]; then
-            curl -L --fail --max-time 20 "$POSTER_URL" -o /tmp/poster.jpg || rm -f /tmp/poster.jpg
+            if [[ "$POSTER_URL" == "$NEXUS_BASE_URL/media/"* ]]; then
+              curl --fail --max-time 20 "$NEXUS_BASE_URL/api/internal/video-render/poster" \
+                -H "x-nexus-job-id: $JOB_ID" \
+                -H "x-nexus-client-id: $CLIENT_ID" \
+                -H "x-nexus-callback-token: $CALLBACK_TOKEN" -o /tmp/poster.jpg
+            else
+              curl -L --fail --max-time 20 "$POSTER_URL" -o /tmp/poster.jpg
+            fi
           fi
           if [ "$LOGO_ENABLED" = "true" ]; then
             curl --fail-with-body --retry 2 --retry-all-errors \
@@ -124,6 +133,12 @@ jobs:
             ffmpeg -y -i /tmp/source.mp4 -t "$RENDER_DUR" \
               -vf "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1" \
               -map 0:v:0 -map 0:a? -c:v libx264 -preset veryfast -crf 24 -c:a aac -b:a 128k -movflags +faststart /tmp/rendered-base.mp4
+          elif [[ "${TITLE,,}" == "michael" || "${TITLE,,}" == "michael jackson" ]] && [[ -z "$RELEASE_YEAR" || "$RELEASE_YEAR" == "2026" ]]; then
+            POSTER_ARGS=()
+            if [ -s /tmp/poster.jpg ]; then POSTER_ARGS=(--poster /tmp/poster.jpg); fi
+            /usr/bin/python3 scripts/render_video_template.py --source /tmp/source.mp4 \
+              --output /tmp/rendered-base.mp4 --work /tmp/movie-template \
+              --duration "$RENDER_DUR" "${POSTER_ARGS[@]}"
           elif [ -s /tmp/poster.jpg ]; then
             ffmpeg -y -i /tmp/source.mp4 -loop 1 -i /tmp/poster.jpg -t "$RENDER_DUR" \
               -filter_complex "[0:v]scale=1080:900:force_original_aspect_ratio=increase,crop=1080:900,setsar=1[v];color=c=0x050807:s=1080x1920:d=$RENDER_DUR[bg];[bg][v]overlay=0:0[base];movie=/tmp/phone-frame.png[phone];[base][phone]overlay=320:930[p0];[1:v]scale=340:300:force_original_aspect_ratio=decrease,pad=340:300:(ow-iw)/2:(oh-ih)/2:color=0x0b1117[poster];[p0][poster]overlay=370:1015[p];[p]drawtext=fontfile=$BOLD:textfile=/tmp/title.txt:x=370:y=1335:fontsize=38:line_spacing=6:fontcolor=white[tit];[tit]drawtext=fontfile=$BOLD:textfile=/tmp/meta.txt:x=370:y=1438:fontsize=22:fontcolor=0x65d9ff[meta];[meta]drawtext=fontfile=$FONT:textfile=/tmp/overview.txt:x=370:y=1492:fontsize=22:line_spacing=6:fontcolor=0xd8e5eb[desc];[desc]drawbox=x=85:y=1830:w=910:h=70:color=0x0d2330@0.95:t=fill[cta];[cta]drawtext=fontfile=$BOLD:textfile=/tmp/cta.txt:x=(w-text_w)/2:y=1850:fontsize=26:fontcolor=0xa5ebff[outv]" \
