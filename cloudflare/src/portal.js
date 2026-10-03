@@ -568,7 +568,7 @@ export async function handlePortalApi(request, env, url, ctx) {
       const metadata = await catalogMetadata(title, body.type === "series" ? "series" : "movie", String(body.catalogId || ""));
       const id = "video_" + crypto.randomUUID().replace(/-/g, "").slice(0, 24);
       const branding = client.config?.branding || {};
-      const settings = { sourceUrl, contentTitle: metadata.title, overview: String(body.overview || metadata.overview).slice(0, 1800), releaseYear: metadata.year, mediaType: metadata.mediaType, posterUrl: metadata.posterUrl, movieMetadata: metadata, editStyle: "cinematic-card-v1", clipDuration: null, requestedClips: 1, logoEnabled: Boolean(branding.logoKey), logoObjectKey: branding.logoKey || "" };
+      const settings = { sourceUrl, contentTitle: metadata.title, overview: String(body.overview || metadata.overview).slice(0, 1800), releaseYear: metadata.year, mediaType: metadata.mediaType, posterUrl: metadata.posterUrl, movieMetadata: metadata, editStyle: "cinematic-card-v1", clipDuration: null, requestedClips: 1, logoEnabled: body.logoEnabled !== false && Boolean(branding.logoKey), logoObjectKey: body.logoEnabled !== false ? (branding.logoKey || "") : "" };
       settings.endContact = String(body.endContact ?? client.config?.videoTemplate?.whatsappNumber ?? "").trim().slice(0, 40);
       await env.DB.prepare("INSERT INTO video_jobs(id,client_id,source_object_key,status,settings_json,result_json,created_at,updated_at) VALUES(?1,?2,'','importing',?3,?4,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)").bind(
         id,
