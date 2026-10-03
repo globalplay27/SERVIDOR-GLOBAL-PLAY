@@ -186,7 +186,7 @@ async function searchTrailers(event) {
 
 async function startTrailerJob(item, button) {
   if (!selectedCatalog) {
-    notice("Selecione o filme ou série na lista de títulos antes de gerar o corte.");
+    notice("Selecione o filme ou série na lista de títulos antes de gerar o vídeo.");
     return;
   }
   const original = button.textContent;
@@ -206,7 +206,7 @@ async function startTrailerJob(item, button) {
         endContact: $("#video-whatsapp-number")?.value.trim() || ""
       })
     });
-    notice(data.message || "Trailer enviado. O corte 9:16 está sendo gerado.");
+    notice(data.message || "Trailer enviado. O vídeo completo 9:16 está sendo gerado.");
     await loadVideoJobs();
     $("#video-job-list")?.scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (error) {
