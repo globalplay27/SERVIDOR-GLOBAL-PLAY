@@ -867,6 +867,7 @@ async function uploadMedia(event) {
     await loadVideoJobs();
   } catch (error) {
     message.textContent = error.message;
+    await loadVideoJobs().catch(() => {});
   } finally {
     button.disabled = false;
   }
