@@ -21,20 +21,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - name: Install downloader
         shell: bash
         run: |
           set -euo pipefail
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg
-          python3 -m pip install --disable-pip-version-check --quiet --upgrade yt-dlp
+          python3 -m pip install --disable-pip-version-check --quiet --upgrade "yt-dlp[default]"
 
       - name: Download YouTube source
         shell: bash
         run: |
           set -euo pipefail
           echo youtube_download_failed > /tmp/nexus-ingest-error.txt
+          set +e
           yt-dlp \
+            --js-runtimes node \
             --no-playlist \
             --retries 5 \
             --fragment-retries 5 \
@@ -42,7 +48,17 @@ jobs:
             --merge-output-format mp4 \
             -f "bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[height<=720][ext=mp4]/b[height<=720]" \
             -o "/tmp/source.%(ext)s" \
-            "$SOURCE_URL"
+            "$SOURCE_URL" 2>&1 | tee /tmp/yt-dlp.log
+          STATUS=${PIPESTATUS[0]}
+          set -e
+          if [ "$STATUS" -ne 0 ]; then
+            if grep -qi "sign in to confirm.*not a bot\|cookies.*authentication" /tmp/yt-dlp.log; then
+              echo youtube_authentication_required > /tmp/nexus-ingest-error.txt
+            elif grep -qi "javascript runtime\|challenge" /tmp/yt-dlp.log; then
+              echo youtube_challenge_failed > /tmp/nexus-ingest-error.txt
+            fi
+            exit "$STATUS"
+          fi
           FILE="$(find /tmp -maxdepth 1 -type f -name 'source.*' | head -n1)"
           test -n "$FILE"
           if [ "$FILE" != "/tmp/source.mp4" ]; then
