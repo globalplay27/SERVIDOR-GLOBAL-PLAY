@@ -203,6 +203,10 @@ jobs:
                   instagramConnection
                 }]
               }'
+              if echo "$last" | jq -e '.errorCode == "d1_daily_read_limit"' >/dev/null 2>&1; then
+                echo "::error::D1 daily read quota exhausted; stopping health retries."
+                break
+              fi
               if echo "$last" | jq -e '
                 .ok == true and
                 .automationActive == true and
