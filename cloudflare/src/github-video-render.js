@@ -1,3 +1,4 @@
+import { portugueseTrailerScore } from './video-catalog.js';
 function parseJson(raw, fallback = {}) {
   try {
     const value = JSON.parse(String(raw || ""));
@@ -93,6 +94,7 @@ export async function startGitHubVideoRender(env, clientId, jobId, patch = {}) {
           media_type: String(settings.mediaType || "").slice(0, 24),
           poster_url: String(settings.posterUrl || "").slice(0, 1200),
           source_url: String(settings.sourceUrl || ""),
+          require_portuguese: Boolean(settings.sourceUrl),
           metadata: settings.movieMetadata || null,
           logo_enabled: settings.logoEnabled === true && Boolean(settings.logoObjectKey),
           duration,
@@ -156,9 +158,10 @@ export async function handleGitHubVideoRenderCallback(request, env, url) {
     const settings = parseJson(row.settings_json);
     if (!settings.searchOnly) return new Response("invalid_search_job", { status: 400 });
     const body = await request.json();
-    const results = (Array.isArray(body.results) ? body.results : []).slice(0, 8)
+    const results = (Array.isArray(body.results) ? body.results : []).slice(0, 30)
       .filter(x => /^[a-zA-Z0-9_-]{11}$/.test(String(x.id || "")))
-      .map(x => ({ id: x.id, title: String(x.title || "").slice(0, 220), channel: String(x.channel || "").slice(0, 120), duration: Number(x.duration) || null, url: "https://www.youtube.com/watch?v=" + x.id, thumbnail: "https://i.ytimg.com/vi/" + x.id + "/hqdefault.jpg" }));
+      .map(x => ({ id: x.id, title: String(x.title || "").slice(0, 220), channel: String(x.channel || "").slice(0, 120), channelVerified: x.channelVerified === true, duration: Number(x.duration) || null, url: "https://www.youtube.com/watch?v=" + x.id, thumbnail: "https://i.ytimg.com/vi/" + x.id + "/hqdefault.jpg" }))
+      .filter(x => portugueseTrailerScore(x) >= 0).sort((a, b) => portugueseTrailerScore(b) - portugueseTrailerScore(a)).slice(0, 8);
     delete settings.githubRenderToken;
     await env.DB.prepare("UPDATE video_jobs SET status='search_results',settings_json=?3,result_json=?4,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2")
       .bind(jobId, clientId, JSON.stringify(settings), JSON.stringify({ results })).run();
@@ -330,7 +333,7 @@ export async function handleGitHubVideoRenderCallback(request, env, url) {
       JSON.stringify({
         ...result,
         progress: 0,
-        message: "A renderização do modelo NEXUS falhou.",
+        message: body.error === "trailer_not_portuguese" ? "O áudio deste trailer não foi confirmado em português. Escolha outro trailer oficial dublado." : body.error === "trailer_not_official" ? "Este vídeo não foi confirmado como trailer de um canal oficial. Escolha outro resultado." : "A renderização do modelo NEXUS falhou.",
         error: String(body.error || "github_render_failed").slice(0, 500)
       })
     ).run();

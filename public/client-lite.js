@@ -58,6 +58,7 @@ function showDashboard(data) {
   }
   $("#profile-name").value = data.contact?.name || data.name || "";
   $("#profile-phone").value = data.contact?.phone || "";
+  if ($("#video-whatsapp-number")) $("#video-whatsapp-number").value = data.videoTemplate?.whatsappNumber || "";
   $("#profile-instagram").value = instagramHandle || "";
   $("#next-post").textContent = "Automática pelo NEXUS";
 }
@@ -543,7 +544,7 @@ async function generateYouTubeVideo(url) {
   const message = $("#youtube-search-message");
   message.textContent = "Preparando o vídeo completo...";
   try {
-    await api("/api/portal/videos/youtube", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url, title: selected?.title || $("#youtube-query").value.trim(), type: $("#youtube-type").value, catalogId: selected?.id || "", overview: $("#youtube-overview").value.trim() }) });
+    await api("/api/portal/videos/youtube", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url, title: selected?.title || $("#youtube-query").value.trim(), type: $("#youtube-type").value, catalogId: selected?.id || "", endContact: $("#video-whatsapp-number")?.value.trim() || "", overview: $("#youtube-overview").value.trim() }) });
     message.textContent = "Vídeo completo enviado para edição. Acompanhe abaixo.";
     await loadVideoJobs();
   } catch (error) { message.textContent = error.message; }
@@ -564,7 +565,7 @@ async function searchYouTube(event) {
         const state = await api('/api/portal/videos/search/' + encodeURIComponent(data.searchId));
         if (state.status === 'searching') { videoSearchTimer = setTimeout(poll, 5000); return; }
         if (state.status !== 'search_results') throw new Error('A busca do YouTube falhou. Você pode informar um link abaixo.');
-        message.textContent = state.results.length ? 'Escolha o vídeo e confira o título e a sinopse.' : 'Nenhum vídeo encontrado. Informe um link do YouTube abaixo.';
+        message.textContent = state.results.length ? 'Somente canais oficiais verificados. O áudio em português será conferido antes da geração.' : 'Nenhum trailer oficial dublado em português encontrado. Um link informado também precisa passar pela verificação.';
         for (const result of state.results) {
           const card = document.createElement('article'); card.className = 'card media-card';
           const image = document.createElement('img'); image.src = result.thumbnail; image.alt = result.title;
@@ -639,7 +640,7 @@ async function loadVideoJobs() {
             await api("/api/portal/videos/" + encodeURIComponent(job.id) + "/process", {
               method: "POST",
               headers: { "content-type": "application/json" },
-              body: JSON.stringify({})
+              body: JSON.stringify({ endContact: $("#video-whatsapp-number")?.value.trim() || "" })
             });
             notice("Vídeo enviado para renderização.");
             await loadVideoJobs();
@@ -1023,6 +1024,15 @@ $("#logo-form")?.addEventListener("submit", submitLogo);
 $("#logo-file")?.addEventListener("change", previewLogo);
 $("#logo-remove-bg")?.addEventListener("change", previewLogo);
 $("#media-upload-form")?.addEventListener("submit", uploadMedia);
+$("#video-whatsapp-form")?.addEventListener("submit", async event => {
+  event.preventDefault(); const button = event.currentTarget.querySelector('button');
+  button.disabled = true;
+  try {
+    await api('/api/portal/videos/preferences', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ whatsappNumber: $("#video-whatsapp-number").value.trim() }) });
+    $("#video-whatsapp-message").textContent = 'Número salvo para os próximos vídeos.';
+  } catch (error) { $("#video-whatsapp-message").textContent = error.message; }
+  finally { button.disabled = false; }
+});
 $("#video-search-form")?.addEventListener("submit", searchYouTube);
 $("#youtube-catalog")?.addEventListener("change", () => { $("#youtube-overview").value = youtubeCatalog.find(x => x.id === $("#youtube-catalog").value)?.overview || ''; });
 $("#youtube-link-form")?.addEventListener("submit", event => { event.preventDefault(); generateYouTubeVideo($("#youtube-url").value.trim()); });

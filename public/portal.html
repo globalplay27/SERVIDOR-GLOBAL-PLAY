@@ -126,7 +126,7 @@
         <form id="video-search-form" class="media-upload">
           <label>Nome do filme ou série<input id="youtube-query" type="search" required maxlength="120" placeholder="Ex.: Reacher"></label>
           <label>Tipo<select id="youtube-type"><option value="movie">Filme</option><option value="series">Série</option></select></label>
-          <button class="primary" type="submit">Buscar vídeos</button>
+          <button class="primary" type="submit">Buscar trailer oficial dublado</button>
         </form>
         <p id="youtube-search-message" role="status" class="muted"></p>
         <label>Título no catálogo<select id="youtube-catalog"><option value="">Busque um filme ou série</option></select></label>
@@ -168,6 +168,13 @@
         <p id="media-upload-message" class="muted" role="status"></p>
       </form>
       <div id="video-job-list" class="media-grid" aria-live="polite"></div>
+      <form id="video-whatsapp-form" class="card">
+        <h2><img src="/assets/video-template/whatsapp-official.svg" alt="WhatsApp" width="32" height="32"> WhatsApp no vídeo</h2>
+        <label>Número do WhatsApp<input id="video-whatsapp-number" type="tel" maxlength="40" inputmode="tel" placeholder="(11) 99999-9999"></label>
+        <p class="muted">Este número aparecerá ao lado do símbolo oficial no rodapé dos próximos vídeos.</p>
+        <button type="submit">Salvar número</button>
+        <p id="video-whatsapp-message" class="muted" role="status"></p>
+      </form>
       <div id="media-list" class="media-grid" aria-live="polite"></div>
     </section>
     <section id="tab-performance" class="tab" hidden>

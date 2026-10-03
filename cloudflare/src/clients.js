@@ -116,6 +116,7 @@ export function portalClientView(client) {
       name: String(config.contact?.name || client.name || ""),
       phone: String(config.contact?.phone || "")
     },
+    videoTemplate: { whatsappNumber: String(config.videoTemplate?.whatsappNumber || "") },
     status: client.status,
     theme: config.theme || "nexus",
     primaryColor: config.primaryColor || (client.id === "ragnar-one" ? "#19c563" : "#22c55e"),
