@@ -180,7 +180,7 @@ function dayKey(date = new Date()) {
 }
 
 export async function agentCoreDashboard(env) {
-  const clients = (await listClients(env)).slice(0, 50);
+  const clients = (await listClients(env)).filter(client => client.status === "online").slice(0, 50);
   const views = [];
   for (const client of clients) views.push(await agentCoreClientView(env, client, 120));
 
