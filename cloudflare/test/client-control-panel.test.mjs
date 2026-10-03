@@ -25,6 +25,9 @@ test("client portal exposes minimal video, Instagram and logo navigation", async
   assert.match(js, /async function loadVideoJobs\(/);
   assert.match(js, /Gerar vídeo agora/);
   assert.match(js, /Baixar vídeo 9:16/);
+  assert.match(js, /let pendingUploadMetadata = null/);
+  assert.match(js, /const uploadMetadata = pendingUploadMetadata \|\| selectedCatalog/);
+  assert.match(js, /NEXUS mantém o título, a sinopse e gera o 9:16/);
   assert.match(js, /MAX_VIDEO_UPLOAD_BYTES = 90 \* 1024 \* 1024/);
   assert.match(portal, /const maxBytes = 90 \* 1024 \* 1024/);
   assert.match(portal, /env\.MEDIA\.put\(key, file\.stream\(\)/);
