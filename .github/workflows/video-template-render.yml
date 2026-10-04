@@ -31,14 +31,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check FFmpeg
+      - name: Check render dependencies
         shell: bash
         run: |
           set -euo pipefail
-          if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
+          if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1 || [ ! -f /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf ]; then
             sudo apt-get update -qq
-            sudo apt-get install -y -qq ffmpeg
+            sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
           fi
+          python3 -c "from PIL import Image, ImageDraw, ImageFont" >/dev/null 2>&1 || python3 -m pip install --quiet pillow
 
       - name: Download source from R2 through NEXUS
         shell: bash
@@ -51,7 +52,37 @@ jobs:
             -H "x-nexus-callback-token: $CALLBACK_TOKEN" -o /tmp/source.mp4
           test -s /tmp/source.mp4
 
-      - name: Convert full video to clean 9x16
+      - name: Prepare unbranded promotional card
+        shell: bash
+        run: |
+          set -euo pipefail
+          PROMO_READY=0
+          if [ -n "$TITLE" ] && { [ -n "$OVERVIEW" ] || [ -n "$POSTER_URL" ]; }; then
+            PROMO_READY=1
+          fi
+          echo "PROMO_READY=$PROMO_READY" >> "$GITHUB_ENV"
+
+          if [ "$PROMO_READY" = "1" ]; then
+            rm -f /tmp/poster.jpg
+            if [ -n "$POSTER_URL" ]; then
+              if [[ "$POSTER_URL" == "$NEXUS_BASE_URL/media/"* ]]; then
+                curl --fail --max-time 20 "$NEXUS_BASE_URL/api/internal/video-render/poster" \
+                  -H "x-nexus-job-id: $JOB_ID" \
+                  -H "x-nexus-client-id: $CLIENT_ID" \
+                  -H "x-nexus-callback-token: $CALLBACK_TOKEN" \
+                  -o /tmp/poster.jpg || rm -f /tmp/poster.jpg
+              else
+                curl -L --fail --max-time 20 "$POSTER_URL" -o /tmp/poster.jpg || rm -f /tmp/poster.jpg
+              fi
+            fi
+            if [ ! -s /tmp/poster.jpg ]; then
+              ffmpeg -hide_banner -loglevel error -y -ss 1 -i /tmp/source.mp4 -frames:v 1 /tmp/poster.jpg
+            fi
+            python3 scripts/build_promo_card.py --output /tmp/promo-card.png --poster /tmp/poster.jpg
+            test -s /tmp/promo-card.png
+          fi
+
+      - name: Render full 9x16 video
         id: render
         shell: bash
         run: |
@@ -70,16 +101,28 @@ jobs:
           if [ -z "$CROP" ]; then CROP="crop=iw:ih:0:0"; fi
           echo "Using source crop: $CROP"
 
-          FILTER="[0:v]$CROP,split=2[clean][base];[base]scale=270:480:force_original_aspect_ratio=increase,crop=270:480,boxblur=6:1,scale=1080:1920[bg];[clean]scale=1080:1920:force_original_aspect_ratio=decrease[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1,format=yuv420p[out]"
-
-          ffmpeg -hide_banner -loglevel error -y \
-            -i /tmp/source.mp4 \
-            -filter_complex "$FILTER" \
-            -map "[out]" -map 0:a? \
-            -c:v libx264 -preset superfast -crf 21 -threads 0 \
-            -c:a aac -b:a 128k \
-            -movflags +faststart \
-            /tmp/rendered.mp4
+          if [ "${PROMO_READY:-0}" = "1" ] && [ -s /tmp/promo-card.png ]; then
+            FILTER="[0:v]$CROP,split=2[clean][topbase];[topbase]scale=270:225:force_original_aspect_ratio=increase,crop=270:225,boxblur=6:1,scale=1080:900[topbg];[clean]scale=1080:900:force_original_aspect_ratio=decrease[topfg];[topbg][topfg]overlay=(W-w)/2:(H-h)/2[top];[top]pad=1080:1920:0:0:color=#050a0f[canvas];[canvas][1:v]overlay=0:0:shortest=1,setsar=1,format=yuv420p[out]"
+            ffmpeg -hide_banner -loglevel error -y \
+              -i /tmp/source.mp4 \
+              -loop 1 -framerate 1 -i /tmp/promo-card.png \
+              -filter_complex "$FILTER" \
+              -map "[out]" -map 0:a? \
+              -c:v libx264 -preset superfast -crf 21 -threads 0 \
+              -c:a aac -b:a 128k \
+              -movflags +faststart \
+              /tmp/rendered.mp4
+          else
+            FILTER="[0:v]$CROP,split=2[clean][base];[base]scale=270:480:force_original_aspect_ratio=increase,crop=270:480,boxblur=6:1,scale=1080:1920[bg];[clean]scale=1080:1920:force_original_aspect_ratio=decrease[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1,format=yuv420p[out]"
+            ffmpeg -hide_banner -loglevel error -y \
+              -i /tmp/source.mp4 \
+              -filter_complex "$FILTER" \
+              -map "[out]" -map 0:a? \
+              -c:v libx264 -preset superfast -crf 21 -threads 0 \
+              -c:a aac -b:a 128k \
+              -movflags +faststart \
+              /tmp/rendered.mp4
+          fi
 
           test -s /tmp/rendered.mp4
           test "$(ffprobe -v error -select_streams v:0 -show_entries stream=width -of csv=p=0 /tmp/rendered.mp4)" = "1080"
