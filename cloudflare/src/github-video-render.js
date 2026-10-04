@@ -130,6 +130,9 @@ export async function startGitHubVideoRender(env, clientId, jobId, patch = {}) {
   const settings = parseJson(row.settings_json, {});
   const result = parseJson(row.result_json, {});
   const duration = null; // Customer template renders the complete source video.
+  if (!String(settings.contentTitle || "").trim() || !String(settings.overview || "").trim()) {
+    throw new Error("video_metadata_required");
+  }
   const clips = Math.max(1, Math.min(12, Number(patch.clips || patch.requestedClips || settings.requestedClips || 3)));
   const outputFormat = ["reel","feed","square"].includes(String(patch.outputFormat || settings.outputFormat || "reel"))
     ? String(patch.outputFormat || settings.outputFormat || "reel") : "reel";

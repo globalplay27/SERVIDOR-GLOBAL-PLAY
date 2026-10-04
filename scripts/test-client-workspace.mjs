@@ -46,6 +46,7 @@ try{
   const source=await readFile(process.env.NEXUS_E2E_SOURCE);
   globalThis.fetch=async(url,options)=>{if(String(url).startsWith('https://api.github.com/'))return new Response(null,{status:204});throw new Error('external_network_disabled_in_fixture');};
   const form=new FormData();form.append('file',new Blob([source],{type:'video/mp4'}),'test.mp4');form.append('purpose','publish');
+  form.append('title','Reacher');form.append('overview','Um investigador enfrenta uma conspiração.');form.append('catalogType','series');
   let r=await call('/api/portal/media',{method:'POST',body:form});assert.equal(r.status,201,JSON.stringify(r.data));const jobId=r.data.videoJobId;
   assert.equal(r.data.renderStarted,true,JSON.stringify(r.data));
   let jobs=(await call('/api/portal/videos')).data.jobs;const job=jobs.find(x=>x.id===jobId);assert.equal(job.sourceReady,true);assert.equal(job.status,'cutting');

@@ -62,6 +62,17 @@ function showTab(name) {
   $$(".tab").forEach(section => { section.hidden = section.id !== "tab-" + name; });
   if (name === "videos") loadVideoJobs();
   if (name === "instagram") loadInstagram();
+  if (name === "upload") {
+    const metadata = pendingUploadMetadata || selectedCatalog;
+    const complete = Boolean(metadata?.title && metadata?.overview);
+    $("#upload-content-fields").hidden = complete;
+    $("#upload-content-summary").hidden = !complete;
+    $("#upload-content-summary").textContent = complete ? "Modelo de " + metadata.title + ". Título e sinopse já selecionados." : "";
+    for (const id of ["#upload-title", "#upload-overview"]) {
+      $(id).required = !complete;
+      $(id).disabled = complete;
+    }
+  }
 }
 
 function renderCatalog(items) {
@@ -305,18 +316,46 @@ async function loadVideoJobs() {
         });
         actions.append(uploadFallback);
       }
-      if (job.status === "awaiting_configuration" && job.sourceReady === true) {
+      if (["ready", "failed", "awaiting_configuration"].includes(job.status) && job.sourceReady === true) {
+        let titleInput, overviewInput, typeInput;
+        if (!job.overview) {
+          const titleLabel = document.createElement("label");
+          titleLabel.textContent = "Título do filme ou série";
+          titleInput = document.createElement("input");
+          titleInput.value = job.overview ? job.contentTitle : "";
+          titleInput.maxLength = 180;
+          titleLabel.append(titleInput);
+          const overviewLabel = document.createElement("label");
+          overviewLabel.textContent = "Sinopse";
+          overviewInput = document.createElement("textarea");
+          overviewInput.maxLength = 1800;
+          overviewLabel.append(overviewInput);
+          const typeLabel = document.createElement("label");
+          typeLabel.textContent = "Tipo";
+          typeInput = document.createElement("select");
+          for (const [value, label] of [["FILME", "Filme"], ["SÉRIE", "Série"]]) {
+            const option = document.createElement("option");
+            option.value = value; option.textContent = label; typeInput.append(option);
+          }
+          typeLabel.append(typeInput);
+          card.append(titleLabel, overviewLabel, typeLabel);
+        }
         const generate = document.createElement("button");
         generate.type = "button";
         generate.className = "primary";
-        generate.textContent = "Gerar vídeo agora";
+        generate.textContent = job.status === "ready" ? "Gerar novamente com card" : "Gerar vídeo agora";
         generate.addEventListener("click", async () => {
+          if (titleInput && (!titleInput.value.trim() || !overviewInput.value.trim())) {
+            notice("Informe título e sinopse para aplicar o card.");
+            return;
+          }
           generate.disabled = true;
           try {
             await api("/api/portal/videos/" + encodeURIComponent(job.id) + "/process", {
               method: "POST",
               headers: { "content-type": "application/json" },
               body: JSON.stringify({
+                ...(titleInput ? { title: titleInput.value.trim(), overview: overviewInput.value.trim(), mediaType: typeInput.value } : {}),
                 endContact: $("#video-whatsapp-number")?.value.trim() || "",
                 logoEnabled: $("#video-use-logo")?.checked !== false
               })
@@ -391,7 +430,16 @@ async function uploadMedia(event) {
   body.append("file", file);
   body.append("purpose", "publish");
   if ($("#media-note")?.value) body.append("note", $("#media-note").value);
-  const uploadMetadata = pendingUploadMetadata || selectedCatalog;
+  const existingMetadata = pendingUploadMetadata || selectedCatalog;
+  const uploadMetadata = existingMetadata?.title && existingMetadata?.overview ? existingMetadata : {
+    ...existingMetadata,
+    title: $("#upload-title")?.value.trim(), overview: $("#upload-overview")?.value.trim(),
+    catalogType: $("#upload-type")?.value || "movie"
+  };
+  if (!uploadMetadata.title || !uploadMetadata.overview) {
+    message.textContent = "Informe título e sinopse para aplicar o modelo.";
+    return;
+  }
   if (uploadMetadata) {
     body.append("title", String(uploadMetadata.title || ""));
     body.append("overview", String(uploadMetadata.overview || ""));

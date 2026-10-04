@@ -4,7 +4,7 @@ import { confirmedVideoSource, isMp4Header } from '../src/video-source.js';
 import { startYouTubeVideoIngest, startGitHubVideoRender, handleGitHubVideoRenderCallback } from '../src/github-video-render.js';
 
 function fixture() {
-  const row = { id: 'job', client_id: 'client-a', source_object_key: '', status: 'importing', settings_json: JSON.stringify({sourceUrl:'https://www.youtube.com/watch?v=htlUwNs2AjQ',ingestCallbackToken:'ingest-secret'}), result_json:'{}' };
+  const row = { id: 'job', client_id: 'client-a', source_object_key: '', status: 'importing', settings_json: JSON.stringify({contentTitle:'Reacher',overview:'Um investigador enfrenta uma conspiração.',sourceUrl:'https://www.youtube.com/watch?v=htlUwNs2AjQ',ingestCallbackToken:'ingest-secret'}), result_json:'{}' };
   const updates=[];
   const objects=new Map();
   const env={ NEXUS_DOWNLOADER_URL:'https://downloader.test', GITHUB_ACTIONS_TOKEN:'fixture-only', DB:{prepare(sql){return{bind(...args){return{first:async()=>({...row}),run:async()=>{
@@ -52,6 +52,15 @@ test('render never dispatches if the database key has no confirmed R2 object',as
   const f=fixture();f.row.status='awaiting_configuration';f.row.source_object_key='library/client-a/missing.mp4';
   await assert.rejects(startGitHubVideoRender(f.env,'client-a','job'),/video_source_missing/);
   assert.equal(f.updates.length,0);
+});
+
+test('render rejects missing synopsis before claiming or dispatching a valid original',async()=>{
+  const f=fixture();f.row.status='ready';f.row.source_object_key='library/client-a/video.mp4';
+  f.objects.set(f.row.source_object_key,{size:12,httpMetadata:{contentType:'video/mp4'}});
+  f.row.settings_json=JSON.stringify({contentTitle:'random-file-name',overview:''});
+  await assert.rejects(startGitHubVideoRender(f.env,'client-a','job'),/video_metadata_required/);
+  assert.equal(f.updates.length,0);
+  assert.equal(f.row.status,'ready');
 });
 
 test('ingest upload confirms R2 and starts the fixed 9x16 render automatically',async()=>{
