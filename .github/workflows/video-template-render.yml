@@ -76,11 +76,7 @@ jobs:
               fi
             fi
             if [ -s /tmp/poster.jpg ]; then
-              python3 - <<'PY' || rm -f /tmp/poster.jpg
-from PIL import Image
-img = Image.open('/tmp/poster.jpg')
-img.verify()
-PY
+              python3 -c "from PIL import Image; img=Image.open('/tmp/poster.jpg'); img.verify()" || rm -f /tmp/poster.jpg
             fi
             if [ ! -s /tmp/poster.jpg ]; then
               ffmpeg -hide_banner -loglevel error -y -ss 1 -i /tmp/source.mp4 -frames:v 1 /tmp/poster.jpg
