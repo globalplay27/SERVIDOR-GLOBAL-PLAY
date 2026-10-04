@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#080d15"><title>NEXUS Vídeos</title>
-  <link rel="stylesheet" href="/client-lite.css?v=21"><script src="/client-lite.js?v=34" defer></script>
+  <link rel="stylesheet" href="/client-lite.css?v=21"><script src="/client-lite.js?v=35" defer></script>
 </head>
 <body><main class="shell">
   <section id="login" class="login card" hidden>
@@ -100,12 +100,7 @@
         <label>Vídeo
           <input id="media-file" name="file" type="file" accept="video/mp4,video/webm,video/quicktime" required>
         </label>
-        <div id="upload-content-fields">
-          <label>Título do filme ou série<input id="upload-title" maxlength="180" required></label>
-          <label>Sinopse<textarea id="upload-overview" maxlength="1800" required></textarea></label>
-          <label>Tipo<select id="upload-type"><option value="movie">Filme</option><option value="series">Série</option></select></label>
-        </div>
-        <p id="upload-content-summary" class="muted" hidden></p>
+        <p id="upload-content-summary" class="muted">O NEXUS identifica título, sinopse e tipo automaticamente. Se você veio da busca de catálogo, os dados selecionados serão preservados.</p>
         <input id="media-purpose" name="purpose" type="hidden" value="publish">
         <button class="primary upload-main-action" type="submit">Enviar e gerar 9:16</button>
         <p id="media-upload-message" class="muted" role="status"></p>
