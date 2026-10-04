@@ -100,6 +100,12 @@
         <label>Vídeo
           <input id="media-file" name="file" type="file" accept="video/mp4,video/webm,video/quicktime" required>
         </label>
+        <div id="upload-content-fields">
+          <label>Título do filme ou série<input id="upload-title" maxlength="180" required></label>
+          <label>Sinopse<textarea id="upload-overview" maxlength="1800" required></textarea></label>
+          <label>Tipo<select id="upload-type"><option value="movie">Filme</option><option value="series">Série</option></select></label>
+        </div>
+        <p id="upload-content-summary" class="muted" hidden></p>
         <input id="media-purpose" name="purpose" type="hidden" value="publish">
         <button class="primary upload-main-action" type="submit">Enviar e gerar 9:16</button>
         <p id="media-upload-message" class="muted" role="status"></p>

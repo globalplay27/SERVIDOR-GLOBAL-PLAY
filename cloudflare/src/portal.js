@@ -721,10 +721,13 @@ export async function handlePortalApi(request, env, url, ctx) {
       endText: "",
       endContact: String(body.endContact ?? client.config?.videoTemplate?.whatsappNumber ?? current.endContact ?? "").trim().slice(0, 40)
     };
-    if (!settings.movieMetadata && !/^(michael|michael jackson)$/i.test(settings.contentTitle)) {
+    if (!settings.movieMetadata?.overview || (body.title && body.title !== current.contentTitle)) {
       try { settings.movieMetadata = await catalogMetadata(settings.contentTitle, /s[eé]rie|series|tv/i.test(settings.mediaType) ? "series" : "movie"); }
       catch { settings.movieMetadata = { title: settings.contentTitle, overview: settings.overview, year: settings.releaseYear, mediaType: settings.mediaType, posterUrl: settings.posterUrl, cast: [], reviews: [], related: [] }; }
     }
+    settings.overview = settings.overview || String(settings.movieMetadata?.overview || "").slice(0, 1800);
+    settings.posterUrl = settings.posterUrl || String(settings.movieMetadata?.posterUrl || "").slice(0, 1200);
+    settings.movieMetadata = { ...settings.movieMetadata, title: settings.contentTitle, overview: settings.overview };
     await env.DB.prepare(
       "UPDATE video_jobs SET settings_json=?3, updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND client_id=?2"
     ).bind(jobId, client.id, JSON.stringify(settings)).run();

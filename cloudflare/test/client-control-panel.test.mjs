@@ -26,7 +26,7 @@ test("client portal exposes minimal video, Instagram and logo navigation", async
   assert.match(js, /Gerar vídeo agora/);
   assert.match(js, /Baixar vídeo 9:16/);
   assert.match(js, /let pendingUploadMetadata = null/);
-  assert.match(js, /const uploadMetadata = pendingUploadMetadata \|\| selectedCatalog/);
+  assert.match(js, /pendingUploadMetadata \|\| selectedCatalog/);
   assert.match(js, /NEXUS mantém título e sinopse/);
   assert.match(js, /MAX_VIDEO_UPLOAD_BYTES = 90 \* 1024 \* 1024/);
   assert.match(html, /class="video-status-dock"/);

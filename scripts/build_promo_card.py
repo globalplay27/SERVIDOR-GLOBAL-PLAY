@@ -14,6 +14,7 @@ def clean(value, limit=5000):
 
 def font_path(bold=False):
     candidates = [
+        "C:/Windows/Fonts/arialbd.ttf" if bold else "C:/Windows/Fonts/arial.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
     ]
@@ -91,10 +92,9 @@ def main():
     d = ImageDraw.Draw(overlay)
 
     # If no usable catalog data exists, keep the successful plain 9:16 output.
-    promo_ready = bool(title and (overview or metadata.get("posterUrl")))
+    promo_ready = bool(title and overview)
     if not promo_ready:
-        overlay.save(args.output)
-        return
+        raise ValueError("video_metadata_required")
 
     # Cinematic transition into a custom NEXUS information card. No third-party branding.
     for y in range(PANEL_Y - 90, PANEL_Y + 130):

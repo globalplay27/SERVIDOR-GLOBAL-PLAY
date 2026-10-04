@@ -57,10 +57,14 @@ jobs:
         run: |
           set -euo pipefail
           PROMO_READY=0
-          if [ -n "$TITLE" ] && { [ -n "$OVERVIEW" ] || [ -n "$POSTER_URL" ]; }; then
+          if [ -n "$TITLE" ] && [ -n "$OVERVIEW" ]; then
             PROMO_READY=1
           fi
           echo "PROMO_READY=$PROMO_READY" >> "$GITHUB_ENV"
+          if [ "$PROMO_READY" != "1" ]; then
+            echo video_metadata_required > /tmp/nexus-render-error.txt
+            exit 1
+          fi
 
           if [ "$PROMO_READY" = "1" ]; then
             rm -f /tmp/poster.jpg

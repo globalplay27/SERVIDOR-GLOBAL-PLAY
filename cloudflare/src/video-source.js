@@ -22,6 +22,7 @@ export function isMp4Header(bytes) {
 }
 
 export const videoErrorMessages = {
+  video_metadata_required: "Informe o título e a sinopse para aplicar o card ao vídeo.",
   r2_unavailable: "O armazenamento R2 está indisponível. Tente novamente.",
   video_source_missing: "O vídeo original não foi confirmado no R2. Envie um arquivo válido antes de abrir o Laboratório.",
   video_source_invalid: "O arquivo original não é um vídeo válido para esta conta.",
