@@ -155,9 +155,6 @@ def main():
         d.rounded_rectangle((x, cta_y + 42, x + 480, cta_y + 112), radius=28, fill=(19, 129, 72, 238))
         d.text((x + 28, cta_y + 59), "WHATSAPP  " + display, font=font(27, True), fill=(255, 255, 255, 255))
 
-    # Small neutral NEXUS signature, intentionally no reference-video brand/logo.
-    d.text((W - 220, H - 54), "NEXUS VIDEO", font=font(18, True), fill=(120, 145, 160, 165))
-
     overlay.save(args.output)
 
 if __name__ == "__main__":
