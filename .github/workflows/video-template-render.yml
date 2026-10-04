@@ -75,6 +75,13 @@ jobs:
                 curl -L --fail --max-time 20 "$POSTER_URL" -o /tmp/poster.jpg || rm -f /tmp/poster.jpg
               fi
             fi
+            if [ -s /tmp/poster.jpg ]; then
+              python3 - <<'PY' || rm -f /tmp/poster.jpg
+from PIL import Image
+img = Image.open('/tmp/poster.jpg')
+img.verify()
+PY
+            fi
             if [ ! -s /tmp/poster.jpg ]; then
               ffmpeg -hide_banner -loglevel error -y -ss 1 -i /tmp/source.mp4 -frames:v 1 /tmp/poster.jpg
             fi
